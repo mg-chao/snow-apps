@@ -899,6 +899,105 @@ QImage ScreenshotRecognitionWindow::translationDocumentImage() const {
     return image;
 }
 
+std::optional<ScreenshotRecognitionViewportSnapshot>
+ScreenshotRecognitionWindow::capturePrintViewportScene(
+    const QRectF& canvasRect, QImage filtered, const QRectF& filteredRect, qreal contentOpacity,
+    const ScreenshotTextAnnotationRenderSnapshot& textAnnotations, const ViewportCapture& capture) {
+    const QPointer<ScreenshotRecognitionWindow> lifetime(this);
+    if (m_showOriginalImage || !m_stack->currentWidget())
+        return std::nullopt;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (m_stack->currentWidget() == m_tableEditor && m_tableEditor->isEditingCell()) {
+        if (!m_tableEditor->commitActiveEdit() || !lifetime)
+            return std::nullopt;
+    }
+#endif
+    QWidget* content = m_stack->currentWidget();
+    QWidget* viewport = content;
+    if (auto* scroll = qobject_cast<QAbstractScrollArea*>(content))
+        viewport = scroll->viewport();
+    auto* text = qobject_cast<QTextEdit*>(content);
+    if (!text) {
+        for (auto* candidate : content->findChildren<QTextEdit*>()) {
+            if (candidate->isVisibleTo(content)) {
+                text = candidate;
+                break;
+            }
+        }
+    }
+    if (text)
+        viewport = text->viewport();
+    if (viewport->size().isEmpty())
+        return std::nullopt;
+    ScreenshotRecognitionViewportSnapshot scene;
+    scene.viewportSize = viewport->size();
+    scene.devicePixelRatio = viewport->devicePixelRatioF();
+    scene.outputPixelSize = viewport->size() * scene.devicePixelRatio;
+    scene.backgroundCanvasRect = canvasRect;
+    scene.contentOpacity = std::clamp(contentOpacity, 0.0, 1.0);
+    if (content == m_textLayer) {
+        scene.canvasToViewport = canvasToLocalTransform();
+        scene.overlay = ocrImageSnapshot();
+        if (m_selectionOnly)
+            scene.overlay->lines.clear();
+        scene.overlay->canvasRect =
+            scene.canvasToViewport.inverted().mapRect(QRectF(viewport->rect()));
+        scene.overlay->filteredImage = std::move(filtered);
+        scene.overlay->filteredCanvasRect = filteredRect;
+        scene.overlay->textAnnotations = textAnnotations;
+    } else {
+        if (!capture)
+            return std::nullopt;
+        scene.presentationImage = capture(scene.outputPixelSize, [&] {
+            return printViewportSnapshot({}, canvasRect, {}, {}, 1.0, {}, textAnnotations);
+        });
+        if (!lifetime || scene.presentationImage.isNull())
+            return std::nullopt;
+    }
+    return scene;
+}
+
+QImage renderScreenshotRecognitionViewport(const ScreenshotRecognitionViewportSnapshot& scene,
+                                           const QImage& background,
+                                           const std::function<bool()>& cancelled) {
+    if (scene.outputPixelSize.isEmpty() || scene.viewportSize.isEmpty() ||
+        (cancelled && cancelled()))
+        return {};
+    QImage image = scene.presentationImage;
+    if (image.isNull()) {
+        image = QImage(scene.outputPixelSize, QImage::Format_ARGB32_Premultiplied);
+        if (image.isNull() || !scene.overlay)
+            return {};
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.setClipRect(image.rect());
+        painter.scale(scene.devicePixelRatio, scene.devicePixelRatio);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::TextAntialiasing);
+        painter.save();
+        painter.setTransform(scene.canvasToViewport, true);
+        if (!background.isNull() && !scene.backgroundCanvasRect.isEmpty())
+            painter.drawImage(scene.backgroundCanvasRect, background);
+        painter.restore();
+        if (!paintScreenshotRecognitionOverlay(painter, *scene.overlay, scene.canvasToViewport,
+                                               cancelled))
+            return {};
+    }
+    if (cancelled && cancelled())
+        return {};
+    if (scene.contentOpacity < 1.0) {
+        QPainter painter(&image);
+        painter.setClipRect(image.rect());
+        painter.scale(scene.devicePixelRatio, scene.devicePixelRatio);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::TextAntialiasing);
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        painter.fillRect(QRect(QPoint(), scene.viewportSize),
+                         QColor(0, 0, 0, qRound(255 * scene.contentOpacity)));
+    }
+    return image;
+}
+
 QImage ScreenshotRecognitionWindow::printViewportSnapshot(
     QImage background, const QRectF& canvasRect, QImage filtered, const QRectF& filteredRect,
     qreal contentOpacity, QSize outputPixelSize,

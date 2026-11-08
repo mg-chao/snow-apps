@@ -397,13 +397,19 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateCropSelection(const QPointF& nativePosition);
     void endCropSelection(bool cancel, const QPoint& menuPosition = {});
     bool handleCropPointer(QObject* watched, QEvent* event);
-    bool setCropCanvasRect(const QRectF& rect);
+    bool setCropCanvasRect(const QRectF& rect, bool publish = true);
     void applyCrop();
     bool commitPreparedCrop(const QRect& pixels, QImage original, QImage transformed,
                             const QTransform& transform,
                             std::shared_ptr<const ScreenshotAnimationSource> animation,
-                            bool bakedStyle);
+                            bool bakedStyle, quint64 animationHold = 0);
+    void cancelCropPreparation(bool discardDeferredSteps = false);
     bool m_cropApplying = false;
+    ScreenshotExportJobHandle m_cropJob;
+    quint64 m_cropPreparationGeneration = 0;
+    quint64 m_cropAnimationHold = 0;
+    ScreenshotExportCoordinator* m_cropCoordinator = nullptr;
+    std::function<void(int, const ScreenshotExportCancellation&)> m_cropPreparationStage;
     [[nodiscard]] QRectF cropSelectionViewRect(const QWidget* target) const;
     void paintCropSelection(QPainter& painter, const QWidget* target) const;
     void updateCropPresentation();
@@ -505,6 +511,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void beginAuxiliaryWindowInteraction();
     void endAuxiliaryWindowInteraction();
     void activateRecognitionMode(int mode, bool showToolbar = true);
+    void applyRecognitionIntent(quint64 intent);
+    void clearRecognitionIntent();
     void toggleTextRecognitionResults();
     void initializeTextType(const Config& config);
     void setTextType(snow_shot::storage::PinnedTextType type);
@@ -598,6 +606,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void persistNow();
     void removePersistence();
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceRecord() const;
+    [[nodiscard]] bool persistenceContentValid() const;
+    [[nodiscard]] std::optional<snow_shot::storage::PinnedWindowRecord> prepareTerminalSnapshot();
     void restorePersistentState(const Config& config);
     [[nodiscard]] QRect intendedNativeGeometry() const;
     [[nodiscard]] QRect authoritativeNativeGeometry() const;
@@ -733,6 +743,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     struct PinnedRenderCache;
     std::unique_ptr<PinnedRenderCache> m_pinnedRenderCache;
     std::shared_ptr<ScreenshotExportArtifact> m_nativeExportArtifact;
+    ScreenshotExportJobHandle m_nativeViewportJob;
+    std::function<void()> m_nativeSceneCaptured;
     QPointer<ScreenshotPrintService> m_printService;
     bool m_printPending = false;
     QPointer<ScreenshotAirDropService> m_airDropService;
@@ -940,8 +952,14 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_formattedTextAvailable = false;
     bool m_ocrMode = false;
     bool m_hiddenTextSelection = false;
-    bool m_initialRecognitionVisible = false;
-    bool m_initialTranslationVisible = false;
+    struct RecognitionIntent {
+        std::optional<int> mode;
+        bool showToolbar = false;
+        bool pending = false;
+        bool requiresCachedText = false;
+        quint64 generation = 0;
+    };
+    RecognitionIntent m_recognitionIntent;
     snow_shot::storage::PinnedTextType m_textType =
         snow_shot::storage::PinnedTextType::RecognitionResults;
     bool m_translateAfterRecognition = false;
@@ -962,6 +980,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;
     bool m_closing = false;
+    bool m_terminalCaptureActive = false;
     std::optional<snow_shot::storage::PinnedWindowRecord> m_closeSnapshot;
     bool m_closeStatePersisted = false;
     bool m_deferredInactiveGroupClose = false;

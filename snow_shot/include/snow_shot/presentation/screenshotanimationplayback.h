@@ -9,6 +9,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 
 // Playback owns timing and decoding. The host acknowledges actual painting before a
 // prepared frame becomes the displayed frame and an exportable snapshot.
@@ -41,6 +42,13 @@ class ScreenshotAnimationPlayback final : public QObject {
         QImage transformed;
         QTransform transform;
         int frameIndex = 0;
+        quint64 token = 0;
+    };
+    struct FrameHold {
+        std::shared_ptr<const ScreenshotAnimationSource> source;
+        QImage original;
+        int frameIndex = 0;
+        quint64 paintedToken = 0;
         quint64 token = 0;
     };
     using TransformCompletion = std::function<void(PreparedTransform, QString error)>;
@@ -84,8 +92,16 @@ class ScreenshotAnimationPlayback final : public QObject {
 
     void setSource(std::shared_ptr<const ScreenshotAnimationSource> source, bool playing = true,
                    int speed = 100, QImage initialTransformed = {});
-    bool adoptCroppedSource(std::shared_ptr<const ScreenshotAnimationSource> source,
-                            QImage original, QImage transformed, const QTransform& transform);
+    // Crop preparation retains the painted frame and defers stepping just like transforms.
+    [[nodiscard]] std::optional<FrameHold> holdFrameForCrop();
+    [[nodiscard]] bool cropHoldValid(quint64 token) const;
+    bool reserveCroppedSource(const FrameHold& hold,
+                              std::shared_ptr<const ScreenshotAnimationSource> source,
+                              QImage original, QImage transformed, const QTransform& transform);
+    // Staging has no callbacks. The host commits its prepared state before publication.
+    bool stageReservedCroppedSource(quint64 token);
+    bool publishReservedCroppedSource(quint64 token);
+    void cancelCropPreparation(quint64 token, bool discardDeferredSteps = false);
     void clear();
     void setSuspended(bool suspended);
     void setTransform(const QTransform& transform);

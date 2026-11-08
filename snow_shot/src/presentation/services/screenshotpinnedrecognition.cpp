@@ -115,7 +115,8 @@ ScreenshotRecognitionResults decodeScreenshotPinnedRecognition(const QByteArray&
                 size > stream.device()->bytesAvailable()) {
                 return results;
             }
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             QByteArray payload(static_cast<qsizetype>(size), Qt::Uninitialized);
             if (stream.readRawData(payload.data(), static_cast<int>(size)) !=
                 static_cast<int>(size)) {

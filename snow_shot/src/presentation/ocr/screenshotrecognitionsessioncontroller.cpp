@@ -234,7 +234,8 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
                 return;
             }
             const auto it = m_textCache.constFind(m_translationKey);
-            if (it != m_textCache.cend() && it->hasTranslationConfiguration &&
+            if (it != m_textCache.cend() && !retainsTranslationDocument(*it) &&
+                it->hasTranslationConfiguration &&
                 it->translationConfiguration !=
                     snow_shot::storage::ScreenshotTranslationSettings().configuration()) {
                 if (!notify(&ScreenshotRecognitionSessionController::invalidateCurrentTranslation,
@@ -307,7 +308,8 @@ void ScreenshotRecognitionSessionController::setProviders(
                     }
                     QTimer::singleShot(0, this, [this] {
                         const auto entry = m_textCache.constFind(m_translationKey);
-                        if (entry != m_textCache.cend() && entry->hasTranslationConfiguration &&
+                        if (entry != m_textCache.cend() && !retainsTranslationDocument(*entry) &&
+                            entry->hasTranslationConfiguration &&
                             entry->translationConfiguration !=
                                 snow_shot::storage::ScreenshotTranslationSettings().configuration())
                             if (!notify(&ScreenshotRecognitionSessionController::
@@ -322,8 +324,9 @@ void ScreenshotRecognitionSessionController::setProviders(
             m_translationService, &TranslationService::modelInvalidated, this,
             [this](const QString& id) {
                 const auto active = m_textCache.constFind(m_translationKey);
-                const bool affected =
-                    active != m_textCache.cend() && active->translationConfiguration.modelId == id;
+                const bool affected = active != m_textCache.cend() &&
+                                      !retainsTranslationDocument(*active) &&
+                                      active->translationConfiguration.modelId == id;
                 if (affected)
                     if (!notify(
                             &ScreenshotRecognitionSessionController::invalidateCurrentTranslation,
@@ -337,11 +340,14 @@ void ScreenshotRecognitionSessionController::setProviders(
                         entry.translationJob->deleteLater();
                         entry.translationJob = nullptr;
                     }
+                    if (retainsTranslationDocument(entry))
+                        continue;
                     entry.hasTranslationConfiguration = false;
                     entry.hasSuccessfulTranslation = false;
                     entry.translationStatus = TextCacheEntry::TranslationStatus::Absent;
                     entry.translationText.clear();
                     entry.successfulTranslation.clear();
+                    entry.translationSourceFingerprint.clear();
                     entry.overlayTranslation = {};
                 }
                 if (affected && m_translating)
@@ -494,6 +500,10 @@ void ScreenshotRecognitionSessionController::setIndependentEditing(bool enabled)
     updateOriginalImagePreview();
 }
 
+void ScreenshotRecognitionSessionController::setRetainCompletedTranslations(bool enabled) {
+    m_retainCompletedTranslations = enabled;
+}
+
 void ScreenshotRecognitionSessionController::setTarget(ScreenshotRecognitionTarget target) {
     if (target.key == m_target.key && target.canvasRect == m_target.canvasRect &&
         target.formattedTextDocument == m_target.formattedTextDocument &&
@@ -619,10 +629,36 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
             entry.hasTranslationConfiguration = true;
         }
 #endif
-        prepareIndependentTranslation(entry, m_target.key);
         m_textCache.insert(m_target.key, std::move(entry));
         textInserted = true;
     }
+
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (results.translatedEditor && results.translatedEditor->isValidFor(m_target.key)) {
+        auto entry = m_textCache.find(m_target.key);
+        const auto& saved = *results.translatedEditor;
+        if (entry != m_textCache.end() && entry->editingSession && !entry->translationSession &&
+            saved.sourceFingerprint ==
+                QCryptographicHash::hash(entry->editingSession->originalText().toUtf8(),
+                                         QCryptographicHash::Sha256)) {
+            auto session = std::make_shared<ScreenshotOcrTextEditingSession>(saved.baseline);
+            if (saved.draft)
+                session->establishHistory(*saved.draft);
+            entry->translationSession = std::move(session);
+            entry->successfulTranslation = saved.baseline;
+            entry->translationText = saved.draft.value_or(saved.baseline);
+            entry->translationSourceFingerprint = saved.sourceFingerprint;
+            entry->hasSuccessfulTranslation = true;
+            entry->translationStatus = TextCacheEntry::TranslationStatus::Completed;
+            entry->translationConfiguration = saved.configuration;
+            entry->hasTranslationConfiguration = true;
+            connect(entry->translationSession->document(), &QTextDocument::contentsChanged, this,
+                    [this, key = m_target.key] { handleTranslationDocumentChanged(key); });
+        }
+    }
+#endif
+    if (auto entry = m_textCache.find(m_target.key); entry != m_textCache.end())
+        prepareIndependentTranslation(*entry, m_target.key);
 
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (results.tableEntries.isEmpty() && results.table && results.table->succeeded()) {
@@ -778,6 +814,21 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
     if (const auto qr = m_qrResults.constFind(m_target.key);
         qr != m_qrResults.cend() && qr->error.isEmpty() && !qr->contents.isEmpty()) {
         results.qr = qr.value();
+    }
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (const auto entry = m_textCache.constFind(m_target.key);
+        entry != m_textCache.cend() && entry->translationSession &&
+        entry->hasSuccessfulTranslation && entry->hasTranslationConfiguration) {
+        ScreenshotTranslatedTextEntry saved;
+        saved.sourceKey = m_target.key;
+        saved.sourceFingerprint = entry->translationSourceFingerprint;
+        saved.configuration = entry->translationConfiguration;
+        saved.baseline = entry->successfulTranslation;
+        const QString current = entry->translationSession->text();
+        if (current != saved.baseline)
+            saved.draft = current;
+        results.translatedEditor = std::move(saved);
     }
 #endif
     if (results.isEmpty()) {
@@ -1743,6 +1794,7 @@ void ScreenshotRecognitionSessionController::resetTargetState() {
         it->hasTranslationConfiguration = false;
         it->translationText.clear();
         it->successfulTranslation.clear();
+        it->translationSourceFingerprint.clear();
         it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
         it->hasSuccessfulTranslation = false;
 #endif
@@ -2061,7 +2113,8 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
         return;
     }
     const auto cached = m_textCache.constFind(m_target.key);
-    if (cached != m_textCache.cend() && cached->overlayTranslation.captured &&
+    if (cached != m_textCache.cend() && !retainsTranslationDocument(*cached) &&
+        cached->overlayTranslation.captured &&
         (!cached->hasTranslationConfiguration ||
          cached->translationConfiguration ==
              snow_shot::storage::ScreenshotTranslationSettings().configuration()) &&
@@ -2078,7 +2131,7 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
     }
     it->editing = false;
     const snow_shot::storage::ScreenshotTranslationSettings settings;
-    const bool originalImage = !m_independentEditing &&
+    const bool originalImage = !retainsTranslationDocument(*it) && !m_independentEditing &&
                                settings.originalImageTranslationEnabled() && !it->formatted &&
                                it->presentation != nullptr;
     if (originalImage != m_translationInImage) {
@@ -2087,7 +2140,7 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
     }
     m_translationInImage = originalImage;
     m_translationKey = m_editingKey;
-    if (it->hasTranslationConfiguration &&
+    if (!retainsTranslationDocument(*it) && it->hasTranslationConfiguration &&
         it->translationConfiguration != settings.configuration()) {
         if (!notify(&ScreenshotRecognitionSessionController::invalidateCurrentTranslation, false))
             return;
@@ -2150,6 +2203,8 @@ bool ScreenshotRecognitionSessionController::activateCachedTextTranslation() {
         return false;
     }
     auto entry = m_textCache.find(m_target.key);
+    if (entry != m_textCache.end() && retainsTranslationDocument(*entry))
+        return false;
     if (entry == m_textCache.end() || !entry->overlayTranslation.captured ||
         entry->overlayTranslation.presentation == nullptr) {
         return false;
@@ -2280,10 +2335,13 @@ void ScreenshotRecognitionSessionController::applyTextTargetLanguage(const QStri
         const bool saved = m_translationService->savePreferences(preferences);
         if (!lifetime || !m_translationService)
             return;
-        if (!saved)
-            if (!showStatus(m_translationService->errorText(), true))
-                return;
+        if (!saved) {
+            static_cast<void>(showStatus(m_translationService->errorText(), true));
+            return;
+        }
     }
+    if (!replaceTranslationForLocalSettings())
+        return;
     if (m_actions.setTextTargetLanguage)
         if (!notifyUiCallback(m_actions.setTextTargetLanguage,
                               m_translationService->preferences().targetLanguage))
@@ -2311,10 +2369,13 @@ void ScreenshotRecognitionSessionController::applyTextTranslationService(const Q
         const bool saved = m_translationService->savePreferences(preferences);
         if (!lifetime || !m_translationService)
             return;
-        if (!saved)
-            if (!showStatus(m_translationService->errorText(), true))
-                return;
+        if (!saved) {
+            static_cast<void>(showStatus(m_translationService->errorText(), true));
+            return;
+        }
     }
+    if (!replaceTranslationForLocalSettings())
+        return;
     updateTextState();
 #else
     Q_UNUSED(service);
@@ -2339,24 +2400,72 @@ void ScreenshotRecognitionSessionController::openTranslationSettings() {
         owner = content();
     if (owner == nullptr)
         return;
+    const auto priorConfiguration =
+        snow_shot::storage::ScreenshotTranslationSettings().configuration();
+    const bool priorOverlay =
+        snow_shot::storage::ScreenshotTranslationSettings().originalImageTranslationEnabled();
+    const auto applied = std::make_shared<bool>(false);
     m_translationSettingsModal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(
         *m_translationService, owner, this,
-        [this, restart = std::make_shared<bool>(false)](bool before) {
+        [this, applied, restart = std::make_shared<bool>(false)](bool before) {
             if (before) {
                 *restart = m_translating;
                 if (*restart)
                     endTextEditing();
-            } else if (*restart) {
+            } else if (*restart || m_retainCompletedTranslations) {
+                *applied = true;
                 if (!notify(&ScreenshotRecognitionSessionController::invalidateCurrentTranslation,
                             false))
                     return;
-                if (!notify(&ScreenshotRecognitionSessionController::beginTextTranslation))
+                if (*restart &&
+                    !notify(&ScreenshotRecognitionSessionController::beginTextTranslation))
                     return;
             }
         });
+    connect(m_translationSettingsModal, &adqt::widgets::AdModal::accepted, this,
+            [this, applied, priorConfiguration, priorOverlay] {
+                const snow_shot::storage::ScreenshotTranslationSettings settings;
+                const auto entry = m_textCache.constFind(m_target.key);
+                const bool retainedSettingsChanged =
+                    entry != m_textCache.cend() && retainsTranslationDocument(*entry) &&
+                    (entry->translationConfiguration != settings.configuration() ||
+                     (settings.originalImageTranslationEnabled() && !entry->formatted));
+                if (!*applied &&
+                    (retainedSettingsChanged || settings.configuration() != priorConfiguration ||
+                     settings.originalImageTranslationEnabled() != priorOverlay))
+                    static_cast<void>(replaceTranslationForLocalSettings());
+            });
     connect(m_translationSettingsModal, &adqt::widgets::AdModal::finished, this,
             [this] { m_translationSettingsModal = nullptr; });
 #endif
+}
+
+bool ScreenshotRecognitionSessionController::retainsTranslationDocument(
+    const TextCacheEntry& entry) const {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    return m_retainCompletedTranslations && entry.translationSession != nullptr &&
+           entry.hasSuccessfulTranslation;
+#else
+    Q_UNUSED(entry)
+    return false;
+#endif
+}
+
+bool ScreenshotRecognitionSessionController::replaceTranslationForLocalSettings() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    // Other windows receive the shared preference notification, but only this explicit caller
+    // relinquishes a retained document and requests a replacement.
+    if (!m_retainCompletedTranslations)
+        return true;
+    const bool restart = m_translating;
+    if (restart && !notify(&ScreenshotRecognitionSessionController::endTextEditing))
+        return false;
+    if (!notify(&ScreenshotRecognitionSessionController::invalidateCurrentTranslation, false))
+        return false;
+    if (restart && !notify(&ScreenshotRecognitionSessionController::beginTextTranslation))
+        return false;
+#endif
+    return true;
 }
 
 void ScreenshotRecognitionSessionController::prepareIndependentTranslation(TextCacheEntry& entry,
@@ -2378,6 +2487,8 @@ void ScreenshotRecognitionSessionController::prepareIndependentTranslation(TextC
     entry.translationText = text;
     entry.successfulTranslation = text;
     entry.hasSuccessfulTranslation = true;
+    entry.translationSourceFingerprint = QCryptographicHash::hash(
+        entry.editingSession->originalText().toUtf8(), QCryptographicHash::Sha256);
     entry.translationStatus = TextCacheEntry::TranslationStatus::Completed;
 #else
     Q_UNUSED(entry)
@@ -2401,6 +2512,9 @@ void ScreenshotRecognitionSessionController::startTranslation() {
     it->translationConfiguration =
         snow_shot::storage::ScreenshotTranslationSettings().configuration();
     it->hasTranslationConfiguration = true;
+    it->translationSourceFingerprint = QCryptographicHash::hash(
+        it->editingSession != nullptr ? it->editingSession->originalText().toUtf8() : QByteArray{},
+        QCryptographicHash::Sha256);
     const QString key = m_translationKey;
     const quint64 generation = ++m_translationGeneration;
     const bool inImage = m_translationInImage;
@@ -2659,7 +2773,10 @@ void ScreenshotRecognitionSessionController::handleTranslationFinished(
 
 void ScreenshotRecognitionSessionController::invalidateCurrentTranslation(bool restartIfVisible) {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-    auto it = m_textCache.find(m_translationKey.isEmpty() ? m_textCacheKey : m_translationKey);
+    const QString sourceKey = !m_translationKey.isEmpty() ? m_translationKey
+                              : !m_textCacheKey.isEmpty() ? m_textCacheKey
+                                                          : m_target.key;
+    auto it = m_textCache.find(sourceKey);
     if (it == m_textCache.end()) {
         return;
     }
@@ -2675,6 +2792,7 @@ void ScreenshotRecognitionSessionController::invalidateCurrentTranslation(bool r
     it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
     it->translationText.clear();
     it->successfulTranslation.clear();
+    it->translationSourceFingerprint.clear();
     it->hasSuccessfulTranslation = false;
     it->hasTranslationConfiguration = false;
     it->overlayTranslation = {};
@@ -4088,17 +4206,28 @@ bool ScreenshotRecognitionSessionController::updateTextState() const {
     const bool available = hasTextResult() && m_active && m_mode == Mode::Text;
     const auto entry = m_textCache.value(m_editingKey);
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    const auto retained = m_textCache.constFind(m_target.key);
+    const bool retainedConfiguration = retained != m_textCache.cend() &&
+                                       retainsTranslationDocument(*retained) &&
+                                       retained->hasTranslationConfiguration;
+    const QString selectedService =
+        retainedConfiguration  ? retained->translationConfiguration.modelId
+        : m_translationService ? m_translationService->preferences().modelId
+                               : QString{};
+    const QString selectedLanguage =
+        retainedConfiguration  ? retained->translationConfiguration.targetLanguage
+        : m_translationService ? m_translationService->preferences().targetLanguage
+                               : QString{};
+    const bool hasTranslationPreferences = retainedConfiguration || m_translationService != nullptr;
     if (m_actions.setTextTranslationServices)
         if (!notifyUiCallback(m_actions.setTextTranslationServices,
                               m_translationService ? m_translationService->models()
                                                    : QVector<SnowShotChatModel>{},
-                              m_translationService ? m_translationService->preferences().modelId
-                                                   : QString{},
+                              selectedService,
                               m_translationService && m_translationService->loadingModels()))
             return false;
-    if (m_translationService != nullptr && m_actions.setTextTargetLanguage)
-        if (!notifyUiCallback(m_actions.setTextTargetLanguage,
-                              m_translationService->preferences().targetLanguage))
+    if (hasTranslationPreferences && m_actions.setTextTargetLanguage)
+        if (!notifyUiCallback(m_actions.setTextTargetLanguage, selectedLanguage))
             return false;
     const bool overlay = originalImageTranslationActive();
     const auto translation = m_textCache.constFind(m_translationKey);

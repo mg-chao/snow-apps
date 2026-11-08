@@ -1,6 +1,9 @@
 #ifndef SNOW_SHOT_TESTS_PINNED_TEXT_TYPE_TESTS_H
 #define SNOW_SHOT_TESTS_PINNED_TEXT_TYPE_TESTS_H
 
+#include "snow_shot/presentation/languagemanager.h"
+#include <QCryptographicHash>
+
 namespace {
 QAction* pinnedTextTypeAction(ScreenshotPinnedWindow& window, const char* name) {
     materializePinnedMenuTree(window);
@@ -239,9 +242,274 @@ void pinnedTextTypeMenuActivatesSelectedResults() {
             "text type is disabled together with unavailable recognition");
 }
 
+void pinnedTranslatedEditorPayloadIsBoundedAndOptional() {
+    namespace persistence = snow_shot::presentation;
+    auto source = cachedOcrPinConfig(nullptr).recognitionResults;
+    source.translatedEditor = ScreenshotTranslatedTextEntry{
+        source.key,
+        QCryptographicHash::hash(QByteArrayLiteral("Saved OCR"), QCryptographicHash::Sha256),
+        {QStringLiteral("en"), QStringLiteral("zh-Hans"), QStringLiteral("general"),
+         QStringLiteral("original")},
+        QStringLiteral("Translation baseline"),
+        QStringLiteral("")};
+    const QByteArray payload = persistence::encodeRecognitionModels(source);
+    require(!payload.isEmpty() && persistence::canPersistTranslatedEditor(source),
+            "a bounded translation with an empty draft is admissible");
+    auto decoded = source;
+    decoded.translatedEditor.reset();
+    persistence::decodeRecognitionModels(payload, decoded);
+    require(decoded.translatedEditor && decoded.translatedEditor->draft.has_value() &&
+                decoded.translatedEditor->draft->isEmpty() &&
+                decoded.translatedEditor->configuration == source.translatedEditor->configuration,
+            "the optional editor payload retains all configuration fields and empty edits");
+    const QJsonObject root = QJsonDocument::fromJson(payload).object();
+    for (int scenario = 0; scenario < 9; ++scenario) {
+        auto malformed = root;
+        auto entry = malformed.value(QStringLiteral("text_translation")).toObject();
+        if (scenario == 0)
+            entry.insert(QStringLiteral("version"), 2);
+        else if (scenario == 1)
+            entry.insert(QStringLiteral("source_key"), QStringLiteral("another-source"));
+        else if (scenario == 2)
+            entry.insert(QStringLiteral("source_fingerprint"), QStringLiteral("invalid"));
+        else if (scenario == 3)
+            entry.insert(QStringLiteral("baseline"), 12);
+        else if (scenario == 4)
+            entry.insert(QStringLiteral("draft"), QJsonValue(QJsonValue::Null));
+        else {
+            auto configuration = entry.value(QStringLiteral("configuration")).toObject();
+            if (scenario == 5)
+                configuration.remove(QStringLiteral("secondary_target_language"));
+            else if (scenario == 6)
+                configuration.insert(QStringLiteral("language_detection_confidence_threshold"),
+                                     101);
+            else if (scenario == 7)
+                configuration.insert(QStringLiteral("language_detection_confidence_threshold"),
+                                     60.5);
+            else
+                configuration.insert(QStringLiteral("layout_processing"),
+                                     QStringLiteral("unsupported"));
+            entry.insert(QStringLiteral("configuration"), configuration);
+        }
+        malformed.insert(QStringLiteral("text_translation"), entry);
+        auto invalid = source;
+        invalid.translatedEditor.reset();
+        persistence::decodeRecognitionModels(
+            QJsonDocument(malformed).toJson(QJsonDocument::Compact), invalid);
+        require(!invalid.translatedEditor && invalid.text && invalid.key == source.key,
+                "invalid optional translated content cannot discard valid OCR results");
+    }
+    auto excessive = source;
+    excessive.translatedEditor->draft = QString(4 * 1024 * 1024 + 1, u'x');
+    require(!persistence::canPersistTranslatedEditor(excessive) &&
+                persistence::encodeRecognitionModels(excessive).isEmpty(),
+            "oversized user drafts are rejected explicitly instead of silently omitted");
+    excessive.translatedEditor->draft = QString(3 * 1024 * 1024, QChar(1));
+    require(!persistence::canPersistTranslatedEditor(excessive),
+            "JSON escaping is included in the bounded translation payload estimate");
+    QString projectedModel;
+    QString projectedLanguage;
+    ScreenshotRecognitionSessionActions actions;
+    actions.setTextTranslationServices = [&](const QVector<SnowShotChatModel>& models,
+                                             const QString& selection, bool) {
+        require(models.isEmpty(),
+                "retained provenance does not invent an available provider model");
+        projectedModel = selection;
+    };
+    actions.setTextTargetLanguage = [&](const QString& language) { projectedLanguage = language; };
+    ScreenshotRecognitionSessionController controller(nullptr, nullptr, nullptr,
+                                                      std::move(actions));
+    controller.setRetainCompletedTranslations(true);
+    const auto config = cachedOcrPinConfig(nullptr);
+    controller.setTarget(
+        {source.key, config.imageSource.materializedImage, config.canvasSourceRect, {}, {}});
+    auto wrongSource = source;
+    wrongSource.translatedEditor->sourceFingerprint = QByteArray(32, 'x');
+    controller.seedRecognitionResults(wrongSource);
+    require(!controller.recognitionResultsSnapshot().translatedEditor && controller.hasTextResult(),
+            "a translation bound to different source text cannot seed the current document");
+    controller.seedRecognitionResults(source);
+    controller.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(projectedModel == source.translatedEditor->configuration.modelId &&
+                projectedLanguage == source.translatedEditor->configuration.targetLanguage,
+            "retained model and target controls reflect saved provenance without a provider");
+    controller.setRetainCompletedTranslations(false);
+    controller.synchronizeUiState();
+    require(projectedModel.isEmpty(),
+            "nonretained hosts continue to project their provider preferences");
+    auto overlay = std::make_shared<ScreenshotOcrPresentation>();
+    overlay->selection = source.text->presentation->selection;
+    overlay->lines = source.text->presentation->lines;
+    overlay->setLineText(0, QStringLiteral("Legacy overlay baseline"));
+    overlay->prepareForRendering();
+    wrongSource.translatedText = overlay;
+    ScreenshotRecognitionSessionController independent(nullptr, nullptr, nullptr, {});
+    independent.setIndependentEditing(true);
+    independent.setTarget(
+        {source.key, config.imageSource.materializedImage, config.canvasSourceRect, {}, {}});
+    independent.seedRecognitionResults(wrongSource);
+    const auto fallback = independent.recognitionResultsSnapshot();
+    require(fallback.translatedEditor &&
+                fallback.translatedEditor->baseline == QStringLiteral("Legacy overlay baseline"),
+            "invalid optional editor binding preserves the independent host's legacy overlay seed");
+}
+
+void pinnedTranslatedEditorSurvivesRepositoryRestart() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using snow_shot::storage::PinnedTextType;
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const auto priorConfiguration = settings.configuration();
+    const bool priorOverlay = settings.originalImageTranslationEnabled();
+    const auto restoreSettings = qScopeGuard([&] {
+        settings.setConfiguration(priorConfiguration);
+        settings.setOriginalImageTranslationEnabled(priorOverlay);
+    });
+    const snow_shot::storage::ScreenshotTranslationConfiguration savedConfiguration{
+        QStringLiteral("en"),       QStringLiteral("zh-Hans"), QStringLiteral("general"),
+        QStringLiteral("original"), QStringLiteral("fr"),      75};
+    for (bool formatted : {false, true}) {
+        for (bool emptyDraft : {false, true}) {
+            for (bool visible : {false, true}) {
+                require(settings.setConfiguration(savedConfiguration) &&
+                            settings.setOriginalImageTranslationEnabled(false),
+                        "configure saved translated editor");
+                translation_tests::Server server;
+                SnowShotApiClient api(server.url());
+                auto config = cachedOcrPinConfig(nullptr);
+                config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                config.tableRecognition = &api;
+                const QString original =
+                    formatted ? QStringLiteral("Formatted source") : QStringLiteral("Saved OCR");
+                if (formatted) {
+                    config.formattedTextDocument = std::make_shared<QTextDocument>();
+                    config.formattedTextDocument->setHtml(
+                        QStringLiteral("<p><b>Formatted</b> source</p>"));
+                    config.formattedPlainText = original;
+                    config.originalClipboardContent.text = original;
+                    config.originalClipboardContent.html = config.formattedTextDocument->toHtml();
+                    config.recognitionResults.text.reset();
+                }
+                config.recognitionResults.translatedEditor = ScreenshotTranslatedTextEntry{
+                    config.recognitionResults.key,
+                    QCryptographicHash::hash(original.toUtf8(), QCryptographicHash::Sha256),
+                    savedConfiguration, QStringLiteral("Retained baseline"), std::nullopt};
+                ScreenshotPinnedWindow source;
+                auto* session = Access::hiddenSelectionOffscreen(source, config);
+                pinnedTextTypeAction(source, "screenshotPinnedTranslationResultsAction")->trigger();
+                require(session->translating() &&
+                            session->textDraft() == QStringLiteral("Retained baseline"),
+                        "seed a completed translated document without requesting a provider");
+                const QString draft = emptyDraft ? QStringLiteral("") : QStringLiteral("User edit");
+                session->setTextDraft(draft);
+                if (!visible)
+                    Access::toggleTextResults(source);
+                auto record = source.persistenceSnapshot();
+                QTemporaryDir directory;
+                require(directory.isValid(), "create translated editor repository");
+                {
+                    snow_shot::storage::PinnedWindowRepository repository(directory.path());
+                    require(repository.upsert(record).success && repository.flush().success,
+                            "persist the translated draft before retiring its source window");
+                }
+                source.close();
+                auto changedConfiguration = savedConfiguration;
+                changedConfiguration.targetLanguage = QStringLiteral("de");
+                changedConfiguration.layoutProcessing = QStringLiteral("smart_merge");
+                require(settings.setConfiguration(changedConfiguration) &&
+                            settings.setOriginalImageTranslationEnabled(true),
+                        "change global translation defaults before restoration");
+                snow_shot::storage::PinnedWindowRepository reopened(directory.path());
+                const auto loaded = reopened.loadRecord(record.id);
+                require(loaded.has_value(),
+                        "reload a translated editor after repository recreation");
+                auto restoredConfig = config;
+                restoredConfig.restorePersistentState = true;
+                restoredConfig.recognitionResults = {};
+                restoredConfig.persistedRecognitionResults = loaded->recognitionResults;
+                restoredConfig.persistedTextType = loaded->textType;
+                restoredConfig.persistedRecognitionVisible = loaded->recognitionVisible;
+                restoredConfig.persistedTranslationVisible = loaded->translationVisible;
+                // Exercise unavailable providers as well as the normal configured host.
+                if (emptyDraft)
+                    restoredConfig.tableRecognition = nullptr;
+                ScreenshotPinnedWindow restored;
+                auto* restoredSession = Access::hiddenSelectionOffscreen(restored, restoredConfig);
+                Access::finishInitialTextDisplay(restored, loaded->recognitionVisible);
+                if (!visible) {
+                    require(!restoredSession->active() && restored.persistenceSnapshot().textType ==
+                                                              PinnedTextType::TranslationResults,
+                            "restoring hidden translated content retains only its selected type");
+                    pinnedTextTypeAction(restored, "screenshotPinnedTranslationResultsAction")
+                        ->trigger();
+                }
+                require(restoredSession->translating() && restoredSession->editing() &&
+                            !restoredSession->originalImageTranslationActive() &&
+                            restoredSession->textDraft() == draft && server.streams.isEmpty(),
+                        "edited and empty translated documents survive restart without a request");
+                auto subsequentConfiguration = changedConfiguration;
+                subsequentConfiguration.layoutProcessing = QStringLiteral("original");
+                require(settings.setConfiguration(subsequentConfiguration),
+                        "change global layout while a retained editor is open");
+                QApplication::processEvents();
+                require(restoredSession->textDraft() == draft && server.streams.isEmpty(),
+                        "global configuration notifications preserve the retained editor");
+                if (!emptyDraft) {
+                    auto& service = snow_shot::translation::TranslationService::forClient(
+                        api, snow_shot::storage::ApplicationStorage::instance().configuration(),
+                        snow_shot::presentation::LanguageManager::instance().currentLocale());
+                    service.preferencesChanged(
+                        snow_shot::translation::TranslationService::ChangeReason::UserPreferences);
+                    service.modelInvalidated(savedConfiguration.modelId);
+                    QApplication::processEvents();
+                    require(restoredSession->textDraft() == draft && server.streams.isEmpty() &&
+                                restoredSession->recognitionResultsSnapshot()
+                                        .translatedEditor->baseline ==
+                                    QStringLiteral("Retained baseline"),
+                            "shared preference and model invalidation preserve retained user text");
+                }
+                restoredSession->resetTextEditing();
+                require(restoredSession->textDraft() == QStringLiteral("Retained baseline") &&
+                            server.streams.isEmpty(),
+                        "Reset restores the saved successful baseline without a provider");
+                const auto snapshot = restoredSession->recognitionResultsSnapshot();
+                require(snapshot.translatedEditor &&
+                            snapshot.translatedEditor->configuration == savedConfiguration &&
+                            !snapshot.translatedEditor->draft.has_value(),
+                        "restored baseline keeps its original configuration provenance");
+                if (formatted && !emptyDraft && visible) {
+                    ScreenshotPinnedWindow sibling;
+                    auto* siblingSession =
+                        Access::hiddenSelectionOffscreen(sibling, restoredConfig);
+                    pinnedTextTypeAction(sibling, "screenshotPinnedTranslationResultsAction")
+                        ->trigger();
+                    restoredSession->applyTextTargetLanguage(
+                        subsequentConfiguration.targetLanguage);
+                    translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                                 "explicit local settings start replacement work");
+                    require(siblingSession->textDraft() == draft &&
+                                siblingSession->recognitionResultsSnapshot()
+                                        .translatedEditor->configuration == savedConfiguration,
+                            "local replacement applies global defaults only to the requesting pin");
+                    server.delta(0, QStringLiteral("New local translation"));
+                    server.finish(0);
+                    translation_tests::waitUntil(
+                        [&] {
+                            return !restoredSession->workflowState()
+                                        .value(QStringLiteral("busy"))
+                                        .toBool();
+                        },
+                        "finish the explicitly requested replacement");
+                }
+            }
+        }
+    }
+}
+
 void pinnedTextTypeStartsTranslationAfterRecognition() {
     using Access = ScreenshotPinnedWindowTestAccess;
     using snow_shot::storage::PinnedTextType;
+    pinnedTranslatedEditorPayloadIsBoundedAndOptional();
+    pinnedTranslatedEditorSurvivesRepositoryRestart();
     const snow_shot::storage::ScreenshotTranslationSettings settings;
     const auto priorConfiguration = settings.configuration();
     const bool priorOverlay = settings.originalImageTranslationEnabled();
@@ -348,22 +616,12 @@ void pinnedTextTypeStartsTranslationAfterRecognition() {
             ScreenshotPinnedWindow restored;
             auto* restoredSession = Access::hiddenSelectionOffscreen(restored, restoredConfig);
             Access::finishInitialTextDisplay(restored, restoredConfig.persistedRecognitionVisible);
-            translation_tests::waitUntil(
-                [&] { return server.streams.size() == 2; },
-                "restore the visible translation editor using saved settings");
-            server.delta(1, QStringLiteral("Restored translation"));
-            server.finish(1);
-            translation_tests::waitUntil(
-                [&] {
-                    return !restoredSession->workflowState().value(QStringLiteral("busy")).toBool();
-                },
-                "finish restored translation editor");
             require(restoredSession->editing() &&
                         restored.persistenceSnapshot().recognitionVisible &&
+                        server.streams.size() == 1 &&
                         restoredSession->recognitionClipboardMimeData()->text() ==
-                            QStringLiteral("Restored translation"),
-                    "the translation editor restores its selection and display visibility "
-                    "independently");
+                            QStringLiteral("Translated text late"),
+                    "restore completed translated text without a replacement provider request");
         }
 
         config.recognitionResults.text = result;

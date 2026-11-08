@@ -343,7 +343,13 @@ QImage decodeImageBytes(const QByteArray& bytes, snow::image::Format format,
         return cancelled && cancelled() ? QImage{} : std::move(image);
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    return image_codec::decodeBgra(bytes, format);
+    // Imported sources retain their original codec. Its canonical output contract
+    // must not depend on whether the caller supplies admission/cancellation hooks
+    // (single-frame GIF, for example, only supports RGBA). Repository-owned PNG
+    // payloads can still use the native BGRA optimization.
+    if (format == snow::image::Format::png)
+        return image_codec::decodeBgra(bytes, format);
+    return image_codec::decode(bytes, format, nullptr);
 #else
     return image_codec::decode(bytes, format, nullptr);
 #endif

@@ -2176,7 +2176,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_compile_definitions(snow_shot PRIVATE SNOW_SHOT_CONTROLLER_LIFETIME_TESTS=1)
     target_sources(snow_shot PRIVATE tests/screenshot_controller_lifetime_tests.cpp
         tests/screenshot_controller_clipboard_tests.cpp
-        tests/mcp_application_lifecycle_tests.cpp)
+        tests/mcp_application_lifecycle_tests.cpp
+        tests/pinned_mcp_source_tests.cpp)
     snow_shot_import_offscreen_platform(snow_shot)
 endif()
 
@@ -5644,6 +5645,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --duplicate-pin-only -platform offscreen)
     set_tests_properties(snow-shot-duplicate-pin-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-native-scene-tests
+        COMMAND snow-shot-pinned-window-tests --native-scene-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-native-scene-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    foreach(_pinned_scene_scale IN ITEMS 1.25 2)
+        add_test(NAME snow-shot-pinned-native-scene-dpi-${_pinned_scene_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --native-scene-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-native-scene-dpi-${_pinned_scene_scale}-tests PROPERTIES
+            LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=${_pinned_scene_scale}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
+    unset(_pinned_scene_scale)
     set_tests_properties(snow-shot-pinned-management-lifecycle-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-batch-actions-tests
@@ -9624,6 +9640,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     if(SNOW_SHOT_ENABLE_MCP)
+        add_test(NAME snow-shot-pinned-mcp-source-tests COMMAND snow_shot --pinned-mcp-source-tests)
+        set_tests_properties(snow-shot-pinned-mcp-source-tests PROPERTIES
+            LABELS unit TIMEOUT 60 ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
         add_test(NAME snow-shot-mcp-application-lifecycle-tests
             COMMAND snow_shot --mcp-lifecycle-tests)
         set_tests_properties(snow-shot-mcp-application-lifecycle-tests PROPERTIES

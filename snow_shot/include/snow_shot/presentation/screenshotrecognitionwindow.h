@@ -47,6 +47,23 @@ class ScreenshotOcrTextLayer;
 class ScreenshotTableEditingSession;
 class ScreenshotTableEditor;
 struct ScreenshotTableCommandState;
+
+// Captured on the GUI thread. Composition owns these values and never reads a widget.
+struct ScreenshotRecognitionViewportSnapshot final {
+    QSize outputPixelSize;
+    QSize viewportSize;
+    qreal devicePixelRatio = 1.0;
+    QRectF backgroundCanvasRect;
+    QTransform canvasToViewport;
+    std::optional<ScreenshotRecognitionImageSnapshot> overlay;
+    QImage presentationImage;
+    qreal contentOpacity = 1.0;
+};
+
+[[nodiscard]] QImage
+renderScreenshotRecognitionViewport(const ScreenshotRecognitionViewportSnapshot& snapshot,
+                                    const QImage& background,
+                                    const std::function<bool()>& cancelled = {});
 namespace adqt::widgets {
 class AdSpin;
 class AdButton;
@@ -185,6 +202,12 @@ class ScreenshotRecognitionWindow final : public QWidget {
                           QImage filtered = {}, const QRectF& filteredRect = {},
                           qreal contentOpacity = 1.0, QSize outputPixelSize = {},
                           const ScreenshotTextAnnotationRenderSnapshot& textAnnotations = {});
+    using ViewportCapture = std::function<QImage(QSize, const std::function<QImage()>&)>;
+    [[nodiscard]] std::optional<ScreenshotRecognitionViewportSnapshot>
+    capturePrintViewportScene(const QRectF& canvasRect, QImage filtered, const QRectF& filteredRect,
+                              qreal contentOpacity,
+                              const ScreenshotTextAnnotationRenderSnapshot& textAnnotations,
+                              const ViewportCapture& capture);
     void showFormattedText(
         std::shared_ptr<QTextDocument> document,
         ScreenshotOcrTextLayer::RenderingMode mode = ScreenshotOcrTextLayer::RenderingMode::Normal,

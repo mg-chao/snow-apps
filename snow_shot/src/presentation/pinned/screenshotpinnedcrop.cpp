@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "screenshotpinnedcropgeometry.h"
+#include "screenshotpinnedcroppreparation.h"
 #include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include "screenshotpinnednativegeometrycontroller.h"
 #include "pinnedwindowplatform.h"
@@ -21,10 +22,8 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QScopedValueRollback>
-#include <QFutureWatcher>
-#include <QtConcurrentRun>
-#include "snow_shot/runtime/runtimeactivitytracker.h"
+#include <QTimer>
+#include <utility>
 #include "widgets/message.h"
 
 namespace crop_geometry = screenshot_pinned_crop_geometry;
@@ -226,7 +225,7 @@ bool ScreenshotPinnedWindow::handleCropPointer(QObject* watched, QEvent* event) 
     return false;
 }
 
-bool ScreenshotPinnedWindow::setCropCanvasRect(const QRectF& requested) {
+bool ScreenshotPinnedWindow::setCropCanvasRect(const QRectF& requested, bool publish) {
     const QRectF clipped = requested.intersected(m_backgroundCanvasRect);
     if (!crop_geometry::valid(clipped) || m_originalPixelSize.isEmpty())
         return false;
@@ -243,10 +242,15 @@ bool ScreenshotPinnedWindow::setCropCanvasRect(const QRectF& requested) {
                        qRound(native.y() + (clipped.y() - previous.y()) * sy),
                        std::max(1, qRound(clipped.width() * sx)),
                        std::max(1, qRound(clipped.height() * sy)));
+    const QPointer<ScreenshotPinnedWindow> lifetime(this);
+    const auto generation = m_presentationGeneration;
+    const auto replacement = m_contentReplacementGeneration;
+    const auto oldCrop = m_cropRect;
+    const bool oldPreserve = m_preserveScaleForSettledGeometry;
+    m_cropRect = source;
+    m_preserveScaleForSettledGeometry = true;
     bool applied = false;
     {
-        QScopedValueRollback<std::optional<QRectF>> crop(m_cropRect, source);
-        QScopedValueRollback<bool> preserve(m_preserveScaleForSettledGeometry, true);
         const QRect outer = snow_shot::presentation::pinnedOuterRect(target);
         if (m_thumbnailMode) {
             m_preThumbnailNativeGeometry = outer;
@@ -257,16 +261,19 @@ bool ScreenshotPinnedWindow::setCropCanvasRect(const QRectF& requested) {
         } else {
             applied = applyWindowGeometry(outer, GeometryMutation::ContentReplacement);
         }
-        if (applied) {
-            crop.commit();
-            preserve.commit();
-        }
     }
+    if (!lifetime || m_closing || generation != m_presentationGeneration ||
+        replacement != m_contentReplacementGeneration)
+        return false;
     if (!applied) {
-        updateCropPresentation();
+        m_cropRect = oldCrop;
+        m_preserveScaleForSettledGeometry = oldPreserve;
+        if (publish)
+            updateCropPresentation();
         return false;
     }
-    updateCropPresentation();
+    if (publish)
+        updateCropPresentation();
     return true;
 }
 
@@ -308,107 +315,160 @@ void ScreenshotPinnedWindow::applyCrop() {
     const QRect pixels = crop_geometry::pixelBounds(*m_cropRect, m_originalPixelSize);
     if (pixels.isEmpty())
         return;
-    struct Prepared {
-        QImage original;
-        QImage transformed;
-        QTransform transform;
-        std::shared_ptr<const ScreenshotAnimationSource> animation;
-        bool bakedStyle = false;
-    };
-    m_cropApplying = true;
-    updateAnimationSuspension();
-    refreshContextMenu();
-    const auto crop = m_cropRect;
+    namespace preparation = screenshot_pinned_crop_preparation;
+    const QPointer<ScreenshotPinnedWindow> lifetime(this);
     const auto generation = m_presentationGeneration;
     const auto replacement = m_contentReplacementGeneration;
-    auto* watcher = new QFutureWatcher<Prepared>(this);
-    connect(watcher, &QFutureWatcher<Prepared>::finished, this,
-            [this, watcher, pixels, crop, generation, replacement] {
-                Prepared prepared;
-                try {
-                    prepared = watcher->future().takeResult();
-                } catch (...) {
-                    // Allocation/worker failure must leave both the original and viewport intact.
-                }
-                watcher->deleteLater();
-                m_cropApplying = false;
-                if (!m_closing && !m_lockedMode && generation == m_presentationGeneration &&
-                    replacement == m_contentReplacementGeneration && crop == m_cropRect) {
-                    const bool success =
-                        !prepared.original.isNull() && !prepared.transformed.isNull() &&
-                        commitPreparedCrop(pixels, std::move(prepared.original),
-                                           std::move(prepared.transformed), prepared.transform,
-                                           std::move(prepared.animation), prepared.bakedStyle);
-                    if (!success) {
-                        adqt::widgets::AdMessage::Request message;
-                        message.key = QStringLiteral("screenshot-pinned-crop-status");
-                        message.content = tr("The pinned image could not be prepared");
-                        adqt::widgets::AdMessageService::error(std::move(message), this);
-                    }
-                }
-                updateAnimationSuspension();
-                refreshContextMenu();
-            });
-    const QImage image = m_originalImage;
-    const auto source = m_animationSource;
+    const auto operation = ++m_cropPreparationGeneration;
+    const auto crop = m_cropRect;
+    const auto originalSize = m_originalPixelSize;
     const auto orientation = m_imageTransform;
-    const auto style = m_resultStyle;
-    const auto background = m_backgroundCanvasRect;
-    const bool bake = !source && !isLiveWindow() &&
-                      (style.region || style.cornerRadius > 0 || style.effectWidth() > 0);
-    watcher->setFuture(QtConcurrent::run(snow_shot::runtime::trackRuntimeWork(
-        [image, source, orientation, style, background, pixels, bake] {
-            Prepared result;
-            result.bakedStyle = bake;
-            if (bake) {
-                const auto oriented =
-                    snowCanvasTransformImage(image, orientation, Qt::SmoothTransformation);
-                const auto scaled = ScreenshotResultCompositor::scaledStyle(
-                    style, oriented.width() / background.width());
-                const auto composed = ScreenshotResultCompositor::compose(oriented, scaled);
-                const auto mapping = QImage::trueMatrix(orientation, image.width(), image.height());
-                auto region = mapping.mapRect(QRectF(pixels)).toAlignedRect();
-                region.translate(
-                    -ScreenshotResultCompositor::layoutForContent(oriented.size(), scaled)
-                         .outputRect.topLeft());
-                result.original = snowCanvasCopyImage(composed, region);
-            } else {
-                result.original = snowCanvasCopyImage(image, pixels);
-                result.transform = QImage::trueMatrix(orientation, pixels.width(), pixels.height());
+    const auto liveGeneration = m_liveFrameGeneration;
+    std::optional<ScreenshotAnimationPlayback::FrameHold> hold;
+    m_cropApplying = true;
+    if (m_animationPlayback) {
+        const QPointer<ScreenshotAnimationPlayback> playback(m_animationPlayback.get());
+        hold = playback->holdFrameForCrop();
+        if (!lifetime || operation != m_cropPreparationGeneration || m_closing) {
+            if (playback && hold)
+                playback->cancelCropPreparation(hold->token, true);
+            return;
+        }
+        m_cropAnimationHold = hold ? hold->token : 0;
+    }
+    const auto fail = [lifetime, operation] {
+        if (!lifetime || operation != lifetime->m_cropPreparationGeneration)
+            return;
+        lifetime->cancelCropPreparation();
+        if (!lifetime || lifetime->m_closing)
+            return;
+        lifetime->updateAnimationSuspension();
+        if (!lifetime)
+            return;
+        lifetime->refreshContextMenu();
+        if (!lifetime)
+            return;
+        adqt::widgets::AdMessage::Request message;
+        message.key = QStringLiteral("screenshot-pinned-crop-status");
+        message.content = tr("The pinned image could not be prepared");
+        adqt::widgets::AdMessageService::error(std::move(message), lifetime);
+    };
+    if (m_animationPlayback && !hold) {
+        fail();
+        return;
+    }
+    const auto source = hold ? hold->source : m_animationSource;
+    const bool bake =
+        !source && !isLiveWindow() &&
+        (m_resultStyle.region || m_resultStyle.cornerRadius > 0 || m_resultStyle.effectWidth() > 0);
+    const auto plan =
+        preparation::makePlan(hold ? hold->original : m_originalImage, source, orientation,
+                              m_resultStyle, m_backgroundCanvasRect, pixels, bake);
+    if (!plan) {
+        fail();
+        return;
+    }
+    updateAnimationSuspension();
+    if (!lifetime || operation != m_cropPreparationGeneration)
+        return;
+    refreshContextMenu();
+    if (!lifetime || operation != m_cropPreparationGeneration)
+        return;
+    auto prepared = std::make_shared<preparation::Prepared>();
+    auto& coordinator =
+        m_cropCoordinator ? *m_cropCoordinator : ScreenshotExportCoordinator::shared();
+    m_cropJob = coordinator.submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [plan = *plan, prepared,
+         stage = m_cropPreparationStage](const ScreenshotExportCancellation& token) {
+            *prepared = preparation::prepare(plan, token, stage);
+            if (token.isCancellationRequested())
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
+            if (prepared->original.isNull() || prepared->transformed.isNull())
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Render,
+                                                           {});
+            return ScreenshotExportTaskResult{};
+        },
+        [lifetime, operation, generation, replacement, crop, originalSize, orientation,
+         liveGeneration, pixels, hold, prepared, fail](const ScreenshotExportTaskResult& result) {
+            if (!lifetime || operation != lifetime->m_cropPreparationGeneration)
+                return;
+            lifetime->m_cropJob = {};
+            const bool current =
+                !lifetime->m_closing && !lifetime->m_lockedMode &&
+                generation == lifetime->m_presentationGeneration &&
+                replacement == lifetime->m_contentReplacementGeneration &&
+                crop == lifetime->m_cropRect && originalSize == lifetime->m_originalPixelSize &&
+                orientation == lifetime->m_imageTransform &&
+                (!lifetime->isLiveWindow() || liveGeneration == lifetime->m_liveFrameGeneration);
+            if (!current) {
+                lifetime->cancelCropPreparation();
+            } else if (!result.succeeded() ||
+                       (hold && (!lifetime->m_animationPlayback ||
+                                 !lifetime->m_animationPlayback->reserveCroppedSource(
+                                     *hold, prepared->animation, prepared->original,
+                                     prepared->transformed, prepared->transform)))) {
+                fail();
+                return;
+            } else if (!lifetime->commitPreparedCrop(
+                           pixels, std::move(prepared->original), std::move(prepared->transformed),
+                           prepared->transform, std::move(prepared->animation),
+                           prepared->bakedStyle, hold ? hold->token : 0)) {
+                fail();
+                return;
+            } else if (lifetime && operation == lifetime->m_cropPreparationGeneration) {
+                lifetime->m_cropApplying = false;
+                lifetime->m_cropAnimationHold = 0;
             }
-            result.transformed =
-                ScreenshotResultCompositor::normalizeImage(snowCanvasTransformImage(
-                    result.original, result.transform, Qt::SmoothTransformation));
-            if (source) {
-                auto next = std::make_shared<ScreenshotAnimationSource>(*source);
-                next->sourceCropRect = pixels.translated(next->sourceCropRect.topLeft());
-                next->canvasSize = pixels.size();
-                next->firstFrame = snowCanvasCopyImage(next->firstFrame, pixels);
-                next->firstDisplayFrame =
-                    source->firstFrame.constBits() == source->firstDisplayFrame.constBits()
-                        ? next->firstFrame
-                        : snowCanvasCopyImage(next->firstDisplayFrame, pixels);
-                if (next->firstFrame.isNull() || next->firstDisplayFrame.isNull())
-                    return Prepared{};
-                result.animation = std::move(next);
-            }
-            return result;
-        })));
+            if (!lifetime)
+                return;
+            lifetime->updateAnimationSuspension();
+            if (lifetime)
+                lifetime->refreshContextMenu();
+        },
+        plan->workingBytes);
+    if (!m_cropJob.isValid())
+        fail();
+}
+
+void ScreenshotPinnedWindow::cancelCropPreparation(bool discardDeferredSteps) {
+    const QPointer<ScreenshotPinnedWindow> lifetime(this);
+    const bool active = m_cropApplying || m_cropJob.isValid() || m_cropAnimationHold;
+    ++m_cropPreparationGeneration;
+    m_cropApplying = false;
+    const auto hold = std::exchange(m_cropAnimationHold, 0);
+    const auto job = std::exchange(m_cropJob, {});
+    job.cancel();
+    if (m_animationPlayback && hold)
+        m_animationPlayback->cancelCropPreparation(hold, discardDeferredSteps);
+    if (!lifetime || !active)
+        return;
+    // Release timed suspension after the caller's synchronous lifecycle transition.
+    // A teardown may destroy the shell; QObject ownership discards that queued update.
+    QTimer::singleShot(0, lifetime, [lifetime] {
+        if (lifetime && !lifetime->m_destroying)
+            lifetime->updateAnimationSuspension();
+    });
 }
 
 bool ScreenshotPinnedWindow::commitPreparedCrop(
     const QRect& pixels, QImage original, QImage transformed, const QTransform& transform,
-    std::shared_ptr<const ScreenshotAnimationSource> animation, bool bakedStyle) {
+    std::shared_ptr<const ScreenshotAnimationSource> animation, bool bakedStyle,
+    quint64 animationHold) {
+    const QPointer<ScreenshotPinnedWindow> lifetime(this);
+    const auto generation = m_presentationGeneration;
+    const auto replacement = m_contentReplacementGeneration;
+    const auto operation = m_cropPreparationGeneration;
+    if (original.isNull() || transformed.isNull() ||
+        (animation && (!animationHold || !m_animationPlayback ||
+                       !m_animationPlayback->cropHoldValid(animationHold))))
+        return false;
     const qreal ux = m_canvasSourceRect.width() / m_originalPixelSize.width();
     const qreal uy = m_canvasSourceRect.height() / m_originalPixelSize.height();
     const auto mapping = crop_geometry::sourceToCanvas(m_originalPixelSize, m_imageTransform,
                                                        m_backgroundCanvasRect);
     const QRectF canvas = mapping.mapRect(QRectF(pixels));
-    if (!setCropCanvasRect(canvas))
-        return false;
-    QSizeF baseline = scaleReferenceSize();
-    if (!bakedStyle && m_quarterTurns % 2)
-        baseline.transpose();
     const bool recognitionVisible = m_ocrMode;
     const auto recognitionMode = m_recognitionSession
                                      ? m_recognitionSession->mode()
@@ -441,6 +501,36 @@ bool ScreenshotPinnedWindow::commitPreparedCrop(
         results.text->filteredImage = {};
     }
     translatePresentation(results.translatedText);
+    const auto previousGeometry = authoritativeNativeGeometry();
+    const auto previousCrop = m_cropRect;
+    const bool previousPreserve = m_preserveScaleForSettledGeometry;
+    if (!setCropCanvasRect(canvas, false))
+        return false;
+    if (!lifetime)
+        return false;
+    const auto stagedCrop = m_cropRect;
+    const auto rollback = [&] {
+        if (!lifetime || m_closing || generation != m_presentationGeneration ||
+            replacement != m_contentReplacementGeneration || m_cropRect != stagedCrop)
+            return;
+        m_cropRect = previousCrop;
+        m_preserveScaleForSettledGeometry = previousPreserve;
+        if (!applyWindowGeometry(previousGeometry, GeometryMutation::ContentReplacement) &&
+            lifetime) {
+            hideForClosing();
+            QTimer::singleShot(0, lifetime, &QWidget::close);
+        }
+    };
+    if (m_closing || generation != m_presentationGeneration ||
+        replacement != m_contentReplacementGeneration || operation != m_cropPreparationGeneration ||
+        (animationHold && (!m_animationPlayback ||
+                           !m_animationPlayback->stageReservedCroppedSource(animationHold)))) {
+        rollback();
+        return false;
+    }
+    QSizeF baseline = scaleReferenceSize();
+    if (!bakedStyle && m_quarterTurns % 2)
+        baseline.transpose();
     if (isLiveWindow()) {
         const QRectF previous =
             m_liveAppliedCrop.isEmpty() ? QRectF(0, 0, 1, 1) : m_liveAppliedCrop;
@@ -452,7 +542,6 @@ bool ScreenshotPinnedWindow::commitPreparedCrop(
         ++m_liveFrameGeneration;
     }
     m_cropRect.reset();
-    clearTextAnnotations();
     ++m_contentReplacementGeneration;
     if (m_replacementPersistenceWriter)
         m_persistenceWriter = m_replacementPersistenceWriter;
@@ -481,23 +570,45 @@ bool ScreenshotPinnedWindow::commitPreparedCrop(
         isLiveWindow() ? m_originalImage : m_transformedImage, canvas);
     m_recognitionResults = std::move(results);
     m_recognitionTargetReady = false;
-    refreshColorSwatch();
     m_animationSource = std::move(animation);
+    if (animationHold) {
+        // Publish the accepted source before toolbar/menu notifications can start another
+        // lifecycle transition. Every authoritative value and visible layer is coherent here.
+        m_textAnnotations.clear();
+        m_textAnnotationSnapshot = {};
+        m_screenshotRenderer->setTextAnnotations({});
+        m_screenshotRenderer->setPinnedResultSurface(canvas, canvas, m_resultStyle);
+        if (!m_animationPlayback->publishReservedCroppedSource(animationHold))
+            return false;
+        if (!lifetime || m_closing || operation != m_cropPreparationGeneration)
+            return true;
+    }
+    clearTextAnnotations();
+    if (!lifetime || m_closing || operation != m_cropPreparationGeneration)
+        return true;
+    refreshColorSwatch();
+    if (!lifetime || m_closing || operation != m_cropPreparationGeneration)
+        return true;
     if (isLiveWindow())
         m_screenshotRenderer->setPinnedLiveFrame(m_imageSource, m_imageTransform);
-    else
+    else if (!animationHold)
         m_screenshotRenderer->setImageSource(m_imageSource);
     m_screenshotRenderer->setPinnedResultSurface(canvas, canvas, m_resultStyle);
-    if (m_animationPlayback) {
-        static_cast<void>(m_animationPlayback->adoptCroppedSource(m_animationSource, original,
-                                                                  transformed, transform));
-    } else if (!isLiveWindow()) {
+    if (!m_animationPlayback && !isLiveWindow()) {
         configureRecognitionSession();
+        if (!lifetime || m_closing || operation != m_cropPreparationGeneration)
+            return true;
         configureRecognitionTarget();
+        if (!lifetime || m_closing || operation != m_cropPreparationGeneration)
+            return true;
         if (recognitionVisible)
             activateRecognitionMode(static_cast<int>(recognitionMode), false);
     }
+    if (!lifetime || m_closing || operation != m_cropPreparationGeneration)
+        return true;
     updateCropPresentation();
+    if (!lifetime || m_closing || operation != m_cropPreparationGeneration)
+        return true;
     schedulePersistence();
     return true;
 }

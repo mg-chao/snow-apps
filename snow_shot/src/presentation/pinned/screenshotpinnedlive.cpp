@@ -557,6 +557,14 @@ void ScreenshotPinnedWindow::convertLiveToImage() {
 void ScreenshotPinnedWindow::finishLiveConversion(QImage image) {
     if (image.isNull() || !isLiveWindow() || m_closing)
         return;
+    const QPointer<ScreenshotPinnedWindow> lifetime(this);
+    const auto generation = m_presentationGeneration;
+    const auto replacement = m_contentReplacementGeneration;
+    const auto source = m_liveSource;
+    cancelCropPreparation(true);
+    if (!lifetime || m_closing || generation != m_presentationGeneration ||
+        replacement != m_contentReplacementGeneration || source != m_liveSource)
+        return;
     endCropSelection(true);
     if (m_interactionCropRect)
         endControlledInteraction(false);

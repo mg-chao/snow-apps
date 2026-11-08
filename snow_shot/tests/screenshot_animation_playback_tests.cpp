@@ -115,6 +115,7 @@ struct Harness {
     quint64 pendingToken = 0;
     int pendingIndex = 0;
     std::function<void()> discardAction;
+    std::function<void()> publicationAction;
     QImage lastOriginal;
     QImage lastTransformed;
     bool acknowledge = true;
@@ -132,6 +133,8 @@ struct Harness {
             pendingIndex = index;
             if (acknowledge)
                 playback->framePainted(token);
+            if (publicationAction)
+                publicationAction();
         };
         hooks.stateChanged = [this] { ++changes; };
         hooks.error = [this](const QString&) { ++errors; };
@@ -199,6 +202,124 @@ struct Harness {
         job.completion(std::move(job.request.original), transformed, error);
     }
 };
+
+std::shared_ptr<ScreenshotAnimationSource>
+croppedSource(const ScreenshotAnimationPlayback::FrameHold& hold) {
+    auto result = std::make_shared<ScreenshotAnimationSource>(*hold.source);
+    result->canvasSize = QSize(2, 3);
+    result->sourceCropRect = QRect(0, 0, 2, 3);
+    result->firstFrame = snowCanvasCopyImage(result->firstFrame, result->sourceCropRect);
+    result->firstDisplayFrame = result->firstFrame;
+    return result;
+}
+
+void cropTransactionsRetainPaintedFrameAndDeferredSteps() {
+    Harness h;
+    h.start();
+    h.playback->pause();
+    while (!h.jobs.empty())
+        h.complete();
+    const auto hold = h.playback->holdFrameForCrop();
+    require(hold && hold->frameIndex == 0 && hold->original == h.lastOriginal,
+            "crop holds the painted pixels and their frame identity");
+    h.playback->nextFrame();
+    h.playback->nextFrame();
+    h.playback->previousFrame();
+    h.playback->increaseSpeed();
+    require(h.jobs.empty() && h.playback->frameIndex() == 0 && !h.playback->requestedPlaying(),
+            "crop preparation defers accumulated steps without changing painted identity");
+    const auto next = croppedSource(*hold);
+    const auto pixels = snowCanvasCopyImage(hold->original, QRect(QPoint(), next->canvasSize));
+    auto wrong = *hold;
+    wrong.frameIndex = 1;
+    require(!h.playback->reserveCroppedSource(wrong, next, pixels, pixels, {}),
+            "crop reservation rejects pixels labeled with another frame index");
+    require(h.playback->reserveCroppedSource(*hold, next, pixels, pixels, {}) &&
+                h.playback->stageReservedCroppedSource(hold->token) && h.publications == 1,
+            "crop source adoption stages without invoking presentation callbacks");
+    h.acknowledge = false;
+    require(h.playback->publishReservedCroppedSource(hold->token) && h.pendingIndex == 0 &&
+                h.lastOriginal == pixels && h.playback->frameIndex() == 0 && h.jobs.empty(),
+            "prepared frame A is published as A before deferred frame B can decode");
+    h.playback->setSuspended(true);
+    h.playback->pause();
+    require(h.playback->frameIndex() == hold->frameIndex &&
+                h.playback->currentFrameToken() == h.pendingToken,
+            "a staged crop keeps the last paint identity until actual acknowledgement");
+    h.playback->framePainted(h.pendingToken);
+    require(h.jobs.size() == 1 && h.jobs.front().request.frameIndex == 1 &&
+                h.jobs.front().request.source == next && h.playback->speedPercent() == 110,
+            "the crop paint releases deferred steps against the cropped source at latest speed");
+    h.acknowledge = true;
+    h.complete();
+    require(h.playback->frameIndex() == 1 && h.lastOriginal.size() == QSize(2, 3) &&
+                !h.playback->requestedPlaying(),
+            "deferred crop stepping displays the matching frame and remains paused");
+}
+
+void cropReservationCancellationAndReplacementPreserveSource() {
+    Harness h;
+    h.start();
+    h.playback->pause();
+    while (!h.jobs.empty())
+        h.complete();
+    const auto first = h.playback->holdFrameForCrop();
+    require(first.has_value(), "a painted source admits crop preparation");
+    h.playback->nextFrame();
+    h.playback->cancelCropPreparation(first->token);
+    require(!h.playback->cropHoldValid(first->token) && h.jobs.size() == 1 &&
+                h.jobs.front().request.source == first->source,
+            "rejected crop replays legitimate steps against the unchanged original source");
+    h.complete();
+    const auto second = h.playback->holdFrameForCrop();
+    require(second.has_value(), "canceled crop leaves the source usable");
+    h.playback->nextFrame();
+    h.playback->cancelCropPreparation(second->token, true);
+    require(h.jobs.empty(), "source teardown can discard deferred crop steps");
+    const auto third = h.playback->holdFrameForCrop();
+    require(third.has_value(), "crop can be retried after cancellation");
+    const auto next = croppedSource(*third);
+    const auto pixels = snowCanvasCopyImage(third->original, QRect(QPoint(), next->canvasSize));
+    require(h.playback->reserveCroppedSource(*third, next, pixels, pixels, {}),
+            "an unchanged held frame admits its prepared cropped source");
+    h.playback->setSource(source(), false);
+    require(!h.playback->stageReservedCroppedSource(third->token) &&
+                !h.playback->publishReservedCroppedSource(third->token) &&
+                h.lastOriginal.size() == QSize(4, 3),
+            "replacement invalidates every phase of the previous crop transaction");
+}
+
+void cropCallbacksMayDestroyPlayback() {
+    Harness discard;
+    discard.start();
+    discard.playback->pause();
+    while (!discard.jobs.empty())
+        discard.complete();
+    discard.acknowledge = false;
+    discard.playback->nextFrame();
+    discard.complete();
+    discard.discardAction = [&] { discard.playback.reset(); };
+    const auto hold = discard.playback->holdFrameForCrop();
+    require(!hold && !discard.playback,
+            "discard callbacks may destroy the controller while crop acquires a frame hold");
+
+    Harness publish;
+    publish.start();
+    publish.playback->pause();
+    while (!publish.jobs.empty())
+        publish.complete();
+    const auto current = publish.playback->holdFrameForCrop();
+    require(current.has_value(), "publication lifetime fixture holds a painted frame");
+    const auto next = croppedSource(*current);
+    const auto pixels = snowCanvasCopyImage(current->original, QRect(QPoint(), next->canvasSize));
+    require(publish.playback->reserveCroppedSource(*current, next, pixels, pixels, {}) &&
+                publish.playback->stageReservedCroppedSource(current->token),
+            "publication lifetime fixture stages its crop");
+    publish.acknowledge = false;
+    publish.publicationAction = [&] { publish.playback.reset(); };
+    require(publish.playback->publishReservedCroppedSource(current->token) && !publish.playback,
+            "crop publication tolerates synchronous destruction by its recipient");
+}
 
 void preparedTransformsFreezeSourceTimeUntilPaint() {
     Harness h;
@@ -1363,6 +1484,9 @@ int main(int argc, char** argv) {
         return preparationTeardownChild(argc, argv);
     QCoreApplication application(argc, argv);
     destructionKeepsPlaybackAvailableToDeadlineCancellation();
+    cropTransactionsRetainPaintedFrameAndDeferredSteps();
+    cropReservationCancellationAndReplacementPreserveSource();
+    cropCallbacksMayDestroyPlayback();
     preparedTransformsFreezeSourceTimeUntilPaint();
     latestPreparedTransformSurvivesHiddenAndPausedStates();
     preparationCancellationFailureAndQueuedStepsPreserveIntent();

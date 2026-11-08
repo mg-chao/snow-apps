@@ -2,8 +2,10 @@
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snowimageqtcodec.h"
 #include "pinned_animation_fixtures.h"
+#include "snow_shot/presentation/screenshotrecognitionmodelpersistence.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QBuffer>
 #include <QColor>
 #include <QDateTime>
@@ -1599,6 +1601,19 @@ void textTypeRoundTripsAndMigratesLegacyVisibility() {
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto record = recordWithId(id, patternedImage({24, 12}, 9));
     record.textType = storage::PinnedTextType::TranslationResults;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    ScreenshotRecognitionResults recognition;
+    recognition.key = QStringLiteral("stored-translation");
+    recognition.translatedEditor = ScreenshotTranslatedTextEntry{
+        recognition.key,
+        QCryptographicHash::hash(QByteArrayLiteral("source"), QCryptographicHash::Sha256),
+        {QStringLiteral("en"), QStringLiteral("zh-Hans"), QStringLiteral("general"),
+         QStringLiteral("original")},
+        QStringLiteral("Successful baseline"),
+        QStringLiteral("")};
+    record.recognitionResults = snow_shot::presentation::encodeRecognitionModels(recognition);
+    require(!record.recognitionResults.isEmpty(), "encode an explicitly empty translated draft");
+#endif
     {
         storage::PinnedWindowRepository repository(directory.path());
         require(repository.upsert(record).success && repository.flush().success,
@@ -1610,6 +1625,20 @@ void textTypeRoundTripsAndMigratesLegacyVisibility() {
         require(loaded && loaded->textType == storage::PinnedTextType::TranslationResults &&
                     !loaded->recognitionVisible && !loaded->translationVisible,
                 "text type survives reopening independently of visibility");
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        ScreenshotRecognitionResults restoredTranslation;
+        restoredTranslation.key = recognition.key;
+        snow_shot::presentation::decodeRecognitionModels(loaded->recognitionResults,
+                                                         restoredTranslation);
+        require(restoredTranslation.translatedEditor &&
+                    restoredTranslation.translatedEditor->baseline ==
+                        recognition.translatedEditor->baseline &&
+                    restoredTranslation.translatedEditor->draft.has_value() &&
+                    restoredTranslation.translatedEditor->draft->isEmpty() &&
+                    restoredTranslation.translatedEditor->configuration ==
+                        recognition.translatedEditor->configuration,
+                "repository recreation retains translation baseline, configuration and empty edit");
+#endif
         record.textType = storage::PinnedTextType::RecognitionResults;
         record.recognitionVisible = true;
         record.translationVisible = true;
@@ -1806,46 +1835,58 @@ void alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
             "legacy records must restore with always-on-top enabled");
 }
 void mislabeledImageFilesSurviveRestart() {
-    for (const auto format : {snow::image::Format::jpeg, snow::image::Format::png}) {
-        QTemporaryDir directory;
-        require(directory.isValid(), "mislabeled repository fixture directory");
-        const auto suffix =
-            format == snow::image::Format::jpeg ? QStringLiteral("png") : QStringLiteral("jpg");
-        const auto path = directory.filePath(QStringLiteral("original.") + suffix);
-        QByteArray encoded;
-        QBuffer buffer(&encoded);
-        require(buffer.open(QIODevice::WriteOnly) &&
-                    snow_shot::image_codec::encodeToDevice(patternedImage({32, 24}, 7), &buffer,
-                                                           format, {}),
-                "encode repository content detection fixture");
-        QFile file(path);
-        require(file.open(QIODevice::WriteOnly) && file.write(encoded) == encoded.size(),
-                "write mislabeled repository source");
-        file.close();
-        const auto reference = snow_shot::image_codec::decode(encoded, format, nullptr);
-        auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), reference);
-        record.sourceKind = storage::PinnedWindowSourceKind::ClipboardImageFile;
-        record.originalFilePath = path;
-        record.originalFileName = QFileInfo(path).fileName();
-        record.sourceIdentity = {QStringLiteral("file:") + path};
-        {
+    for (const auto format :
+         {snow::image::Format::jpeg, snow::image::Format::png, snow::image::Format::gif}) {
+        const QStringList suffixes =
+            format == snow::image::Format::gif
+                ? QStringList{QStringLiteral("gif"), QStringLiteral("png")}
+                : QStringList{format == snow::image::Format::jpeg ? QStringLiteral("png")
+                                                                  : QStringLiteral("jpg")};
+        for (const auto& suffix : suffixes) {
+            QTemporaryDir directory;
+            require(directory.isValid(), "mislabeled repository fixture directory");
+            const auto path = directory.filePath(QStringLiteral("original.") + suffix);
+            QByteArray encoded;
+            if (format == snow::image::Format::gif) {
+                encoded = pinned_animation_fixtures::singleFrameImages().first().bytes;
+            } else {
+                QBuffer buffer(&encoded);
+                require(buffer.open(QIODevice::WriteOnly) &&
+                            snow_shot::image_codec::encodeToDevice(patternedImage({32, 24}, 7),
+                                                                   &buffer, format, {}),
+                        "encode repository content detection fixture");
+            }
+            QFile file(path);
+            require(file.open(QIODevice::WriteOnly) && file.write(encoded) == encoded.size(),
+                    "write mislabeled repository source");
+            file.close();
+            const auto reference = snow_shot::image_codec::decode(encoded, format, nullptr);
+            auto record =
+                recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), reference);
+            record.sourceKind = storage::PinnedWindowSourceKind::ClipboardImageFile;
+            record.originalFilePath = path;
+            record.originalFileName = QFileInfo(path).fileName();
+            record.sourceIdentity = {QStringLiteral("file:") + path};
+            {
+                storage::PinnedWindowRepository repository(directory.path());
+                require(repository.create(record).success && repository.flush().success,
+                        "persist mislabeled image file");
+            }
             storage::PinnedWindowRepository repository(directory.path());
-            require(repository.create(record).success && repository.flush().success,
-                    "persist mislabeled image file");
-        }
-        storage::PinnedWindowRepository repository(directory.path());
-        const auto restored = repository.loadRecord(record.id);
-        const auto admitted = repository.loadRecord(record.id, [](qint64) { return true; });
-        const auto preview = repository.loadPreviewSource(record.id);
-        require(restored && admitted && preview && samePixels(restored->image, reference) &&
+            const auto restored = repository.loadRecord(record.id);
+            const auto admitted = repository.loadRecord(record.id, [](qint64) { return true; });
+            const auto preview = repository.loadPreviewSource(record.id);
+            require(
+                restored && admitted && preview && samePixels(restored->image, reference) &&
                     samePixels(admitted->image, reference) &&
                     samePixels(preview->image, reference) &&
                     restored->sourceIdentity == record.sourceIdentity &&
                     readBytes(restored->originalFilePath) == encoded,
                 "restored pins and previews decode original bytes regardless of file extension");
-        require(!repository.loadRecord(record.id, [](qint64) { return false; }) &&
-                    !repository.loadPreviewSource(record.id, {}, [] { return true; }),
-                "mislabeled stored sources must retain admission and cancellation checks");
+            require(!repository.loadRecord(record.id, [](qint64) { return false; }) &&
+                        !repository.loadPreviewSource(record.id, {}, [] { return true; }),
+                    "mislabeled stored sources must retain admission and cancellation checks");
+        }
     }
 }
 

@@ -4,7 +4,8 @@
 #include "snow_shot/presentation/screenshotrecognitionmodel.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,7 +19,8 @@ inline constexpr quint8 kRecognitionModelPayloadVersion = 1;
 inline constexpr qsizetype kMaximumRecognitionModelPayload = 16 * 1024 * 1024;
 inline constexpr qsizetype kMaximumRecognitionModelEntries = 128;
 
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 [[nodiscard]] inline bool validRecognitionModelSelection(const QString& selection) {
     if (selection.isEmpty() || selection.size() > 256)
         return false;
@@ -42,10 +44,67 @@ inline constexpr qsizetype kMaximumRecognitionModelEntries = 128;
     return bytes;
 }
 
+[[nodiscard]] inline std::optional<qsizetype>
+translatedEditorPayloadBytes(const ScreenshotRecognitionResults& results) {
+    qsizetype bytes = 2048;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (results.translatedEditor) {
+        const auto& entry = *results.translatedEditor;
+        if (!entry.isValidFor(results.key))
+            return std::nullopt;
+        bytes += recognitionModelStringPayloadBytes(entry.sourceKey) +
+                 recognitionModelStringPayloadBytes(entry.configuration.sourceLanguage) +
+                 recognitionModelStringPayloadBytes(entry.configuration.targetLanguage) +
+                 recognitionModelStringPayloadBytes(entry.configuration.modelId) +
+                 recognitionModelStringPayloadBytes(entry.configuration.layoutProcessing) +
+                 recognitionModelStringPayloadBytes(entry.configuration.secondaryTargetLanguage) +
+                 recognitionModelStringPayloadBytes(entry.baseline);
+        if (entry.draft)
+            bytes += recognitionModelStringPayloadBytes(*entry.draft);
+        if (bytes > kMaximumRecognitionModelPayload)
+            return std::nullopt;
+    }
+#else
+    Q_UNUSED(results)
+#endif
+    return bytes;
+}
+
+[[nodiscard]] inline bool canPersistTranslatedEditor(const ScreenshotRecognitionResults& results) {
+    return translatedEditorPayloadBytes(results).has_value();
+}
+
 [[nodiscard]] inline QByteArray
 encodeRecognitionModels(const ScreenshotRecognitionResults& results) {
     QJsonObject root;
-    qsizetype estimatedBytes = 2048;
+    const auto translationBytes = translatedEditorPayloadBytes(results);
+    if (!translationBytes)
+        return {};
+    qsizetype estimatedBytes = *translationBytes;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (results.translatedEditor) {
+        const auto& entry = *results.translatedEditor;
+        QJsonObject configuration{
+            {QStringLiteral("source_language"), entry.configuration.sourceLanguage},
+            {QStringLiteral("target_language"), entry.configuration.targetLanguage},
+            {QStringLiteral("model"), entry.configuration.modelId},
+            {QStringLiteral("layout_processing"), entry.configuration.layoutProcessing},
+            {QStringLiteral("secondary_target_language"),
+             entry.configuration.secondaryTargetLanguage},
+            {QStringLiteral("language_detection_confidence_threshold"),
+             entry.configuration.languageDetectionConfidenceThreshold}};
+        QJsonObject translated{{QStringLiteral("version"), 1},
+                               {QStringLiteral("source_key"), entry.sourceKey},
+                               {QStringLiteral("source_fingerprint"),
+                                QString::fromLatin1(entry.sourceFingerprint.toHex())},
+                               {QStringLiteral("configuration"), configuration},
+                               {QStringLiteral("baseline"), entry.baseline}};
+        if (entry.draft)
+            translated.insert(QStringLiteral("draft"), *entry.draft);
+        // Extend the known JSON envelope so older readers keep their other recognition results.
+        root.insert(QStringLiteral("text_translation"), translated);
+    }
+#endif
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     QVector<ScreenshotTableRecognitionEntry> tables;
     QSet<QString> tableModels;
@@ -170,7 +229,9 @@ encodeRecognitionModels(const ScreenshotRecognitionResults& results) {
         return payload;
     root.remove(QStringLiteral("tables"));
     root.remove(QStringLiteral("latex"));
-    return root.isEmpty() ? QByteArray{} : QJsonDocument(root).toJson(QJsonDocument::Compact);
+    const QByteArray fallback = QJsonDocument(root).toJson(QJsonDocument::Compact);
+    return root.isEmpty() || fallback.size() > kMaximumRecognitionModelPayload ? QByteArray{}
+                                                                               : fallback;
 }
 
 inline void decodeRecognitionModels(const QByteArray& bytes,
@@ -181,6 +242,45 @@ inline void decodeRecognitionModels(const QByteArray& bytes,
     if (!document.isObject())
         return;
     const QJsonObject root = document.object();
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    const QJsonObject translated = root.value(QStringLiteral("text_translation")).toObject();
+    const QJsonObject configuration = translated.value(QStringLiteral("configuration")).toObject();
+    const auto hasString = [](const QJsonObject& object, const QString& key) {
+        return object.value(key).isString();
+    };
+    if (translated.value(QStringLiteral("version")) == QJsonValue(1) &&
+        hasString(translated, QStringLiteral("source_key")) &&
+        hasString(translated, QStringLiteral("source_fingerprint")) &&
+        hasString(translated, QStringLiteral("baseline")) &&
+        (!translated.contains(QStringLiteral("draft")) ||
+         hasString(translated, QStringLiteral("draft"))) &&
+        hasString(configuration, QStringLiteral("source_language")) &&
+        hasString(configuration, QStringLiteral("target_language")) &&
+        hasString(configuration, QStringLiteral("secondary_target_language")) &&
+        hasString(configuration, QStringLiteral("model")) &&
+        hasString(configuration, QStringLiteral("layout_processing")) &&
+        configuration.value(QStringLiteral("language_detection_confidence_threshold")).isDouble()) {
+        ScreenshotTranslatedTextEntry entry;
+        entry.sourceKey = translated.value(QStringLiteral("source_key")).toString();
+        const QByteArray fingerprint =
+            translated.value(QStringLiteral("source_fingerprint")).toString().toLatin1();
+        entry.sourceFingerprint = QByteArray::fromHex(fingerprint);
+        entry.configuration = {
+            configuration.value(QStringLiteral("source_language")).toString(),
+            configuration.value(QStringLiteral("target_language")).toString(),
+            configuration.value(QStringLiteral("model")).toString(),
+            configuration.value(QStringLiteral("layout_processing")).toString(),
+            configuration.value(QStringLiteral("secondary_target_language")).toString(),
+            configuration.value(QStringLiteral("language_detection_confidence_threshold"))
+                .toInt(-1)};
+        entry.baseline = translated.value(QStringLiteral("baseline")).toString();
+        if (translated.contains(QStringLiteral("draft")))
+            entry.draft = translated.value(QStringLiteral("draft")).toString();
+        if (fingerprint.size() == 64 && entry.sourceFingerprint.toHex() == fingerprint &&
+            entry.isValidFor(results.key))
+            results.translatedEditor = std::move(entry);
+    }
+#endif
     const auto selection = [&root](const QString& key) {
         const QString value = root.value(key).toString();
         return validRecognitionModelSelection(value) ? value : QString();

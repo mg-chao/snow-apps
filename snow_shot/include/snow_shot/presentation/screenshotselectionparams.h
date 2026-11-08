@@ -71,6 +71,11 @@ struct ScreenshotSelectionPreset {
 [[nodiscard]] ScreenshotSelectionParams
 clampScreenshotSelectionParams(const ScreenshotSelectionParams& params, const QRect& bounds);
 
+// Project a retained pin's content-relative style into absolute document coordinates.
+// Fractional mappings capture the rendered outline, including rounded corners.
+[[nodiscard]] ScreenshotSelectionParams
+pinnedStyleToContentSelection(const ScreenshotResultStyle& style, const QRectF& contentBounds);
+
 // Restore commands must validate available geometry before replacing the current selection.
 [[nodiscard]] std::optional<ScreenshotSelectionParams>
 clampScreenshotSelectionParamsForRestore(const ScreenshotSelectionParams& params,

@@ -717,12 +717,15 @@ struct ScreenshotAnimationPlayback::Impl {
             transformCancellation->store(true);
         transformCancellation.reset();
         preparedTransform.reset();
+        preparedCrop.reset();
         deferredStepTarget.reset();
+        cropHeld = false;
         transformHeld = false;
         transformAdopted = false;
         ++preparationSerial;
     }
-    void releaseTransformHold() {
+    void releaseTransformHold(bool notify = true) {
+        const auto alive = lifetime;
         const auto deferred = deferredStepTarget;
         if (!transformAdopted)
             transform = displayedTransform;
@@ -735,7 +738,8 @@ struct ScreenshotAnimationPlayback::Impl {
         } else {
             schedule();
         }
-        changed();
+        if (notify && alive->owner)
+            alive->owner->changed();
     }
     void retireWorker() {
         if (!worker)
@@ -1103,6 +1107,14 @@ struct ScreenshotAnimationPlayback::Impl {
     std::shared_ptr<std::atomic_bool> cancellation;
     PreparationCancellation transformCancellation;
     std::optional<PreparedTransform> preparedTransform;
+    struct PreparedCrop {
+        FrameHold hold;
+        std::shared_ptr<const ScreenshotAnimationSource> source;
+        QImage original;
+        QImage transformed;
+        QTransform transform;
+    };
+    std::optional<PreparedCrop> preparedCrop;
     std::optional<int> deferredStepTarget;
     std::vector<long double> starts;
     QTransform transform;
@@ -1147,6 +1159,7 @@ struct ScreenshotAnimationPlayback::Impl {
     bool failed = false;
     bool transformHeld = false;
     bool transformAdopted = false;
+    bool cropHeld = false;
     Diagnostics metrics;
 };
 
@@ -1217,21 +1230,82 @@ void ScreenshotAnimationPlayback::setSource(std::shared_ptr<const ScreenshotAnim
         m_impl->requestFrame(0, true);
     m_impl->changed();
 }
-bool ScreenshotAnimationPlayback::adoptCroppedSource(
-    std::shared_ptr<const ScreenshotAnimationSource> source, QImage original, QImage transformed,
-    const QTransform& transform) {
-    if (!source || !m_impl->source || m_impl->transformHeld || original.isNull() ||
-        transformed.isNull() || source->frameDurationsNs != m_impl->source->frameDurationsNs)
-        return false;
+std::optional<ScreenshotAnimationPlayback::FrameHold>
+ScreenshotAnimationPlayback::holdFrameForCrop() {
+    if (!m_impl->source || !m_impl->painted || m_impl->transformHeld ||
+        m_impl->displayedOriginal.isNull())
+        return std::nullopt;
+    const QPointer<ScreenshotAnimationPlayback> lifetime(this);
     m_impl->settleDisplayed();
-    m_impl->cancel();
-    m_impl->source = std::move(source);
-    m_impl->transform = transform;
-    m_impl->displayedTransform = transform;
-    m_impl->anchor = m_impl->now();
-    m_impl->publish(std::move(original), std::move(transformed), m_impl->displayedIndex);
+    m_impl->transformHeld = true;
+    m_impl->cropHeld = true;
+    m_impl->transformAdopted = false;
+    const FrameHold hold{m_impl->source, m_impl->displayedOriginal, m_impl->displayedIndex,
+                         m_impl->paintedToken, ++m_impl->preparationSerial};
+    m_impl->discardPending(false);
+    if (!lifetime || !cropHoldValid(hold.token))
+        return std::nullopt;
+    m_impl->cancelDeadline();
+    if (!lifetime || !cropHoldValid(hold.token))
+        return std::nullopt;
+    m_impl->cancelJob();
+    ++m_impl->generation;
+    m_impl->decoding = false;
+    m_impl->retireWorker();
     m_impl->changed();
+    return lifetime && cropHoldValid(hold.token) ? std::optional(hold) : std::nullopt;
+}
+
+bool ScreenshotAnimationPlayback::cropHoldValid(quint64 token) const {
+    return token && m_impl->source && m_impl->cropHeld && m_impl->transformHeld &&
+           !m_impl->transformAdopted && token == m_impl->preparationSerial;
+}
+
+bool ScreenshotAnimationPlayback::reserveCroppedSource(
+    const FrameHold& hold, std::shared_ptr<const ScreenshotAnimationSource> source, QImage original,
+    QImage transformed, const QTransform& transform) {
+    if (!cropHoldValid(hold.token) || m_impl->preparedCrop || hold.source != m_impl->source ||
+        hold.frameIndex != m_impl->displayedIndex || hold.paintedToken != m_impl->paintedToken ||
+        hold.original.cacheKey() != m_impl->displayedOriginal.cacheKey() || !source ||
+        original.isNull() || transformed.isNull() || original.size() != source->canvasSize ||
+        source->frameDurationsNs != hold.source->frameDurationsNs ||
+        source->totalPlayCount != hold.source->totalPlayCount ||
+        source->encoded != hold.source->encoded)
+        return false;
+    m_impl->preparedCrop = Impl::PreparedCrop{hold, std::move(source), std::move(original),
+                                              std::move(transformed), transform};
     return true;
+}
+
+bool ScreenshotAnimationPlayback::stageReservedCroppedSource(quint64 token) {
+    if (!cropHoldValid(token) || !m_impl->preparedCrop ||
+        m_impl->preparedCrop->hold.source != m_impl->source)
+        return false;
+    m_impl->source = m_impl->preparedCrop->source;
+    m_impl->transform = m_impl->preparedCrop->transform;
+    m_impl->transformAdopted = true;
+    return true;
+}
+
+bool ScreenshotAnimationPlayback::publishReservedCroppedSource(quint64 token) {
+    if (!token || token != m_impl->preparationSerial || !m_impl->cropHeld ||
+        !m_impl->transformAdopted || !m_impl->preparedCrop)
+        return false;
+    auto ready = std::move(*m_impl->preparedCrop);
+    m_impl->preparedCrop.reset();
+    // frameReady may synchronously paint, replace the source, or destroy this object.
+    m_impl->publish(std::move(ready.original), std::move(ready.transformed), ready.hold.frameIndex);
+    return true;
+}
+
+void ScreenshotAnimationPlayback::cancelCropPreparation(quint64 token, bool discardDeferredSteps) {
+    if (!cropHoldValid(token))
+        return;
+    if (discardDeferredSteps)
+        m_impl->deferredStepTarget.reset();
+    // The host is canceling before a lifecycle transition; it refreshes presentation
+    // after that transition, so do not reenter it through stateChanged here.
+    m_impl->releaseTransformHold(false);
 }
 
 void ScreenshotAnimationPlayback::clear() {
@@ -1283,6 +1357,8 @@ quint64 ScreenshotAnimationPlayback::prepareTransform(const QTransform& transfor
     if (m_impl->transformCancellation)
         m_impl->transformCancellation->store(true);
     m_impl->preparedTransform.reset();
+    m_impl->preparedCrop.reset();
+    m_impl->cropHeld = false;
     m_impl->transformHeld = true;
     m_impl->transformAdopted = false;
     const quint64 preparation = ++m_impl->preparationSerial;
@@ -1374,6 +1450,11 @@ void ScreenshotAnimationPlayback::play() {
     m_impl->requested = true;
     if (m_impl->finished) {
         m_impl->finished = false;
+        if (m_impl->transformHeld) {
+            m_impl->deferredStepTarget = 0;
+            m_impl->changed();
+            return;
+        }
         m_impl->position = 0;
         m_impl->painted = false;
         m_impl->requestFrame(0, true);

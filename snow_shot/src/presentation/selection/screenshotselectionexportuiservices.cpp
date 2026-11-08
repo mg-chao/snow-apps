@@ -1846,120 +1846,108 @@ void ScreenshotSelectionExportUiServices::trackSourceWindow(
                      m_pendingPinCoordinator.get(), remove);
 }
 
-ScreenshotPinnedWindow* ScreenshotSelectionExportUiServices::findDuplicatePin(
-    const snow_shot::storage::PinnedSourceIdentity& identity) const {
-    if (!identity.isValid())
-        return nullptr;
-    const auto it = m_sourceWindows.constFind(identity.key);
-    if (it == m_sourceWindows.cend())
-        return nullptr;
+QVector<ScreenshotSelectionExportUiServices::DuplicatePinCandidate>
+ScreenshotSelectionExportUiServices::duplicatePinCandidates() const {
     const QString group =
         m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    ScreenshotPinnedWindow* newest = nullptr;
-    for (const auto& window : *it) {
-        if (window && window->sourcePinAvailable() && window->sourceIdentity() == identity &&
-            window->groupId() == group &&
-            (!newest || window->sourceCreatedUtc() >= newest->sourceCreatedUtc()))
-            newest = window;
-    }
-    return newest;
-}
-
-QSet<QString> ScreenshotSelectionExportUiServices::duplicateSourceKeys() const {
-    QSet<QString> keys;
-    const QString group =
-        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    for (const auto& pending : m_restoringIds) {
-        if (pending.groupId == group && pending.sourceIdentity.isValid())
-            keys.insert(pending.sourceIdentity.key);
-    }
-    for (auto it = m_sourceWindows.cbegin(); it != m_sourceWindows.cend(); ++it) {
-        if (findDuplicatePin({it.key()}))
-            keys.insert(it.key());
-    }
+    QHash<QString, DuplicatePinCandidate> byId;
+    QSet<QString> excluded;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {
         const auto records = storage.pinnedWindows().summariesIncludingPending();
         for (const auto& record : records) {
-            if (!record.hidden || record.ignored || record.groupId != group)
+            const auto restoring = m_restoringIds.constFind(record.id);
+            const bool restoreRequested =
+                restoring != m_restoringIds.cend() && restoring->groupId == group;
+            // Closed records remain ignored until their first restored frame is
+            // accepted. An explicit in-flight restore already reserves that identity.
+            if (record.groupId != group || (record.ignored && !restoreRequested)) {
+                excluded.insert(record.id);
                 continue;
+            }
             auto identity = storage.pinnedWindows().sourceIdentity(record.id);
             if (!identity.isValid())
                 identity = m_pendingPinCoordinator->sourceIdentity(record.id);
             if (identity.isValid())
-                keys.insert(identity.key);
+                byId.insert(record.id, {record.id, identity, record.createdUtc, {}, false});
         }
     }
-    return keys;
+    // Repository, restoring and live representations refer to one retained pin.
+    // Collapse them by record ID before selecting the newest source candidate.
+    for (auto it = m_restoringIds.cbegin(); it != m_restoringIds.cend(); ++it) {
+        if (excluded.contains(it.key()) || it->groupId != group || !it->sourceIdentity.isValid())
+            continue;
+        auto& candidate = byId[it.key()];
+        candidate.id = it.key();
+        candidate.identity = it->sourceIdentity;
+        candidate.createdUtc = it->createdUtc;
+        candidate.restoring = true;
+        candidate.window = it->window;
+    }
+    for (auto it = m_sourceWindows.cbegin(); it != m_sourceWindows.cend(); ++it) {
+        for (const auto& window : *it) {
+            if (!window || !window->sourcePinAvailable() || window->groupId() != group ||
+                !window->sourceIdentity().isValid() || excluded.contains(window->persistenceId()))
+                continue;
+            auto& candidate = byId[window->persistenceId()];
+            candidate.id = window->persistenceId();
+            candidate.identity = window->sourceIdentity();
+            candidate.createdUtc = window->sourceCreatedUtc();
+            candidate.window = window;
+        }
+    }
+    auto candidates = byId.values();
+    std::sort(candidates.begin(), candidates.end(), [](const auto& left, const auto& right) {
+        return left.createdUtc != right.createdUtc ? left.createdUtc > right.createdUtc
+                                                   : left.id < right.id;
+    });
+    return candidates;
 }
 
-QString ScreenshotSelectionExportUiServices::hiddenDuplicateId(
+ScreenshotPinnedWindow* ScreenshotSelectionExportUiServices::findDuplicatePin(
     const snow_shot::storage::PinnedSourceIdentity& identity) const {
-    auto& storage = snow_shot::storage::ApplicationStorage::instance();
-    if (!storage.isInitialized())
-        return {};
-    const QString group =
-        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    const auto records = storage.pinnedWindows().summariesIncludingPending();
-    QString newest;
-    QDateTime created;
-    for (const auto& record : records) {
-        if (!record.hidden || record.ignored || record.groupId != group)
-            continue;
-        auto candidate = storage.pinnedWindows().sourceIdentity(record.id);
-        if (!candidate.isValid())
-            candidate = m_pendingPinCoordinator->sourceIdentity(record.id);
-        if (candidate == identity && (newest.isEmpty() || record.createdUtc > created)) {
-            newest = record.id;
-            created = record.createdUtc;
-        }
+    if (!identity.isValid())
+        return nullptr;
+    for (const auto& candidate : duplicatePinCandidates()) {
+        if (candidate.identity == identity && candidate.window &&
+            candidate.window->sourcePinAvailable())
+            return candidate.window;
     }
-    return newest;
+    return nullptr;
+}
+
+QSet<QString> ScreenshotSelectionExportUiServices::duplicateSourceKeys() const {
+    QSet<QString> keys;
+    for (const auto& candidate : duplicatePinCandidates())
+        keys.insert(candidate.identity.key);
+    return keys;
 }
 
 bool ScreenshotSelectionExportUiServices::handleDuplicatePin(
     const snow_shot::storage::PinnedSourceIdentity& identity, const QString& action,
     bool& restored) {
-    if (action == QStringLiteral("repeat_action"))
+    if (action == QStringLiteral("repeat_action") || !identity.isValid())
         return false;
-    if (!identity.isValid())
-        return false;
-    auto* window = findDuplicatePin(identity);
-    const QString group =
-        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    RestoringPin* pending = nullptr;
-    for (auto& restoring : m_restoringIds) {
-        if (restoring.sourceIdentity == identity && restoring.groupId == group &&
-            (!window || restoring.createdUtc > window->sourceCreatedUtc()) &&
-            (!pending || restoring.createdUtc > pending->createdUtc))
-            pending = &restoring;
-    }
-    QString hiddenId = hiddenDuplicateId(identity);
-    if (!hiddenId.isEmpty() && (window || pending)) {
-        auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
-        const auto hidden = repository.summary(hiddenId);
-        const QDateTime newestShown = pending ? pending->createdUtc : window->sourceCreatedUtc();
-        if (hidden && hidden->createdUtc >= newestShown) {
-            window = nullptr;
-            pending = nullptr;
-        } else {
-            hiddenId.clear();
-        }
-    }
-    if (!window && !pending && hiddenId.isEmpty())
+    const auto candidates = duplicatePinCandidates();
+    const auto found = std::find_if(candidates.cbegin(), candidates.cend(),
+                                    [&](const auto& pin) { return pin.identity == identity; });
+    if (found == candidates.cend())
         return false;
     if (action == QStringLiteral("restore_last_closed_window")) {
         if (!std::exchange(restored, true))
             restoreLastClosedWindow();
     } else if (action != QStringLiteral("none")) {
-        if (pending)
-            pending->attentionPending = true;
-        else if (window)
-            window->shakeForAttention();
-        else {
-            m_pendingAttention.insert(hiddenId);
-            if (!restoreRecord(hiddenId, false)) {
-                m_pendingAttention.remove(hiddenId);
+        if (found->restoring) {
+            auto pending = m_restoringIds.find(found->id);
+            if (pending != m_restoringIds.end())
+                pending->attentionPending = true;
+        } else if (found->window && found->window->sourcePinAvailable()) {
+            found->window->shakeForAttention();
+        } else {
+            m_pendingAttention.insert(found->id);
+            if (!restoreRecordImpl(found->id, false,
+                                   ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus)) {
+                m_pendingAttention.remove(found->id);
                 if (m_restoreFailure)
                     m_restoreFailure();
             }

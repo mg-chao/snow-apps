@@ -167,8 +167,14 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     toggleOtherWindowsForShake(const QString& exceptId);
     void cancelRestore(const QString& id);
     [[nodiscard]] ScreenshotPinnedWindow* liveWindow(const QString& id) const;
-    [[nodiscard]] QString
-    hiddenDuplicateId(const snow_shot::storage::PinnedSourceIdentity& identity) const;
+    struct DuplicatePinCandidate {
+        QString id;
+        snow_shot::storage::PinnedSourceIdentity identity;
+        QDateTime createdUtc;
+        QPointer<ScreenshotPinnedWindow> window;
+        bool restoring = false;
+    };
+    [[nodiscard]] QVector<DuplicatePinCandidate> duplicatePinCandidates() const;
     void trackSourceWindow(ScreenshotPinnedWindow* window,
                            const snow_shot::storage::PinnedSourceIdentity& identity);
     [[nodiscard]] bool presentRestoredRecord(snow_shot::storage::PinnedWindowRecord record,

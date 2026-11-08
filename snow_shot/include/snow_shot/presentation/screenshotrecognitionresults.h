@@ -6,11 +6,43 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotimageconversion.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QString>
 
 #include <optional>
 #include <memory>
+
+struct ScreenshotTranslatedTextEntry {
+    QString sourceKey;
+    QByteArray sourceFingerprint;
+    snow_shot::storage::ScreenshotTranslationConfiguration configuration;
+    QString baseline;
+    // Presence is independent of emptiness: deleting all translated text is a valid edit.
+    std::optional<QString> draft;
+
+    [[nodiscard]] bool isValidFor(const QString& key) const {
+        const auto validIdentifier = [](const QString& value) {
+            if (value.isEmpty() || value.size() > 256)
+                return false;
+            for (QChar character : value) {
+                if (character.isSpace() || character.category() == QChar::Other_Control)
+                    return false;
+            }
+            return true;
+        };
+        return !sourceKey.isEmpty() && sourceKey.size() <= 1024 && sourceKey == key &&
+               sourceFingerprint.size() == 32 && validIdentifier(configuration.sourceLanguage) &&
+               validIdentifier(configuration.targetLanguage) &&
+               validIdentifier(configuration.secondaryTargetLanguage) &&
+               validIdentifier(configuration.modelId) &&
+               (configuration.layoutProcessing == QStringLiteral("original") ||
+                configuration.layoutProcessing == QStringLiteral("smart_merge")) &&
+               configuration.languageDetectionConfidenceThreshold >= 0 &&
+               configuration.languageDetectionConfidenceThreshold <= 100 &&
+               baseline.size() <= 4 * 1024 * 1024 && (!draft || draft->size() <= 4 * 1024 * 1024);
+    }
+};
 
 struct ScreenshotTableRecognitionEntry {
     QString model;
@@ -50,6 +82,7 @@ struct ScreenshotRecognitionResults {
     std::optional<SnowShotTableResult> table;
     std::optional<ScreenshotQrRecognitionResult> qr;
     std::shared_ptr<ScreenshotOcrPresentation> translatedText;
+    std::optional<ScreenshotTranslatedTextEntry> translatedEditor;
     QVector<ScreenshotImageConversionEntry> conversions;
     std::optional<SnowShotImageConversionFormat> visibleConversion;
     QVector<ScreenshotTableRecognitionEntry> tableEntries;
@@ -62,8 +95,9 @@ struct ScreenshotRecognitionResults {
 
     [[nodiscard]] bool isEmpty() const {
         return !latex.has_value() && !text.has_value() && !table.has_value() && !qr.has_value() &&
-               conversions.isEmpty() && tableEntries.isEmpty() && latexEntries.isEmpty() &&
-               tableModelSelection.isEmpty() && latexModelSelection.isEmpty();
+               !translatedEditor.has_value() && conversions.isEmpty() && tableEntries.isEmpty() &&
+               latexEntries.isEmpty() && tableModelSelection.isEmpty() &&
+               latexModelSelection.isEmpty();
     }
 
     [[nodiscard]] bool isValidFor(const QString& targetKey) const {
@@ -93,8 +127,10 @@ inline void sanitizeEditionRecognitionResults(ScreenshotRecognitionResults& resu
         results.conversions.clear();
         results.visibleConversion.reset();
     }
-    if constexpr (!edition::textTranslation)
+    if constexpr (!edition::textTranslation) {
         results.translatedText.reset();
+        results.translatedEditor.reset();
+    }
 }
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONRESULTS_H

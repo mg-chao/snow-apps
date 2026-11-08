@@ -25,6 +25,33 @@ ScreenshotResultStyle ScreenshotSelectionParams::resultStyle() const {
     return style;
 }
 
+ScreenshotSelectionParams pinnedStyleToContentSelection(const ScreenshotResultStyle& style,
+                                                        const QRectF& contentBounds) {
+    ScreenshotSelectionParams selection;
+    selection.selection = contentBounds.toAlignedRect();
+    selection.radius = style.cornerRadius;
+    selection.shadowWidth = style.shadowWidth;
+    selection.shadowColor = style.shadowColor;
+    selection.borderType = style.borderType;
+    selection.borderWidth = style.borderWidth;
+    selection.borderColor = style.borderColor;
+    selection.backgroundOpacityPercent = style.backgroundOpacityPercent;
+    const bool integralBounds = QRectF(selection.selection) == contentBounds;
+    if (integralBounds && style.regionScale == 1.0) {
+        if (style.region)
+            selection.region = style.region->translated(selection.selection.topLeft());
+    } else if (style.region || !integralBounds) {
+        // QRegion transforms round fractional edges. Capture the compositor's
+        // exact vector outline instead, and avoid applying its corners twice.
+        selection.region = ScreenshotRegionGeometry::fromPath(
+            screenshotSelectionPath(contentBounds, style.region, style.cornerRadius,
+                                    style.regionScale),
+            ScreenshotRegionType::Curve);
+        selection.radius = 0;
+    }
+    return selection;
+}
+
 ScreenshotSelectionParams clampScreenshotSelectionParams(const ScreenshotSelectionParams& params,
                                                          const QRect& bounds) {
     const QRect actualBounds = validBoundsOrFallback(bounds);

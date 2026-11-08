@@ -126,6 +126,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void releaseTargetImage();
     // Independent image editors show results directly, without image overlays or companion windows.
     void setIndependentEditing(bool enabled);
+    // Pinned documents retain completed translated text independently of global preferences.
+    void setRetainCompletedTranslations(bool enabled);
     [[nodiscard]] QHash<QString, QByteArray> contentCheckpoints() const;
     [[nodiscard]] QString activeContentKey() const;
     // Updates an existing formatted target's appearance without resetting session state.
@@ -292,6 +294,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
         bool jobInImage = false;
         QString translationText;
         QString successfulTranslation;
+        QByteArray translationSourceFingerprint;
         TranslationStatus translationStatus = TranslationStatus::Absent;
         bool hasSuccessfulTranslation = false;
 #endif
@@ -366,6 +369,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void handleTextDocumentChanged(const QString& key);
     void handleTranslationDocumentChanged(const QString& key);
     void prepareIndependentTranslation(TextCacheEntry& entry, const QString& key);
+    [[nodiscard]] bool retainsTranslationDocument(const TextCacheEntry& entry) const;
+    bool replaceTranslationForLocalSettings();
     void startTranslation();
     void prepareOverlayTranslation(TextCacheEntry& entry);
     void reportOverlayTranslationFailure();
@@ -514,6 +519,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     bool m_active = false;
     bool m_showOriginalImage = false;
     bool m_independentEditing = false;
+    bool m_retainCompletedTranslations = false;
     // "Shown" tracks the visible download prompt; "in progress" tracks that
     // asset acquisition is still pending for the in-flight text request, even
     // while only cache verification or helper start-up is running.

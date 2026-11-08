@@ -2,8 +2,10 @@
 // Included after the pinned-window fixtures.
 #include "../src/presentation/pinned/screenshotpinnedcropgeometry.h"
 #include "../src/presentation/pinned/screenshotpinnedgeometrymapping.h"
+#include "../src/presentation/pinned/screenshotpinnedcroppreparation.h"
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
-#include <QThreadPool>
+#include <QSemaphore>
+#include <atomic>
 
 namespace pinned_crop_tests {
 using Access = ScreenshotPinnedWindowTestAccess;
@@ -695,6 +697,298 @@ void staleApplyAndRestore() {
     }
 }
 
+struct PreparationGate {
+    QSemaphore entered;
+    QSemaphore release;
+    void wait(int stage, int target) {
+        if (stage != target)
+            return;
+        entered.release();
+        release.acquire();
+    }
+};
+
+void cropPreparationAdmissionAndCancellation() {
+    ScreenshotExportCoordinator coordinator(500, 1);
+    ScreenshotPinnedWindow first;
+    ScreenshotPinnedWindow second;
+    Access::prepareReplacement(first, config());
+    Access::prepareReplacement(second, config());
+    Access::setCropCoordinator(first, &coordinator);
+    Access::setCropCoordinator(second, &coordinator);
+    require(Access::crop(first, {110, 210, 30, 20}) && Access::crop(second, {110, 210, 30, 20}),
+            "competing crop fixtures have selected viewports");
+    const auto original = Access::originalImage(first);
+    const auto gate = std::make_shared<PreparationGate>();
+    std::atomic_int secondExecutions{0};
+    Access::setCropPreparationStage(first,
+                                    [gate](int stage, const auto&) { gate->wait(stage, 0); });
+    Access::setCropPreparationStage(second, [&](int stage, const auto&) {
+        if (stage == 0)
+            ++secondExecutions;
+    });
+    Access::startApplyCrop(first);
+    translation_tests::waitUntil([&] { return gate->entered.available() == 1; },
+                                 "first crop enters admitted worker");
+    const qint64 reservation = coordinator.activeWorkingBytes();
+    Access::startApplyCrop(second);
+    require(reservation > 1 && coordinator.activeWorkingBytes() == reservation &&
+                secondExecutions == 0,
+            "an oversized crop runs alone while another pin waits without preparing pixels");
+    Access::cancelCrop(second);
+    Access::cancelCrop(first);
+    require(!Access::cropApplying(first) && !Access::cropApplying(second) &&
+                coordinator.activeWorkingBytes() == reservation &&
+                Access::originalImage(first) == original && first.persistenceSnapshot().cropRect,
+            "canceling an active crop retains its reservation and leaves original content usable");
+    gate->release.release();
+    translation_tests::waitUntil(
+        [&] { return coordinator.activeWorkingBytes() == 0 && coordinator.pendingJobCount() == 0; },
+        "canceled crop reservations retire after worker unwind");
+    require(secondExecutions == 0 && Access::originalImage(second) == original,
+            "queued crop cancellation never runs preparation or changes content");
+
+    Access::setCropPreparationStage(first, {});
+    Access::applyCrop(first);
+    require(!first.persistenceSnapshot().cropRect &&
+                Access::originalImage(first).size() == QSize(30, 20),
+            "a canceled crop can be retried through the same admitted executor");
+    coordinator.shutdown();
+    Access::startApplyCrop(second);
+    require(
+        !Access::cropApplying(second) && second.persistenceSnapshot().cropRect &&
+            Access::originalImage(second) == original,
+        "rejected coordinator submission leaves both original pixels and crop selection intact");
+}
+
+void cropPreparationStopsAtEveryCheckpoint() {
+    namespace preparation = screenshot_pinned_crop_preparation;
+    QImage image(12, 10, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::red);
+    ScreenshotResultStyle style;
+    style.cornerRadius = 2;
+    style.shadowWidth = 2;
+    const auto styled =
+        preparation::makePlan(image, {}, {}, style, QRectF(0, 0, 12, 10), QRect(0, 0, 6, 8), true);
+    require(styled && styled->workingBytes > image.sizeInBytes(),
+            "baked crop admission covers full composition and scratch beyond its source raster");
+    const auto animation = snow_shot::image_codec::decodeAnimationSource(
+        pinned_animation_fixtures::images().back().bytes);
+    require(animation && animation->isAnimated(), "checkpoint animation fixture decodes");
+    const auto animated = preparation::makePlan(animation->firstFrame, animation, {}, {},
+                                                QRectF(QPointF(), animation->canvasSize),
+                                                QRect(QPoint(), animation->canvasSize), false);
+    require(animated.has_value(), "animation crop has a checked preview-copy preparation plan");
+    require(!preparation::makePlan(image, {}, QTransform().scale(1e100, 1e100), {},
+                                   QRectF(0, 0, 12, 10), QRect(0, 0, 6, 8), false),
+            "unrepresentable crop transformations are rejected before any raster work");
+    for (int checkpoint = 0; checkpoint <= 7; ++checkpoint) {
+        ScreenshotExportCoordinator coordinator(500, 1);
+        const auto& plan = checkpoint == 6 ? *animated : *styled;
+        const auto gate = std::make_shared<PreparationGate>();
+        preparation::Prepared output;
+        bool done = false;
+        const auto job = coordinator.submit(
+            qApp, ScreenshotExportCoordinator::Priority::Foreground,
+            [&, gate](const ScreenshotExportCancellation& token) {
+                output =
+                    preparation::prepare(plan, token, [gate, checkpoint](int stage, const auto&) {
+                        gate->wait(stage, checkpoint);
+                    });
+                return ScreenshotExportTaskResult{};
+            },
+            [&](const auto&) { done = true; }, plan.workingBytes);
+        require(job.isValid(), "checkpoint fixture enters the export coordinator");
+        translation_tests::waitUntil([&] { return gate->entered.available() == 1; },
+                                     "crop preparation reaches the held stage");
+        job.cancel();
+        require(coordinator.activeWorkingBytes() == plan.workingBytes,
+                "stop requests retain accounting until the actual preparation retires");
+        gate->release.release();
+        translation_tests::waitUntil([&] { return done; }, "checkpoint cancellation unwinds");
+        require(output.original.isNull() && output.transformed.isNull() && !output.animation &&
+                    coordinator.activeWorkingBytes() == 0,
+                "cancellation between stages releases partial output and its reservation");
+    }
+}
+
+void cropPreparationSurvivesOwnerDestruction() {
+    ScreenshotExportCoordinator coordinator(500, 1);
+    const auto gate = std::make_shared<PreparationGate>();
+    auto window = std::make_unique<ScreenshotPinnedWindow>();
+    Access::prepareReplacement(*window, config());
+    Access::setCropCoordinator(*window, &coordinator);
+    Access::setCropPreparationStage(*window,
+                                    [gate](int stage, const auto&) { gate->wait(stage, 3); });
+    require(Access::crop(*window, {110, 210, 30, 20}), "destruction fixture selects a crop");
+    Access::startApplyCrop(*window);
+    translation_tests::waitUntil([&] { return gate->entered.available() == 1; },
+                                 "crop worker holds owned inputs before transformation");
+    const auto reserved = coordinator.activeWorkingBytes();
+    window.reset();
+    require(coordinator.activeWorkingBytes() == reserved && reserved > 0,
+            "destroying the host cannot release a running crop's working reservation");
+    gate->release.release();
+    translation_tests::waitUntil(
+        [&] { return coordinator.activeWorkingBytes() == 0 && coordinator.pendingJobCount() == 0; },
+        "destroyed crop owner releases worker state without a late UI callback");
+}
+
+void cropGeometryRejectionPreservesContent() {
+    ScreenshotExportCoordinator coordinator(500, 1);
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config());
+    require(Access::crop(window, {110.25, 210.25, 30.5, 20.5}),
+            "geometry rejection fixture keeps fractional crop bounds");
+    const auto original = Access::originalImage(window);
+    const auto crop = window.persistenceSnapshot().cropRect;
+    const auto geometry = LiveAccess::contentGeometry(window);
+    auto* platform = Access::installFailingPlatform(window);
+    const auto gate = std::make_shared<PreparationGate>();
+    Access::setCropCoordinator(window, &coordinator);
+    Access::setCropPreparationStage(window,
+                                    [gate](int stage, const auto&) { gate->wait(stage, 7); });
+    Access::startApplyCrop(window);
+    translation_tests::waitUntil([&] { return gate->entered.available() == 1; },
+                                 "geometry rejection fixture holds prepared pixels");
+    platform->failNextGeometry = true;
+    gate->release.release();
+    translation_tests::waitUntil([&] { return !Access::cropApplying(window); },
+                                 "native geometry rejection retires the crop operation");
+    require(!platform->failNextGeometry && Access::originalImage(window) == original &&
+                window.persistenceSnapshot().cropRect == crop &&
+                LiveAccess::contentGeometry(window) == geometry,
+            "failed native crop geometry preserves the prior source, selection and window bounds");
+}
+
+void animatedCropDefersStepsAndRejectsLostHold() {
+    const auto animation = snow_shot::image_codec::decodeAnimationSource(
+        pinned_animation_fixtures::images().back().bytes);
+    require(animation && animation->isAnimated(), "held animated crop fixture decodes");
+    for (int scenario = 0; scenario < 3; ++scenario) {
+        const bool reject = scenario == 1;
+        ScreenshotExportCoordinator coordinator(500, 1);
+        ScreenshotPinnedWindow window;
+        auto setup = config();
+        setup.canvasSourceRect = QRectF(0, 0, 40, 40);
+        setup.initialWindowSize = QSize(40, 40);
+        setup.nativeGeometry = QRect(100, 100, 40, 40);
+        setup.imageSource =
+            ScreenshotImageSource::fromImage(animation->firstFrame, setup.canvasSourceRect);
+        setup.animationSource = animation;
+        setup.enableEditing = false;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        require(window.present(setup), "present held crop fixture");
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        translation_tests::waitUntil(
+            [&] {
+                static_cast<void>(renderWidget(*canvas));
+                return Access::shakeContentReady(window);
+            },
+            "held crop paints initial frame");
+        auto& playback = Access::playback(window);
+        playback.pause();
+        require(Access::crop(window, {0, 0, 20, 40}), "held animation selects its left half");
+        const auto original = Access::originalImage(window);
+        const auto geometry = LiveAccess::contentGeometry(window);
+        const auto crop = window.persistenceSnapshot().cropRect;
+        const auto frame = playback.frameIndex();
+        if (scenario == 2) {
+            static_cast<void>(Access::contextMenu(window));
+            auto* action = Access::applyCropAction(window);
+            require(action && action->isEnabled(), "acquisition fixture exposes enabled Apply");
+            bool canceled = false;
+            QObject::connect(action, &QAction::changed, &window, [&] {
+                if (!canceled && Access::cropApplying(window)) {
+                    canceled = true;
+                    Access::cancelCrop(window, true);
+                }
+            });
+            Access::startApplyCrop(window);
+            require(canceled && !Access::cropApplying(window),
+                    "a synchronous presentation callback supersedes crop during hold acquisition");
+            playback.nextFrame();
+            translation_tests::waitUntil(
+                [&] {
+                    static_cast<void>(renderWidget(*canvas));
+                    return playback.frameIndex() != frame;
+                },
+                "aborted acquisition releases its unregistered local playback hold");
+            require(Access::originalImage(window).size() == original.size() &&
+                        window.persistenceSnapshot().cropRect == crop,
+                    "superseded crop leaves the original animation usable with its selection");
+            window.hide();
+            continue;
+        }
+        const auto gate = std::make_shared<PreparationGate>();
+        Access::setCropCoordinator(window, &coordinator);
+        Access::setCropPreparationStage(window,
+                                        [gate](int stage, const auto&) { gate->wait(stage, 7); });
+        Access::startApplyCrop(window);
+        translation_tests::waitUntil([&] { return gate->entered.available() == 1; },
+                                     "animated crop holds completed preparation");
+        if (reject) {
+            playback.cancelTransformPreparation();
+        } else {
+            Access::animationCommand(window, QStringLiteral("next_frame"));
+            static_cast<void>(renderWidget(*canvas));
+            require(playback.frameIndex() == frame && Access::originalImage(window) == original,
+                    "manual stepping cannot paint another frame while crop pixels are prepared");
+        }
+        gate->release.release();
+        translation_tests::waitUntil([&] { return !Access::cropApplying(window); },
+                                     "held crop adoption completes");
+        if (reject) {
+            require(
+                Access::originalImage(window) == original &&
+                    window.persistenceSnapshot().cropRect == crop &&
+                    LiveAccess::contentGeometry(window) == geometry,
+                "lost playback admission rejects crop without partial host or geometry mutation");
+        } else {
+            translation_tests::waitUntil(
+                [&] {
+                    static_cast<void>(renderWidget(*canvas));
+                    return playback.frameIndex() != frame;
+                },
+                "cropped frame paints before the deferred manual step runs");
+            require(!window.persistenceSnapshot().cropRect &&
+                        Access::originalImage(window).size() == QSize(1, 2) &&
+                        !playback.requestedPlaying(),
+                    "deferred stepping uses the cropped source and preserves pause intent");
+        }
+        window.hide();
+    }
+}
+
+void liveConversionSupersedesCropPreparation() {
+    ScreenshotExportCoordinator coordinator(500, 1);
+    auto source = std::make_shared<live_pinned_tests::FakeSource>();
+    ScreenshotPinnedWindow window;
+    live_pinned_tests::present(window, live_pinned_tests::config(source));
+    require(Access::crop(window, {20, 10, 60, 40}), "live supersession fixture selects crop");
+    const auto gate = std::make_shared<PreparationGate>();
+    Access::setCropCoordinator(window, &coordinator);
+    Access::setCropPreparationStage(window,
+                                    [gate](int stage, const auto&) { gate->wait(stage, 3); });
+    Access::startApplyCrop(window);
+    translation_tests::waitUntil([&] { return gate->entered.available() == 1; },
+                                 "live crop holds owned preparation before conversion");
+    LiveAccess::convert(window);
+    translation_tests::waitUntil([&] { return !window.isLiveWindow(); },
+                                 "live snapshot converts while the earlier crop worker is held");
+    const auto converted = Access::originalImage(window);
+    require(!Access::cropApplying(window) && !converted.isNull(),
+            "live conversion immediately supersedes pending crop UI state");
+    gate->release.release();
+    translation_tests::waitUntil(
+        [&] { return coordinator.activeWorkingBytes() == 0 && coordinator.pendingJobCount() == 0; },
+        "superseded live crop releases its preparation reservation");
+    require(!window.isLiveWindow() && Access::originalImage(window) == converted &&
+                !window.persistenceSnapshot().cropRect,
+            "late crop completion cannot overwrite the converted static source");
+    window.hide();
+}
+
 void liveWindow() {
     auto source = std::make_shared<live_pinned_tests::FakeSource>();
     ScreenshotPinnedWindow window;
@@ -972,33 +1266,31 @@ void liveConversionEndsCropInteraction() {
 }
 
 void liveConversionDiscardsPendingCrop() {
+    ScreenshotExportCoordinator coordinator(500, 1);
     auto source = patternedLiveSource();
     ScreenshotPinnedWindow window;
     live_pinned_tests::present(window, live_pinned_tests::config(source));
     require(Access::crop(window, {20, 10, 60, 40}), "pending apply conversion fixture");
     const QImage expected = exportImage(window, LiveAccess::artifact(window, false));
-    auto* pool = QThreadPool::globalInstance();
-    const int workers = pool->maxThreadCount();
-    pool->setMaxThreadCount(1);
-    const auto started = std::make_shared<QSemaphore>();
-    const auto release = std::make_shared<QSemaphore>();
-    const auto restoreWorkers = qScopeGuard([&] {
-        release->release();
-        pool->setMaxThreadCount(workers);
-    });
-    pool->start([started, release] {
-        started->release();
-        release->acquire();
-    });
-    require(started->tryAcquire(1, 5000), "hold crop preparation until after conversion");
+    const auto gate = std::make_shared<PreparationGate>();
+    const auto releaseWorker = qScopeGuard([gate] { gate->release.release(); });
+    Access::setCropCoordinator(window, &coordinator);
+    Access::setCropPreparationStage(window,
+                                    [gate](int stage, const auto&) { gate->wait(stage, 3); });
     Access::startApplyCrop(window);
+    translation_tests::waitUntil([&] { return gate->entered.available() == 1; },
+                                 "hold admitted crop preparation until after conversion");
     require(Access::cropApplying(window), "crop preparation remains pending");
     LiveAccess::convert(window);
     translation_tests::waitUntil([&] { return !window.isLiveWindow(); },
                                  "conversion installs its independently prepared snapshot");
-    release->release();
-    translation_tests::waitUntil([&] { return !Access::cropApplying(window); },
-                                 "obsolete crop preparation retires");
+    gate->release.release();
+    translation_tests::waitUntil(
+        [&] {
+            return !Access::cropApplying(window) && coordinator.activeWorkingBytes() == 0 &&
+                   coordinator.pendingJobCount() == 0;
+        },
+        "obsolete crop preparation retires");
     require(!window.persistenceSnapshot().cropRect && Access::originalImage(window) == expected &&
                 exportImage(window, Access::cropSave(window)) == expected,
             "pending crop work cannot overwrite the converted source");
@@ -1190,6 +1482,7 @@ void nativeInput() {
 void livePinnedCropTests() {
     pinned_crop_tests::liveWindow();
     pinned_crop_tests::liveCropPaintsTransforms();
+    pinned_crop_tests::liveConversionSupersedesCropPreparation();
 }
 
 void pinnedCropTests() {
@@ -1203,6 +1496,11 @@ void pinnedCropTests() {
     pinned_crop_tests::inlineAnnotations();
     pinned_crop_tests::textAndRecognition();
     pinned_crop_tests::staleApplyAndRestore();
+    pinned_crop_tests::cropPreparationAdmissionAndCancellation();
+    pinned_crop_tests::cropPreparationStopsAtEveryCheckpoint();
+    pinned_crop_tests::cropPreparationSurvivesOwnerDestruction();
+    pinned_crop_tests::cropGeometryRejectionPreservesContent();
+    pinned_crop_tests::animatedCropDefersStepsAndRejectsLostHold();
     pinned_crop_tests::styledAndTransformedApply();
     pinned_crop_tests::animations();
     livePinnedCropTests();

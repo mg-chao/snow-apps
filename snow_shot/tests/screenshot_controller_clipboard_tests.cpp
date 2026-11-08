@@ -50,6 +50,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
+#include <QUuid>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -1247,6 +1248,64 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
             controller.pinFilesToScreen({}, [&] { ++completed; });
             require(completed == 3, "empty launches also finish");
             closePins();
+        }
+        for (const auto& action :
+             {QStringLiteral("none"), QStringLiteral("shake_window"),
+              QStringLiteral("restore_last_closed_window"), QStringLiteral("repeat_action")}) {
+            auto& repository = storage.pinnedWindows();
+            QVector<QString> obsolete;
+            for (const auto& record : repository.summaries())
+                obsolete.append(record.id);
+            require(repository.removeMany(obsolete).success && repository.flush().success &&
+                        settings.setDuplicateContentAction(action),
+                    "isolate a persisted-visible startup duplicate policy");
+            snow_shot::storage::PinnedWindowRecord retained;
+            retained.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            retained.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile;
+            retained.originalFilePath = path;
+            retained.sourceIdentity =
+                ScreenshotClipboardContentReader::snapshotLocalFiles({path}).first().sourceIdentity;
+            retained.image = source;
+            retained.canvasSourceRect = retained.contentCanvasRect = retained.surfaceCanvasRect =
+                QRectF(QPointF(), source.size());
+            retained.initialWindowSize = source.size();
+            retained.nativeGeometry = QRect(QPoint(40, 40), source.size());
+            SnowCanvasRuntime annotations;
+            require(
+                !annotations
+                     .applyAnnotationTransaction(
+                         R"({"version":1,"operations":[{"type":"rectangle","bounds":[8,8,24,24]}]})")
+                     .isEmpty(),
+                "startup duplicate retains user annotations");
+            retained.canvasSession = annotations.serializeDocumentSession();
+            require(repository.create(retained).success && repository.flush().success,
+                    "seed a visible private pin without a live or restoring shell");
+            {
+                snow_shot::app::ApplicationController controller(application);
+                int maintenance = 0;
+                controller.start(snow_shot::app::shellImageLaunchArguments({path}),
+                                 [&] { ++maintenance; });
+                const int expected = action == QStringLiteral("repeat_action") ? 2 : 1;
+                waitUntil(
+                    [&] {
+                        return maintenance == 1 && visiblePins().size() == expected &&
+                               repository.pendingSummaries().isEmpty();
+                    },
+                    "startup duplicate completes once and restores the selected private record");
+                const auto original = repository.loadRecord(retained.id);
+                SnowCanvasRuntime restoredAnnotations;
+                require(repository.summaries().size() == expected && original &&
+                            restoredAnnotations.restoreDocumentSession(original->canvasSession) &&
+                            restoredAnnotations.documentCheckpoint() ==
+                                annotations.documentCheckpoint() &&
+                            restoredAnnotations.canUndo() &&
+                            original->sourceIdentity == retained.sourceIdentity,
+                        "duplicate policy preserves the original UUID, content and annotations");
+                controller.start({}, [&] { ++maintenance; });
+                QCoreApplication::processEvents();
+                require(maintenance == 1, "duplicate startup completion is exactly once");
+                closePins();
+            }
         }
         return EXIT_SUCCESS;
     }

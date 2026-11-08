@@ -1427,16 +1427,7 @@ class ApplicationController::Impl {
                             originalPixels, record->imageTransform, result.image.size(),
                             selectionBounds);
                     result.images.append({result.image, selectionBounds});
-                    result.selection = ScreenshotSelectionParams{selectionBounds.toAlignedRect(),
-                                                                 style->cornerRadius,
-                                                                 style->shadowWidth,
-                                                                 style->shadowColor,
-                                                                 false,
-                                                                 false,
-                                                                 style->region};
-                    result.selection->borderType = style->borderType;
-                    result.selection->borderWidth = style->borderWidth;
-                    result.selection->borderColor = style->borderColor;
+                    result.selection = pinnedStyleToContentSelection(*style, selectionBounds);
                     result.documentSession = record->canvasSession;
                     if (!livePinTool.isEmpty())
                         result.tool = livePinTool;

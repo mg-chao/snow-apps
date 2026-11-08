@@ -402,6 +402,18 @@ class ScreenshotPinnedWindowTestAccess {
     static bool cropApplying(const ScreenshotPinnedWindow& window) {
         return window.m_cropApplying;
     }
+    static void setCropCoordinator(ScreenshotPinnedWindow& window,
+                                   ScreenshotExportCoordinator* coordinator) {
+        window.m_cropCoordinator = coordinator;
+    }
+    static void
+    setCropPreparationStage(ScreenshotPinnedWindow& window,
+                            std::function<void(int, const ScreenshotExportCancellation&)> stage) {
+        window.m_cropPreparationStage = std::move(stage);
+    }
+    static void cancelCrop(ScreenshotPinnedWindow& window, bool discard = false) {
+        window.cancelCropPreparation(discard);
+    }
     static void cropActive(ScreenshotPinnedWindow& window, bool active) {
         window.m_windowActive = active;
         window.applyRuntimeBorderColor();
@@ -1158,9 +1170,32 @@ class ScreenshotPinnedWindowTestAccess {
         window.handleTextTranslationRequested();
     }
     static void finishInitialTextDisplay(ScreenshotPinnedWindow& window, bool visible) {
-        window.m_initialRecognitionVisible = visible;
+        window.clearRecognitionIntent();
+        if (visible) {
+            window.m_recognitionIntent.mode =
+                static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text);
+            window.m_recognitionIntent.pending = true;
+            window.m_recognitionIntent.requiresCachedText = true;
+        }
         window.m_firstContentFramePublished = true;
         window.finishDeferredPresentationSetup(window.m_presentationGeneration);
+    }
+    static void activateRecognition(ScreenshotPinnedWindow& window,
+                                    ScreenshotRecognitionSessionController::Mode mode) {
+        window.activateRecognitionMode(static_cast<int>(mode), false);
+    }
+    static void deactivateRecognition(ScreenshotPinnedWindow& window) {
+        window.deactivateRecognition();
+    }
+    static bool recognitionDesired(const ScreenshotPinnedWindow& window) {
+        return window.m_recognitionIntent.mode.has_value();
+    }
+    static void invalidateReplacement(ScreenshotPinnedWindow& window) {
+        window.cancelContentReplacement();
+    }
+    static void requestMaterialized(ScreenshotPinnedWindow& window,
+                                    std::function<void(bool)> ready) {
+        window.requestMaterializedImage(std::move(ready));
     }
     static void selectHiddenText(ScreenshotPinnedWindow& window) {
         window.m_displayOcrPresentation->selectAll();
@@ -1266,11 +1301,40 @@ class ScreenshotPinnedWindowTestAccess {
     static bool printPending(const ScreenshotPinnedWindow& window) {
         return window.m_printPending;
     }
+    static void nativeSceneCaptured(ScreenshotPinnedWindow& window, std::function<void()> hook) {
+        window.m_nativeSceneCaptured = std::move(hook);
+    }
+    static bool seedNativeTextMarks(ScreenshotPinnedWindow& window) {
+        window.synchronizeTextAnnotations(true);
+        const bool changed = window.m_textAnnotations.toggle(
+            {{0, 0, 4}}, ScreenshotTextAnnotationTool::Highlight, {});
+        window.synchronizeTextAnnotations();
+        return changed;
+    }
+    static void clearNativeTextMarks(ScreenshotPinnedWindow& window) {
+        window.clearTextAnnotations();
+    }
+    static void visibleSnapshot(ScreenshotPinnedWindow& window,
+                                std::function<void(ScreenshotExportImageResult)> ready) {
+        window.requestVisibleContentSnapshot(std::move(ready));
+    }
     static void replaceDuringPrint(ScreenshotPinnedWindow& window) {
         ++window.m_contentReplacementGeneration;
     }
     static std::shared_ptr<ScreenshotExportArtifact> printArtifact(ScreenshotPinnedWindow& window) {
         return window.viewportArtifact();
+    }
+    static std::shared_ptr<ScreenshotExportArtifact>
+    printBackgroundArtifact(ScreenshotPinnedWindow& window) {
+        return window.viewportArtifact(
+            ScreenshotPinnedWindow::ViewportExportMode::RecognitionBackground);
+    }
+    static QImage nativeReferenceSnapshot(ScreenshotPinnedWindow& window, QImage background) {
+        return window.m_recognitionContent->printViewportSnapshot(
+            std::move(background), window.visibleCanvasRect(),
+            window.m_screenshotRenderer->ocrFilteredImage(),
+            window.m_screenshotRenderer->ocrFilteredCanvasRect(), window.m_opacityPercent / 100.0,
+            {}, window.textAnnotationSnapshot());
     }
     static void quickSave(ScreenshotPinnedWindow& window) {
         window.quickSave();
@@ -3908,6 +3972,77 @@ void pinnedRecognitionShortcutTogglesResults() {
                     (offscreen || window->persistenceSnapshot().recognitionVisible == visible),
                 "each recognition shortcut press must toggle result visibility");
     }
+    ScreenshotPinnedWindowTestAccess::toggleTextResults(*window);
+    auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+    require(session && session->active(), "recognition activates before showing the original");
+    session->setShowOriginalImage(true);
+    require(!window->persistenceSnapshot().recognitionVisible,
+            "original-image mode persists the hidden recognition surface");
+    session->setShowOriginalImage(false);
+    require(window->persistenceSnapshot().recognitionVisible,
+            "returning to recognition persists its desired visible surface");
+    session->beginTextEditing();
+    require(session->editing() && window->persistenceSnapshot().recognitionVisible,
+            "the visible editor has independent persisted visibility");
+    ScreenshotPinnedWindowTestAccess::invalidateReplacement(*window);
+    require(session->active() && session->editing() &&
+                window->persistenceSnapshot().recognitionVisible,
+            "an unadopted replacement retains the existing editor visibility");
+}
+
+void pinnedRecognitionIntentSurvivesDeferredMaterialization() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    for (const int scenario : {0, 1, 2, 3, 4, 5}) {
+        IdleOcrRecognition recognition;
+        auto config = cachedOcrPinConfig(&recognition);
+        config.automaticTextRecognition = false;
+        config.recognitionResults.text.reset();
+        SnowShotTableResult table;
+        table.html = QStringLiteral("<table><tr><td>Saved table</td></tr></table>");
+        config.recognitionResults.table = table;
+        ScreenshotImageLoadCallback deliver;
+        config.imageLoader = [&](QObject*, ScreenshotImageLoadCallback ready) {
+            deliver = std::move(ready);
+        };
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        require(window.present(config), "present a pin with held image materialization");
+        Access::toggleTextResults(window);
+        require(Access::recognitionDesired(window) && recognition.requests == 0,
+                "a pending toggle records visibility without starting recognition");
+        if (scenario == 0)
+            Access::toggleTextResults(window);
+        else if (scenario == 2)
+            Access::activateRecognition(window, Mode::Table);
+        else if (scenario == 3)
+            Access::deactivateRecognition(window);
+        else if (scenario == 4)
+            Access::invalidateReplacement(window);
+        bool unrelatedCompleted = false;
+        Access::requestMaterialized(window, [&](bool success) { unrelatedCompleted = success; });
+        require(static_cast<bool>(deliver), "materialization consumers share the held loader");
+        if (scenario == 5)
+            window.close();
+        deliver(config.imageSource.materializedImage);
+        QCoreApplication::processEvents();
+        auto* session = window.findChild<ScreenshotRecognitionSessionController*>();
+        if (scenario == 1) {
+            require(session && session->active() && session->mode() == Mode::Text &&
+                        recognition.requests == 1,
+                    "one pending toggle activates recognition exactly once");
+        } else if (scenario == 2) {
+            require(session && session->active() && session->mode() == Mode::Table &&
+                        recognition.requests == 0,
+                    "a superseding mode owns activation after materialization");
+        } else {
+            require((!session || !session->active()) && recognition.requests == 0 &&
+                        !Access::recognitionDesired(window),
+                    "withdrawn or obsolete recognition intent cannot reactivate");
+        }
+        require(scenario == 5 || unrelatedCompleted,
+                "withdrawing recognition leaves unrelated materialization consumers intact");
+    }
 }
 
 void pinnedTranslationSettingsSuspendWindowShortcuts() {
@@ -6394,6 +6529,9 @@ void pinnedHideClosesOnlyAfterPersistenceSucceeds() {
     const auto restoreConfirmation = qScopeGuard(
         [&] { static_cast<void>(settings.setConfirmBeforeClosingWindow(previousConfirmation)); });
     require(settings.setConfirmBeforeClosingWindow(true), "enable close confirmation for Hide");
+    QTemporaryDir directory;
+    require(directory.isValid(), "Hide fixture has isolated storage");
+    storage::PinnedWindowRepository repository(directory.path());
 
     ScreenshotPinnedWindow window;
     window.setAttribute(Qt::WA_DeleteOnClose, false);
@@ -6419,8 +6557,14 @@ void pinnedHideClosesOnlyAfterPersistenceSucceeds() {
         ++hides;
         require(snapshot.hidden && !snapshot.ignored && window.isVisible(),
                 "Hide must persist its separate lifecycle state before closing");
-        if (accept)
+        require(snapshot.canvasSession.contains("Pending Hide text") && !window.requestHide(),
+                "terminal capture commits inline text and rejects a reentrant Hide");
+        if (accept) {
             persisted = snapshot;
+            require(repository.upsert(snapshot).success &&
+                        repository.setRecordsHidden({snapshot.id}, true).success,
+                    "persist accepted Hide record");
+        }
         return accept;
     };
     QObject::connect(&window, &ScreenshotPinnedWindow::closingForPersistence,
@@ -6433,12 +6577,34 @@ void pinnedHideClosesOnlyAfterPersistenceSucceeds() {
                      });
     require(window.present(config), "present Hide persistence fixture");
     waitForUi(50);
-    const auto before = window.persistenceSnapshot();
     QPointer<SnowCanvasWidget> canvas(window.findChild<SnowCanvasWidget*>());
     require(canvas, "Hide fixture has a live canvas");
+    ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(window, true);
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    require(
+        controller && controller->toolbarWindow() &&
+            controller->toolbarWindow()->palette()->activateDrawingShortcut(QStringLiteral("text")),
+        "Hide fixture activates inline annotation text");
+    const auto typeDraft = [&](const QString& text, QPointF position) {
+        canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, position,
+                                           Qt::LeftButton, Qt::LeftButton);
+        canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, position,
+                                           Qt::LeftButton, Qt::NoButton);
+        QInputMethodEvent input;
+        input.setCommitString(text);
+        QCoreApplication::sendEvent(canvas, &input);
+        require(canvas->hasActiveTextEditing(), "Hide captures a draft before focus-out");
+    };
+    typeDraft(QStringLiteral("Pending Hide text"), canvas->rect().center());
+    const auto before = window.persistenceSnapshot();
+    require(!before.canvasSession.contains("Pending Hide text"),
+            "the serializer alone does not contain the active inline draft");
     require(!window.automationAction(QStringLiteral("hide")) && window.isVisible() &&
-                window.sourcePinAvailable() && canvas && closeSignals == 0,
+                window.sourcePinAvailable() && canvas && closeSignals == 0 &&
+                controller->editMode() && canvas->canvasTool() == SnowCanvasTool::Text &&
+                window.persistenceSnapshot().canvasSession.contains("Pending Hide text"),
             "a rejected hidden-state save must keep the window usable");
+    typeDraft(QStringLiteral("After rejected Hide"), canvas->rect().center() + QPointF(0, 25));
     accept = true;
     const int writesBeforeHide = ordinaryWrites;
     require(window.automationAction(QStringLiteral("hide")), "Hide accepts saved state");
@@ -6453,13 +6619,31 @@ void pinnedHideClosesOnlyAfterPersistenceSucceeds() {
         require(snapshot->hidden && !snapshot->ignored &&
                     snapshot->nativeGeometry == before.nativeGeometry &&
                     snapshot->placement == before.placement &&
-                    snapshot->canvasSession == before.canvasSession &&
+                    snapshot->canvasSession.contains("Pending Hide text") &&
+                    snapshot->canvasSession.contains("After rejected Hide") &&
                     snapshot->recognitionResults == before.recognitionResults,
                 "Hide preserves the final geometry, document and recognition snapshot");
     }
+    require(repository.flush().success, "flush hidden inline content to disk");
+    storage::PinnedWindowRepository reopened(directory.path());
+    const auto reloaded = reopened.loadRecord(config.persistenceId);
+    require(reloaded && reloaded->canvasSession == persisted->canvasSession && reloaded->hidden,
+            "a recreated repository restores both finalized inline drafts");
     window.showFromManagement();
     require(!window.isVisible() && !window.requestHide() && hides == 2,
             "a closed hidden shell cannot reopen or persist Hide again");
+}
+
+void pinnedHideHandlesDeletingPersistenceCallback() {
+    QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow());
+    auto config = cachedOcrPinConfig(nullptr);
+    config.persistenceHider = [&](const auto&) {
+        delete window.data();
+        return true;
+    };
+    require(window->present(config), "present a deleting Hide persistence callback");
+    require(!window->requestHide() && !window,
+            "Hide tolerates synchronous owner destruction during persistence acceptance");
 }
 
 void pinnedVisibilityActionsUseServicePorts() {
@@ -21938,6 +22122,7 @@ void duplicatePinActions() {
     service.restorePersistedWindows();
     wait([&] { return service.findDuplicatePin(identity) != nullptr; },
          "restored pins recover source identity");
+    const auto retainedRecordCount = repository.summaries().size();
     require(service.restoreRecord(unrelatedId), "queue restoration without a live window");
     bool reservedRestore = false;
     require(!service.findDuplicatePin(unrelatedIdentity) &&
@@ -21952,6 +22137,9 @@ void duplicatePinActions() {
                                          QStringLiteral("screenshotPinnedShakeAnimation"));
         },
         "duplicate request during disk load shakes the restored window");
+    require(repository.summaries().size() == retainedRecordCount &&
+                service.findDuplicatePin(unrelatedIdentity)->persistenceId() == unrelatedId,
+            "duplicate attention joins the requested restore without another record or UUID");
     service.findDuplicatePin(unrelatedIdentity)
         ->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"))
         ->setCurrentTime(300);
@@ -23130,6 +23318,70 @@ void pinnedAirDropRecognitionSnapshot() {
                 "flattening");
         require(window.isVisible() && (!editor || editor->verticalScrollBar()->value() == scroll),
                 "sharing recognized content preserves pin visibility and table scroll");
+    }
+}
+
+void pinnedNativeSnapshotsFreezeTheCompleteScene() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    for (const bool formatted : {false, true}) {
+        auto config = cachedOcrPinConfig(nullptr);
+        if (formatted) {
+            config.recognitionResults = {};
+            config.formattedTextDocument = std::make_shared<QTextDocument>();
+            config.formattedTextDocument->setHtml(
+                QStringLiteral("<p style='color:red'>Original native scene</p>").repeated(30));
+            config.formattedPlainText = config.formattedTextDocument->toPlainText();
+        }
+        ScreenshotPinnedWindow window;
+        auto* session = Access::hiddenSelectionOffscreen(window, config);
+        session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+        auto* content = window.findChild<ScreenshotRecognitionWindow*>(
+            QStringLiteral("screenshotPinnedRecognitionContent"));
+        require(content, "native scene fixture owns a recognition surface");
+        Access::setGeneralOpacity(window, 75);
+        require(Access::seedNativeTextMarks(window), "seed a native snapshot text highlight");
+        const auto capture = [&] {
+            std::optional<ScreenshotExportImageResult> result;
+            Access::visibleSnapshot(window, [&](auto image) { result = std::move(image); });
+            translation_tests::waitUntil([&] { return result.has_value(); },
+                                         "complete the frozen native viewport");
+            require(result->succeeded(), "native viewport snapshot succeeds");
+            return result->image;
+        };
+        const QImage original = capture();
+        auto backgroundArtifact = Access::printBackgroundArtifact(window);
+        std::optional<ScreenshotExportImageResult> background;
+        require(backgroundArtifact &&
+                    backgroundArtifact->requestImage(
+                        &window, [&](auto image) { background = std::move(image); }),
+                "prepare the synchronous native viewport reference");
+        translation_tests::waitUntil([&] { return background.has_value(); },
+                                     "complete the reference native background");
+        require(background->succeeded() &&
+                    original == Access::nativeReferenceSnapshot(window, background->image),
+                "owned scene composition preserves native viewport pixels and fractional DPR");
+        bool changed = false;
+        Access::nativeSceneCaptured(window, [&] {
+            changed = true;
+            Access::nativeSceneCaptured(window, {});
+            Access::setGeneralOpacity(window, 35);
+            Access::clearNativeTextMarks(window);
+            if (formatted) {
+                config.formattedTextDocument->setHtml(
+                    QStringLiteral("<p style='color:blue'>New streamed scene</p>").repeated(40));
+                for (auto* view : content->findChildren<QGraphicsView*>())
+                    view->verticalScrollBar()->setValue(view->verticalScrollBar()->maximum());
+            } else {
+                content->updateOcrText(0, QStringLiteral("New streamed recognition"), true);
+                QImage filtered(20, 20, QImage::Format_ARGB32_Premultiplied);
+                filtered.fill(Qt::green);
+                Access::renderer(window).setOcrFilteredImage(filtered, config.canvasSourceRect);
+            }
+        });
+        const QImage frozen = capture();
+        require(changed && frozen == original,
+                "native completion uses one captured text/filter/marks/opacity/viewport scene");
+        require(capture() != original, "subsequent exports observe the new complete scene");
     }
 }
 
@@ -27901,6 +28153,7 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "screenshot_pinned_menu_lifetime_tests.h"
 #include "pinned_export_snapshot_tests.h"
 #include "pinned_copy_ordering_tests.h"
+#include "pinned_duplicate_lifecycle_tests.h"
 #ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
 #include "screenshot_pinned_crop_performance_benchmark.h"
 #endif
@@ -28266,6 +28519,14 @@ int main(int argc, char* argv[]) {
             pinnedAirDropAnimationSnapshot();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--native-scene-only"))) {
+            const int font = QFontDatabase::addApplicationFont(
+                QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
+            require(font >= 0, "native scene fixtures load their bundled font");
+            QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
+            pinnedNativeSnapshotsFreezeTheCompleteScene();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--print-only"))) {
             print_tests::LogSession logs;
             const int font = QFontDatabase::addApplicationFont(
@@ -28277,6 +28538,7 @@ int main(int argc, char* argv[]) {
             pinnedPrintingWithoutToolbarAndDelayedCompletion(false);
             pinnedPrintingWithoutToolbarAndDelayedCompletion(true);
             pinnedPrintMatchesTransformedViewport();
+            pinnedNativeSnapshotsFreezeTheCompleteScene();
             recognitionPrintPreservesScrollAndExcludesSelection();
             bool requested = false;
             bool failed = false;
@@ -28485,6 +28747,7 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--duplicate-pin-only"))) {
             duplicatePinActions();
+            persistedDuplicateLifecycleActions();
             ScreenshotExportCoordinator::shared().shutdown();
             return 0;
         }
@@ -28958,6 +29221,7 @@ int main(int argc, char* argv[]) {
             pinnedDrawingToolsRemainUsableAfterRecognition();
             pinnedEditingRecognitionShortcutsUsePaletteCommands();
             pinnedRecognitionShortcutTogglesResults();
+            pinnedRecognitionIntentSurvivesDeferredMaterialization();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--mouse-recognition-only"))) {
@@ -29009,6 +29273,7 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--hidden-window-lifecycle-only"))) {
             pinnedHideClosesOnlyAfterPersistenceSucceeds();
+            pinnedHideHandlesDeletingPersistenceCallback();
             pinnedVisibilityActionsUseServicePorts();
             pinnedHiddenWindowsPersistAndRestore();
             pinnedHideBeforeFirstSaveKeepsLatestVisibility();
