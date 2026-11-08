@@ -1721,6 +1721,45 @@ void toolbarVisibilityIsIndependentOfInputAndPreparation() {
     }
 }
 
+void explicitToolCommandEnablesOnlyVisibleCaptureToolbar() {
+    using Mode = ScreenshotCaptureWorkflow::StartMode;
+    using Preparation = ScreenshotCaptureWorkflow::ToolbarPreparation;
+    using Visibility = ScreenshotCaptureWorkflow::ToolbarVisibility;
+    using Presentation = ScreenshotCaptureWorkflow::PresentationMode;
+    for (const auto mode : {Mode::Normal, Mode::ExternalDrag}) {
+        for (const auto presentation : {Presentation::Visible, Presentation::Silent}) {
+            ScreenshotCaptureState state;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotInteractionState interaction;
+            ScreenshotSelectionModel selection;
+            ScreenshotIntelligentSelectionModel intelligent;
+            CaptureRuntime runtime;
+            auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                         intelligent, runtime);
+            workflow.startCapture(mode, Preparation::OnDemand, Visibility::Suppressed,
+                                  presentation);
+            const quint64 sessionId = state.sessionId;
+            const int captureRequests = runtime.captureAllAsyncCalls;
+            workflow.enableCaptureToolbar();
+            workflow.enableCaptureToolbar();
+            require(workflow.suppressCaptureToolbar() == (presentation == Presentation::Silent) &&
+                        state.presentationSuppressed == (presentation == Presentation::Silent),
+                    "explicit tools must enable quick capture's toolbar while keeping silent "
+                    "sessions hidden");
+            require(state.sessionId == sessionId &&
+                        runtime.captureAllAsyncCalls == captureRequests &&
+                        runtime.showOverlayCalls == 0 && runtime.prewarmToolbarSurfaceCalls == 0,
+                    "enabling the toolbar must preserve capture and defer presentation until the "
+                    "requested tool is active");
+            workflow.cancelCapture();
+            workflow.startCapture(mode, Preparation::OnDemand, Visibility::Suppressed);
+            require(workflow.suppressCaptureToolbar(),
+                    "an explicit tool override must not change the next quick capture's policy");
+        }
+    }
+}
+
 void normalCaptureRestoresToolbarAfterSuppressedCapture() {
     using Mode = ScreenshotCaptureWorkflow::StartMode;
     for (const auto mode : {Mode::ExternalDrag, Mode::Normal}) {
@@ -2558,6 +2597,7 @@ int main() {
     colorPickerFollowsCaptureSessionLifetime();
     recapturePreservesEditingStateAndRollsBackFailures();
     toolbarVisibilityIsIndependentOfInputAndPreparation();
+    explicitToolCommandEnablesOnlyVisibleCaptureToolbar();
     noToolbarCaptureWaitsForUserSelection();
     normalCaptureRestoresToolbarAfterSuppressedCapture();
     externalDragDisplayChangesInvalidatePendingCapture();

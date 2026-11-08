@@ -2,6 +2,7 @@
 #pragma once
 #include "snow_shot/presentation/imageeditingdocument.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/platform/selectedfiles.h"
 #include <QPointer>
 
 namespace adqt::widgets {
@@ -18,12 +19,16 @@ struct ImageEditingServices {
     PinnedWindowGroupManager* pins = nullptr;
     ScreenshotPrintService* printing = nullptr;
     std::function<bool(QImage, std::function<void(bool)>)> pin = {};
+    std::function<void(QWidget*, std::function<void(QStringList)>)> chooseFiles = {};
 };
 class ImageEditingWindow final : public QObject {
     Q_OBJECT
   public:
     explicit ImageEditingWindow(ImageEditingServices services = {}, QObject* parent = nullptr);
     ~ImageEditingWindow() override;
+    void presentEmpty();
+    void presentFile(QString path);
+    void openFiles(const QStringList& paths);
     void present(ImageEditingSource source);
     void presentSource(ScreenshotExportSource source, QString originalFileName = {});
     void presentHistory(storage::CaptureHistoryRecord record);
@@ -32,6 +37,7 @@ class ImageEditingWindow final : public QObject {
     void confirmDiscard(std::function<void(bool)> completion);
     void shutdown();
     bool dirty() const;
+    bool loading() const;
     QByteArray contentCheckpoint() const;
     ImageEditingDocument* document() const;
     ImageEditingCanvas* canvas() const;
@@ -42,6 +48,7 @@ class ImageEditingWindow final : public QObject {
     void closed();
     void loaded(bool success);
     void exportFinished(bool success);
+    void additionalFilesRequested(const QStringList& paths);
 
   protected:
     bool eventFilter(QObject*, QEvent*) override;
@@ -58,6 +65,9 @@ class ImageEditingWindowCoordinator final : public QObject {
     explicit ImageEditingWindowCoordinator(ImageEditingServices services,
                                            QObject* parent = nullptr);
     ~ImageEditingWindowCoordinator() override;
+    void presentFiles(const QStringList& paths);
+    void presentSelectedFiles(std::shared_ptr<platform::SelectedFileBackend> backend,
+                              platform::SelectedFileTarget target);
     void presentHistory(const storage::CaptureHistoryRecord& record);
     void presentSource(ScreenshotExportSource source);
     void presentPinnedRecord(const QString& id);

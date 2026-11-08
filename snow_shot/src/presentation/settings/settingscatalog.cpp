@@ -331,6 +331,18 @@ SettingsItemDefinition splitSelectedImagesItem() {
         []() { return custom_outlined_icons::ImageSplitting(); });
 }
 
+SettingsItemDefinition editSelectedImagesItem() {
+    return quickActionItem(
+        QStringLiteral("quick.edit-selected-images"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Edit selected images"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Open image editing for each selected image file, or an empty window "
+                          "if no images are selected"),
+        {}, GlobalShortcutAction::EditSelectedImages,
+        QStringLiteral("global_shortcuts/edit_selected_images"),
+        []() { return custom_outlined_icons::ImageEditing(); });
+}
+
 SettingsItemDefinition themeItem() {
     SettingsSelectDefinition payload;
     payload.options = {
@@ -3903,6 +3915,7 @@ constexpr CatalogItemFactory catalogPageGlobalHotkeysSectionOtherItems[] = {
     {globalCanvasItem},
     {stitchSelectedImagesItem},
     {splitSelectedImagesItem},
+    {editSelectedImagesItem},
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {translateSelectedTextItem},
 #endif
@@ -5446,6 +5459,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/stitch_selected_images");
     case GlobalShortcutAction::SplitSelectedImages:
         return QStringLiteral("global_shortcuts/split_selected_images");
+    case GlobalShortcutAction::EditSelectedImages:
+        return QStringLiteral("global_shortcuts/edit_selected_images");
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return QStringLiteral("global_shortcuts/open_pin_to_screen_management");
     case GlobalShortcutAction::OpenSettings:
@@ -5856,6 +5871,10 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Split selected images"),
                 GlobalShortcutAction::SplitSelectedImages,
                 []() { return custom_outlined_icons::ImageSplitting(); }),
+          quick(QStringLiteral("quick.edit-selected-images"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Edit selected images"),
+                GlobalShortcutAction::EditSelectedImages,
+                []() { return custom_outlined_icons::ImageEditing(); }),
           quick(QStringLiteral("quick.translate-selected-text"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Translate selected text"),
                 GlobalShortcutAction::TranslateSelectedText,

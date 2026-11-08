@@ -72,6 +72,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QMouseEvent>
+#include <QMoveEvent>
 #include <QWheelEvent>
 #include <QWindow>
 #include <QScreen>
@@ -1384,6 +1385,27 @@ void recordingToolbarReconcilesFrameBeforeShowing() {
     require(toolbar.size() == expected &&
                 toolbar.rect().contains(toolbar.paletteHost()->geometry()),
             "restoring recording controls after area interaction must reconcile the frame");
+#ifndef Q_OS_MACOS
+    auto* dpi = toolbar.findChild<adqt::widgets::AdDpiStableWindowController*>();
+    require(dpi != nullptr, "recording toolbar must maintain its native physical extent");
+    bool staleFrameDelivered = false;
+    const auto connection = QObject::connect(
+        &toolbar, &ScreenshotFloatingToolPaletteWindow::dpiScaleCommitCompleted, &toolbar, [&] {
+            if (!staleFrameDelivered) {
+                staleFrameDelivered = true;
+                // Model Qt delivering the previous display's logical extent
+                // after the native controller has already committed its scale.
+                toolbar.resize(expected.width() / 2, expected.height());
+            }
+        });
+    dpi->requestScaleCommit();
+    for (int pass = 0; pass < 5; ++pass)
+        QCoreApplication::processEvents();
+    QObject::disconnect(connection);
+    require(staleFrameDelivered && toolbar.size() == expected &&
+                toolbar.rect().contains(toolbar.paletteHost()->geometry()),
+            "queued DPI geometry must not leave recording controls outside the native frame");
+#endif
 }
 
 void recordingToolbarPlacementAcrossDisplays() {
@@ -1410,6 +1432,18 @@ void recordingToolbarPlacementAcrossDisplays() {
                 toolbar.showAndActivate();
                 for (int pass = 0; pass < 5; ++pass) {
                     QCoreApplication::processEvents();
+                }
+                if (toolbar.size() != toolbar.windowSizeHint() ||
+                    !toolbar.rect().contains(toolbar.paletteHost()->geometry())) {
+                    qWarning() << "Cross-display recording toolbar" << "region" << region
+                               << "display" << screen->name() << bounds
+                               << screen->devicePixelRatio() << "toolbar display"
+                               << toolbar.screen()->name() << toolbar.devicePixelRatioF()
+                               << "geometry" << toolbar.geometry() << "expected size"
+                               << toolbar.windowSizeHint() << "host"
+                               << toolbar.paletteHost()->geometry() << "content"
+                               << toolbar.occupiedContentRect().translated(
+                                      toolbar.contentPosition());
                 }
                 require(toolbar.size() == toolbar.windowSizeHint() &&
                             toolbar.rect().contains(toolbar.paletteHost()->geometry()),
@@ -1514,6 +1548,134 @@ void recordingSecondaryPanelsStayOnScreen() {
     requireAnchored();
     exportButton->click();
     requireAnchored();
+}
+
+void recordingEntryPlacementStaysVisible() {
+    ScreenRecordingController controller(testEffectsSource);
+    for (auto* screen : QGuiApplication::screens()) {
+#ifdef Q_OS_MACOS
+        const QRect bounds = screen->geometry();
+#else
+        const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+#endif
+        const QSize smallSize(bounds.width() / 4, bounds.height() / 4);
+        for (const QRect& region :
+             {bounds, QRect(bounds.topLeft(), smallSize),
+              QRect(bounds.topRight() - QPoint(smallSize.width() - 1, 0), smallSize),
+              QRect(bounds.bottomLeft() - QPoint(0, smallSize.height() - 1), smallSize),
+              QRect(bounds.bottomRight() - QPoint(smallSize.width() - 1, smallSize.height() - 1),
+                    smallSize)}) {
+            controller.open(region);
+            auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+            ScreenRecordingAreaWindow* area = nullptr;
+            for (auto* widget : QApplication::topLevelWidgets())
+                if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+                    candidate && candidate->isVisible())
+                    area = candidate;
+            require(area != nullptr, "entering recording must present the selected area");
+            const auto requireVisible = [&] {
+                require(toolbar && toolbar->isVisible() && toolbar->recordingUiPresented(),
+                        "entering recording must present the toolbar");
+                // The area can publish corrected desktop geometry after showing
+                // its native frame. The toolbar must follow that committed region.
+#ifdef Q_OS_MACOS
+                auto* target = QGuiApplication::screenAt(area->recordingRegion().center());
+#else
+                auto* target =
+                    ScreenshotGeometryMapper::screenForPhysicalRect(area->recordingRegion());
+#endif
+                require(target != nullptr, "the committed recording area must have a display");
+                const QRect logicalBounds = target->geometry();
+                const QRect occupied =
+                    toolbar->occupiedContentRect().translated(toolbar->contentPosition());
+                require(occupied.top() >= logicalBounds.top() &&
+                            occupied.bottom() <= logicalBounds.bottom(),
+                        "initial recording rows must stay vertically within the selected display");
+                if (occupied.width() <= logicalBounds.width()) {
+                    require(logicalBounds.contains(occupied),
+                            "initial recording rows must stay within the selected display");
+                }
+                require(toolbar->size() == toolbar->windowSizeHint() &&
+                            toolbar->rect().contains(occupied.translated(-toolbar->pos())),
+                        "initial recording rows must fit the native frame");
+            };
+            requireVisible();
+            for (int pass = 0; pass < 5; ++pass)
+                QCoreApplication::processEvents();
+            requireVisible();
+        }
+    }
+}
+
+class RecordingToolbarMoves final : public QObject {
+  public:
+    QList<QPoint> positions;
+
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Move)
+            positions.append(static_cast<QMoveEvent*>(event)->pos());
+        return false;
+    }
+};
+
+void recordingPanelSwitchesPublishOnlyFinalLayout() {
+    ScreenRecordingController controller(testEffectsSource);
+    auto* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "recording panel placement requires a display");
+#ifdef Q_OS_MACOS
+    const QRect region = screen->geometry();
+#else
+    const QRect region = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+#endif
+    controller.open(region);
+    auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+    auto* settings = toolbar->palette()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingExportSettings"));
+    require(settings != nullptr, "recording toolbar must expose export settings");
+    for (const auto tool : {ScreenshotToolPalette::Tool::Select, ScreenshotToolPalette::Tool::Shape,
+                            ScreenshotToolPalette::Tool::Text}) {
+        toolbar->palette()->setActiveTool(tool);
+        QCoreApplication::processEvents();
+        RecordingToolbarMoves moves;
+        toolbar->installEventFilter(&moves);
+        int changes = 0;
+        bool finalLayoutOnly = true;
+        const auto connection = QObject::connect(
+            toolbar->palette(), &ScreenshotToolPalette::visibleContentChanged, toolbar, [&] {
+                ++changes;
+                finalLayoutOnly &= toolbar->palette()->recordingExportSettingsVisible() &&
+                                   !toolbar->palette()->activeTool().has_value() &&
+                                   !toolbar->palette()->styleToolbarVisible() &&
+                                   !toolbar->palette()->actionToolbarVisible();
+            });
+        settings->click();
+        QObject::disconnect(connection);
+        require(finalLayoutOnly,
+                "opening export settings must never publish a collapsed intermediate row");
+        require(changes == 1, "opening export settings must publish one completed panel change");
+        QCoreApplication::processEvents();
+        for (const auto& position : std::as_const(moves.positions))
+            require(position == toolbar->pos(),
+                    "opening export settings must move directly to the final toolbar position");
+
+        changes = 0;
+        moves.positions.clear();
+        const auto drawingConnection = QObject::connect(
+            toolbar->palette(), &ScreenshotToolPalette::visibleContentChanged, toolbar, [&] {
+                ++changes;
+                finalLayoutOnly &= !toolbar->palette()->recordingExportSettingsVisible() &&
+                                   toolbar->palette()->activeTool() == tool;
+            });
+        toolbar->palette()->setActiveTool(tool);
+        QObject::disconnect(drawingConnection);
+        require(finalLayoutOnly,
+                "leaving export settings must publish the destination tool's layout");
+        require(changes == 1, "leaving export settings must publish one completed panel change");
+        QCoreApplication::processEvents();
+        for (const auto& position : std::as_const(moves.positions))
+            require(position == toolbar->pos(),
+                    "leaving export settings must move directly to the final toolbar position");
+    }
 }
 } // namespace
 
@@ -2530,7 +2692,12 @@ void recordingToolbarAutoHideFollowsSession() {
     require(settings.setAutoHideToolbar(true) && settings.setStartDelaySeconds(0),
             "enable auto-hide for controller lifecycle coverage");
     ScreenRecordingController controller(testEffectsSource);
-    controller.open({80, 80, 320, 240});
+    auto* screen = QGuiApplication::primaryScreen();
+#ifdef Q_OS_MACOS
+    controller.open(screen->geometry());
+#else
+    controller.open(ScreenshotGeometryMapper::physicalRectForScreen(*screen));
+#endif
     auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
     require(toolbar != nullptr, "recording lifecycle has a toolbar");
     const QRect monitor = toolbar->screen()->geometry();
@@ -2563,7 +2730,24 @@ void recordingToolbarAutoHideFollowsSession() {
         toolbar->palette()->recordingResumeRequested();
         QCoreApplication::processEvents();
     }
-    toolbar->palette()->recordingCloseRequested();
+    outside();
+    retreat->stop();
+    require(QMetaObject::invokeMethod(retreat, "timeout", Qt::DirectConnection) &&
+                !toolbar->isVisible() && toolbar->autoHideControlWindow()->isVisible(),
+            "full-screen recording must retain its edge control while the toolbar is collapsed");
+    ScreenRecordingAreaWindow* area = nullptr;
+    for (auto* widget : QApplication::topLevelWidgets())
+        if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+            candidate && candidate->isVisible())
+            area = candidate;
+    require(area != nullptr, "full-screen recording must retain its shortcut input surface");
+    PhysicalKeyEvent closePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(area, &closePress);
+    PhysicalKeyEvent closeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(area, &closeRelease);
+    require(
+        !controller.isOpen() && recordingStopRequested,
+        "Escape with a collapsed toolbar must request backend stop before retiring recording UI");
     waitForIdle(controller);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
@@ -8431,14 +8615,21 @@ template <typename Application> int runRecordingControllerTests(Application& app
         recordingStartupFailureAllowsRetry();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--entry-placement-only"))) {
+        recordingEntryPlacementStaysVisible();
+        recordingPanelSwitchesPublishOnlyFinalLayout();
+        return 0;
+    }
     recordingExpandsSmallSelectionsOnOpenAndReopen();
     recordingInputOwnerKeepsFocusAcrossPresentation();
     recordingToolbarReconcilesFrameBeforeShowing();
+    recordingEntryPlacementStaysVisible();
     recordingToolbarPlacementAcrossDisplays();
+    recordingSecondaryPanelsStayOnScreen();
+    recordingPanelSwitchesPublishOnlyFinalLayout();
     if (app.arguments().contains(QStringLiteral("--placement-only"))) {
         return 0;
     }
-    recordingSecondaryPanelsStayOnScreen();
     recordingMagnifierUnavailableWithoutImageSources();
     {
         ScreenRecordingController controller(testEffectsSource);

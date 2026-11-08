@@ -2075,6 +2075,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         },
         [this]() {
             resetPendingCaptureRequest();
+            m_captureWorkflow->enableCaptureToolbar();
             if (auto* toolbar = m_overlayCoordinator->ensureToolbar()) {
                 toolbar->suppressRememberedDrawingTool();
             }
@@ -2082,6 +2083,13 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
     };
     actions.currentLogicalCursorPosition = [this] {
         return m_displaySession.logicalCursorPosition();
+    };
+    actions.prepareSelectionReplacement = [this] {
+        if (!m_captureWorkflow->suppressCaptureToolbar()) {
+            if (auto* toolbar = m_overlayCoordinator->ensureToolbar()) {
+                toolbar->suppressRememberedDrawingTool();
+            }
+        }
     };
     actions.toggleGuidesForCurrentSession = [this] { return toggleGuidesForCurrentSession(); };
     actions.cursorVisibilityAvailable = [this] { return screenshotCursorAvailable(); };

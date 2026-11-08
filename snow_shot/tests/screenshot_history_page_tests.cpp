@@ -25,6 +25,7 @@
 #include "widgets/message.h"
 #include "widgets/scroll_area.h"
 #include "history_sticky_selection_test_support.h"
+#include "history_viewport_test_support.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include <QApplication>
@@ -176,6 +177,72 @@ QVector<storage::CaptureHistoryRecord> historyRecords(int count) {
     return records;
 }
 
+void historyVirtualizesPage() {
+    MutableHistoryDataSource source;
+    source.setRecords(historyRecords(55));
+    storage::InterfaceSettings settings;
+    const int original = settings.screenshotHistoryPageSize();
+    const auto restore = qScopeGuard([&] { settings.setScreenshotHistoryPageSize(original); });
+    settings.setScreenshotHistoryPageSize(50);
+    ScreenshotHistoryPageWidget page(&source, nullptr);
+    page.setActive(true);
+    require(source.displayAssetRequests < 10,
+            "initial history construction resolves assets only for the viewport");
+    QSet<QString> expected;
+    for (int index = 0; index < 50; ++index)
+        expected.insert(QStringLiteral("record-%1").arg(index));
+    history_viewport_test::verifyPage(page, QStringLiteral("screenshotHistory"), expected, require);
+}
+
+void historySharesDeleteConfirmation() {
+    MutableHistoryDataSource source;
+    source.setRecords(historyRecords(55));
+    ScreenshotHistoryPageWidget page(&source, nullptr);
+    page.resize(980, 640);
+    page.show();
+    page.setActive(true);
+    history_sticky_test::settleLayout();
+    const auto confirmations = page.findChildren<adqt::widgets::AdPopconfirm*>(
+        QStringLiteral("screenshotHistoryEntryDeleteConfirm"));
+    require(confirmations.size() == 1, "history shares one entry confirmation across its cards");
+    auto* confirmation = confirmations.first();
+    const auto open = [&](int index) {
+        auto* row =
+            page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-%1").arg(index));
+        require(row, "confirmation fixture record is in the viewport");
+        auto* more =
+            row->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHistoryEntryMore"));
+        more->click();
+        flushEvents();
+        auto* menu = row->findChild<adqt::widgets::AdContextMenu*>();
+        require(menu, "record menu exposes deletion");
+        activateMenuAction(menu, menu->actions().last());
+        history_sticky_test::settleLayout();
+        require(confirmation->isVisible() && confirmation->sourceWidget() == more,
+                "shared confirmation is anchored to the requested record");
+    };
+    open(1);
+    confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok)->click();
+    history_sticky_test::settleLayout();
+    require(source.removedIds == QVector<QString>{QStringLiteral("record-1")},
+            "shared confirmation deletes exactly its current record");
+    open(0);
+    auto* scroll = page.findChild<adqt::widgets::AdScrollArea*>()->verticalScrollBar();
+    scroll->setValue(scroll->maximum());
+    history_sticky_test::settleLayout();
+    require(!confirmation->isVisible() && !confirmation->sourceWidget(),
+            "recycling a confirmation's anchor dismisses and detaches it");
+    QMetaObject::invokeMethod(confirmation, "accepted", Qt::DirectConnection);
+    require(source.removedIds.size() == 1,
+            "a retired confirmation cannot delete a recycled record");
+    scroll->setValue(0);
+    history_sticky_test::settleLayout();
+    open(1);
+    confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Cancel)->click();
+    QMetaObject::invokeMethod(confirmation, "accepted", Qt::DirectConnection);
+    require(source.removedIds.size() == 1, "rejecting shared deletion clears its pending record");
+}
+
 class SkinBackdrop final : public QWidget {
   public:
     QColor color = QColor(35, 90, 145);
@@ -248,8 +315,12 @@ void entryDescriptionsUseSmallThemeText() {
                  {"screenshotHistorySourceBadge", "screenshotHistoryEntrySummary",
                   "screenshotHistoryEntryMetadata"}) {
                 const auto labels = page.findChildren<QLabel*>(QString::fromLatin1(name));
-                require(labels.size() == source.records().size(),
-                        "every screenshot entry exposes all three description labels");
+                require(!labels.isEmpty() &&
+                            labels.size() ==
+                                page.findChildren<adqt::widgets::AdCheckbox*>(
+                                        QStringLiteral("screenshotHistoryEntrySelection"))
+                                    .size(),
+                        "every materialized screenshot entry exposes all three description labels");
                 for (const auto* label : labels) {
                     require(label->font().pixelSize() == scheme.metricAlias.fontSizeSM &&
                                 label->font().weight() == QFont::Normal &&
@@ -554,7 +625,8 @@ void entriesUseBordersAndSupportCrossPageSelection() {
     flushEvents();
 
     auto checkboxes = entryCheckboxes(page);
-    require(checkboxes.size() == 10, "the first history page must expose ten title checkboxes");
+    require(!checkboxes.isEmpty() && checkboxes.size() < 10,
+            "the first history page creates title checkboxes only near the viewport");
     require(page.findChildren<QWidget*>(QStringLiteral("screenshotHistoryEntryDivider")).isEmpty(),
             "history entries must not retain divider widgets after restoring record borders");
     for (adqt::widgets::AdCheckbox* checkbox : checkboxes) {
@@ -612,13 +684,14 @@ void entriesUseBordersAndSupportCrossPageSelection() {
             "selection actions must use link styling with a danger Delete action");
 
     adqt::widgets::AdCheckbox* firstCheckbox = checkboxes.first();
-    const int assetRequestsBeforeSelection = dataSource.displayAssetRequests;
     auto* scrollArea =
         page.findChild<adqt::widgets::AdScrollArea*>(QStringLiteral("screenshotHistoryScrollArea"));
     require(scrollArea != nullptr && scrollArea->verticalScrollBar()->maximum() > 0,
             "selection performance test requires a scrollable history page");
     scrollArea->verticalScrollBar()->setValue(
         std::min(100, scrollArea->verticalScrollBar()->maximum()));
+    flushEvents();
+    const int assetRequestsBeforeSelection = dataSource.displayAssetRequests;
     const int scrollPositionBeforeSelection = scrollArea->verticalScrollBar()->value();
     firstCheckbox->click();
     flushEvents();
@@ -1049,11 +1122,12 @@ void pageSizesRememberedIndependently(const QString& storageDirectory) {
             require(historyPagination->pageSize() == sizes.first &&
                         pinnedPagination->pageSize() == sizes.second,
                     "refresh preserves both selected page sizes");
-            require(historyPage
-                            .findChildren<adqt::widgets::AdCheckbox*>(
-                                QStringLiteral("screenshotHistoryEntrySelection"))
-                            .size() == sizes.first,
-                    "history renders the selected number of entries");
+            require(
+                historyPage.findChildren<adqt::widgets::AdCheckbox*>(
+                               QStringLiteral("screenshotHistoryEntrySelection"))
+                            .size() < sizes.first &&
+                    historyPagination->visibleItemRange().last == sizes.first,
+                "history paginates all requested entries while materializing only the viewport");
         }
 
         storage::ApplicationStorage::instance().shutdown();
@@ -1383,10 +1457,10 @@ void moreMenuOffersPinStitchAndDelete() {
 
     auto* more = pinnableEntry->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotHistoryEntryMore"));
-    auto* confirmation = pinnableEntry->findChild<adqt::widgets::AdPopconfirm*>(
+    auto* confirmation = page.findChild<adqt::widgets::AdPopconfirm*>(
         QStringLiteral("screenshotHistoryEntryDeleteConfirm"));
     require(more != nullptr && more->text() == QStringLiteral("More") && more->isVisible() &&
-                confirmation != nullptr && confirmation->sourceWidget() == more,
+                confirmation != nullptr && confirmation->sourceWidget() == nullptr,
             "each history entry must replace Delete with a More button");
     require(pinnableEntry->findChild<adqt::widgets::AdContextMenu*>(
                 QStringLiteral("screenshotHistoryEntryMoreMenu")) == nullptr,
@@ -1592,7 +1666,8 @@ void moreMenuOffersPinStitchAndDelete() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     adqt::widgets::AdButton* confirmDelete =
         confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok);
-    require(confirmation->isVisible() && confirmDelete != nullptr && !menu,
+    require(confirmation->isVisible() && confirmation->sourceWidget() == more &&
+                confirmDelete != nullptr && !menu,
             "Delete must close the action menu and ask for confirmation");
     confirmDelete->click();
     flushEvents();
@@ -1990,8 +2065,20 @@ int main(int argc, char** argv) {
                 .initialize({temporary.path(), temporary.path(), 8000})
                 .success,
             "isolated application storage must initialize");
+    if (application.arguments().contains(QStringLiteral("--confirmation-only"))) {
+        historySharesDeleteConfirmation();
+        storage::ApplicationStorage::instance().shutdown();
+        QCoreApplication::removeTranslator(&englishTranslator);
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--sticky-only"))) {
         selectionPanelSticksWhileScrolling();
+        storage::ApplicationStorage::instance().shutdown();
+        QCoreApplication::removeTranslator(&englishTranslator);
+        return 0;
+    }
+    historyVirtualizesPage();
+    if (application.arguments().contains(QStringLiteral("--viewport-only"))) {
         storage::ApplicationStorage::instance().shutdown();
         QCoreApplication::removeTranslator(&englishTranslator);
         return 0;
@@ -2024,6 +2111,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--context-menu-only"))) {
+        historySharesDeleteConfirmation();
         historyHoverMovementDoesNotRequireSelectionOrEnter();
         moreButtonClicksDoNotRequestDeletion();
         moreMenuOffersPinStitchAndDelete();
@@ -2046,6 +2134,7 @@ int main(int argc, char** argv) {
         QCoreApplication::removeTranslator(&englishTranslator);
         return 0;
     }
+    historySharesDeleteConfirmation();
     historyHoverMovementDoesNotRequireSelectionOrEnter();
     moreButtonClicksDoNotRequestDeletion();
     moreMenuOffersPinStitchAndDelete();

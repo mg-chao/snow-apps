@@ -23,6 +23,27 @@
 
 namespace snow_shot::presentation::components::history_page {
 
+int PreviewModel::rowCount(const QModelIndex& parent) const {
+    return parent.isValid() ? 0 : m_count;
+}
+
+QVariant PreviewModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_count || !m_itemAt)
+        return {};
+    if (role == adqt::widgets::AdImageItemRoles::SourceRole)
+        return m_itemAt(index.row()).source;
+    if (role == adqt::widgets::AdImageItemRoles::AltTextRole || role == Qt::DisplayRole)
+        return m_itemAt(index.row()).altText;
+    return {};
+}
+
+void PreviewModel::reset(int count, std::function<adqt::widgets::AdImageItem(int)> itemAt) {
+    beginResetModel();
+    m_count = count;
+    m_itemAt = std::move(itemAt);
+    endResetModel();
+}
+
 QString revealActionText() {
 #ifdef Q_OS_WIN
     return QCoreApplication::translate("HistoryFileLocation", "Open in Explorer");

@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -7,6 +8,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "widgets/image.h"
 #include "legacy_thumbnail_test_support.h"
@@ -17,6 +19,9 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QUuid>
@@ -137,6 +142,115 @@ QJsonObject readBaseline() {
     return error.error == QJsonParseError::NoError && document.isObject() ? document.object()
                                                                           : QJsonObject{};
 }
+
+int benchmarkPageSizes() {
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    for (int index = 0; index < 55; ++index) {
+        if (!applicationStorage.captureHistory()
+                 .publish(benchmarkDraft(index))
+                 .get()
+                 .storage.success)
+            return 1;
+        snow_shot::storage::PinnedWindowRecord pin;
+        pin.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        pin.image = QImage(kImageSize, QImage::Format_RGB32);
+        pin.image.fill(QColor::fromHsv(index * 31 % 360, 180, 210));
+        pin.nativeGeometry = QRect(QPoint(), pin.image.size());
+        pin.canvasSourceRect = QRectF(pin.nativeGeometry);
+        pin.contentCanvasRect = pin.canvasSourceRect;
+        pin.surfaceCanvasRect = pin.canvasSourceRect;
+        pin.initialWindowSize = pin.image.size();
+        pin.createdUtc = QDateTime::currentDateTimeUtc().addSecs(-index);
+        if (index % 3 == 0) {
+            pin.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardText;
+            pin.originalText =
+                QStringLiteral("Pinned text preview, measured at its original layout.\n")
+                    .repeated(100);
+            pin.firstCreationTextDpi = 2.0;
+        }
+        if (!applicationStorage.pinnedWindows().upsert(pin).success ||
+            !applicationStorage.pinnedWindows().flush().success)
+            return 1;
+    }
+    QJsonArray samples;
+    bool passed = true;
+    for (const int pageSize : {10, 20, 50}) {
+        snow_shot::storage::InterfaceSettings settings;
+        settings.setScreenshotHistoryPageSize(pageSize);
+        settings.setPinnedWindowManagementPageSize(pageSize);
+        for (int run = 0; run < 3; ++run) {
+            for (bool history : {true, false}) {
+                QElapsedTimer timer;
+                timer.start();
+                std::unique_ptr<QWidget> page;
+                if (history) {
+                    auto* widget = new ScreenshotHistoryPageWidget;
+                    page.reset(widget);
+                    widget->setActive(true);
+                } else {
+                    page = std::make_unique<PinnedWindowManagementPageWidget>();
+                }
+                const qint64 constructionMs = timer.elapsed();
+                page->resize(980, 640);
+                page->show();
+                qint64 firstReadyMs = -1;
+                const auto visibleReady = [&] {
+                    int visible = 0;
+                    int ready = 0;
+                    for (auto* image : page->findChildren<adqt::widgets::AdImage*>()) {
+                        if (image->visibleRegion().isEmpty())
+                            continue;
+                        // WhenVisible starts on paint; force it before treating idle as loaded.
+                        static_cast<void>(image->grab());
+                        ++visible;
+                        if (!image->source().isEmpty() && !image->loading() && !image->loadFailed())
+                            ++ready;
+                    }
+                    if (ready && firstReadyMs < 0)
+                        firstReadyMs = timer.elapsed();
+                    return visible > 0 && visible == ready;
+                };
+                QApplication::processEvents();
+                processUntil(visibleReady, 10000);
+                const qint64 visibleReadyMs = timer.elapsed();
+                int cards = 0;
+                for (auto* widget : page->findChildren<QWidget*>())
+                    if (widget->objectName() == QStringLiteral("pinnedManagementRecord") ||
+                        widget->objectName().startsWith(QStringLiteral("screenshotHistoryEntry-")))
+                        ++cards;
+                passed &= visibleReady() && cards > 0 && cards <= 8;
+                auto* area = page->findChild<QScrollArea*>();
+                timer.restart();
+                area->verticalScrollBar()->setValue(area->verticalScrollBar()->maximum());
+                // Deliver the viewport's queued row update before checking the newly visible rows.
+                for (int turn = 0; turn < 3; ++turn)
+                    QApplication::processEvents();
+                processUntil(visibleReady, 10000);
+                passed &= visibleReady();
+                samples.push_back(
+                    QJsonObject{{QStringLiteral("page"),
+                                 history ? QStringLiteral("history") : QStringLiteral("pins")},
+                                {QStringLiteral("page_size"), pageSize},
+                                {QStringLiteral("run"), run + 1},
+                                {QStringLiteral("construction_ms"), constructionMs},
+                                {QStringLiteral("first_visible_ready_ms"), firstReadyMs},
+                                {QStringLiteral("all_visible_ready_ms"), visibleReadyMs},
+                                {QStringLiteral("scroll_to_bottom_ready_ms"), timer.elapsed()},
+                                {QStringLiteral("materialized_cards"), cards}});
+                page.reset();
+                applicationStorage.pinnedPreviewPool().waitForDone();
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                QApplication::processEvents();
+            }
+        }
+    }
+    std::cout << QJsonDocument(QJsonObject{{QStringLiteral("samples"), samples},
+                                           {QStringLiteral("passed"), passed},
+                                           {QStringLiteral("fixture_records_per_page_type"), 55}})
+                     .toJson(QJsonDocument::Indented)
+                     .constData();
+    return passed ? 0 : 2;
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -156,6 +270,12 @@ int main(int argc, char** argv) {
              .success) {
         std::cerr << "Unable to initialize benchmark storage\n";
         return 1;
+    }
+
+    if (application.arguments().contains(QStringLiteral("--page-sizes"))) {
+        const int result = benchmarkPageSizes();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return result;
     }
 
     auto& repository = snow_shot::storage::ApplicationStorage::instance().captureHistory();
@@ -198,12 +318,8 @@ int main(int argc, char** argv) {
     QElapsedTimer assetTimer;
     assetTimer.start();
     qint64 peakBytes = processMetrics().privateCommitBytes;
-    processUntil(
-        [&]() {
-            return page->findChildren<adqt::widgets::AdImage*>().size() >=
-                   kRecordCount * kDisplayCount;
-        },
-        30000, &peakBytes);
+    processUntil([&]() { return !page->findChildren<adqt::widgets::AdImage*>().isEmpty(); }, 30000,
+                 &peakBytes);
     const qint64 assetPreparationMs = assetTimer.elapsed();
 
     const QList<adqt::widgets::AdImage*> images = page->findChildren<adqt::widgets::AdImage*>();

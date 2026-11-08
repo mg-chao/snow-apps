@@ -436,6 +436,14 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>自訂工具列</translation>
         </message>
         <message>
+            <source>Edit selected images</source>
+            <translation>編輯選取的影像</translation>
+        </message>
+        <message>
+            <source>Full-screen canvas</source>
+            <translation>全螢幕畫布</translation>
+        </message>
+        <message>
             <source>Hide during screenshots</source>
             <translation>截圖時隱藏</translation>
         </message>
@@ -464,8 +472,20 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>截圖</translation>
         </message>
         <message>
+            <source>Screenshot history</source>
+            <translation>截圖歷史</translation>
+        </message>
+        <message>
             <source>Show toolbar</source>
             <translation>顯示工具列</translation>
+        </message>
+        <message>
+            <source>Split selected images</source>
+            <translation>分割選取的影像</translation>
+        </message>
+        <message>
+            <source>Stitch selected images</source>
+            <translation>拼接選取的影像</translation>
         </message>
         <message>
             <source>Toolbar mode</source>

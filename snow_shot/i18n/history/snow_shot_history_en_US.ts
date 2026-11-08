@@ -153,6 +153,14 @@
             <translation>%1 px</translation>
         </message>
         <message>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</translation>
+        </message>
+        <message>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>Could not read the selected image files. Please try again</translation>
+        </message>
+        <message>
             <source>No available output filename was found</source>
             <translation>No available output filename was found</translation>
         </message>
@@ -161,8 +169,20 @@
             <translation>The editing content could not be prepared for export</translation>
         </message>
         <message>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>The file manager is unavailable. Open it and try again</translation>
+        </message>
+        <message>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>The file manager took too long to return the selected files. Please try again</translation>
+        </message>
+        <message>
             <source>The image could not be loaded</source>
             <translation>The image could not be loaded</translation>
+        </message>
+        <message>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>The image is too large or there is not enough memory to load it</translation>
         </message>
         <message>
             <source>The save directory is not available</source>
@@ -2361,6 +2381,14 @@ Files:
     <context>
         <name>snow_shot::presentation::ImageEditingWindow</name>
         <message>
+            <source>Add images</source>
+            <translation>Add images</translation>
+        </message>
+        <message>
+            <source>Add images to start image editing</source>
+            <translation>Add images to start image editing</translation>
+        </message>
+        <message>
             <source>Configure cloud upload before uploading an image</source>
             <translation>Configure cloud upload before uploading an image</translation>
         </message>
@@ -2375,6 +2403,14 @@ Files:
         <message>
             <source>Discard changes?</source>
             <translation>Discard changes?</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>Drag image files here, or choose add images</translation>
+        </message>
+        <message>
+            <source>Drop images to edit</source>
+            <translation>Drop images to edit</translation>
         </message>
         <message>
             <source>Export completed</source>
@@ -2397,12 +2433,20 @@ Files:
             <translation>Image editing</translation>
         </message>
         <message>
+            <source>Images</source>
+            <translation>Images</translation>
+        </message>
+        <message>
             <source>Loading image…</source>
             <translation>Loading image…</translation>
         </message>
         <message>
             <source>No recognition result is available to export</source>
             <translation>No recognition result is available to export</translation>
+        </message>
+        <message>
+            <source>Open each image in its own window</source>
+            <translation>Open each image in its own window</translation>
         </message>
         <message>
             <source>Printing is unavailable</source>
@@ -2419,6 +2463,10 @@ Files:
         <message>
             <source>The image could not be loaded</source>
             <translation>The image could not be loaded</translation>
+        </message>
+        <message>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>The image is too large or there is not enough memory to load it</translation>
         </message>
         <message>
             <source>This editing window has unsaved changes</source>

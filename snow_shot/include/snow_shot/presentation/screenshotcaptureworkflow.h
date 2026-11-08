@@ -78,6 +78,9 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     [[nodiscard]] bool startRecapture(const QVector<std::uint32_t>& excludedWindowIds = {});
     [[nodiscard]] bool recaptureInProgress() const;
     [[nodiscard]] bool suppressCaptureToolbar() const;
+    // Explicit editing commands may replace a quick action's hidden toolbar policy.
+    // Silent capture sessions retain their presentation policy.
+    void enableCaptureToolbar();
     void cancelCapture(ScreenshotCaptureFocusDisposition focus =
                            ScreenshotCaptureFocusDisposition::RestorePrevious);
     void cancelCaptureForExport();

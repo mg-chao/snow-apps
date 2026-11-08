@@ -22,6 +22,11 @@ int main() {
         require(snow_shot::app::featureFamilyFor(traits.action) == traits.family,
                 "application routing consumes the common action family");
     }
+    const auto* editing = globalActionTraits(GlobalShortcutAction::EditSelectedImages);
+    require(
+        editing && !editing->family &&
+            editing->permission == snow_shot::presentation::InitialActionPermission::None,
+        "editing selected images is classified without capture permissions or a feature family");
     require(!globalActionTraits(static_cast<GlobalShortcutAction>(-1)) &&
                 !globalActionTraits(static_cast<GlobalShortcutAction>(9999)),
             "unknown action values cannot acquire a valid classification");

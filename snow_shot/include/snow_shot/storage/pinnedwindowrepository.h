@@ -42,6 +42,7 @@ struct PinnedWindowPreviewSource final {
     QDateTime createdUtc{};
     std::optional<PinnedTextStyle> textStyle;
     PinnedTextFormat textFormat = PinnedTextFormat::PlainText;
+    QSize naturalSize;
 };
 
 enum class PinnedWindowOperation {
@@ -76,9 +77,14 @@ class PinnedWindowRepository final {
     [[nodiscard]] std::optional<PinnedWindowPreviewSource>
     loadPreviewSource(const QString& id, std::function<bool(qint64)> allocationCheck = {},
                       std::function<bool()> cancelled = {}) const;
+    [[nodiscard]] std::optional<PinnedWindowPreviewSource>
+    loadThumbnailSource(const QString& id, QSize targetSize,
+                        std::function<bool()> cancelled = {}) const;
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id,
                                                                bool* colorSwatch = nullptr) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
+    // Management applies its own activity ordering; skip the repository's timestamp sort.
+    [[nodiscard]] QVector<PinnedWindowSummary> unorderedSummaries() const;
     // One metadata snapshot across persisted records and pending first saves.
     [[nodiscard]] QVector<PinnedWindowSummary> summariesIncludingPending() const;
     // Looks up either lifecycle state without reading source or document payloads.
@@ -162,7 +168,11 @@ class PinnedWindowRepository final {
     [[nodiscard]] QString lastError() const;
 
   private:
-    [[nodiscard]] QVector<PinnedWindowSummary> summariesImpl(bool includePending) const;
+    [[nodiscard]] std::optional<PinnedWindowPreviewSource>
+    loadPreviewSourceImpl(const QString& id, std::function<bool(qint64)> allocationCheck,
+                          std::function<bool()> cancelled, QSize targetSize) const;
+    [[nodiscard]] QVector<PinnedWindowSummary> summariesImpl(bool includePending,
+                                                             bool sorted = true) const;
     [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, PreparedPngImage sourceImage,
                                            bool requireReservation);
     [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, bool requireReservation);

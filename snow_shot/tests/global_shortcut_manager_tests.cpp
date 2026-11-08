@@ -54,6 +54,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::GlobalCanvas,
     GlobalShortcutAction::StitchSelectedImages,
     GlobalShortcutAction::SplitSelectedImages,
+    GlobalShortcutAction::EditSelectedImages,
     GlobalShortcutAction::SwitchWindowGroup,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
@@ -608,7 +609,9 @@ void selectedImagesShortcutsRegisterAndPersist(GlobalShortcutAction action) {
         require(manager.setShortcuts(action, bindings) &&
                     manager.state(action).status == GlobalShortcutStatus::Registered &&
                     input->registrations.size() == 2 &&
-                    (action == GlobalShortcutAction::SplitSelectedImages
+                    (action == GlobalShortcutAction::EditSelectedImages
+                         ? snow_shot::storage::ShortcutSettings().editSelectedImages()
+                     : action == GlobalShortcutAction::SplitSelectedImages
                          ? snow_shot::storage::ShortcutSettings().splitSelectedImages()
                          : snow_shot::storage::ShortcutSettings().stitchSelectedImages()) ==
                         bindings,
@@ -2016,6 +2019,7 @@ int main(int argc, char** argv) {
     globalCanvasShortcutCanBeAssignedAndRestored();
     selectedImagesShortcutsRegisterAndPersist(GlobalShortcutAction::StitchSelectedImages);
     selectedImagesShortcutsRegisterAndPersist(GlobalShortcutAction::SplitSelectedImages);
+    selectedImagesShortcutsRegisterAndPersist(GlobalShortcutAction::EditSelectedImages);
     globalCanvasFullscreenGateTracksSession();
     backendAvailabilityInvalidatesOwnershipAndRecovers();
 #ifdef Q_OS_MACOS

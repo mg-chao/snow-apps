@@ -1364,8 +1364,12 @@ void selectedImagesSettings(const settings::SettingsRegistry& registry) {
         page.findChild<ShortcutKeyRow*>(QStringLiteral("settings-item-quick-global-canvas"));
     auto* split = page.findChild<ShortcutKeyRow*>(
         QStringLiteral("settings-item-quick-split-selected-images"));
+    auto* edit =
+        page.findChild<ShortcutKeyRow*>(QStringLiteral("settings-item-quick-edit-selected-images"));
     require(
-        stitch && canvas && split &&
+        stitch && canvas && split && edit &&
+            edit->mapTo(&page, QPoint()).y() > split->mapTo(&page, QPoint()).y() &&
+            session.shortcutState(GlobalShortcutAction::EditSelectedImages).shortcuts.isEmpty() &&
             stitch->mapTo(&page, QPoint()).y() > canvas->mapTo(&page, QPoint()).y() &&
             split->mapTo(&page, QPoint()).y() > stitch->mapTo(&page, QPoint()).y() &&
             session.shortcutState(action).shortcuts.isEmpty() &&
@@ -1386,18 +1390,24 @@ void selectedImagesSettings(const settings::SettingsRegistry& registry) {
     expectedAction = GlobalShortcutAction::SplitSelectedImages;
     require(QMetaObject::invokeMethod(split, "clicked", Qt::DirectConnection) && commands == 2,
             "the splitting row runs without an assigned key");
+    expectedAction = GlobalShortcutAction::EditSelectedImages;
+    require(QMetaObject::invokeMethod(edit, "clicked", Qt::DirectConnection) && commands == 3,
+            "the editing row runs without an assigned key");
     const snow_shot::shortcuts::ShortcutBindingList bindings{QStringLiteral("Ctrl+Alt+F8"),
                                                              QStringLiteral("Ctrl+Alt+F9")};
     const snow_shot::storage::ShortcutSettings stored;
     const auto screenshot = stored.screenshot();
     const snow_shot::shortcuts::ShortcutBindingList splitBindings{QStringLiteral("Ctrl+Alt+F10"),
                                                                   QStringLiteral("Ctrl+Alt+F11")};
+    const snow_shot::shortcuts::ShortcutBindingList editBindings{QStringLiteral("Ctrl+Alt+F12")};
     require(session.applyShortcuts(action, bindings) && stored.stitchSelectedImages() == bindings &&
                 session.applyShortcuts(GlobalShortcutAction::SplitSelectedImages, splitBindings) &&
                 stored.splitSelectedImages() == splitBindings &&
+                session.applyShortcuts(GlobalShortcutAction::EditSelectedImages, editBindings) &&
+                stored.editSelectedImages() == editBindings &&
                 session.reset(settings::SettingsSectionReset::OtherShortcuts) &&
-                stored.stitchSelectedImages().isEmpty() && stored.splitSelectedImages().isEmpty() &&
-                stored.screenshot() == screenshot,
+                stored.editSelectedImages().isEmpty() && stored.stitchSelectedImages().isEmpty() &&
+                stored.splitSelectedImages().isEmpty() && stored.screenshot() == screenshot,
             "Other reset clears stitching and splitting keys and preserves screenshot keys");
     auto& languages = LanguageManager::instance();
     for (const auto* locale : {"zh_CN", "zh_TW"}) {
@@ -1410,7 +1420,10 @@ void selectedImagesSettings(const settings::SettingsRegistry& registry) {
                     stitch->accessibleName() != QStringLiteral("Stitch selected images") &&
                     split->accessibleName() ==
                         QCoreApplication::translate("SettingsCatalog", "Split selected images") &&
-                    split->accessibleName() != QStringLiteral("Split selected images"),
+                    split->accessibleName() != QStringLiteral("Split selected images") &&
+                    edit->accessibleName() ==
+                        QCoreApplication::translate("SettingsCatalog", "Edit selected images") &&
+                    edit->accessibleName() != QStringLiteral("Edit selected images"),
                 "both selected-image actions retranslate in both Chinese catalogs");
     }
     require(languages.setLanguage(QStringLiteral("en_US")), "restore settings test language");

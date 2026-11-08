@@ -1251,7 +1251,10 @@ bool ScreenshotOverlayInputHandler::selectCurrentScreen() {
                                     (selected == screen || selected == allScreens);
 
     resetTransientShortcuts();
-    m_context.actions.prepareExplicitSelectionCommand();
+    // Replacing the region confirms the action that opened this capture, just
+    // like a mouse selection or restoring a previous region. Only an explicit
+    // toolbar command may supersede that pending action.
+    m_context.actions.prepareSelectionReplacement();
     m_context.selection.setSelectionRect(expandToAllScreens ? allScreens : screen);
     // A full-screen replacement must retain the target's exact extent, even
     // when the preceding selection used a remembered aspect ratio preset.

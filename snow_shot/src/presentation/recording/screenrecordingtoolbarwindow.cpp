@@ -635,8 +635,16 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
         m_autoHide->dragging = false;
         m_autoHide->queueReconcile();
     });
-    connect(this, &ScreenshotFloatingToolPaletteWindow::dpiScaleCommitCompleted, this,
-            [this] { m_autoHide->queueReconcile(); });
+    connect(
+        this, &ScreenshotFloatingToolPaletteWindow::dpiScaleCommitCompleted, this,
+        [this] {
+            // Qt can deliver the final widget geometry after the native DPI
+            // commit. Repair the frame and region anchor after those events.
+            if (!m_manuallyDragged && !m_regionInteractionActive)
+                placeForRecordingRegion(m_recordingRegion);
+            m_autoHide->queueReconcile();
+        },
+        Qt::QueuedConnection);
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {
         connect(

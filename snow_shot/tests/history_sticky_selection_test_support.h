@@ -32,6 +32,18 @@ void verifySelection(QWidget& page, const QString& prefix, adqt::widgets::AdChec
         page.findChild<adqt::widgets::AdButton*>(prefix + QStringLiteral("DeselectAll"));
     require(area && bar && panel && entries && checkbox && deselect,
             "sticky selection fixture exposes the page controls");
+    const auto* originalRow = checkbox->parentWidget()->parentWidget();
+    const QString originalName = originalRow->objectName();
+    const QVariant originalId = originalRow->property("recordId");
+    const QString checkboxName = checkbox->objectName();
+    const auto currentCheckbox = [&]() -> adqt::widgets::AdCheckbox* {
+        for (auto* candidate : entries->findChildren<adqt::widgets::AdCheckbox*>(checkboxName)) {
+            const auto* row = candidate->parentWidget()->parentWidget();
+            if (row->objectName() == originalName && row->property("recordId") == originalId)
+                return candidate;
+        }
+        return nullptr;
+    };
     auto* viewport = area->viewport();
     auto* scroll = area->verticalScrollBar();
     const int topMargin = snow_shot::presentation::styles::ThemeManager::instance()
@@ -114,18 +126,25 @@ void verifySelection(QWidget& page, const QString& prefix, adqt::widgets::AdChec
             "selection actions remain available at the end of the page");
     scroll->setValue(0);
     settleLayout();
+    // Scrolling recycles offscreen cards. Find the same record's current checkbox.
+    checkbox = currentCheckbox();
+    require(checkbox, "returning to the start materializes the original selected record");
     require(bar->mapTo(viewport, QPoint()).y() == normalTop && entries->y() == contentEntryTop,
             "scrolling back restores the normal panel position without layout drift");
     scroll->setValue(normalTop + 80);
     settleLayout();
     deselect->click();
     settleLayout();
-    require(!bar->isVisible() && !checkbox->isChecked(),
-            "clearing a sticky selection hides the panel and unchecks the entry");
+    require(!bar->isVisible(), "clearing a sticky selection hides the panel");
     require(entries->y() == entriesWithoutSelection,
             "clearing a sticky selection removes its reserved space");
     // Hiding the focused action can scroll Qt's next focus target into view.
     // Start the next selection explicitly below the sticky threshold.
+    scroll->setValue(0);
+    settleLayout();
+    checkbox = currentCheckbox();
+    require(checkbox && !checkbox->isChecked(),
+            "clearing a sticky selection also unchecks a rematerialized entry");
     scroll->setValue(normalTop + 80);
     checkbox->setChecked(true);
     settleLayout();

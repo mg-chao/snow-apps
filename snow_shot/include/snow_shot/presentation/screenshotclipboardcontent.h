@@ -187,6 +187,20 @@ class ScreenshotClipboardContentReader final {
     renderOriginalText(const ScreenshotClipboardOriginalContent& original, qreal devicePixelRatio,
                        const QColor& baseColor = {}, AllocationCheck allocate = {},
                        std::optional<PinnedColorSwatchStyle> colorSwatchStyle = {});
+    // Keeps the original text layout but rasterizes directly into a bounded thumbnail.
+    [[nodiscard]] static std::optional<ScreenshotClipboardContent>
+    renderOriginalTextThumbnail(const ScreenshotClipboardOriginalContent& original,
+                                qreal devicePixelRatio, QSize targetSize, QSize* naturalSize,
+                                CancellationCheck cancelled = {},
+                                std::optional<PinnedColorSwatchStyle> colorSwatchStyle = {});
+
+  private:
+    [[nodiscard]] static std::optional<ScreenshotClipboardContent>
+    renderOriginalTextImpl(const ScreenshotClipboardOriginalContent& original,
+                           qreal devicePixelRatio, const QColor& baseColor,
+                           AllocationCheck allocate,
+                           std::optional<PinnedColorSwatchStyle> colorSwatchStyle, QSize targetSize,
+                           QSize* naturalSize, CancellationCheck cancelled);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDCONTENT_H

@@ -830,6 +830,14 @@ bool ShortcutSettings::setSplitSelectedImages(
     return setShortcutValue(QStringLiteral("global_shortcuts/split_selected_images"), bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::editSelectedImages() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/edit_selected_images"));
+}
+
+bool ShortcutSettings::setEditSelectedImages(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/edit_selected_images"), bindings);
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::openPinToScreenManagement() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
 }

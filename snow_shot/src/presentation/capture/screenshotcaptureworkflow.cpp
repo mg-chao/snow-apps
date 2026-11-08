@@ -57,6 +57,12 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
     return m_toolbarVisibility == ToolbarVisibility::Suppressed;
 }
 
+void ScreenshotCaptureWorkflow::enableCaptureToolbar() {
+    if (!m_state.presentationSuppressed) {
+        m_toolbarVisibility = ToolbarVisibility::ShowAfterSelection;
+    }
+}
+
 void ScreenshotCaptureWorkflow::setCaptureSuspended(bool suspended) {
     m_captureSuspended = suspended;
 }

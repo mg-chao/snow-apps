@@ -1646,6 +1646,11 @@ class ApplicationController::Impl {
             {QStringLiteral("text-recognition"), Quick::ScreenshotOcr},
             {QStringLiteral("text-translation"), Quick::ScreenshotTranslation},
             {QStringLiteral("record-screen"), Quick::ScreenRecord},
+            {QStringLiteral("screenshot-history"), Quick::OpenCaptureHistory},
+            {QStringLiteral("global-canvas"), Quick::GlobalCanvas},
+            {QStringLiteral("stitch-selected-images"), Quick::StitchSelectedImages},
+            {QStringLiteral("split-selected-images"), Quick::SplitSelectedImages},
+            {QStringLiteral("edit-selected-images"), Quick::EditSelectedImages},
         };
         if (const auto action = quickActions.constFind(id); action != quickActions.cend()) {
             dispatchQuickAction(*action);
@@ -1810,6 +1815,12 @@ class ApplicationController::Impl {
             auto backend = platform::createSelectedFileBackend();
             const auto target = backend->captureTarget();
             ensureImageSplitWindowCoordinator().presentSelectedFiles(std::move(backend), target);
+            break;
+        }
+        case presentation::GlobalShortcutAction::EditSelectedImages: {
+            auto backend = platform::createSelectedFileBackend();
+            const auto target = backend->captureTarget();
+            ensureImageEditingWindowCoordinator().presentSelectedFiles(std::move(backend), target);
             break;
         }
         case presentation::GlobalShortcutAction::OpenPinToScreenManagement:

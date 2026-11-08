@@ -968,6 +968,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/screenshothistorypagewidget.cpp
     include/snow_shot/presentation/components/historyentrycard.h
     src/presentation/components/historyentrycard.cpp
+    include/snow_shot/presentation/components/historyentryviewport.h
+    src/presentation/components/historyentryviewport.cpp
     include/snow_shot/presentation/components/historyselectionbar.h
     include/snow_shot/presentation/components/historypagecommon.h
     src/presentation/components/historypagecommon.cpp
@@ -2871,6 +2873,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_add_translations(snow-shot-pinned-window-management-page-tests)
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-management-page-tests)
     add_test(NAME snow-shot-pinned-window-management-page-tests COMMAND snow-shot-pinned-window-management-page-tests)
+    add_test(NAME snow-shot-pinned-thumbnail-work-tests
+        COMMAND snow-shot-pinned-window-management-page-tests --thumbnail-work-only)
+    add_test(NAME snow-shot-history-thumbnail-source-tests
+        COMMAND snow-shot-pinned-window-repository-tests --thumbnail-only)
+    set_tests_properties(snow-shot-pinned-thumbnail-work-tests
+        snow-shot-history-thumbnail-source-tests PROPERTIES LABELS unit
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-collage-pinned-selection-tests
         COMMAND snow-shot-pinned-window-management-page-tests --collage-only)
     set_tests_properties(snow-shot-collage-pinned-selection-tests PROPERTIES LABELS unit
@@ -5325,6 +5335,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/spreadsheet_open_test_support.h
         ${SNOW_SHOT_IMAGE_EDITING_SOURCES}
         tests/imageediting_tests.cpp
+        tests/imageediting_import_tests.cpp
         tests/imageediting_canvas_tests.cpp
         tests/imageediting_document_tests.cpp
         tests/imageediting_translation_tests.cpp
@@ -5462,6 +5473,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_compile_options(snow-shot-pinned-window-tests PRIVATE /bigobj)
     endif()
     target_link_libraries(snow-shot-pinned-window-tests PRIVATE
+        snow_shot_collage_core
         snow_shot_file_manager
         snow_stitch_images_c
         snow_shot_diagnostics
@@ -5531,7 +5543,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     foreach(_snow_editor_regression IN ITEMS
-        close source smart-erase save pin canvas document translation branch history conversion-availability
+        close source smart-erase save pin canvas document translation branch history conversion-availability import
         automatic-selection)
         set(_snow_editor_regression_test
             "snow-shot-image-editing-${_snow_editor_regression}-tests")
@@ -6142,6 +6154,11 @@ if(SNOW_SHOT_BUILD_TESTS)
              COMMAND snow-shot-clipboard-content-tests --mime-data-only)
     add_test(NAME snow-shot-clipboard-text-layout-tests
              COMMAND snow-shot-clipboard-content-tests --text-layout-only)
+    add_test(NAME snow-shot-history-thumbnail-text-tests
+        COMMAND snow-shot-clipboard-content-tests --thumbnail-only)
+    set_tests_properties(snow-shot-history-thumbnail-text-tests PROPERTIES LABELS unit
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-clipboard-text-layout-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -8913,6 +8930,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-tool-toggle-tests
         COMMAND snow-shot-screen-recording-controller-tests --tool-toggle-only -platform offscreen)
     set_tests_properties(snow-shot-recording-tool-toggle-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-toolbar-placement-tests
+        COMMAND snow-shot-screen-recording-controller-tests --placement-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-toolbar-placement-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-toolbar-mixed-dpi-placement-tests
+        COMMAND snow-shot-screen-recording-controller-tests --placement-only
+            -platform offscreen:configfile=recording_toolbar_screens.json)
+    set_tests_properties(snow-shot-recording-toolbar-mixed-dpi-placement-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     add_test(NAME snow-shot-recording-eraser-tests
         COMMAND snow-shot-screen-recording-controller-tests --eraser-only -platform offscreen)
     set_tests_properties(snow-shot-recording-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60)
