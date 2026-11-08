@@ -48,7 +48,7 @@ class ImageEditingWindow final : public QObject {
 
   private:
     friend class ImageEditingWindowCoordinator;
-    bool preparePendingEdits();
+    bool preparePendingEdits(bool requireCanvasCommit = false);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };
@@ -62,6 +62,10 @@ class ImageEditingWindowCoordinator final : public QObject {
     void presentSource(ScreenshotExportSource source);
     void presentPinnedRecord(const QString& id);
     void confirmShutdown(std::function<void(bool)> completion);
+    // Owner-thread final admission only: commit current drafts without prompting.
+    // Refuse dirty/closing windows, a pending review, or membership changes during
+    // preparation. This inspects current state; callers must still close admission.
+    [[nodiscard]] bool prepareForUpdateHandoff();
     void shutdown();
     bool hasUnsavedChanges() const;
     QVector<QPointer<ImageEditingWindow>> windows() const {
@@ -75,6 +79,8 @@ class ImageEditingWindowCoordinator final : public QObject {
     ImageEditingWindow* createWindow();
     ImageEditingServices m_services;
     QVector<QPointer<ImageEditingWindow>> m_windows;
+    quint64 m_windowRevision = 0;
+    bool m_handoffPreparing = false;
     bool m_reviewPending = false;
     bool m_quitPending = false;
     bool m_quitApproved = false;

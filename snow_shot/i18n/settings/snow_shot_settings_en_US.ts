@@ -5099,6 +5099,10 @@ Unavailable: %2</translation>
             <translation>Choose an absolute storage directory path</translation>
         </message>
         <message>
+            <source>Could not change the storage directory</source>
+            <translation>Could not change the storage directory</translation>
+        </message>
+        <message>
             <source>Could not copy %1</source>
             <translation>Could not copy %1</translation>
         </message>

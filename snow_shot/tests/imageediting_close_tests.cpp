@@ -12,7 +12,9 @@
 #include <QClipboard>
 #include <QElapsedTimer>
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QScopeGuard>
@@ -315,6 +317,9 @@ void shutdownReviewCommitsPendingCellBeforeCleanScan() {
                 "quit review cannot approve a clean checkpoint while a table draft is pending");
         auto decision = confirmation(*window);
         require(decision, "quit review prompts for an active or deferred table cell edit");
+        require(
+            !coordinator.prepareForUpdateHandoff() && confirmation(*window) == decision,
+            "final update admission refuses an outstanding review without replacing its prompt");
         decision->reject();
         require(reviewed && !accepted && window->dirty() &&
                     table->model()->index(0, 0).data(Qt::EditRole).toString() == text,
@@ -333,6 +338,113 @@ void shutdownReviewCommitsPendingCellBeforeCleanScan() {
         coordinator.shutdown();
         awaitCondition([&] { return !window && coordinator.windows().isEmpty(); },
                        "approved shutdown deletes the table editor and its draft");
+    }
+}
+
+void updateHandoffPreparesPendingCellsWithoutPrompting() {
+    for (const auto kind : {CellEdit::Active, CellEdit::Deferred}) {
+        ImageEditingWindowCoordinator coordinator({});
+        QPointer<ImageEditingWindow> window = openTable(coordinator);
+        auto* table = window->canvas()->parentWidget()->findChild<ScreenshotTableEditor*>();
+        copyTable(*window, QStringLiteral("Original"));
+        require(coordinator.prepareForUpdateHandoff(),
+                "a clean stable editor permits final update preparation");
+        const auto text = editCell(*table, kind, "prepareForUpdateHandoff");
+        require(!coordinator.prepareForUpdateHandoff() && window && window->dirty() &&
+                    table->model()->index(0, 0).data(Qt::EditRole).toString() == text &&
+                    !confirmation(*window) && coordinator.windows().size() == 1,
+                "final update admission commits pending cell edits and refuses without a prompt");
+        copyTable(*window, text);
+        require(coordinator.prepareForUpdateHandoff(),
+                "an explicitly exported draft permits a later final update attempt");
+    }
+}
+
+void updateHandoffCommitsCanvasDraftAndRejectsDetachedRuntime() {
+    ImageEditingWindowCoordinator coordinator({});
+    QImage image(200, 160, QImage::Format_ARGB32);
+    image.fill(Qt::white);
+    coordinator.presentSource(ScreenshotExportSource::fromImage(image));
+    QPointer<ImageEditingWindow> window = coordinator.windows().first();
+    awaitCondition([&] { return window && !window->document()->image().isNull(); },
+                   "canvas draft editor finishes loading its clean source");
+    window->canvas()->setMode(snow_shot::presentation::ImageEditingCanvas::Mode::Draw);
+    require(window->canvas()->setCanvasTool(SnowCanvasTool::Text),
+            "final handoff fixture activates pending canvas text");
+    const QPointF point = window->canvas()->canvasToViewTransform().map(QPointF(80, 70));
+    for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, point, window->canvas()->mapToGlobal(point), Qt::LeftButton,
+                          type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(window->canvas(), &event);
+    }
+    require(window->canvas()->hasActiveTextEditing(), "canvas owns a pending text draft");
+    QKeyEvent input(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("Pending text"));
+    QApplication::sendEvent(window->canvas(), &input);
+    require(!coordinator.prepareForUpdateHandoff() && window &&
+                !window->canvas()->hasActiveTextEditing() && window->dirty() &&
+                !confirmation(*window),
+            "final admission commits pending canvas text and refuses its unsaved contents");
+    coordinator.shutdown();
+    awaitCondition([&] { return !window; }, "canvas draft fixture releases its editor");
+    window = openTable(coordinator);
+    copyTable(*window, QStringLiteral("Original"));
+    window->document()->runtime().destroyAsync();
+    require(!coordinator.prepareForUpdateHandoff() && window && !confirmation(*window),
+            "failed canvas preparation cannot approve final handoff from a clean checkpoint");
+}
+
+void updateHandoffRejectsReentrantMembershipChanges() {
+    enum class Change { AddWindow, DestroyWindow, DestroyCoordinator, ReenterPreparation };
+    for (const auto change : {Change::AddWindow, Change::DestroyWindow, Change::DestroyCoordinator,
+                              Change::ReenterPreparation}) {
+        auto coordinator = std::make_unique<ImageEditingWindowCoordinator>(
+            snow_shot::presentation::ImageEditingServices{});
+        QPointer<ImageEditingWindow> window = openTable(*coordinator);
+        copyTable(*window, QStringLiteral("Original"));
+        require(window->canvas()->setCanvasTool(SnowCanvasTool::Shape) && !window->dirty(),
+                "a transient tool choice leaves the editor clean before preparation");
+        bool changed = false;
+        bool reentrantAccepted = true;
+        const auto connection =
+            QObject::connect(window->canvas(), &SnowCanvasWidget::activeToolChanged, qApp, [&] {
+                if (changed)
+                    return;
+                changed = true;
+                if (change == Change::AddWindow)
+                    coordinator->presentSource(
+                        ScreenshotExportSource::fromImage(tableSource().image));
+                else if (change == Change::DestroyWindow)
+                    delete window.data();
+                else if (change == Change::DestroyCoordinator)
+                    coordinator.reset();
+                else
+                    reentrantAccepted = coordinator->prepareForUpdateHandoff();
+            });
+        const bool accepted = coordinator->prepareForUpdateHandoff();
+        QObject::disconnect(connection);
+        require(changed, "draft preparation publishes its transient canvas tool reset");
+        if (change == Change::ReenterPreparation) {
+            require(accepted && !reentrantAccepted && coordinator && window && !window->dirty(),
+                    "nested final preparation refuses without disturbing the original clean scan");
+        } else {
+            require(!accepted, "changed editor membership cannot reuse the earlier final scan");
+            if (change == Change::AddWindow) {
+                require(coordinator && coordinator->windows().size() == 2 &&
+                            !coordinator->hasUnsavedChanges(),
+                        "even a newly opened clean window invalidates the preparation snapshot");
+                const QPointer<ImageEditingWindow> added = coordinator->windows().last();
+                awaitCondition([&] { return added && !added->document()->image().isNull(); },
+                               "new editor finishes loading before a fresh final scan");
+                require(coordinator->prepareForUpdateHandoff(),
+                        "a later stable scan prepares both current clean windows");
+            } else if (change == Change::DestroyWindow) {
+                require(coordinator && !window && coordinator->windows().isEmpty(),
+                        "destroyed windows leave no stale membership entries");
+            } else {
+                require(!coordinator, "preparation safely returns after coordinator destruction");
+            }
+        }
     }
 }
 
@@ -439,6 +551,9 @@ void runImageEditingCloseTests() {
     cleanExportedTableClosesWithoutPrompt();
     closeCommitsPendingCellBeforeReview();
     shutdownReviewCommitsPendingCellBeforeCleanScan();
+    updateHandoffPreparesPendingCellsWithoutPrompting();
+    updateHandoffCommitsCanvasDraftAndRejectsDetachedRuntime();
+    updateHandoffRejectsReentrantMembershipChanges();
     exportCommitsActiveAndDeferredCells();
     discardCompletionMayDestroyItsEditor();
     shutdownReviewCompletionMayDestroyItsCoordinator();

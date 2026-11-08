@@ -108,6 +108,15 @@ int fakeSidecar(int argc, char** argv) {
             if (scenario == u"timeout")
                 continue;
             status("Applying");
+            if (scenario == u"late-ready") {
+                require(QDir().mkpath(cache), "create gated startup cache");
+                const QString release = QDir(cache).filePath(QStringLiteral("release-ready"));
+                QElapsedTimer wait;
+                wait.start();
+                while (!QFileInfo::exists(release) && wait.elapsed() < 5000)
+                    QThread::msleep(1);
+                require(QFileInfo::exists(release), "parent releases late readiness after timeout");
+            }
             if (scenario == u"delayed")
                 QThread::msleep(250);
             frame({{QStringLiteral("protocol"), 2},
@@ -354,6 +363,39 @@ int main(int argc, char** argv) {
                 "cache no-op, rejected handoff, malformed response, and timeout continue startup");
         require(flushes == (scenario == u"commit-failed" ? 1 : 0),
                 "only a prepared handoff flushes application storage");
+    }
+
+    {
+        auto value = options(QStringLiteral("late-ready"));
+        const QString cache = value.cacheDirectory;
+        UpdateService service(std::move(value));
+        service.setMode(QStringLiteral("next_launch"));
+        int flushes = 0;
+        int suspensions = 0;
+        int commits = 0;
+        QObject::connect(&service, &UpdateService::handoffPendingChanged, &app,
+                         [&](bool pending) { suspensions += pending ? 1 : 0; });
+        QObject::connect(&service, &UpdateService::handoffCommitted, &app, [&] { ++commits; });
+        require(snow_shot::update::runStartupUpdate(
+                    service,
+                    [&] {
+                        ++flushes;
+                        return true;
+                    },
+                    {}, std::chrono::seconds(1)) == StartupUpdateResult::ContinueStartup &&
+                    service.status().state == snow_shot::update::UpdateState::Applying,
+                "startup timeout returns while readiness remains gated in helper");
+        QFile release(QDir(cache).filePath(QStringLiteral("release-ready")));
+        require(release.open(QIODevice::WriteOnly), "release readiness after owner scope ended");
+        release.close();
+        QElapsedTimer wait;
+        wait.start();
+        while (service.busy() && wait.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        require(!service.busy() && flushes == 0 && suspensions == 0 && commits == 0,
+                "late readiness after timeout cannot use expired approval or suspend/commit");
     }
 
     for (const bool foregroundRequested : {false, true}) {

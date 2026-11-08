@@ -118,14 +118,10 @@ QJsonObject updateJson(update::UpdateService* service) {
             {QStringLiteral("version"), status.version},
             {QStringLiteral("received_bytes"), status.received},
             {QStringLiteral("total_bytes"), status.total},
-#ifdef Q_OS_MACOS
-            {QStringLiteral("installation"), QStringLiteral("official_website")}
-#else
-            {QStringLiteral("installation"), service->managedByStore()
-                                                 ? QStringLiteral("microsoft_store")
-                                                 : QStringLiteral("native_updater")}
-#endif
-    };
+            {QStringLiteral("installation"),
+             service->managedByStore()         ? QStringLiteral("microsoft_store")
+             : service->capabilities().install ? QStringLiteral("native_updater")
+                                               : QStringLiteral("official_website")}};
 }
 } // namespace
 
@@ -784,18 +780,16 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
     } else if (method == u"snow_shot_updates_status") {
         finish(updateJson(ports.updates));
     } else if (method == u"snow_shot_updates_action") {
-        if (!ports.updates || ports.updates->managedByStore()) {
+        if (!ports.updates || !ports.updates->capabilities().check) {
             error(QStringLiteral("unsupported"));
             return;
         }
         const auto action = params.value(QStringLiteral("action")).toString();
         if (action == u"check" || action == u"download") {
-#ifdef Q_OS_MACOS
-            if (action == u"download") {
+            if (action == u"download" && !ports.updates->capabilities().download) {
                 error(QStringLiteral("unsupported"));
                 return;
             }
-#endif
             if (ports.updates->busy() || !activeUpdateJob.isEmpty()) {
                 error(QStringLiteral("busy"));
                 return;
@@ -869,6 +863,10 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
             if (!lifetime)
                 return;
         } else if (action == u"apply") {
+            if (!ports.updates->capabilities().install) {
+                error(QStringLiteral("unsupported"));
+                return;
+            }
             if (ports.updates->status().state != update::UpdateState::Ready) {
                 error(QStringLiteral("invalid_state"));
                 return;

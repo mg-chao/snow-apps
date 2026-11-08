@@ -452,6 +452,10 @@ UpdateService::~UpdateService() {
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
 }
+UpdateCapabilities UpdateService::capabilities() const {
+    return {true, false, false};
+}
+void UpdateService::setHandoffApproval(QObject*, std::function<bool()>) {}
 bool UpdateService::managedByStore() const {
     return false;
 }
@@ -496,12 +500,18 @@ void UpdateService::cancel() {
     emit statusChanged();
     emit operationFinished(QStringLiteral("check"), QStringLiteral("cancelled"));
 }
-// These Windows installation operations intentionally have no macOS implementation.
-void UpdateService::download() {}
-void UpdateService::requestRestart() {}
-void UpdateService::beginApply() {}
+// Discovery hands off to a release host; this service never owns macOS installation.
+void UpdateService::download() {
+    emit operationFinished(QStringLiteral("download"), QStringLiteral("unsupported"));
+}
+void UpdateService::requestRestart() {
+    emit operationFinished(QStringLiteral("restart"), QStringLiteral("unsupported"));
+}
+void UpdateService::beginApply() {
+    emit operationFinished(QStringLiteral("apply"), QStringLiteral("unsupported"));
+}
 void UpdateService::applyAtStartup() {
-    emit operationFinished(QStringLiteral("apply"), QStringLiteral("success"));
+    emit operationFinished(QStringLiteral("apply"), QStringLiteral("unsupported"));
 }
 void UpdateService::setRelaunchArguments(const QStringList&) {}
 void UpdateService::clearRelaunchArguments() {}

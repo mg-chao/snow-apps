@@ -5099,6 +5099,10 @@ Unavailable: %2</source>
             <translation>請輸入儲存目錄的絕對路徑</translation>
         </message>
         <message>
+            <source>Could not change the storage directory</source>
+            <translation>無法變更儲存目錄</translation>
+        </message>
+        <message>
             <source>Could not copy %1</source>
             <translation>無法複製 %1</translation>
         </message>

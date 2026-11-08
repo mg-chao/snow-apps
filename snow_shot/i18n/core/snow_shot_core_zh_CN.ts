@@ -885,10 +885,6 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>无法将选中的文件固定到屏幕</translation>
         </message>
         <message>
-            <source>Feature unavailable</source>
-            <translation>功能暂不可用</translation>
-        </message>
-        <message>
             <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage</source>
             <translation>请先完成截图、录制、导出、文本识别或更新，再更改存储目录</translation>
         </message>

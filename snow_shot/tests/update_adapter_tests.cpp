@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 using snow_shot::update::UpdateService;
@@ -401,7 +402,10 @@ int main(int argc, char** argv) {
                              ++completions;
                          });
         QObject::connect(&service, &UpdateService::restartRequested, &app, [&] { restart = true; });
-        QObject::connect(&service, &UpdateService::handoffReady, &app, [&] { handoff = true; });
+        service.setHandoffApproval(&app, [&] {
+            handoff = true;
+            return true;
+        });
         service.setMode(QStringLiteral("next_launch"));
         service.start();
         service.check();
@@ -411,6 +415,9 @@ int main(int argc, char** argv) {
         service.requestRestart();
         service.cancel();
         QCoreApplication::processEvents();
+        const auto capabilities = service.capabilities();
+        require(!capabilities.check && !capabilities.download && !capabilities.install,
+                "Store policy exposes no native update capabilities");
         require(service.managedByStore() && !service.busy() && !service.handoffPending() &&
                     service.status().state == UpdateState::Unavailable && completions == 4 &&
                     !restart && !handoff && !QFileInfo::exists(cache),
@@ -427,9 +434,14 @@ int main(int argc, char** argv) {
                              operations.append({operation, outcome});
                          });
         QObject::connect(&service, &UpdateService::updateReady, &app, [&] { updateReady = true; });
-        QObject::connect(&service, &UpdateService::handoffReady, &app, [&] {
+        const auto capabilities = service.capabilities();
+        require(capabilities.check && capabilities.download && capabilities.install,
+                "standalone Windows owns discovery, download, and installation");
+        service.setHandoffApproval(&app, [&] {
             handoff = true;
+            require(!service.handoffPending(), "approval precedes application suspension");
             service.reportBlocked(QStringLiteral("blocked for adapter test"));
+            return false;
         });
         service.start();
         require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
@@ -443,11 +455,54 @@ int main(int argc, char** argv) {
                 "service completion reports exact operation and outcome without polling");
         service.beginApply();
         require(waitUntil([&] { return handoff && service.status().state == UpdateState::Ready; }),
-                "reentrant handoff cancellation");
+                "direct handoff refusal preserves the running application");
+        require(!service.handoffPending(), "refused handoff never suspends application input");
+    }
+
+    for (int refusal = 0; refusal < 4; ++refusal) {
+        auto refusedOptions = options(QStringLiteral("default"));
+        const QString cache = refusedOptions.cacheDirectory;
+        UpdateService service(std::move(refusedOptions));
+        int approvals = 0;
+        int suspensions = 0;
+        bool committed = false;
+        auto context = std::make_unique<QObject>();
+        service.setHandoffApproval(context.get(), [&]() -> bool {
+            ++approvals;
+            require(QThread::currentThread() == service.thread() && !service.handoffPending(),
+                    "handoff authority executes on owner thread before suspension");
+            if (refusal == 1)
+                throw std::runtime_error("approval failure");
+            return false;
+        });
+        if (refusal == 2)
+            context.reset();
+        else if (refusal == 3)
+            service.setHandoffApproval(nullptr, {});
+        QObject::connect(&service, &UpdateService::handoffPendingChanged, &app,
+                         [&](bool pending) { suspensions += pending ? 1 : 0; });
+        QObject::connect(&service, &UpdateService::handoffCommitted, &app,
+                         [&] { committed = true; });
+        service.applyAtStartup();
+        require(waitUntil([&] {
+                    return !service.busy() &&
+                           QFileInfo::exists(QDir(cache).filePath(QStringLiteral("handoff.json")));
+                }),
+                "refused or unavailable authority completes the helper rollback");
+        require(
+            approvals == (refusal >= 2 ? 0 : 1) && suspensions == 0 && !committed &&
+                service.status().state == UpdateState::Ready &&
+                !readJson(QDir(cache).filePath(QStringLiteral("handoff.json")))
+                     .value(QStringLiteral("proceed"))
+                     .toBool(true),
+            "refusal, exception, expired context, and missing authority never commit or suspend");
     }
 
     {
         UpdateService service(options(QStringLiteral("all-statuses")));
+        // This case tests status mapping. Automatic download from its intermediate Available
+        // frame would legitimately replace the final failure with a later successful operation.
+        service.setMode(QStringLiteral("manual"));
         QList<UpdateState> seen;
         bool progress = false;
         QObject::connect(&service, &UpdateService::statusChanged, &app, [&] {
@@ -973,11 +1028,12 @@ int main(int argc, char** argv) {
         UpdateService service(std::move(handoffOptions));
         bool prepared = false;
         bool committed = false;
-        QObject::connect(&service, &UpdateService::handoffReady, &app, [&] {
+        service.setHandoffApproval(&app, [&] {
             prepared = true;
             require(!committed, "handoff preparation does not imply acceptance");
             service.setRelaunchArguments(
                 {QStringLiteral("--autostart"), QStringLiteral("--skip-startup-update")});
+            return true;
         });
         QObject::connect(&service, &UpdateService::handoffCommitted, &app,
                          [&] { committed = true; });
@@ -1008,6 +1064,7 @@ int main(int argc, char** argv) {
         auto retryOptions = options(QStringLiteral("retry-shell-handoff"));
         const QString cache = retryOptions.cacheDirectory;
         UpdateService service(std::move(retryOptions));
+        service.setHandoffApproval(&app, [] { return true; });
         const QString image = directory.filePath(QStringLiteral("selected image.png"));
         service.setMode(QStringLiteral("manual"));
         service.setRelaunchArguments({QStringLiteral("--edit-with-snow-shot"), image,

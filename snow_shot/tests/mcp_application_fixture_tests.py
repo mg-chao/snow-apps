@@ -571,7 +571,15 @@ def exercise(client, directory):
     mutate("snow_shot_pinned_action", action="hide")
     assert not pin_state()["result"]["visible"]
     mutate("snow_shot_pinned_action", action="show")
-    assert pin_state()["result"]["visible"]
+    # Show acknowledges admission; an unloaded pin restores its payload on a worker and
+    # presents its first frame later, just like the animated restore fixture below.
+    deadline = time.monotonic() + 10
+    while True:
+        restored = pin_state()["result"]
+        if restored.get("ready", False) and restored["visible"]:
+            break
+        assert time.monotonic() < deadline, restored
+        time.sleep(.025)
     replacement = directory / "replacement.png"
     png(replacement, 100, 70)
     mutate("snow_shot_pinned_replace", source={"kind": "file", "path": str(replacement)})

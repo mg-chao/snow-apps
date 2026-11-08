@@ -885,10 +885,6 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Could not pin selected files to screen</translation>
         </message>
         <message>
-            <source>Feature unavailable</source>
-            <translation>Feature unavailable</translation>
-        </message>
-        <message>
             <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage</source>
             <translation>Finish capturing, recording, exporting, recognizing text, or updating before changing storage</translation>
         </message>

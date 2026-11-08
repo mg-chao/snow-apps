@@ -21,6 +21,7 @@
 #include <QSemaphore>
 #include <QSet>
 #include <QUrl>
+#include <QScopeGuard>
 
 #include <algorithm>
 #include <cmath>
@@ -1153,6 +1154,105 @@ void storageRelocationPreservesServiceIdentity() {
     require(!service.storageBusy(), "new OCR service is ready for requests");
 }
 
+void storageRelocationAppliesLatestConfiguration() {
+    QTemporaryDir fixture;
+    require(fixture.isValid(), "paused OCR configuration fixture is isolated");
+    const auto marker = fixture.filePath(QStringLiteral("submitted"));
+    qputenv("SNOW_TEST_OCR_LIFECYCLE_CHILD", "1");
+    qputenv("SNOW_TEST_OCR_LIFECYCLE_COMPLETE", "1");
+    qputenv("SNOW_TEST_OCR_LIFECYCLE_MARKER", marker.toUtf8());
+    const auto clearEnvironment = qScopeGuard([] {
+        qunsetenv("SNOW_TEST_OCR_LIFECYCLE_CHILD");
+        qunsetenv("SNOW_TEST_OCR_LIFECYCLE_COMPLETE");
+        qunsetenv("SNOW_TEST_OCR_LIFECYCLE_MARKER");
+    });
+    const auto events = [&] {
+        QFile file(marker + QStringLiteral(".events"));
+        return file.open(QIODevice::ReadOnly) ? file.readAll().split('\n') : QList<QByteArray>();
+    };
+    const auto preparations = [&] {
+        QList<QByteArray> result;
+        for (const auto& event : events()) {
+            if (event.startsWith("prepare "))
+                result.append(event);
+        }
+        return result;
+    };
+    ScreenshotOcrRecognitionService::Options options;
+    options.cacheRoot = fixture.filePath(QStringLiteral("old"));
+    options.processPath = QCoreApplication::applicationFilePath();
+    options.detectorModelPath = options.processPath;
+    options.recognizerModelPath = options.processPath;
+    options.dictionaryPath = options.processPath;
+    options.modelType = ScreenshotOcrModelType::ExtraSmall;
+    options.detectorResizePolicy = ScreenshotOcrDetectorResizePolicy::Min;
+    options.textDetectionProcessing = ScreenshotOcrTextDetectionProcessing::SpeedFirst;
+    options.hardwareAcceleration = true;
+    ScreenshotOcrRecognitionService service(options);
+    require(service.runtimeConfiguration().modelType == options.modelType &&
+                service.runtimeConfiguration().detectorResizePolicy ==
+                    options.detectorResizePolicy &&
+                service.runtimeConfiguration().textDetectionProcessing ==
+                    options.textDetectionProcessing &&
+                service.runtimeConfiguration().hardwareAcceleration,
+            "initial options establish the desired runtime configuration");
+    service.suspendStorage();
+    auto drain = std::async(std::launch::async, [&] { service.drainStorage(); });
+    drain.get();
+    ScreenshotOcrRuntimeConfiguration configuration;
+    configuration.residentProcess = true;
+    configuration.modelHotStart = true;
+    service.setRuntimeConfiguration(configuration);
+    service.setModelType(ScreenshotOcrModelType::Medium);
+    service.setDetectorResizePolicy(ScreenshotOcrDetectorResizePolicy::Min);
+    service.setTextDetectionProcessing(ScreenshotOcrTextDetectionProcessing::SpeedFirst);
+    service.setHardwareAcceleration(true);
+    configuration.modelType = ScreenshotOcrModelType::Medium;
+    configuration.detectorResizePolicy = ScreenshotOcrDetectorResizePolicy::Min;
+    configuration.textDetectionProcessing = ScreenshotOcrTextDetectionProcessing::SpeedFirst;
+    configuration.hardwareAcceleration = true;
+    require(service.runtimeConfiguration() == configuration,
+            "all individual setters compose with whole configuration changes while paused");
+    QObject receiver;
+    const auto image = whiteImage(8);
+    require(service.recognize({image, QRectF(0, 0, 8, 8)}, &receiver,
+                              [](ScreenshotOcrRecognitionResult) {
+                                  require(false, "paused OCR must not deliver new recognition");
+                              }) == 0,
+            "configuration does not reopen paused OCR request admission");
+    QCoreApplication::processEvents();
+    require(events().isEmpty() && service.processId() == 0,
+            "configuration while paused cannot create a process or warm session");
+    service.resumeStorage(fixture.filePath(QStringLiteral("new")));
+    require(waitUntil([&] { return !preparations().isEmpty(); }, 5000) &&
+                preparations().back().startsWith("prepare 010101") && service.processId() != 0,
+            "resumed resident hot start uses current detector, processing and acceleration flags");
+    require(service.runtimeConfiguration() == configuration,
+            "resumed resources retain the selected model and latest runtime policy");
+
+    service.suspendStorage();
+    auto secondDrain = std::async(std::launch::async, [&] { service.drainStorage(); });
+    secondDrain.get();
+    configuration = {};
+    configuration.modelType = ScreenshotOcrModelType::ExtraSmall;
+    service.setRuntimeConfiguration(configuration);
+    const auto previousEvents = events();
+    // A failed relocation resumes against the original root; policy still comes from now.
+    service.resumeStorage(options.cacheRoot);
+    QCoreApplication::processEvents();
+    require(service.processId() == 0 && events() == previousEvents,
+            "disabling residency while paused prevents obsolete background startup on rollback");
+    int completions = 0;
+    require(service.recognize({image, QRectF(0, 0, 8, 8)}, &receiver,
+                              [&](ScreenshotOcrRecognitionResult result) {
+                                  require(result.error.isEmpty(), "resumed OCR request succeeds");
+                                  ++completions;
+                              }) != 0 &&
+                waitUntil([&] { return completions == 1 && service.processId() == 0; }, 5000) &&
+                preparations().back().startsWith("prepare 000000"),
+            "whole configuration update reaches next worker and releases nonresident process");
+}
+
 #ifdef Q_OS_WIN
 void downloadedRuntimeRecognizesText(const QString& archive) {
     QTemporaryDir root;
@@ -1242,6 +1342,7 @@ int main(int argc, char** argv) {
 #endif
     if (application.arguments().contains(QStringLiteral("--storage-relocation-only"))) {
         storageRelocationPreservesServiceIdentity();
+        storageRelocationAppliesLatestConfiguration();
         return 0;
     }
     if (qEnvironmentVariableIsSet("SNOW_TEST_OCR_LIFECYCLE_CHILD"))

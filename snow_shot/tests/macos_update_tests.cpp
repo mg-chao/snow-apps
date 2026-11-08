@@ -598,10 +598,23 @@ void schedulingAndFailures() {
     pump(120);
     require(github.requests.size() + gitee.requests.size() == count,
             "manual mode stops scheduled checks");
+    const auto capabilities = service.capabilities();
+    require(capabilities.check && !capabilities.download && !capabilities.install,
+            "macOS service exposes release discovery only");
+    int unsupported = 0;
+    const auto unsupportedConnection =
+        QObject::connect(&service, &UpdateService::operationFinished, &service,
+                         [&](const QString&, const QString& outcome) {
+                             require(outcome == u"unsupported", "installation is unsupported");
+                             ++unsupported;
+                         });
     service.download();
     service.beginApply();
     service.requestRestart();
-    require(service.status().state == UpdateState::Available, "macOS does not install in app");
+    service.applyAtStartup();
+    require(unsupported == 4 && service.status().state == UpdateState::Available && !service.busy(),
+            "unsupported operations finish explicitly without changing discovered release");
+    QObject::disconnect(unsupportedConnection);
 
     github.status = 503;
     gitee.status = 503;

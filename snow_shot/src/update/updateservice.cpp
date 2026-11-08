@@ -13,7 +13,9 @@
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QProcess>
+#include <QPointer>
 #include <QSet>
+#include <QThread>
 #include <QTimer>
 #include <optional>
 
@@ -556,8 +558,19 @@ struct UpdateService::Impl {
             applyStatus(event.value(QStringLiteral("status")).toObject());
             completeOperation(outcome);
         } else if (type == u"handoff_ready") {
-            emit q.handoffReady();
-            const bool proceed = status.state == UpdateState::Applying;
+            bool proceed = false;
+            try {
+                const auto approval = handoffApproval;
+                proceed = approval && approval();
+            } catch (...) {
+                // The helper has not been allowed to proceed, so the application can recover.
+                proceed = false;
+            }
+            proceed = proceed && status.state == UpdateState::Applying;
+            if (!proceed && status.state == UpdateState::Applying) {
+                q.reportBlocked(QCoreApplication::translate(
+                    "UpdateErrors", "The application cancelled the update handoff"));
+            }
             if (proceed) {
                 setHandoffPending(true);
                 QJsonObject decision{{QStringLiteral("proceed"), true}};
@@ -719,6 +732,7 @@ struct UpdateService::Impl {
     quint64 pendingHandoffRequestId = 0;
     QSet<quint64> pendingRelaunchRequestIds;
     std::optional<QStringList> relaunchArguments;
+    std::function<bool()> handoffApproval;
     Operation activeOperation = Operation::None;
     Trigger activeTrigger = Trigger::Startup;
     Operation pendingOperation = Operation::None;
@@ -750,6 +764,7 @@ UpdateService::~UpdateService() {
     // Reaping the helper can dispatch its last frames. Observers must not receive
     // callbacks from a service whose dependent application objects are tearing down.
     QObject::disconnect(this, nullptr, nullptr, nullptr);
+    m_impl->handoffApproval = [] { return false; };
     m_impl.reset();
 }
 
@@ -767,6 +782,20 @@ bool UpdateService::event(QEvent* event) {
 
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
+}
+UpdateCapabilities UpdateService::capabilities() const {
+    return {!managedByStore(), !managedByStore(), !managedByStore()};
+}
+
+void UpdateService::setHandoffApproval(QObject* context, std::function<bool()> approval) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    Q_ASSERT(!context || context->thread() == thread());
+    if (!approval) {
+        m_impl->handoffApproval = {};
+        return;
+    }
+    m_impl->handoffApproval = [context = QPointer<QObject>(context),
+                               approval = std::move(approval)] { return context && approval(); };
 }
 bool UpdateService::managedByStore() const {
     return m_impl->storeManaged;

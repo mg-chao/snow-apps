@@ -6,6 +6,7 @@
 #include <QStringList>
 #include <QUrl>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -31,6 +32,13 @@ struct UpdateStatus {
     qint64 received = 0;
     qint64 total = 0;
     QUrl downloadUrl = {};
+};
+
+// Supported operations for this platform/distribution, independent of current state or readiness.
+struct UpdateCapabilities {
+    bool check = false;
+    bool download = false;
+    bool install = false;
 };
 
 // Windows delegates installation to the updater helper. macOS checks releases over HTTPS
@@ -60,6 +68,7 @@ class UpdateService final : public QObject {
     explicit UpdateService(Options options, QObject* parent = nullptr);
     ~UpdateService() override;
     const UpdateStatus& status() const;
+    UpdateCapabilities capabilities() const;
     bool managedByStore() const;
     bool busy() const;
     bool handoffPending() const;
@@ -79,6 +88,10 @@ class UpdateService final : public QObject {
     void setRelaunchArguments(const QStringList& arguments);
     void clearRelaunchArguments();
     void reportBlocked(const QString& reason);
+    // Runs synchronously on this service's thread before input suspension or helper commitment.
+    // A missing handler, expired context, or exception rejects handoff.
+    // Approval may prepare relaunch arguments and report a specific refusal with reportBlocked().
+    void setHandoffApproval(QObject* context, std::function<bool()> approval);
 
   signals:
     void statusChanged();
@@ -86,7 +99,6 @@ class UpdateService final : public QObject {
     void updateReady();
     void automaticUpdateAvailable(const QString& version);
     void restartRequested();
-    void handoffReady();
     void handoffPendingChanged(bool pending);
     void handoffCommitted();
 

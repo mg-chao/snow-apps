@@ -16,6 +16,7 @@
 #include <iostream>
 #include <atomic>
 #include <thread>
+#include <stdexcept>
 #include <Windows.h>
 #include <winioctl.h>
 #include <cstring>
@@ -202,6 +203,72 @@ void recovery() {
                 "interrupted transaction uses committed root and warns");
     }
 }
+void transactionExceptionsRespectCommit() {
+    for (const auto& point :
+         {QStringLiteral("copy"), QStringLiteral("verify"), QStringLiteral("activate"),
+          QStringLiteral("persist"), QStringLiteral("cleanup")}) {
+        QTemporaryDir dir;
+        auto o = options(dir);
+        bool active = false;
+        int rollbacks = 0;
+        o.activate = [&](const QString&) {
+            active = true;
+            return storage::StorageResult::ok();
+        };
+        o.rollback = [&] {
+            ++rollbacks;
+            active = false;
+        };
+        o.checkpoint = [&](const QString& step) {
+            if (step == point)
+                throw std::runtime_error("transaction checkpoint");
+            return storage::StorageResult::ok();
+        };
+        const auto result = storage::changeStorageDirectory(o);
+        if (point == u"cleanup") {
+            require(result.success && !result.warning.isEmpty() && active && rollbacks == 0,
+                    "postcommit exception retains active root and reports warning");
+            require(storage::savedStorageDirectory(o.source, o.executableDirectory) ==
+                        o.destination,
+                    "postcommit exception preserves durable selector");
+        } else {
+            require(!result.success && !result.error.isEmpty() && !active && rollbacks == 1,
+                    "precommit exception rolls back exactly once");
+            require(storage::savedStorageDirectory(o.source, o.executableDirectory).isEmpty(),
+                    "precommit exception restores durable selector");
+            require(QDir(o.destination)
+                        .entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)
+                        .isEmpty(),
+                    "precommit exception removes partial copies");
+        }
+        require(QFileInfo::exists(QDir(o.source).filePath(QStringLiteral("config.json"))),
+                "exception preserves source payload");
+    }
+    for (const bool duringActivation : {false, true}) {
+        QTemporaryDir fixture;
+        auto o = options(fixture);
+        bool active = false;
+        int rollbacks = 0;
+        o.prepare = [&](const QString&) {
+            if (!duringActivation)
+                throw std::runtime_error("preparation failed");
+            return storage::StorageResult::ok();
+        };
+        o.activate = [&](const QString&) -> storage::StorageResult {
+            active = true;
+            throw std::runtime_error("activation failed after acquiring destination");
+        };
+        o.rollback = [&] {
+            active = false;
+            ++rollbacks;
+        };
+        const auto result = storage::changeStorageDirectory(o);
+        require(!result.success && !active && rollbacks == 1,
+                "throwing preparation or partially completed activation rolls back once");
+        require(storage::savedStorageDirectory(o.source, o.executableDirectory).isEmpty(),
+                "throwing hooks preserve original selector");
+    }
+}
 storage::PinnedWindowRecord pin() {
     storage::PinnedWindowRecord record;
     record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -266,6 +333,162 @@ void flushFailureRestoresAvailability() {
     require(finished && !app.directoryChanging() && app.configurationDirectory() == source &&
                 app.status().writeAvailable,
             "flush failure restores source and releases busy state");
+    app.shutdown();
+}
+
+void asynchronousExceptionsRestoreParticipants() {
+    enum class Failure { Launch, InvalidFuture, Drain, Completion, CommittedCompletion, Shutdown };
+    for (const auto failure :
+         {Failure::Launch, Failure::InvalidFuture, Failure::Drain, Failure::Completion,
+          Failure::CommittedCompletion, Failure::Shutdown}) {
+        QTemporaryDir fixture;
+        auto& app = storage::ApplicationStorage::instance();
+        const auto source = fixture.filePath(QStringLiteral("source"));
+        const auto target = fixture.filePath(QStringLiteral("target"));
+        require(app.initialize({fixture.filePath(QStringLiteral("bin")), source, 60000}).success,
+                "exception fixture initialized");
+        int suspended = 0;
+        int resumed = 0;
+        int completions = 0;
+        QString resumedRoot;
+        bool succeeded = false;
+        auto* ownerThread = QThread::currentThread();
+        app.setDirectoryChangeHooks(
+            [&] {
+                require(QThread::currentThread() == ownerThread, "suspend on owner thread");
+                ++suspended;
+                return storage::StorageResult::ok();
+            },
+            [&](const QString& root) {
+                require(QThread::currentThread() == ownerThread, "resume on owner thread");
+                ++resumed;
+                resumedRoot = root;
+            },
+            [&] {
+                require(QThread::currentThread() != ownerThread, "drain on worker thread");
+                if (failure == Failure::Drain)
+                    throw std::runtime_error("drain failed");
+            },
+            [failure](storage::ApplicationStorage::DirectoryChangeTask work)
+                -> std::future<storage::StorageDirectoryChangeResult> {
+                if (failure == Failure::Launch)
+                    throw std::runtime_error("worker launch failed");
+                if (failure == Failure::InvalidFuture)
+                    return {};
+                return std::async(std::launch::async, [failure, work = std::move(work)] {
+                    if (failure == Failure::Completion)
+                        throw std::runtime_error("worker completion failed");
+                    const auto result = work();
+                    if (failure == Failure::CommittedCompletion)
+                        throw std::runtime_error("result delivery failed after commit");
+                    return result;
+                });
+            });
+        const auto connection =
+            QObject::connect(&app, &storage::ApplicationStorage::directoryChangeFinished, &app,
+                             [&](const auto& result) {
+                                 ++completions;
+                                 succeeded = result.success;
+                             });
+        const auto admitted = app.requestDirectoryChange(target, true);
+        if (failure == Failure::Launch || failure == Failure::InvalidFuture)
+            require(!admitted.success, "launch error is a failed admission");
+        else
+            require(admitted.success, "worker admitted before completion");
+        if (failure == Failure::Shutdown)
+            app.shutdown();
+        QElapsedTimer timer;
+        timer.start();
+        while (completions == 0 && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(2);
+        }
+        const bool committed =
+            failure == Failure::CommittedCompletion || failure == Failure::Shutdown;
+        const auto actualRoot = committed ? target : source;
+        require(suspended == 1 && resumed == 1 && completions == 1,
+                "all exits restore acquired participants and complete exactly once");
+        require(succeeded == committed && resumedRoot == actualRoot &&
+                    app.configurationDirectory() == actualRoot && !app.directoryChanging() &&
+                    app.status().writeAvailable,
+                "restoration uses authoritative root and releases writes");
+        require(app.configuration().setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                             QStringLiteral("disabled")),
+                "configuration writes restored after exception");
+        require(app.pinnedWindows().create(pin()).success, "pin writes restored after exception");
+        QCoreApplication::processEvents();
+        require(resumed == 1 && completions == 1, "retired poll cannot complete a second time");
+        QObject::disconnect(connection);
+        app.setDirectoryChangeHooks({}, {});
+        app.shutdown();
+    }
+}
+
+void completionPreventsEarlyReentryAndAllowsFinalChaining() {
+    QTemporaryDir fixture;
+    auto& app = storage::ApplicationStorage::instance();
+    const auto source = fixture.filePath(QStringLiteral("source"));
+    const auto firstTarget = fixture.filePath(QStringLiteral("first"));
+    const auto secondTarget = fixture.filePath(QStringLiteral("second"));
+    require(app.initialize({fixture.filePath(QStringLiteral("bin")), source, 60000}).success,
+            "reentrant completion fixture initialized");
+    int completions = 0;
+    int preparationRefusals = 0;
+    int resumeRefusals = 0;
+    int statusRefusals = 0;
+    bool chained = false;
+    app.setDirectoryChangeHooks(
+        [&] {
+            require(!app.requestDirectoryChange(
+                            fixture.filePath(QStringLiteral("preparation-reentry")), true)
+                         .success,
+                    "suspension callback cannot recursively acquire a second storage move");
+            ++preparationRefusals;
+            return storage::StorageResult::ok();
+        },
+        [&](const QString& root) {
+            if (root == firstTarget) {
+                require(!app.requestDirectoryChange(secondTarget, true).success,
+                        "resume cannot start a move before old completion finishes");
+                ++resumeRefusals;
+            }
+        });
+    const auto statusConnection = QObject::connect(
+        &app, &storage::ApplicationStorage::storageStatusChanged, &app,
+        [&](const storage::StorageStatus& status) {
+            if (status.effectiveDirectory == firstTarget && !status.directoryChanging &&
+                completions == 0) {
+                require(!app.requestDirectoryChange(secondTarget, true).success,
+                        "status callbacks cannot race old usage-tracker and state restoration");
+                ++statusRefusals;
+            }
+        });
+    const auto finishedConnection = QObject::connect(
+        &app, &storage::ApplicationStorage::directoryChangeFinished, &app, [&](const auto& result) {
+            require(result.success, "each chained migration commits");
+            ++completions;
+            if (completions == 1)
+                chained = app.requestDirectoryChange(secondTarget, true).success;
+        });
+    require(app.requestDirectoryChange(firstTarget, true).success,
+            "initial reentrant migration starts");
+    QElapsedTimer timer;
+    timer.start();
+    while (completions < 2 && timer.elapsed() < 10000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(2);
+    }
+    require(completions == 2 && chained && preparationRefusals == 2 && resumeRefusals == 1 &&
+                statusRefusals > 0,
+            "final completion permits legitimate chaining after rejecting earlier reentry");
+    require(app.configurationDirectory() == secondTarget && !app.directoryChanging() &&
+                app.status().writeAvailable &&
+                app.configuration().setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                             QStringLiteral("disabled")),
+            "old completion does not overwrite the chained operation's final root or availability");
+    QObject::disconnect(statusConnection);
+    QObject::disconnect(finishedConnection);
+    app.setDirectoryChangeHooks({}, {});
     app.shutdown();
 }
 
@@ -412,8 +635,11 @@ int main(int argc, char** argv) {
     transactions();
     crossVolumeCopy();
     failures();
+    transactionExceptionsRespectCommit();
     recovery();
     liveSwitch(true);
     liveSwitch(false);
     flushFailureRestoresAvailability();
+    asynchronousExceptionsRestoreParticipants();
+    completionPreventsEarlyReentryAndAllowsFinalChaining();
 }

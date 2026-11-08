@@ -326,24 +326,6 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_assetManager->setProxyUrl(proxyUrl);
     }
 
-    void setModelType(ScreenshotOcrModelType modelType) {
-        auto configuration = m_configuration;
-        configuration.modelType = modelType;
-        setRuntimeConfiguration(configuration);
-    }
-
-    void setDetectorResizePolicy(ScreenshotOcrDetectorResizePolicy policy) {
-        auto configuration = m_configuration;
-        configuration.detectorResizePolicy = policy;
-        setRuntimeConfiguration(configuration);
-    }
-
-    void setTextDetectionProcessing(ScreenshotOcrTextDetectionProcessing processing) {
-        auto configuration = m_configuration;
-        configuration.textDetectionProcessing = processing;
-        setRuntimeConfiguration(configuration);
-    }
-
     void setRuntimeConfiguration(const ScreenshotOcrRuntimeConfiguration& configuration) {
         if (m_configuration == configuration)
             return;
@@ -1399,7 +1381,7 @@ ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(QObject* parent
 ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(const Options& options,
                                                                  QObject* parent)
     : ScreenshotOcrRecognitionPort(parent), m_impl(std::make_unique<Impl>(this, options)),
-      m_storageOptions(options) {}
+      m_storageOptions(options), m_runtimeConfiguration(m_impl->configuration()) {}
 ScreenshotOcrRecognitionService::~ScreenshotOcrRecognitionService() = default;
 
 ScreenshotOcrRecognitionPort::RequestToken
@@ -1458,19 +1440,22 @@ void ScreenshotOcrRecognitionService::setProxyUrl(const QString& proxyUrl) {
         m_impl->setProxyUrl(proxyUrl);
 }
 void ScreenshotOcrRecognitionService::setModelType(ScreenshotOcrModelType modelType) {
-    if (m_impl != nullptr)
-        m_impl->setModelType(modelType);
+    auto configuration = m_runtimeConfiguration;
+    configuration.modelType = modelType;
+    setRuntimeConfiguration(configuration);
 }
 void ScreenshotOcrRecognitionService::setDetectorResizePolicy(
     ScreenshotOcrDetectorResizePolicy policy) {
-    if (m_impl != nullptr)
-        m_impl->setDetectorResizePolicy(policy);
+    auto configuration = m_runtimeConfiguration;
+    configuration.detectorResizePolicy = policy;
+    setRuntimeConfiguration(configuration);
 }
 
 void ScreenshotOcrRecognitionService::setTextDetectionProcessing(
     ScreenshotOcrTextDetectionProcessing processing) {
-    if (m_impl != nullptr)
-        m_impl->setTextDetectionProcessing(processing);
+    auto configuration = m_runtimeConfiguration;
+    configuration.textDetectionProcessing = processing;
+    setRuntimeConfiguration(configuration);
 }
 int ScreenshotOcrRecognitionService::liveWorkerCount() const {
     return m_impl != nullptr ? m_impl->liveWorkerCount() : 0;
@@ -1485,16 +1470,15 @@ QString ScreenshotOcrRecognitionService::processPath() const {
 
 void ScreenshotOcrRecognitionService::setRuntimeConfiguration(
     const ScreenshotOcrRuntimeConfiguration& configuration) {
+    m_runtimeConfiguration = configuration;
     if (m_impl != nullptr)
         m_impl->setRuntimeConfiguration(configuration);
 }
 
 void ScreenshotOcrRecognitionService::setHardwareAcceleration(bool enabled) {
-    if (m_impl) {
-        auto configuration = m_impl->configuration();
-        configuration.hardwareAcceleration = enabled;
-        m_impl->setRuntimeConfiguration(configuration);
-    }
+    auto configuration = m_runtimeConfiguration;
+    configuration.hardwareAcceleration = enabled;
+    setRuntimeConfiguration(configuration);
 }
 
 bool ScreenshotOcrRecognitionService::storageBusy() const {
@@ -1503,7 +1487,6 @@ bool ScreenshotOcrRecognitionService::storageBusy() const {
 void ScreenshotOcrRecognitionService::suspendStorage() {
     if (!m_impl)
         return;
-    m_storageConfiguration = m_impl->configuration();
     m_impl->beginShutdown();
     m_suspendedImpl = std::move(m_impl);
 }
@@ -1514,7 +1497,7 @@ void ScreenshotOcrRecognitionService::drainStorage() {
 void ScreenshotOcrRecognitionService::resumeStorage(const QString& cacheRoot) {
     m_suspendedImpl.reset();
     m_storageOptions.cacheRoot = cacheRoot;
-    m_storageOptions.modelType = m_storageConfiguration.modelType;
+    m_storageOptions.modelType = m_runtimeConfiguration.modelType;
     m_impl = std::make_unique<Impl>(this, m_storageOptions);
-    m_impl->setRuntimeConfiguration(m_storageConfiguration);
+    m_impl->setRuntimeConfiguration(m_runtimeConfiguration);
 }
