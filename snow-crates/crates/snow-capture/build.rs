@@ -16,6 +16,8 @@ fn main() {
         return;
     }
 
+    compile_wgc_interop();
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let hlsl_path = PathBuf::from("src/platform/windows/tonemap_cs.hlsl");
 
@@ -99,6 +101,25 @@ fn main() {
             );
         }
     }
+}
+
+fn compile_wgc_interop() {
+    for source in [
+        "native/wgc_interop.h",
+        "native/wgc_interop.cpp",
+        "native/wgc_interop_tests.cpp",
+    ] {
+        println!("cargo:rerun-if-changed={source}");
+    }
+    cc::Build::new()
+        .cpp(true)
+        .std("c++20")
+        .flag_if_supported("/EHsc")
+        .warnings_into_errors(true)
+        .file("native/wgc_interop.cpp")
+        // A separate archive member is only linked when Rust tests use the fixture.
+        .file("native/wgc_interop_tests.cpp")
+        .compile("snow_capture_wgc_interop");
 }
 
 fn compile_with_fxc(hlsl_path: &Path, cso_path: &Path, entry_point: &str) -> Result<(), String> {

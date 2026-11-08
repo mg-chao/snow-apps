@@ -63,9 +63,9 @@ frameworks through the existing windows-rs and objc2 bindings (MIT OR Apache-2.0
 OR Zlib). Camera-track storage uses the existing FFmpeg libraries. Their resolved
 licenses are included in the generated dependency notice bundle.
 
-The native macOS microphone exception boundary is compiled using the Rust `cc`
-build helper (MIT OR Apache-2.0). Its resolved build dependency notices are
-included in the generated Rust dependency notice bundle.
+The native Windows Graphics Capture and macOS microphone exception boundaries
+are compiled using the Rust `cc` build helper (MIT OR Apache-2.0). Its resolved
+build dependency notices are included in the generated Rust dependency notice bundle.
 
 Parallel screenshot stitching uses Rayon (Apache-2.0 OR MIT). Its license
 texts and resolved dependencies are included in the generated Rust dependency
