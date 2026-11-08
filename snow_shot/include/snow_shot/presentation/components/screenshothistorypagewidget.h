@@ -58,7 +58,6 @@ class ScreenshotHistoryPageDataSource : public QObject {
     ~ScreenshotHistoryPageDataSource() override = default;
 
     // Cancels page-facing work submitted by the current request generation.
-    // Cache-maintenance work is intentionally independent and is not canceled.
     virtual void cancelPending() {}
 
     [[nodiscard]] virtual QVector<snow_shot::storage::CaptureHistoryRecord> records() const = 0;
@@ -189,12 +188,6 @@ class ScreenshotHistoryPageWidget final : public QWidget {
 // Diagnostics for the dedicated history executor. These counters include both
 // running and queued work and are intentionally read-only to callers.
 [[nodiscard]] int screenshotHistoryPendingJobCount();
-[[nodiscard]] int screenshotHistoryPendingPersistenceJobCount();
-[[nodiscard]] int screenshotHistoryQueuedPersistenceJobCount();
-[[nodiscard]] quint64 screenshotHistorySubmittedPersistenceJobCount();
-[[nodiscard]] quint64 screenshotHistoryCompletedPersistenceJobCount();
-[[nodiscard]] quint64 screenshotHistorySkippedPersistenceJobCount();
-[[nodiscard]] qint64 screenshotHistoryRetainedPersistenceBytes();
 [[nodiscard]] adqt::widgets::AdImageLoader*
 createScreenshotHistoryImageLoader(const snow_shot::storage::CaptureHistoryRecord& record,
                                    ScreenshotHistoryPageDataSource* dataSource, QObject* parent);

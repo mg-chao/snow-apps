@@ -134,7 +134,6 @@ StorageStatusSettingsWidget::StorageStatusSettingsWidget(
     m_entryCountValue = createStatusValue(m_descriptions, QStringLiteral("entries"));
     m_pinnedValue = createStatusValue(m_descriptions, QStringLiteral("pinned"));
     m_ocrValue = createStatusValue(m_descriptions, QStringLiteral("ocr"));
-    m_thumbnailsValue = createStatusValue(m_descriptions, QStringLiteral("thumbnails"));
     m_recordingTempValue = createStatusValue(m_descriptions, QStringLiteral("recording-temp"));
     m_otherValue = createStatusValue(m_descriptions, QStringLiteral("other"));
     m_diagnosticsValue = createStatusValue(m_descriptions, QStringLiteral("diagnostics"));
@@ -148,7 +147,6 @@ StorageStatusSettingsWidget::StorageStatusSettingsWidget(
     addStatusItem(m_descriptions, QStringLiteral("entries"), m_entryCountValue);
     addStatusItem(m_descriptions, QStringLiteral("pinned"), m_pinnedValue);
     addStatusItem(m_descriptions, QStringLiteral("ocr"), m_ocrValue);
-    addStatusItem(m_descriptions, QStringLiteral("thumbnails"), m_thumbnailsValue);
     addStatusItem(m_descriptions, QStringLiteral("recordingTemp"), m_recordingTempValue);
     addStatusItem(m_descriptions, QStringLiteral("other"), m_otherValue);
     addStatusItem(m_descriptions, QStringLiteral("diagnostics"), m_diagnosticsValue);
@@ -205,11 +203,10 @@ StorageStatusSettingsWidget::StorageStatusSettingsWidget(
 void StorageStatusSettingsWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
-    const QVector<QLabel*> valueLabels{m_totalValue,         m_historyValue,   m_entryCountValue,
-                                       m_pinnedValue,        m_ocrValue,       m_thumbnailsValue,
-                                       m_recordingTempValue, m_otherValue,     m_locationValue,
-                                       m_modeValue,          m_errorValue,     m_diagnosticsValue,
-                                       m_logLocationValue,   m_logStatusValue, m_copyLogFeedback};
+    const QVector<QLabel*> valueLabels{
+        m_totalValue,         m_historyValue,     m_entryCountValue, m_pinnedValue,    m_ocrValue,
+        m_recordingTempValue, m_otherValue,       m_locationValue,   m_modeValue,      m_errorValue,
+        m_diagnosticsValue,   m_logLocationValue, m_logStatusValue,  m_copyLogFeedback};
     QVector<QLabel*> labels = valueLabels;
     if (m_directoryModal)
         labels << m_directoryProgressLabel;
@@ -300,8 +297,6 @@ void StorageStatusSettingsWidget::retranslateUi() {
     m_descriptions->setItemLabel(m_descriptions->indexOf(QStringLiteral("pinned")),
                                  tr("Pinned windows"));
     m_descriptions->setItemLabel(m_descriptions->indexOf(QStringLiteral("ocr")), tr("OCR assets"));
-    m_descriptions->setItemLabel(m_descriptions->indexOf(QStringLiteral("thumbnails")),
-                                 tr("Thumbnail cache"));
     m_descriptions->setItemLabel(m_descriptions->indexOf(QStringLiteral("recordingTemp")),
                                  tr("Recording temporary files"));
     m_descriptions->setItemLabel(m_descriptions->indexOf(QStringLiteral("other")),
@@ -317,7 +312,6 @@ void StorageStatusSettingsWidget::retranslateUi() {
     m_entryCountValue->setAccessibleName(tr("History entry count"));
     m_pinnedValue->setAccessibleName(tr("Pinned windows disk usage"));
     m_ocrValue->setAccessibleName(tr("OCR asset disk usage"));
-    m_thumbnailsValue->setAccessibleName(tr("Thumbnail cache disk usage"));
     m_recordingTempValue->setAccessibleName(tr("Recording temporary disk usage"));
     m_otherValue->setAccessibleName(tr("Other app data disk usage"));
     m_locationValue->setAccessibleName(tr("Effective storage location"));
@@ -353,7 +347,6 @@ void StorageStatusSettingsWidget::syncStatus(const snow_shot::storage::StorageSt
     m_entryCountValue->setText(QString::number(status.historyUsage.entryCount));
     m_pinnedValue->setText(formattedBytes(usage.pinnedWindowBytes));
     m_ocrValue->setText(formattedBytes(usage.ocrAssetBytes));
-    m_thumbnailsValue->setText(formattedBytes(usage.thumbnailCacheBytes));
     m_recordingTempValue->setText(formattedBytes(usage.recordingTempBytes));
     m_otherValue->setText(formattedBytes(usage.otherBytes));
     m_diagnosticsValue->setText(formattedBytes(usage.diagnosticsBytes));

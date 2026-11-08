@@ -20,6 +20,12 @@
 #include <utility>
 #include <vector>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <winioctl.h>
+#include <cstring>
+#endif
+
 namespace storage = snow_shot::storage;
 
 namespace {
@@ -398,23 +404,31 @@ void thumbnailClearRemovesOnlyThumbnailFiles() {
     const QString kept = QDir(dirs.thumbnails).filePath(QStringLiteral("index.txt"));
     const QString lowercase = QDir(dirs.thumbnails).filePath(QStringLiteral("a.png"));
     const QString uppercase = QDir(dirs.thumbnails).filePath(QStringLiteral("b.PNG"));
+    const QString sidecar = lowercase + QStringLiteral(".size");
+    const QString orphan = QDir(dirs.thumbnails).filePath(QStringLiteral("orphan.PNG.SIZE"));
+    const QString nested = QDir(dirs.thumbnails).filePath(QStringLiteral("nested/keep.png"));
     writeBytes(lowercase, 10);
     writeBytes(uppercase, 20);
+    writeBytes(sidecar, 5);
+    writeBytes(orphan, 7);
+    writeBytes(nested, 11);
     writeBytes(kept, 30);
 
     UsageRecorder recorder;
     storage::StorageUsageTracker tracker(trackerOptions(dirs, recorder.callbacks()));
     tracker.requestRefresh();
     tracker.drain();
-    require(tracker.usage().thumbnailCacheBytes == 60, "thumbnail bytes must match payloads");
+    require(tracker.usage().thumbnailCacheBytes == 83, "thumbnail bytes must match payloads");
 
     const auto result = tracker.requestClear(storage::StorageCacheKind::ThumbnailCache);
     tracker.drain();
     require(result.valid() && result.get().success, "thumbnail clear must succeed");
-    require(!QFile::exists(lowercase) && !QFile::exists(uppercase),
-            "thumbnail clear must remove png files case-insensitively");
-    require(QFile::exists(kept), "thumbnail clear must keep non-thumbnail files");
-    require(tracker.usage().thumbnailCacheBytes == 30,
+    require(!QFile::exists(lowercase) && !QFile::exists(uppercase) && !QFile::exists(sidecar) &&
+                !QFile::exists(orphan),
+            "thumbnail clear removes PNGs and orphan size sidecars case-insensitively");
+    require(QFile::exists(kept) && QFile::exists(nested),
+            "thumbnail clear must keep unrelated files and subdirectories");
+    require(tracker.usage().thumbnailCacheBytes == 41,
             "usage must reflect the files removed by the clear");
 
     std::lock_guard<std::mutex> lock(recorder.mutex);
@@ -422,6 +436,113 @@ void thumbnailClearRemovesOnlyThumbnailFiles() {
                 recorder.clears.back().first == storage::StorageCacheKind::ThumbnailCache &&
                 recorder.clears.back().second.success,
             "thumbnail clear must report completion through the callback");
+}
+
+void thumbnailClearRemovesEmptyDirectoriesWithoutCreatingMissingOnes() {
+    TrackerDirs dirs;
+    UsageRecorder recorder;
+    storage::StorageUsageTracker tracker(trackerOptions(dirs, recorder.callbacks()));
+    const auto missing = tracker.requestClear(storage::StorageCacheKind::ThumbnailCache);
+    tracker.drain();
+    require(missing.get().success && !QDir(dirs.thumbnails).exists(),
+            "clearing a missing cache must not create a directory");
+    writeBytes(QDir(dirs.thumbnails).filePath(QStringLiteral("orphan.png.size")), 5);
+    const auto empty = tracker.requestClear(storage::StorageCacheKind::ThumbnailCache);
+    tracker.drain();
+    require(empty.get().success && !QDir(dirs.thumbnails).exists() &&
+                tracker.usage().thumbnailCacheBytes == 0,
+            "clearing the final sidecar removes the empty cache directory");
+}
+
+void thumbnailClearSkipsLinkedDirectories() {
+    TrackerDirs dirs;
+    const QString external = dirs.temporary.filePath(QStringLiteral("external"));
+    const QString kept = QDir(external).filePath(QStringLiteral("keep.png"));
+    writeBytes(kept, 19);
+#ifdef Q_OS_WIN
+    // Junctions need no symlink privilege and exercise the Windows reparse path.
+    require(QDir().mkpath(dirs.thumbnails), "create junction fixture");
+    const auto native = QDir::toNativeSeparators(dirs.thumbnails).toStdWString();
+    HANDLE handle = CreateFileW(native.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    require(handle != INVALID_HANDLE_VALUE, "open thumbnail junction fixture");
+    struct JunctionData {
+        DWORD tag;
+        WORD length;
+        WORD reserved;
+        WORD substituteOffset;
+        WORD substituteLength;
+        WORD printOffset;
+        WORD printLength;
+        wchar_t paths[2048];
+    } data{};
+    const auto print = QDir::toNativeSeparators(external).toStdWString();
+    const auto target = std::wstring(1, L'\\') + L"??" + L'\\' + print;
+    data.tag = IO_REPARSE_TAG_MOUNT_POINT;
+    data.substituteLength = static_cast<WORD>(target.size() * sizeof(wchar_t));
+    data.printOffset = static_cast<WORD>((target.size() + 1) * sizeof(wchar_t));
+    data.printLength = static_cast<WORD>(print.size() * sizeof(wchar_t));
+    data.length = static_cast<WORD>(8 + data.printOffset + data.printLength + sizeof(wchar_t));
+    std::memcpy(data.paths, target.c_str(), (target.size() + 1) * sizeof(wchar_t));
+    std::memcpy(reinterpret_cast<char*>(data.paths) + data.printOffset, print.c_str(),
+                (print.size() + 1) * sizeof(wchar_t));
+    DWORD returned = 0;
+    const bool created = DeviceIoControl(handle, FSCTL_SET_REPARSE_POINT, &data, data.length + 8,
+                                         nullptr, 0, &returned, nullptr) != 0;
+    CloseHandle(handle);
+    require(created, "create thumbnail junction without elevation");
+#else
+    std::error_code error;
+    std::filesystem::create_directory_symlink(external.toStdString(), dirs.thumbnails.toStdString(),
+                                              error);
+    require(!error, "create thumbnail directory symlink");
+#endif
+    UsageRecorder recorder;
+    storage::StorageUsageTracker tracker(trackerOptions(dirs, recorder.callbacks()));
+    const auto linkedRoot = tracker.requestClear(storage::StorageCacheKind::ThumbnailCache);
+    tracker.drain();
+    require(linkedRoot.get().success && QFile::exists(kept),
+            "cleanup must never traverse a linked cache root");
+    const QString nestedLink = dirs.temporary.filePath(QStringLiteral("cache/link.png"));
+    require(QDir().mkpath(QFileInfo(nestedLink).absolutePath()) &&
+                QDir().rename(dirs.thumbnails, nestedLink),
+            "move cache link into a real cache directory");
+    dirs.thumbnails = QFileInfo(nestedLink).absolutePath();
+    storage::StorageUsageTracker nestedTracker(trackerOptions(dirs, recorder.callbacks()));
+    const auto linkedEntry = nestedTracker.requestClear(storage::StorageCacheKind::ThumbnailCache);
+    nestedTracker.drain();
+    require(linkedEntry.get().success && QFile::exists(kept) && QFileInfo::exists(nestedLink),
+            "cleanup must preserve links inside the cache");
+#ifdef Q_OS_WIN
+    require(RemoveDirectoryW(QDir::toNativeSeparators(nestedLink).toStdWString().c_str()) != 0,
+            "remove only the test junction");
+#else
+    require(QFile::remove(nestedLink), "remove only the test symlink");
+#endif
+}
+
+void thumbnailClearRetriesDeletionFailures() {
+#ifdef Q_OS_WIN
+    TrackerDirs dirs;
+    const QString locked = QDir(dirs.thumbnails).filePath(QStringLiteral("locked.png.size"));
+    writeBytes(locked, 7);
+    const auto native = QDir::toNativeSeparators(locked).toStdWString();
+    HANDLE handle = CreateFileW(native.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(handle != INVALID_HANDLE_VALUE, "hold thumbnail sidecar against deletion");
+    UsageRecorder recorder;
+    storage::StorageUsageTracker tracker(trackerOptions(dirs, recorder.callbacks()));
+    const auto failed = tracker.requestClear(storage::StorageCacheKind::ThumbnailCache);
+    tracker.drain();
+    require(!failed.get().success && QFile::exists(locked) &&
+                tracker.usage().thumbnailCacheBytes == 7,
+            "locked thumbnail failures retain the file and report its disk usage");
+    CloseHandle(handle);
+    const auto retried = tracker.requestClear(storage::StorageCacheKind::ThumbnailCache);
+    tracker.drain();
+    require(retried.get().success && !QDir(dirs.thumbnails).exists(),
+            "a later cleanup retries files after their deletion lock is released");
+#endif
 }
 
 void recordingTempClearHonorsActiveCutoff() {
@@ -473,6 +594,9 @@ int main(int argc, char** argv) {
     historyBytesProviderReplacesDirectoryWalk();
     staleRefreshReusesRecentScan();
     thumbnailClearRemovesOnlyThumbnailFiles();
+    thumbnailClearRemovesEmptyDirectoriesWithoutCreatingMissingOnes();
+    thumbnailClearSkipsLinkedDirectories();
+    thumbnailClearRetriesDeletionFailures();
     recordingTempClearHonorsActiveCutoff();
     return 0;
 }

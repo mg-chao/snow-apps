@@ -1528,6 +1528,9 @@ void builtInCatalogIsCompleteAndValid() {
                 exportConfiguration->configurationKey.isEmpty() &&
                 importConfiguration->configurationKey.isEmpty(),
             "data storage leads with export and import before the storage-directory widget");
+    require(catalog.item({QStringLiteral("files-history"), QStringLiteral("storage-status"),
+                          QStringLiteral("storage.clear-thumbnails")}) == nullptr,
+            "retired thumbnail cache cleanup must not appear in settings");
     const auto* exportAction =
         std::get_if<settings::SettingsActionDefinition>(&exportConfiguration->payload);
     const auto* importAction =
@@ -1548,7 +1551,7 @@ void builtInCatalogIsCompleteAndValid() {
                 importAction->fileOpen->fileFilter.source != nullptr &&
                 exportAction->successMessage.has_value() &&
                 importAction->successMessage.has_value(),
-            "configuration items must use the thumbnail-cache action style with dedicated icons, "
+            "configuration items must use action buttons with dedicated icons, "
             "catalog-driven import file picking, and success messages");
 
     const auto* pdfPageSize =

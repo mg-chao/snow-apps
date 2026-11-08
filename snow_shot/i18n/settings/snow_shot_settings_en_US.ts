@@ -1584,10 +1584,6 @@
             <translation>Brush highlight</translation>
         </message>
         <message>
-            <source>Cached history thumbnails will be removed and rebuilt on demand</source>
-            <translation>Cached history thumbnails will be removed and rebuilt on demand</translation>
-        </message>
-        <message>
             <source>Cancel</source>
             <translation>Cancel</translation>
         </message>
@@ -1868,10 +1864,6 @@
             <translation>Clear</translation>
         </message>
         <message>
-            <source>Clear cache</source>
-            <translation>Clear cache</translation>
-        </message>
-        <message>
             <source>Clear closed records</source>
             <translation>Clear closed records</translation>
         </message>
@@ -1890,14 +1882,6 @@
         <message>
             <source>Clear screenshot history?</source>
             <translation>Clear screenshot history?</translation>
-        </message>
-        <message>
-            <source>Clear the thumbnail cache?</source>
-            <translation>Clear the thumbnail cache?</translation>
-        </message>
-        <message>
-            <source>Clear thumbnail cache</source>
-            <translation>Clear thumbnail cache</translation>
         </message>
         <message>
             <source>Click-through</source>
@@ -3596,10 +3580,6 @@
             <translation>Remember last used tool</translation>
         </message>
         <message>
-            <source>Remove cached screenshot-history thumbnails</source>
-            <translation>Remove cached screenshot-history thumbnails</translation>
-        </message>
-        <message>
             <source>Remove closed windows</source>
             <translation>Remove closed windows</translation>
         </message>
@@ -4528,10 +4508,6 @@
             <translation>Theme, font, skins and toolbar size</translation>
         </message>
         <message>
-            <source>Thumbnail cache</source>
-            <translation>Thumbnail cache</translation>
-        </message>
-        <message>
             <source>Thumbnail mode</source>
             <translation>Thumbnail mode</translation>
         </message>
@@ -5380,14 +5356,6 @@ Unavailable: %2</translation>
         <message>
             <source>Switching storage directory…</source>
             <translation>Switching storage directory…</translation>
-        </message>
-        <message>
-            <source>Thumbnail cache</source>
-            <translation>Thumbnail cache</translation>
-        </message>
-        <message>
-            <source>Thumbnail cache disk usage</source>
-            <translation>Thumbnail cache disk usage</translation>
         </message>
         <message>
             <source>Total app storage</source>

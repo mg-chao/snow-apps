@@ -10,7 +10,6 @@
 #include "snow_shot/presentation/components/historyselectionbar.h"
 #include "snow_shot/presentation/components/historypagecommon.h"
 #include "snow_shot/presentation/components/historyentrycard.h"
-#include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
@@ -23,7 +22,6 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/settingsadapters.h"
-#include "snow_shot/storage/storageusagetracker.h"
 
 #include "antd_icons.h"
 #include "theme/theme_manager.h"
@@ -52,7 +50,6 @@
 #include <QHideEvent>
 #include <QLabel>
 #include <QSignalBlocker>
-#include <QStandardPaths>
 #include <QPalette>
 #include <QResizeEvent>
 #include <QScrollBar>
@@ -70,13 +67,11 @@
 #include <chrono>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <utility>
 
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
 namespace history_page = snow_shot::presentation::components::history_page;
-namespace thumbnail_cache = snow_shot::presentation::components::thumbnail_cache;
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 namespace storage = snow_shot::storage;
 namespace styles = snow_shot::presentation::styles;
@@ -106,38 +101,25 @@ class ScreenshotHistoryTaskExecutor final {
         m_pool.waitForDone();
     }
 
-    template <typename Function> void submit(Function&& function, bool persistence = false) {
+    template <typename Function> void submit(Function&& function) {
         if (m_stopped.load(std::memory_order_acquire)) {
             return;
         }
         m_pendingJobs.fetch_add(1, std::memory_order_relaxed);
-        if (persistence) {
-            m_pendingPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-            m_submittedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-        }
         try {
             m_pool.start(snow_shot::runtime::trackRuntimeWork(
-                [this, function = std::forward<Function>(function), persistence]() mutable {
+                [this, function = std::forward<Function>(function)]() mutable {
                     snow_shot::platform::applyApplicationQoSToCurrentThread();
                     struct Completion final {
                         ScreenshotHistoryTaskExecutor* executor;
-                        bool persistence;
                         ~Completion() {
-                            executor->complete(persistence);
+                            executor->m_pendingJobs.fetch_sub(1, std::memory_order_release);
                         }
-                    } completion{this, persistence};
-                    if (persistence) {
-                        m_activePersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-                    }
+                    } completion{this};
                     function();
                 }));
         } catch (...) {
-            // The runnable never started, so mirror complete()'s counter
-            // updates to keep pendingJobs() converging to zero.
-            if (persistence) {
-                m_pendingPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-                m_submittedPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-            }
+            // The runnable never started, so release its pending-job count.
             m_pendingJobs.fetch_sub(1, std::memory_order_release);
             throw;
         }
@@ -146,19 +128,6 @@ class ScreenshotHistoryTaskExecutor final {
     [[nodiscard]] int pendingJobs() const {
         return m_pendingJobs.load(std::memory_order_acquire);
     }
-    [[nodiscard]] int pendingPersistenceJobs() const {
-        return m_pendingPersistenceJobs.load(std::memory_order_relaxed);
-    }
-    [[nodiscard]] int queuedPersistenceJobs() const {
-        return std::max(0, pendingPersistenceJobs() -
-                               m_activePersistenceJobs.load(std::memory_order_relaxed));
-    }
-    [[nodiscard]] quint64 submittedPersistenceJobs() const {
-        return m_submittedPersistenceJobs.load(std::memory_order_relaxed);
-    }
-    [[nodiscard]] quint64 completedPersistenceJobs() const {
-        return m_completedPersistenceJobs.load(std::memory_order_relaxed);
-    }
     [[nodiscard]] int workerCount() const {
         return m_pool.maxThreadCount();
     }
@@ -166,74 +135,9 @@ class ScreenshotHistoryTaskExecutor final {
         return m_pool.expiryTimeout();
     }
 
-    void persist(const QString& key, QImage image, std::function<void(QImage)> function) {
-        const qint64 bytes = image.sizeInBytes();
-        {
-            std::lock_guard lock(m_persistenceMutex);
-            if (m_persistenceKeys.contains(key) || m_persistenceKeys.size() >= 32 ||
-                bytes > 16 * 1024 * 1024 - m_retainedBytes) {
-                ++m_skippedPersistenceJobs;
-                return;
-            }
-            m_persistenceKeys.insert(key);
-            m_retainedBytes += bytes;
-        }
-        try {
-            submit(
-                [this, key, bytes, image = std::move(image),
-                 function = std::move(function)]() mutable {
-                    struct Release {
-                        ScreenshotHistoryTaskExecutor* executor;
-                        QString key;
-                        qint64 bytes;
-                        ~Release() {
-                            std::lock_guard lock(executor->m_persistenceMutex);
-                            executor->m_persistenceKeys.remove(key);
-                            executor->m_retainedBytes -= bytes;
-                        }
-                    } release{this, key, bytes};
-                    function(std::move(image));
-                },
-                true);
-        } catch (...) {
-            // The job never started, so its reservation must not leak.
-            std::lock_guard lock(m_persistenceMutex);
-            m_persistenceKeys.remove(key);
-            m_retainedBytes -= bytes;
-            throw;
-        }
-    }
-
-    quint64 skippedPersistenceJobs() const {
-        return m_skippedPersistenceJobs.load();
-    }
-    qint64 retainedBytes() const {
-        std::lock_guard lock(m_persistenceMutex);
-        return m_retainedBytes;
-    }
-
   private:
-    void complete(bool persistence) {
-        if (persistence) {
-            m_activePersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-            m_pendingPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-            m_completedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-        }
-        // Publish aggregate completion last so a zero pending-job count also
-        // implies that the persistence-specific counters are settled.
-        m_pendingJobs.fetch_sub(1, std::memory_order_release);
-    }
-
     std::atomic_int m_pendingJobs{0};
-    std::atomic_int m_pendingPersistenceJobs{0};
-    std::atomic_int m_activePersistenceJobs{0};
-    std::atomic<quint64> m_submittedPersistenceJobs{0};
-    std::atomic<quint64> m_completedPersistenceJobs{0};
     std::atomic_bool m_stopped{false};
-    mutable std::mutex m_persistenceMutex;
-    QSet<QString> m_persistenceKeys;
-    qint64 m_retainedBytes = 0;
-    std::atomic<quint64> m_skippedPersistenceJobs{0};
     // Declare the pool last so it is destroyed first: shutdown() drains it
     // while the diagnostic counters are still alive, and process-exit
     // destruction then only has to join already-idle workers.
@@ -483,10 +387,9 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
         fail(reason);
     }
 
-    void attach(adqt::widgets::AdImageReply* source, std::function<void(QImage)> onSuccess,
-                std::function<void(const QString&)> onFailure = {}) {
+    void attach(adqt::widgets::AdImageReply* source,
+                std::function<void(const QString&)> onFailure) {
         sourceReply_ = source;
-        onSuccess_ = std::move(onSuccess);
         onFailure_ = std::move(onFailure);
         if (sourceReply_ == nullptr) {
             fail(QStringLiteral("Thumbnail source reply was unavailable"));
@@ -503,12 +406,7 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
             sourceReply_.clear();
             source->deleteLater();
             if (source->isSuccessful()) {
-                QImage image = source->image();
-                const QImage replyImage = image;
-                if (onSuccess_) {
-                    onSuccess_(std::move(image));
-                }
-                succeed(replyImage, source->naturalSize());
+                succeed(source->image(), source->naturalSize());
             } else {
                 auto onFailure = std::move(onFailure_);
                 if (onFailure)
@@ -532,7 +430,6 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
 
   private:
     QPointer<adqt::widgets::AdImageReply> sourceReply_;
-    std::function<void(QImage)> onSuccess_;
     std::function<void(const QString&)> onFailure_;
     bool aborted_ = false;
 };
@@ -541,72 +438,24 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
   public:
     HistoryThumbnailLoader(storage::CaptureHistoryRecord record,
                            ScreenshotHistoryPageDataSource* dataSource, QObject* parent)
-        : AdImageLoader(parent), m_record(std::move(record)), m_dataSource(dataSource),
-          m_cacheDirectory(
-              snow_shot::storage::StorageUsageTracker::defaultThumbnailCacheDirectory()) {}
+        : AdImageLoader(parent), m_record(std::move(record)), m_dataSource(dataSource) {}
 
     adqt::widgets::AdImageReply* load(const QUrl& source,
                                       const adqt::widgets::AdImageLoadOptions& options,
                                       QObject* parent = nullptr) override {
         auto* reply = new HistoryThumbnailReply(parent);
-        const QString cachePath = thumbnailPath(source, options);
-        const auto original = [this, reply, source, options, cachePath]() {
-            reply->attach(
-                adqt::widgets::defaultAdImageLoader()->load(source, options, reply),
-                [this, cachePath](QImage image) {
-                    if (!cachePath.isEmpty() && !image.isNull())
-                        persist(cachePath, std::move(image));
-                },
-                [this, reply](const QString& reason) {
-                    if (m_dataSource)
-                        m_dataSource->reportReadFailure(m_record, reason);
-                    reply->finishFailure(reason);
-                });
-        };
-        const QFileInfo cacheInfo(cachePath);
-        if (!cachePath.isEmpty() && cacheInfo.isFile() && !cacheInfo.isSymLink()) {
-            reply->attach(adqt::widgets::defaultAdImageLoader()->load(
-                              QUrl::fromLocalFile(cachePath), {}, reply),
-                          {}, [cachePath, original](const QString&) {
-                              QFile::remove(cachePath);
-                              original();
-                          });
-            return reply;
-        }
-        original();
+        reply->attach(adqt::widgets::defaultAdImageLoader()->load(source, options, reply),
+                      [record = m_record, dataSource = m_dataSource, reply](const QString& reason) {
+                          if (dataSource)
+                              dataSource->reportReadFailure(record, reason);
+                          reply->finishFailure(reason);
+                      });
         return reply;
     }
 
   private:
-    QString thumbnailPath(const QUrl& source,
-                          const adqt::widgets::AdImageLoadOptions& options) const {
-        if (m_cacheDirectory.isEmpty() || source.isEmpty() || options.targetPixelSize.isEmpty()) {
-            return {};
-        }
-        QString sourceKey;
-        if (source.isLocalFile()) {
-            sourceKey = m_record.id + u'|' + QDir::fromNativeSeparators(source.toLocalFile());
-        } else {
-            sourceKey = source.toString();
-        }
-        sourceKey += QStringLiteral("|%1x%2|%3|%4")
-                         .arg(options.targetPixelSize.width())
-                         .arg(options.targetPixelSize.height())
-                         .arg(static_cast<int>(options.aspectRatioMode))
-                         .arg(options.allowUpscale ? 1 : 0);
-        return thumbnail_cache::pathForKey(sourceKey, m_cacheDirectory);
-    }
-
-    void persist(const QString& path, QImage image) const {
-        historyTaskExecutor().persist(path, std::move(image), [path](QImage image) mutable {
-            thumbnail_cache::persist(path, std::move(image));
-        });
-    }
-
     storage::CaptureHistoryRecord m_record;
     QPointer<ScreenshotHistoryPageDataSource> m_dataSource;
-
-    QString m_cacheDirectory;
 };
 
 // Resolve only the image being viewed, including records outside the rendered page.
@@ -696,30 +545,6 @@ createScreenshotHistoryImageLoader(const storage::CaptureHistoryRecord& record,
 
 int screenshotHistoryPendingJobCount() {
     return historyTaskExecutor().pendingJobs();
-}
-
-int screenshotHistoryPendingPersistenceJobCount() {
-    return historyTaskExecutor().pendingPersistenceJobs();
-}
-
-int screenshotHistoryQueuedPersistenceJobCount() {
-    return historyTaskExecutor().queuedPersistenceJobs();
-}
-
-quint64 screenshotHistorySubmittedPersistenceJobCount() {
-    return historyTaskExecutor().submittedPersistenceJobs();
-}
-
-quint64 screenshotHistoryCompletedPersistenceJobCount() {
-    return historyTaskExecutor().completedPersistenceJobs();
-}
-
-quint64 screenshotHistorySkippedPersistenceJobCount() {
-    return historyTaskExecutor().skippedPersistenceJobs();
-}
-
-qint64 screenshotHistoryRetainedPersistenceBytes() {
-    return historyTaskExecutor().retainedBytes();
 }
 
 int screenshotHistoryWorkerCount() {

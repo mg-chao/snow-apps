@@ -9,7 +9,6 @@
 #include "snow_shot/presentation/components/historypagecommon.h"
 #include "snow_shot/presentation/components/historyentrycard.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
-#include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
@@ -55,7 +54,6 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 namespace styles = snow_shot::presentation::styles;
 namespace storage = snow_shot::storage;
 namespace history_page = snow_shot::presentation::components::history_page;
-namespace thumbnail_cache = snow_shot::presentation::components::thumbnail_cache;
 using snow_shot::presentation::components::HistoryEntryCard;
 
 bool pinnedRowPreviewFailed(const QFrame* row) {
@@ -236,28 +234,20 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         const auto previewEpoch = m_previewEpoch;
         const quint64 requestedEpoch = previewEpoch->load();
         const quint64 storageGeneration = m_storageGeneration;
-        const QString cachePath = thumbnail_cache::pathForKey(QStringLiteral("pinned|") + cacheKey);
         auto* receiver = this;
         applicationStorage.pinnedPreviewPool().start(snow_shot::runtime::trackRuntimeWork(
             [alive, previewEpoch, requestedEpoch, receiver, repository, id, requestId, boundedSize,
-             cacheKey, cachePath, storageGeneration, retryAllowed, swatchStyle]() {
+             cacheKey, storageGeneration, retryAllowed, swatchStyle]() {
                 snow_shot::platform::applyApplicationQoSToCurrentThread();
                 if (!alive->load() || previewEpoch->load() != requestedEpoch) {
                     return;
                 }
-                auto thumbnail = thumbnail_cache::load(cachePath);
-                QImage image = std::move(thumbnail.image);
-                QSize naturalSize = thumbnail.naturalSize;
-                if (image.isNull()) {
-                    image = loadPinnedPreview(repository, id, swatchStyle);
-                    naturalSize = image.size();
-                    if (!image.isNull() && (image.width() > boundedSize.width() ||
-                                            image.height() > boundedSize.height())) {
-                        image = snowCanvasScaleImage(image, boundedSize, Qt::KeepAspectRatio,
-                                                     Qt::SmoothTransformation);
-                    }
-                    if (!image.isNull())
-                        thumbnail_cache::persist(cachePath, image, naturalSize);
+                QImage image = loadPinnedPreview(repository, id, swatchStyle);
+                const QSize naturalSize = image.size();
+                if (!image.isNull() && (image.width() > boundedSize.width() ||
+                                        image.height() > boundedSize.height())) {
+                    image = snowCanvasScaleImage(image, boundedSize, Qt::KeepAspectRatio,
+                                                 Qt::SmoothTransformation);
                 }
                 if (!alive->load() || previewEpoch->load() != requestedEpoch) {
                     return;

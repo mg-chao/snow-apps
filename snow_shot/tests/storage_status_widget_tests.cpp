@@ -418,17 +418,15 @@ void widgetRendersAppUsageBreakdown() {
     QLabel* mode = widget.findChild<QLabel*>(QStringLiteral("settings-status-value-mode"));
     QLabel* error = widget.findChild<QLabel*>(QStringLiteral("settings-status-value-error"));
     require(total != nullptr && history != nullptr && entries != nullptr && pinned != nullptr &&
-                ocr != nullptr && thumbnails != nullptr && recordingTemp != nullptr &&
+                ocr != nullptr && thumbnails == nullptr && recordingTemp != nullptr &&
                 other != nullptr && location != nullptr && mode != nullptr && error != nullptr,
-            "all storage status rows must exist");
+            "storage status keeps active categories and removes the obsolete thumbnail row");
 
     require(total->text() == QStringLiteral("8.00 MiB"), "total usage must be formatted");
     require(history->text() == QStringLiteral("1.00 KiB"), "history usage must be formatted");
     require(entries->text() == QStringLiteral("3"), "entry count must be rendered");
     require(pinned->text() == QStringLiteral("2.00 KiB"), "pinned window usage must be formatted");
     require(ocr->text() == QStringLiteral("5.00 MiB"), "ocr usage must be formatted");
-    require(thumbnails->text() == QStringLiteral("512 B"),
-            "thumbnail cache usage must be formatted");
     require(recordingTemp->text() == QStringLiteral("3.00 MiB"),
             "recording temp usage must be formatted");
     require(other->text() == QStringLiteral("128 B"), "other usage must be formatted");
@@ -1531,6 +1529,13 @@ int main(int argc, char** argv) {
     require(storageDirectory.isValid(), "temporary storage directory should be available");
     static_cast<void>(storage::ApplicationStorage::instance().initialize(
         {storageDirectory.path(), storageDirectory.path(), 8000}));
+    if (application.arguments().contains(QStringLiteral("--storage-status-only"))) {
+        widgetUsesDescriptionsTitleAndThemeSpacing();
+        widgetRendersAppUsageBreakdown();
+        widgetShowsScanningStateAndForwardsRefresh();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--toolbar-editor-only"))) {
         toolbarEditorsUseSeparateDefinitionsAndRetranslate();
         drawingToolbarSeparatorCanMoveAndHideByDrop();

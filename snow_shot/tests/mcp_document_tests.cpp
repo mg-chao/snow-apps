@@ -1,5 +1,6 @@
 #include "snow_shot/app/mcp/mcpdocumentservice.h"
 #include "image_orientation_fixture.h"
+#include "legacy_thumbnail_test_support.h"
 #include "snow_shot/app/mcp/mcpjobregistry.h"
 #include "snow_shot/app/mcp/mcpapplicationservice.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -3315,6 +3316,8 @@ void documents(const QString& directory) {
 } // namespace
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    require(cacheEnvironment.isValid(), "MCP tests require isolated thumbnail caches");
     QTemporaryDir temporary;
     require(temporary.isValid(), "isolated document test directory");
     const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));

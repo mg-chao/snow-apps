@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/presentation/components/historypagecommon.h"
-#include "snow_shot/presentation/components/thumbnailcache.h"
+#include "legacy_thumbnail_test_support.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
@@ -37,13 +37,11 @@
 #include <QDir>
 #include <QFrame>
 #include <QImage>
-#include <QColorSpace>
 #include <QPainter>
 #include <QPointer>
 #include <QRegion>
 #include <QScopeGuard>
 #include <QStringList>
-#include <QCryptographicHash>
 #include <QUuid>
 #include <QLabel>
 #include <QLayout>
@@ -1885,81 +1883,49 @@ void historyCopiesPreservePositionAndAppearance() {
     }
 }
 
-void thumbnailsUseMediumCompression() {
-    QTemporaryDir temporary;
-    require(temporary.isValid(), "thumbnail compression fixture must be available");
-    QImage image(64, 48, QImage::Format_RGB32);
-    for (int y = 0; y < image.height(); ++y) {
-        for (int x = 0; x < image.width(); ++x)
-            image.setPixel(x, y, qRgb(x * 3, y * 5, (x + y) * 2));
-    }
-    const auto encoder = snow_shot::image_codec::encoderInfo(snow::image::Format::png);
-    require(encoder.has_value(), "PNG encoder must be available for thumbnail persistence");
-    const QByteArray expected =
-        snow_shot::image_codec::encodePng(image, encoder->compression_level.default_value);
-    require(!expected.isEmpty() && expected != snow_shot::image_codec::encodePng(image, 0),
-            "thumbnail fixture must distinguish medium compression from level zero");
-    const QString path = temporary.filePath(QStringLiteral("thumbnail.png"));
-    const QSize naturalSize(900, 700);
-    snow_shot::presentation::components::thumbnail_cache::persist(path, image, naturalSize);
-    QFile file(path);
-    require(file.open(QIODevice::ReadOnly) && file.readAll() == expected,
-            "persisted thumbnails must use medium PNG compression");
-    const auto cached = snow_shot::presentation::components::thumbnail_cache::load(path);
-    const QImage converted = cached.image.convertToFormat(QImage::Format_RGB32);
-    require(!converted.isNull() && converted.size() == image.size(),
-            "thumbnail compression must preserve image dimensions");
-    // Encoding explicitly declares sRGB even for an untagged input fixture.
-    // Compare pixels independently of QImage's color-metadata-sensitive equality.
-    for (int y = 0; y < image.height(); ++y) {
-        for (int x = 0; x < image.width(); ++x) {
-            require(converted.pixel(x, y) == image.pixel(x, y),
-                    "thumbnail compression must preserve every RGB pixel");
-        }
-    }
-    require(cached.naturalSize == naturalSize,
-            "thumbnail compression must preserve natural-size metadata");
-    require(cached.image.colorSpace() == QColorSpace(QColorSpace::SRgb),
-            "persisted thumbnails must retain their explicitly encoded sRGB color space");
+QString thumbnailCachePath(const storage::CaptureHistoryRecord& record, const QUrl& source,
+                           const adqt::widgets::AdImageLoadOptions& options) {
+    QString key = record.id + u'|' + QDir::fromNativeSeparators(source.toLocalFile());
+    key += QStringLiteral("|%1x%2|%3|%4")
+               .arg(options.targetPixelSize.width())
+               .arg(options.targetPixelSize.height())
+               .arg(static_cast<int>(options.aspectRatioMode))
+               .arg(options.allowUpscale ? 1 : 0);
+    return thumbnail_tests::legacyPath(key);
 }
 
-void imageFailuresRespectCacheFallbackAndCancellation() {
+void thumbnailsIgnoreDiskCacheAndRespectCancellation() {
     QTemporaryDir temporary;
     MutableHistoryDataSource dataSource;
     storage::CaptureHistoryRecord record;
     record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    auto* loader = createScreenshotHistoryImageLoader(record, &dataSource, &dataSource);
     const QString source = temporary.filePath(QStringLiteral("display_0.png"));
     QImage image(100, 80, QImage::Format_RGB32);
     image.fill(Qt::green);
     require(image.save(source), "failed to write image fixture");
     adqt::widgets::AdImageLoadOptions options;
     options.targetPixelSize = QSize(26, 16);
-    auto* first = loader->load(QUrl::fromLocalFile(source), options, &dataSource);
-    waitUntil([&]() { return first->isFinished() && screenshotHistoryPendingJobCount() == 0; },
-              "thumbnail cache write did not finish");
-    require(first->isSuccessful() && dataSource.readFailures == 0, "valid thumbnail failed");
-    QString key = record.id + u'|' + QDir::fromNativeSeparators(source);
-    key += QStringLiteral("|%1x%2|%3|%4")
-               .arg(options.targetPixelSize.width())
-               .arg(options.targetPixelSize.height())
-               .arg(static_cast<int>(options.aspectRatioMode))
-               .arg(options.allowUpscale ? 1 : 0);
-    const QString cache =
-        QDir(storage::StorageUsageTracker::defaultThumbnailCacheDirectory())
-            .filePath(
-                QString::fromLatin1(
-                    QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex()) +
-                QStringLiteral(".png"));
-    QFile file(cache);
-    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate) && file.write("broken") == 6,
-            "failed to corrupt thumbnail cache fixture");
-    file.close();
-    auto* retry = loader->load(QUrl::fromLocalFile(source), options, &dataSource);
-    waitUntil([&]() { return retry->isFinished() && screenshotHistoryPendingJobCount() == 0; },
-              "cache fallback did not finish");
-    require(retry->isSuccessful() && dataSource.readFailures == 0,
-            "cache failure invalidated history instead of loading the original");
+    const QString directory = storage::StorageUsageTracker::defaultThumbnailCacheDirectory();
+    const QString cache = thumbnailCachePath(record, QUrl::fromLocalFile(source), options);
+    require(QDir().mkpath(directory), "create legacy thumbnail fixture directory");
+    QImage stale(26, 16, QImage::Format_RGB32);
+    stale.fill(Qt::magenta);
+    require(stale.save(cache), "seed stale disk thumbnail");
+    const QStringList originalFiles = QDir(directory).entryList(QDir::Files);
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        QObject owner;
+        auto* loader = createScreenshotHistoryImageLoader(record, &dataSource, &owner);
+        auto* reply = loader->load(QUrl::fromLocalFile(source), options, &owner);
+        waitUntil([&] { return reply->isFinished(); }, "source thumbnail did not finish");
+        require(reply->isSuccessful() && reply->image().pixelColor(0, 0) == QColor(Qt::green) &&
+                    reply->naturalSize() == image.size() && reply->image().width() <= 26 &&
+                    reply->image().height() <= 16 && dataSource.readFailures == 0,
+                "fresh loaders ignore disk thumbnails and retain bounded size and natural size");
+        require(QDir(directory).entryList(QDir::Files) == originalFiles &&
+                    QImage(cache).pixelColor(0, 0) == QColor(Qt::magenta),
+                "thumbnail loads neither persist files nor overwrite legacy thumbnails");
+    }
+    auto* loader = createScreenshotHistoryImageLoader(record, &dataSource, &dataSource);
     auto* cancelled = loader->load(
         QUrl::fromLocalFile(temporary.filePath(QStringLiteral("cancelled.png"))), {}, &dataSource);
     cancelled->abort();
@@ -1970,80 +1936,49 @@ void imageFailuresRespectCacheFallbackAndCancellation() {
     waitUntil([&]() { return missing->isFinished(); }, "missing original read did not finish");
     require(!missing->isSuccessful() && dataSource.readFailures == 1,
             "original read failure was not reported exactly once");
-    QFile::remove(cache);
-}
-
-QString thumbnailCachePath(const storage::CaptureHistoryRecord& record, const QUrl& source,
-                           const adqt::widgets::AdImageLoadOptions& options) {
-    QString key = record.id + u'|' + QDir::fromNativeSeparators(source.toLocalFile());
-    key += QStringLiteral("|%1x%2|%3|%4")
-               .arg(options.targetPixelSize.width())
-               .arg(options.targetPixelSize.height())
-               .arg(static_cast<int>(options.aspectRatioMode))
-               .arg(options.allowUpscale ? 1 : 0);
-    return QDir(storage::StorageUsageTracker::defaultThumbnailCacheDirectory())
-        .filePath(QString::fromLatin1(
-                      QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex()) +
-                  QStringLiteral(".png"));
+    require(QFile::remove(cache) && QDir().rmdir(directory), "remove legacy fixture");
+    {
+        ScreenshotHistoryPageWidget page(&dataSource, nullptr);
+        page.setActive(true);
+        page.refresh();
+        auto* fresh = loader->load(QUrl::fromLocalFile(source), options, &dataSource);
+        waitUntil([&] { return fresh->isFinished(); }, "uncached thumbnail did not finish");
+        require(fresh->isSuccessful() && !QDir(directory).exists(),
+                "page refresh and thumbnail loads must not create a disk cache");
+    }
 }
 
 // Must run last: shutdownScreenshotHistoryTasks() parks the process-wide
 // history executor for the remainder of the test binary.
 void shutdownDrainsBacklogThenRejectsNewWork() {
-    QTemporaryDir temporary;
-    storage::CaptureHistoryRecord record;
-    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    MutableHistoryDataSource dataSource;
-    auto* loader = createScreenshotHistoryImageLoader(record, &dataSource, &dataSource);
-    adqt::widgets::AdImageLoadOptions options;
-    options.targetPixelSize = QSize(260, 156);
-
-    constexpr int kBacklogSources = 12;
-    QVector<adqt::widgets::AdImageReply*> replies;
-    for (int index = 0; index < kBacklogSources; ++index) {
-        const QString source = temporary.filePath(QStringLiteral("drain_%1.png").arg(index));
-        QImage image(512, 512, QImage::Format_ARGB32_Premultiplied);
-        image.fill(Qt::green);
-        require(image.save(source), "failed to write drain fixture");
-        replies.push_back(loader->load(QUrl::fromLocalFile(source), options, &dataSource));
-    }
-    waitUntil(
-        [&]() {
-            for (adqt::widgets::AdImageReply* reply : replies) {
-                if (!reply->isFinished()) {
-                    return false;
-                }
-            }
-            return true;
-        },
-        "drain fixture loads must finish");
-
+    ScreenshotHistoryPageWidget page;
+    auto* source = page.findChild<ScreenshotHistoryPageDataSource*>();
+    require(source != nullptr, "production history page owns its asynchronous data source");
+    int completed = 0;
+    QObject::connect(
+        source, &ScreenshotHistoryPageDataSource::displayAssetsReady, &page,
+        [&](quint64, const QVector<ScreenshotHistoryAssetResolution>&) { ++completed; });
+    constexpr int kRequests = 32;
+    const auto records = historyRecords(100);
+    for (int index = 0; index < kRequests; ++index)
+        source->requestDisplayAssets(records, static_cast<quint64>(index));
     shutdownScreenshotHistoryTasks();
     require(screenshotHistoryPendingJobCount() == 0,
-            "shutdown must return only after queued and active history jobs finish");
-    for (int index = 0; index < kBacklogSources; ++index) {
-        const QString source = temporary.filePath(QStringLiteral("drain_%1.png").arg(index));
-        require(QFile::exists(thumbnailCachePath(record, QUrl::fromLocalFile(source), options)),
-                "shutdown must drain queued thumbnail persistence jobs, not drop them");
-    }
-
-    const QString rejectedSource = temporary.filePath(QStringLiteral("rejected.png"));
-    QImage image(512, 512, QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::blue);
-    require(image.save(rejectedSource), "failed to write rejection fixture");
-    auto* rejected = loader->load(QUrl::fromLocalFile(rejectedSource), options, &dataSource);
-    waitUntil([&]() { return rejected->isFinished(); }, "post-shutdown load must still finish");
+            "shutdown must drain queued and active asset reads");
     flushEvents();
-    require(screenshotHistoryPendingJobCount() == 0,
-            "submissions after shutdown must be rejected instead of queued");
-    require(
-        !QFile::exists(thumbnailCachePath(record, QUrl::fromLocalFile(rejectedSource), options)),
-        "rejected submissions must not execute after shutdown");
+    require(completed == kRequests, "all accepted asset reads complete before storage teardown");
+    source->requestDisplayAssets(records, kRequests);
+    flushEvents();
+    require(screenshotHistoryPendingJobCount() == 0 && completed == kRequests,
+            "asset reads submitted after shutdown must be rejected");
 }
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    require(cacheEnvironment.isValid(), "history tests require isolated thumbnail caches");
     recordFiltersPreserveLocalDateBoundaries();
     QTranslator englishTranslator;
     require(englishTranslator.load(QStringLiteral(":/i18n/snow_shot_en_US.qm")),
@@ -2117,9 +2052,10 @@ int main(int argc, char** argv) {
     moreMenuRetirementKeepsIdleHistoryUsable();
     entriesUseBordersAndSupportCrossPageSelection();
     historyCopiesPreservePositionAndAppearance();
-    thumbnailsUseMediumCompression();
-    imageFailuresRespectCacheFallbackAndCancellation();
+    thumbnailsIgnoreDiskCacheAndRespectCancellation();
     shutdownDrainsBacklogThenRejectsNewWork();
+    require(!QDir(cacheEnvironment.directory()).exists(),
+            "history page loads, refreshes, and recreation must not create disk thumbnails");
     storage::ApplicationStorage::instance().shutdown();
     QCoreApplication::removeTranslator(&englishTranslator);
     return 0;

@@ -2,7 +2,7 @@
 #include "snow_shot/presentation/components/historypagecommon.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "../../test-support/virtualmemory.h"
-#include "snow_shot/presentation/components/thumbnailcache.h"
+#include "legacy_thumbnail_test_support.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -1072,6 +1072,8 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    require(cacheEnvironment.isValid(), "pin tests require isolated thumbnail caches");
     QTemporaryDir directory;
     QTemporaryDir migratedDirectory;
     require(storage::ApplicationStorage::instance()
@@ -1399,6 +1401,14 @@ int main(int argc, char** argv) {
     }
     require(repository.flush().success && QFile::remove(sourcePath),
             "previews must use persisted payloads after the original file is removed");
+    const QString legacyCache = thumbnail_tests::legacyPath(
+        QStringLiteral("pinned|") + imageId + u':' +
+        QString::number(*repository.previewSourceRevision(imageId)) + QStringLiteral(":260x156"));
+    require(QDir().mkpath(cacheEnvironment.directory()), "create legacy pinned cache fixture");
+    QImage stalePreview(260, 156, QImage::Format_RGB32);
+    stalePreview.fill(Qt::magenta);
+    require(stalePreview.save(legacyCache), "seed stale pinned thumbnail");
+    const QStringList legacyFiles = QDir(cacheEnvironment.directory()).entryList(QDir::Files);
     {
         PinnedWindowManagementPageWidget page;
         int completedPreviews = 0;
@@ -1459,14 +1469,12 @@ int main(int argc, char** argv) {
             QThread::msleep(1);
         }
         require(explicitPreviewReady, "explicit pinned thumbnail request completes");
-        const QString cacheKey = QStringLiteral("pinned|") + imageId + u':' +
-                                 QString::number(*repository.previewSourceRevision(imageId)) +
-                                 QStringLiteral(":260x156");
-        const auto cached = snow_shot::presentation::components::thumbnail_cache::load(
-            snow_shot::presentation::components::thumbnail_cache::pathForKey(cacheKey));
-        require(!cached.image.isNull() && cached.image.size() == imageThumbnailSize &&
-                    cached.naturalSize == base.size(),
-                "pinned thumbnails share the persistent bounded cache and retain natural size");
+        require(imageNaturalSize == base.size() && imageThumbnailSize.width() <= 260 &&
+                    imageThumbnailSize.height() <= 156,
+                "pinned source previews preserve natural size while ignoring disk thumbnails");
+        require(QDir(cacheEnvironment.directory()).entryList(QDir::Files) == legacyFiles &&
+                    QImage(legacyCache).pixelColor(0, 0) == QColor(Qt::magenta),
+                "pinned previews do not read, overwrite, or add disk thumbnails");
         int baseImages = 0;
         for (auto* preview : page.findChildren<adqt::widgets::AdImage*>(
                  QStringLiteral("pinnedManagementPreview"))) {
@@ -1568,6 +1576,18 @@ int main(int argc, char** argv) {
                 "selected Delete refreshes the page after removing its record");
     }
     {
+        PinnedWindowManagementPageWidget recreated;
+        recreated.resize(980, 900);
+        recreated.show();
+        recreated.refresh();
+        storage::ApplicationStorage::instance().pinnedPreviewPool().waitForDone();
+        application.processEvents();
+        require(QDir(cacheEnvironment.directory()).entryList(QDir::Files) == legacyFiles,
+                "page refresh and recreation do not persist pinned thumbnails");
+    }
+    require(QFile::remove(legacyCache) && QDir().rmdir(cacheEnvironment.directory()),
+            "remove legacy pinned fixture");
+    {
         ScreenshotClipboardContentSnapshot snapshot;
         snapshot.text = QStringLiteral("#7DD35380");
         snapshot.devicePixelRatio = 1.25;
@@ -1653,6 +1673,8 @@ int main(int argc, char** argv) {
                     waitFor([&] { return thumbnail != beforeLanguage; }),
                 "language changes refresh swatch previews without reusing old cached labels");
     }
+    require(!QDir(cacheEnvironment.directory()).exists(),
+            "swatch previews must not create a disk cache");
     storage::ApplicationStorage::instance().shutdown();
     QTemporaryDir burstDirectory;
     require(storage::ApplicationStorage::instance()

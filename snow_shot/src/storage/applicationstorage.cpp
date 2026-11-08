@@ -401,6 +401,12 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                        << "write available:" << m_status.writeAvailable;
     emitStatusChanged();
     requestPinnedWindowRetentionCleanup();
+    // These pages now generate thumbnails only in memory. Reclaim files left by
+    // older versions on the usage worker without delaying application startup.
+    const QString legacyThumbnails = StorageUsageTracker::defaultThumbnailCacheDirectory();
+    if (!legacyThumbnails.isEmpty() && QFileInfo::exists(legacyThumbnails)) {
+        static_cast<void>(requestThumbnailCacheClearAsync());
+    }
     if (effectiveDirectory.isEmpty()) {
         return StorageResult::failure(m_status.fallbackReason);
     }
@@ -426,12 +432,14 @@ void ApplicationStorage::createUsageTracker() {
                                   }),
                                   Qt::QueuedConnection);
     };
-    usageOptions.callbacks.clearFinished = [this](StorageCacheKind kind,
-                                                  const StorageResult& result) {
-        QMetaObject::invokeMethod(this,
-                                  snow_shot::runtime::trackRuntimeWork(
-                                      [this, kind, result]() { finishCacheClear(kind, result); }),
-                                  Qt::QueuedConnection);
+    usageOptions.callbacks.clearFinished = [this, generation](StorageCacheKind kind,
+                                                              const StorageResult& result) {
+        QMetaObject::invokeMethod(
+            this, snow_shot::runtime::trackRuntimeWork([this, generation, kind, result]() {
+                if (generation == m_usageGeneration)
+                    finishCacheClear(kind, result);
+            }),
+            Qt::QueuedConnection);
     };
     m_usageTracker = std::make_unique<StorageUsageTracker>(std::move(usageOptions));
     m_status.appUsage = m_usageTracker->usage();
@@ -828,6 +836,9 @@ void ApplicationStorage::finishHistoryClear(bool success, const QString& error) 
 void ApplicationStorage::finishCacheClear(StorageCacheKind kind, const StorageResult& result) {
     qCInfo(storageLog) << "Cache clear finished, kind:" << static_cast<int>(kind)
                        << "success:" << result.success;
+    if (!result.success) {
+        qCWarning(storageLog) << "Cache cleanup failed:" << result.error;
+    }
     m_status.cacheClearing = false;
     if (m_usageTracker != nullptr) {
         m_status.appUsage = m_usageTracker->usage();

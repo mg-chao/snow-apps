@@ -9,6 +9,7 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
 
 #include "widgets/image.h"
+#include "legacy_thumbnail_test_support.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -16,7 +17,6 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QSet>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QUuid>
@@ -142,6 +142,11 @@ QJsonObject readBaseline() {
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication application(argc, argv);
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    if (!cacheEnvironment.isValid()) {
+        std::cerr << "Unable to isolate benchmark thumbnail cache\n";
+        return 1;
+    }
     snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
 
     QTemporaryDir storageDirectory;
@@ -202,31 +207,25 @@ int main(int argc, char** argv) {
     const qint64 assetPreparationMs = assetTimer.elapsed();
 
     const QList<adqt::widgets::AdImage*> images = page->findChildren<adqt::widgets::AdImage*>();
-    QSet<adqt::widgets::AdImage*> completed;
     qint64 firstThumbnailMs = -1;
     QElapsedTimer thumbnailTimer;
     thumbnailTimer.start();
-    for (adqt::widgets::AdImage* image : images) {
-        QObject::connect(image, &adqt::widgets::AdImage::loadingChanged, page,
-                         [image, &completed, &firstThumbnailMs, &thumbnailTimer](bool loading) {
-                             if (!loading && image->isVisible()) {
-                                 completed.insert(image);
-                                 if (firstThumbnailMs < 0) {
-                                     firstThumbnailMs = thumbnailTimer.elapsed();
-                                 }
-                             }
-                         });
-    }
-
+    // Poll current state so completions during asset preparation are included.
+    // QWidget visibility alone also includes rows clipped below the scroll viewport.
     processUntil(
         [&]() {
             int visibleCount = 0;
+            int completedCount = 0;
             for (adqt::widgets::AdImage* image : images) {
-                if (image->isVisibleTo(page)) {
-                    ++visibleCount;
-                }
+                if (image->visibleRegion().isEmpty())
+                    continue;
+                ++visibleCount;
+                if (!image->source().isEmpty() && !image->loading() && !image->loadFailed())
+                    ++completedCount;
             }
-            return visibleCount > 0 && completed.size() >= visibleCount;
+            if (completedCount > 0 && firstThumbnailMs < 0)
+                firstThumbnailMs = thumbnailTimer.elapsed();
+            return visibleCount > 0 && completedCount == visibleCount;
         },
         30000, &peakBytes);
     const qint64 completeThumbnailMs = thumbnailTimer.elapsed();
@@ -260,34 +259,26 @@ int main(int argc, char** argv) {
     }
     const qint64 postCyclePrivateCommitBytes = processMetrics().privateCommitBytes;
     const int pendingHistoryJobsBeforeDrain = screenshotHistoryPendingJobCount();
-    const int pendingPersistenceJobsBeforeDrain = screenshotHistoryPendingPersistenceJobCount();
-    const int queuedPersistenceJobsBeforeDrain = screenshotHistoryQueuedPersistenceJobCount();
-
-    const quint64 submittedPersistenceJobsBeforeDrain =
-        screenshotHistorySubmittedPersistenceJobCount();
-    // Navigation does not wait for cache writes. Evaluate steady-state memory
-    // only after the intentionally unbounded persistence queue has drained.
+    // Drain asset reads and image decodes after rapid navigation. The image
+    // loader has its own workers, independent of the history executor.
     for (int drainPass = 0; drainPass < 3; ++drainPass) {
         QApplication::processEvents(QEventLoop::AllEvents, 10);
-        processUntil([]() { return screenshotHistoryPendingJobCount() == 0; }, 30000, &peakBytes);
+        processUntil(
+            [page]() {
+                const auto previews = page->findChildren<adqt::widgets::AdImage*>();
+                return screenshotHistoryPendingJobCount() == 0 &&
+                       std::none_of(previews.cbegin(), previews.cend(),
+                                    [](const auto* preview) { return preview->loading(); });
+            },
+            30000, &peakBytes);
     }
     const ProcessMetrics drainedMetrics = processMetrics();
     QThread::msleep(100);
     QApplication::processEvents(QEventLoop::AllEvents, 10);
     const ProcessMetrics idleMetrics = processMetrics();
-    const quint64 completedPersistenceJobsAfterDrain =
-        screenshotHistoryCompletedPersistenceJobCount();
-    const quint64 submittedPersistenceJobsAfterDrain =
-        screenshotHistorySubmittedPersistenceJobCount();
-    const bool executorContractPassed =
-        screenshotHistoryWorkerCount() == 2 && screenshotHistoryWorkerExpiryTimeout() == 0 &&
-        screenshotHistoryPendingPersistenceJobCount() == 0 &&
-        screenshotHistoryQueuedPersistenceJobCount() == 0 &&
-        screenshotHistoryPendingJobCount() == 0 &&
-        submittedPersistenceJobsAfterDrain == completedPersistenceJobsAfterDrain &&
-        submittedPersistenceJobsAfterDrain >= submittedPersistenceJobsBeforeDrain;
-    const bool allAcceptedPersistenceWritesCompleted =
-        submittedPersistenceJobsAfterDrain == completedPersistenceJobsAfterDrain;
+    const bool executorContractPassed = screenshotHistoryWorkerCount() == 2 &&
+                                        screenshotHistoryWorkerExpiryTimeout() == 0 &&
+                                        screenshotHistoryPendingJobCount() == 0;
     const bool timingAndMemoryThresholdsPassed =
         activationMs <= kActivationLimitMs && firstThumbnailMs >= 0 &&
         firstThumbnailMs <= kFirstThumbnailLimitMs &&
@@ -307,11 +298,9 @@ int main(int argc, char** argv) {
         {QStringLiteral("decode_worker_limit"), 2},
         {QStringLiteral("decoded_cache_limit_bytes"), 64 * 1024 * 1024},
         {QStringLiteral("gui_thread_payload_io"), false},
-        {QStringLiteral("persistent_thumbnail_cache"), true},
+        {QStringLiteral("persistent_thumbnail_cache"), false},
         {QStringLiteral("history_worker_limit"), 2},
         {QStringLiteral("history_worker_expiry_timeout_ms"), 0},
-        {QStringLiteral("thumbnail_persistence_queue_bounded"), false},
-        {QStringLiteral("thumbnail_persistence_drops"), 0},
     };
     const QJsonObject baseline = readBaseline();
     const bool baselineFixtureMatches =
@@ -361,22 +350,7 @@ int main(int argc, char** argv) {
         {QStringLiteral("ad_image_count_idle"),
          page->findChildren<adqt::widgets::AdImage*>().size()},
         {QStringLiteral("pending_history_jobs_before_drain"), pendingHistoryJobsBeforeDrain},
-        {QStringLiteral("pending_persistence_jobs_before_drain"),
-         pendingPersistenceJobsBeforeDrain},
-        {QStringLiteral("queued_persistence_jobs_before_drain"), queuedPersistenceJobsBeforeDrain},
-        {QStringLiteral("submitted_persistence_jobs_before_drain"),
-         static_cast<qint64>(submittedPersistenceJobsBeforeDrain)},
         {QStringLiteral("pending_history_jobs_after_drain"), screenshotHistoryPendingJobCount()},
-        {QStringLiteral("pending_persistence_jobs_after_drain"),
-         screenshotHistoryPendingPersistenceJobCount()},
-        {QStringLiteral("queued_persistence_jobs_after_drain"),
-         screenshotHistoryQueuedPersistenceJobCount()},
-        {QStringLiteral("submitted_persistence_jobs_after_drain"),
-         static_cast<qint64>(submittedPersistenceJobsAfterDrain)},
-        {QStringLiteral("completed_persistence_jobs_after_drain"),
-         static_cast<qint64>(completedPersistenceJobsAfterDrain)},
-        {QStringLiteral("all_accepted_persistence_writes_completed"),
-         allAcceptedPersistenceWritesCompleted},
         {QStringLiteral("executor_contract_passed"), executorContractPassed},
         {QStringLiteral("decode_worker_limit"), 2},
         {QStringLiteral("decoded_cache_limit_bytes"), 64 * 1024 * 1024},

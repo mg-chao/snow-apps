@@ -1130,17 +1130,21 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
     } else if (method == u"snow_shot_settings_action" || method == u"snow_shot_storage_cleanup") {
         settings::SettingsActionBinding binding;
         if (method == u"snow_shot_settings_action") {
-            const auto* field = ports.settings->registry().field(
-                params.value(QStringLiteral("field_id")).toString());
+            const QString fieldId = params.value(QStringLiteral("field_id")).toString();
+            const auto* field = ports.settings->registry().field(fieldId);
             const auto* action =
                 field && field->definition
                     ? std::get_if<settings::SettingsActionDefinition>(&field->definition->payload)
                     : nullptr;
-            if (!action) {
+            if (action) {
+                binding = action->binding;
+            } else if (fieldId == u"storage.clear-thumbnails") {
+                // Preserve cleanup callers after retiring the visible settings row.
+                binding = settings::SettingsActionBinding::ClearThumbnailCache;
+            } else {
                 error(QStringLiteral("invalid_parameters"), QStringLiteral("field_id"));
                 return;
             }
-            binding = action->binding;
         } else {
             const auto kind = params.value(QStringLiteral("kind")).toString();
             if (kind == u"history")

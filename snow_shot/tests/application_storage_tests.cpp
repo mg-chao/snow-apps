@@ -8,6 +8,7 @@
 #include "snow_shot/storage/persistedselectioncodec.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/storageusagetracker.h"
+#include "legacy_thumbnail_test_support.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
@@ -3617,24 +3618,66 @@ void pendingClosedPinsReceiveBackgroundRetentionCleanup() {
     reopened.shutdown();
 }
 
+void startupRemovesLegacyThumbnails() {
+    storage::ApplicationStorage::instance().shutdown();
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    require(cacheEnvironment.isValid(), "startup cleanup requires disposable caches");
+    const auto shutdown = qScopeGuard([] { storage::ApplicationStorage::instance().shutdown(); });
+    QTemporaryDir temporary;
+    const QString directory = cacheEnvironment.directory();
+    const QString thumbnail = QDir(directory).filePath(QStringLiteral("old.png"));
+    const QString sidecar = thumbnail + QStringLiteral(".size");
+    const QString orphan = QDir(directory).filePath(QStringLiteral("orphan.PNG.SIZE"));
+    const QString unrelated = QDir(directory).filePath(QStringLiteral("keep.txt"));
+    const QString nested = QDir(directory).filePath(QStringLiteral("nested/keep.png"));
+    writeBytes(thumbnail, QByteArray(32, 'x'));
+    writeBytes(sidecar, QByteArrayLiteral("1920x1080"));
+    writeBytes(orphan, QByteArrayLiteral("20x10"));
+    writeBytes(unrelated, QByteArrayLiteral("keep"));
+    writeBytes(nested, QByteArrayLiteral("nested"));
+    for (int launch = 0; launch < 2; ++launch) {
+        auto& app = initialize(temporary.path(), temporary.path());
+        require(app.flushNow().success, "startup cleanup must drain without initialization errors");
+        waitUntil([&] { return !app.status().cacheClearing; }, "startup cleanup remained busy");
+        require(!QFile::exists(thumbnail) && !QFile::exists(sidecar) && !QFile::exists(orphan) &&
+                    QFile::exists(unrelated) && QFile::exists(nested),
+                "startup removes legacy thumbnail files and preserves unrelated content");
+        require(app.status().appUsage.thumbnailCacheBytes == 10,
+                "remaining legacy-directory bytes must still count toward total storage");
+        app.shutdown();
+    }
+    require(QFile::remove(unrelated) && QFile::remove(nested) &&
+                QDir().rmdir(QDir(directory).filePath(QStringLiteral("nested"))),
+            "remove unrelated test files");
+    auto& empty = initialize(temporary.path(), temporary.path());
+    require(empty.flushNow().success && !QDir(directory).exists(),
+            "startup cleanup removes the empty legacy directory");
+    empty.shutdown();
+    auto& absent = initialize(temporary.path(), temporary.path());
+    require(absent.flushNow().success && !QDir(directory).exists() &&
+                !absent.status().cacheClearing,
+            "startup without legacy files never creates a thumbnail directory");
+    absent.shutdown();
+    writeBytes(directory, QByteArrayLiteral("blocked"));
+    auto& failed = initialize(temporary.path(), temporary.path());
+    require(failed.flushNow().success, "legacy cleanup failures must not fail storage startup");
+    waitUntil([&] { return !failed.status().cacheClearing; }, "failed cleanup remained busy");
+    require(QFileInfo(directory).isFile(), "failed cleanup preserves the blocked cache location");
+    failed.shutdown();
+    require(QFile::remove(directory), "release blocked cache fixture");
+    writeBytes(thumbnail, QByteArrayLiteral("retry"));
+    auto& retried = initialize(temporary.path(), temporary.path());
+    require(retried.flushNow().success && !QDir(directory).exists(),
+            "the next startup retries legacy cleanup after a failure");
+}
+
 void appUsageScanAndCacheCleanup() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create app usage directory");
-    const bool store = snow_shot::app::distribution::isStoreManaged();
-    const bool hadLocal = qEnvironmentVariableIsSet("LOCALAPPDATA");
-    const QByteArray previousLocal = qgetenv("LOCALAPPDATA");
-    const auto restoreLocal = qScopeGuard([&] {
-        if (store) {
-            storage::ApplicationStorage::instance().shutdown();
-            if (hadLocal)
-                qputenv("LOCALAPPDATA", previousLocal);
-            else
-                qunsetenv("LOCALAPPDATA");
-        }
-    });
-    if (store)
-        require(qputenv("LOCALAPPDATA", temporary.path().toUtf8()),
-                "Store usage test must isolate package caches");
+    storage::ApplicationStorage::instance().shutdown();
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    require(cacheEnvironment.isValid(), "app usage tests require disposable thumbnail caches");
+    const auto shutdown = qScopeGuard([] { storage::ApplicationStorage::instance().shutdown(); });
     const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));
     const QString root = QDir(temporary.path()).filePath(QStringLiteral("root"));
     auto& applicationStorage = initialize(executable, root, 60000);
@@ -3642,8 +3685,6 @@ void appUsageScanAndCacheCleanup() {
     require(!applicationStorage.status().appUsage.scanning,
             "a flushed storage must not report scanning");
 
-    // Standalone caches use the test application name. Store package caches use
-    // the fixture LOCALAPPDATA root so cleanup never touches installed app data.
     const QString thumbnailCache = storage::StorageUsageTracker::defaultThumbnailCacheDirectory();
     const QString recordingTemp = storage::StorageUsageTracker::defaultRecordingTempDirectory();
     QDir(thumbnailCache).removeRecursively();
@@ -4499,6 +4540,7 @@ int main(int argc, char** argv) {
     persistedSelectionCodecIsCanonicalAndStrict();
     asynchronousMutationResultsAreObservable();
     pendingClosedPinsReceiveBackgroundRetentionCleanup();
+    startupRemovesLegacyThumbnails();
     appUsageScanAndCacheCleanup();
     applicationQuitPreservesStorageForConsumerDestruction(application);
     storage::ApplicationStorage::instance().shutdown();

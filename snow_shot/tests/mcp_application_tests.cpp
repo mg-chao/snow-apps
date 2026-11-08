@@ -957,7 +957,7 @@ void runMcpApplicationTests() {
         translation_tests::waitUntil([&] { return !storage.status().pinnedClearing; },
                                      "cleanup finishes independently of its retired observer");
     }
-    for (int variant = 0; variant < 3; ++variant) {
+    for (int variant = 0; variant < 4; ++variant) {
         McpJobRegistry lifetimeJobs;
         auto lifetimePorts = ports;
         lifetimePorts.jobs = &lifetimeJobs;
@@ -1004,9 +1004,13 @@ void runMcpApplicationTests() {
                            storage.status().appUsage.thumbnailCacheBytes >= 64;
                 },
                 "thumbnail cleanup is admitted after the seeded cache usage scan finishes");
-            request.method = QStringLiteral("snow_shot_settings_action");
-            request.params = {
-                {QStringLiteral("field_id"), QStringLiteral("storage.clear-thumbnails")}};
+            request.method = variant == 2 ? QStringLiteral("snow_shot_settings_action")
+                                          : QStringLiteral("snow_shot_storage_cleanup");
+            request.params =
+                variant == 2
+                    ? QJsonObject{{QStringLiteral("field_id"),
+                                   QStringLiteral("storage.clear-thumbnails")}}
+                    : QJsonObject{{QStringLiteral("kind"), QStringLiteral("thumbnail_cache")}};
             request.expectedRevision = configuration.revision();
         }
         QString terminalStatus;
@@ -1039,7 +1043,7 @@ void runMcpApplicationTests() {
         translation_tests::waitUntil([&] { return !ownedService; },
                                      "terminal job observers can retire owned observations");
         require(responses == 1, "terminal observers retire their service after its accepted reply");
-        if (variant == 2) {
+        if (variant >= 2) {
             const auto message =
                 QStringLiteral("thumbnail cleanup completes after observer retirement: "
                                "status=%1 error=%2 file_exists=%3 cache_clearing=%4")
