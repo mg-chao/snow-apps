@@ -208,13 +208,15 @@ void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayControll
     using Action = snow_shot::presentation::GlobalShortcutAction;
     const auto stitchId = QStringLiteral("quick.stitch-selected-images");
     const auto splitId = QStringLiteral("quick.split-selected-images");
+    const auto editId = QStringLiteral("quick.edit-selected-images");
 #ifdef Q_OS_WIN
     const auto topmostId = QStringLiteral("quick.toggle-window-under-cursor-always-on-top");
     require(!TraySettings().menuOptions().contains(topmostId),
             "window-under-cursor topmost starts unchecked in the tray");
 #endif
     require(!TraySettings().menuOptions().contains(stitchId) &&
-                !TraySettings().menuOptions().contains(splitId),
+                !TraySettings().menuOptions().contains(splitId) &&
+                !TraySettings().menuOptions().contains(editId),
             "selected-image stitching and splitting start unchecked in the tray");
     auto& appStorage = snow_shot::storage::ApplicationStorage::instance();
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
@@ -243,6 +245,7 @@ void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayControll
     QStringList visible;
     QAction* stitching = nullptr;
     QAction* splitting = nullptr;
+    QAction* editing = nullptr;
     for (auto* action : menu->actions()) {
         if (!action->isSeparator() && action->isVisible())
             visible.append(action->data().toString());
@@ -250,18 +253,23 @@ void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayControll
             stitching = action;
         if (action->data().toString() == splitId)
             splitting = action;
+        if (action->data().toString() == editId)
+            editing = action;
     }
     require(visible == options, "the tray must display every persisted selection, including Exit");
     QVector<Action> imageActions;
     QObject::connect(&controller,
                      &snow_shot::presentation::SystemTrayController::quickActionRequested, menu,
                      [&](Action action) { imageActions.append(action); });
-    require(stitching && stitching->isVisible() && splitting && splitting->isVisible(),
+    require(stitching && stitching->isVisible() && splitting && splitting->isVisible() && editing &&
+                editing->isVisible(),
             "selected stitching and splitting tray entries are visible");
     stitching->trigger();
     splitting->trigger();
-    require(imageActions ==
-                QVector<Action>{Action::StitchSelectedImages, Action::SplitSelectedImages},
+    editing->trigger();
+    require(imageActions == QVector<Action>{Action::StitchSelectedImages,
+                                            Action::SplitSelectedImages,
+                                            Action::EditSelectedImages},
             "selected-image tray entries dispatch their own action exactly once");
 #ifdef Q_OS_WIN
     QAction* topmost = nullptr;
@@ -271,7 +279,7 @@ void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayControll
     }
     require(topmost && topmost->isVisible(), "the topmost action can be enabled in the tray");
     topmost->trigger();
-    require(imageActions.size() == 3 &&
+    require(imageActions.size() == 4 &&
                 imageActions.last() == Action::ToggleWindowUnderCursorAlwaysOnTop,
             "the optional topmost tray entry dispatches its own action exactly once");
 #endif
@@ -1980,7 +1988,9 @@ int main(int argc, char* argv[]) {
           std::pair{QStringLiteral("quick.stitch-selected-images"),
                     snow_shot::presentation::GlobalShortcutAction::StitchSelectedImages},
           std::pair{QStringLiteral("quick.split-selected-images"),
-                    snow_shot::presentation::GlobalShortcutAction::SplitSelectedImages}}) {
+                    snow_shot::presentation::GlobalShortcutAction::SplitSelectedImages},
+          std::pair{QStringLiteral("quick.edit-selected-images"),
+                    snow_shot::presentation::GlobalShortcutAction::EditSelectedImages}}) {
         auto* optionalAction = actionForId(entry.first);
         require(optionalAction != nullptr && !optionalAction->isVisible(),
                 "optional quick actions must start hidden");

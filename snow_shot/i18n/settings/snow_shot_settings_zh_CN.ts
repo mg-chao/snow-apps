@@ -2368,6 +2368,10 @@
             <translation>复制最新选区</translation>
         </message>
         <message>
+            <source>Edit selected images</source>
+            <translation>编辑选中的图像</translation>
+        </message>
+        <message>
             <source>Edit selection</source>
             <translation>编辑选区</translation>
         </message>
@@ -3206,6 +3210,10 @@
         <message>
             <source>Open a canvas on the current display or toggle click-through</source>
             <translation>在当前显示器上打开画布或切换鼠标穿透</translation>
+        </message>
+        <message>
+            <source>Open image editing for each selected image file, or an empty window if no images are selected</source>
+            <translation>为每个选中的图像文件打开图像编辑窗口；未选中图像时打开空窗口</translation>
         </message>
         <message>
             <source>Open image splitting for each selected image file, or an empty window if no images are selected</source>
@@ -4341,7 +4349,7 @@
         </message>
         <message>
             <source>Split selected images</source>
-            <translation>分割选中图像</translation>
+            <translation>分割选中的图像</translation>
         </message>
         <message>
             <source>Spotlight</source>

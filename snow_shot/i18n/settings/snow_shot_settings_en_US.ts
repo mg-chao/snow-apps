@@ -2368,6 +2368,10 @@
             <translation>Duplicate latest region</translation>
         </message>
         <message>
+            <source>Edit selected images</source>
+            <translation>Edit selected images</translation>
+        </message>
+        <message>
             <source>Edit selection</source>
             <translation>Edit selection</translation>
         </message>
@@ -3206,6 +3210,10 @@
         <message>
             <source>Open a canvas on the current display or toggle click-through</source>
             <translation>Open a canvas on the current display or toggle click-through</translation>
+        </message>
+        <message>
+            <source>Open image editing for each selected image file, or an empty window if no images are selected</source>
+            <translation>Open image editing for each selected image file, or an empty window if no images are selected</translation>
         </message>
         <message>
             <source>Open image splitting for each selected image file, or an empty window if no images are selected</source>

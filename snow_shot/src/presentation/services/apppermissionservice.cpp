@@ -66,6 +66,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
     case Action::GlobalCanvas:
     case Action::StitchSelectedImages:
     case Action::SplitSelectedImages:
+    case Action::EditSelectedImages:
     case Action::SwitchWindowGroup:
     case Action::OpenPinToScreenManagement:
     case Action::OpenSettings:
