@@ -45,10 +45,10 @@ void outlineCoverage() {
                     const int end = qCeil(edge + 3 * dpr);
                     qreal alpha = 0;
                     for (int position = begin; position < end; ++position) {
-                        alpha += image
-                                     .pixelColor(vertical ? position : centerX,
-                                                 vertical ? centerY : position)
-                                     .alphaF();
+                        alpha += qreal(image
+                                           .pixelColor(vertical ? position : centerX,
+                                                       vertical ? centerY : position)
+                                           .alphaF());
                     }
                     // Remove the ideal 20%-opaque interior. A centered one-logical-pixel
                     // stroke adds full coverage outside and replaces the fill inside.

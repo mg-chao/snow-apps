@@ -360,3 +360,64 @@ Native input checks require existing event-posting permission and do not request
 or change privacy grants. The AppKit receiver covers Finder-style deferred file
 copying; it is not an automated test of Finder itself. Intel/macOS 15 and Windows
 native execution were not part of this validation.
+
+## Pinned document lifecycle validation — 2026-11-08
+
+Validated commit `3b62ea905` and the macOS verification follow-up on macOS 27.0.1,
+arm64, Qt 6.12.0, with the `snow-shot-macos-arm64-debug` preset and strict compiler
+warnings. Both `snow_shot` and `snow_shot_mini` built successfully. All 48 selected
+checks passed after correcting the fixtures below, including six Cocoa checks.
+Both editions were also installed under the preset's `run/` directory; OCR asset
+verification and `codesign --verify --deep --strict` passed for the deployed apps.
+
+The checks cover crop admission/cancellation and animation frame holds, duplicate
+restoration, annotation drafts at close, retained translation editors, recognition
+intent, frozen print/AirDrop scenes, and the production MCP pinned-source adapter.
+Offscreen cases exercise fractional scaling and 2× rendering. Cocoa cases cover
+scene freezing, crop application, window policy/focus, fresh and prewarmed pin
+creation, and exact content pixels with an exterior border. The scene-freezing
+case now has its own Cocoa CTest registration.
+
+The first pass exposed outdated fixture assumptions: translation editors also
+persist visible recognition intent; converted editing canvases use raster pixels
+while macOS pin placement uses logical units; the border lies outside the content;
+and topmost pins retain their requested menu-bar overlap, including shadow margins.
+The native pixel comparison now hides transient hover controls before comparing
+the canvas and rim. An explicit `qreal` conversion also fixes Apple Clang's
+`-Wdouble-promotion` error in the crop-render fixture.
+
+Build the affected targets:
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-debug \
+  --target snow_shot --target snow_shot_mini \
+  --target snow-shot-pinned-window-tests \
+  --target snow-shot-pinned-window-repository-tests \
+  --target snow-shot-animation-playback-tests \
+  --target snow-shot-pinned-crop-render-tests \
+  --target snow-shot-recognition-session-controller-tests \
+  --target snow-shot-macos-pinned-window-tests
+```
+
+Run the 42 selected unit checks and six Cocoa checks explicitly:
+
+```sh
+checks='^snow-shot-(animation-playback|duplicate-pin|'
+checks+='pinned-(native-scene.*|text-type|translation|recognition-(history|shortcut-offscreen|models)|'
+checks+='early-ocr-snapshot|invalid-ocr-restore|window-repository|window-(print|airdrop)|'
+checks+='close-persistence|drawing-close|restored-state-persistence|crop.*|animation|creation|'
+checks+='pixel-alignment|mcp-source)|live-window-crop.*|recognition-session-controller|'
+checks+='original-image-translation|screenshot-controller-clipboard|mcp-application-lifecycle)-tests$'
+ctest --preset test-snow-shot-macos-arm64-debug -R "$checks"
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(macos-pinned-(native-scene|window|focus|creation|pixel-alignment)|pinned-crop-native)-tests$'
+```
+
+Development deployment uses `cmake --install build/snow-shot-macos-arm64-debug
+--component SnowShot --prefix build/snow-shot-macos-arm64-debug/run`; repeat with
+component `SnowShotMini`. Verify `run/snow_shot.app` and `run/snow_shot_mini.app`,
+since build-tree Debug executables are signed separately from their bundles.
+
+Changed C++ formatting and `git diff --check` passed. No full suite or benchmarks
+ran; clang-tidy is disabled in this build. This pass does not qualify Intel,
+macOS 15, mixed-display hardware, or release packaging.

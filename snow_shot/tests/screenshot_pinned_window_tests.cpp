@@ -20933,6 +20933,9 @@ void pinnedOddPixelExtentRemainsSharp() {
         }
         showBorder->trigger();
         setPinnedWindowActive(window, false);
+        // Native pointer tracking may expose hover controls over this window.
+        // Compare the canvas and exterior rim without those transient controls.
+        window.findChild<QWidget*>(QStringLiteral("screenshotPinnedControlsPanel"))->hide();
         rendered = QImage(QSize(qRound(canvas->width() * dpr), qRound(canvas->height() * dpr)),
                           QImage::Format_ARGB32_Premultiplied);
         rendered.setDevicePixelRatio(dpr);
@@ -21089,10 +21092,9 @@ void pinnedCreationCommitsHiddenGeometry() {
                 waitForUi(5);
             require(completed && succeeded && window.isVisible(),
                     "pin creation must publish a successful first frame");
-            const QRect expected(
-                QPoint(config.nativeGeometry.x(), screen->availableGeometry().top()), image.size());
+            const QRect expected = snow_shot::presentation::pinnedOuterRect(config.nativeGeometry);
             require(window.currentNativeGeometry() == expected && window.geometry() == expected,
-                    "pin creation must preserve size and commit the menu-constrained position");
+                    "topmost pin creation preserves the content size and menu-bar overlap");
             window.close();
         }
     }

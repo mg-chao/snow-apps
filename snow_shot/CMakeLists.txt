@@ -5660,6 +5660,14 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endforeach()
     unset(_pinned_scene_scale)
+    if(APPLE)
+        add_test(NAME snow-shot-macos-pinned-native-scene-tests
+            COMMAND snow-shot-pinned-window-tests --native-scene-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-pinned-native-scene-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa"
+            ENVIRONMENT_MODIFICATION "QT_SCREEN_SCALE_FACTORS=unset:;QT_SCALE_FACTOR=unset:")
+    endif()
     set_tests_properties(snow-shot-pinned-management-lifecycle-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-batch-actions-tests

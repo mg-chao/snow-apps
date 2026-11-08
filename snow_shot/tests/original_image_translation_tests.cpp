@@ -1879,17 +1879,19 @@ void runPinnedOriginalImageTranslationTests() {
             require(fallback->present(config), "present a pin without valid translation data");
             auto* session = fallback->findChild<ScreenshotRecognitionSessionController*>();
             waitUntil([&]() { return session->active(); }, "display the valid source OCR fallback");
+            const auto fallbackRecord = fallback->persistenceSnapshot();
             require(session->translating() &&
                         session->originalImageTranslationActive() == overlay &&
                         session->cachedRecognitionResults().text->presentation->lines[0].text ==
                             QStringLiteral("source 0") &&
                         session->cachedRecognitionResults().text->presentation->lines[1].text ==
-                            QStringLiteral("source 1") &&
-                        fallback->persistenceSnapshot().recognitionVisible == overlay &&
-                        fallback->persistenceSnapshot().textType ==
-                            snow_shot::storage::PinnedTextType::TranslationResults,
+                            QStringLiteral("source 1"),
                     "missing or invalid cached translation starts translation while retaining "
                     "source OCR");
+            require(fallbackRecord.recognitionVisible && fallbackRecord.translationVisible &&
+                        fallbackRecord.textType ==
+                            snow_shot::storage::PinnedTextType::TranslationResults,
+                    "editor and overlay translation fallbacks both persist their visible intent");
             fallback->close();
             waitUntil([&]() { return fallbackGuard.isNull(); },
                       "close the translation fallback pin");

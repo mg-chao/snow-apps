@@ -1552,7 +1552,8 @@ void nativePresentationPreservesShell() {
                                            snow_shot::storage::PinnedGeometryUnits::LogicalPixels
                                        ? window.devicePixelRatioF()
                                        : 1));
-        requireColorNear(raster.pixelColor(margin, raster.height() / 2),
+        // The rim is outside the content rectangle, so its last pixel precedes the margin.
+        requireColorNear(raster.pixelColor(margin - 1, raster.height() / 2),
                          border->property("borderColor").value<QColor>(), 0,
                          "native live content retains the shell's visible border");
         if (!native)

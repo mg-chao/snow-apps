@@ -1174,7 +1174,10 @@ void liveConversion() {
                         Access::visibleCrop(window) == canvas && record.scalePercent == 100,
                     "converted snapshot owns a new canvas and a one-hundred-percent baseline");
             const auto editor = pinnedRenderedEditingSource(window);
-            require(editor.image == expected && editor.canvasRect == canvas,
+            // The editing canvas uses raster pixels; the pin's canvas above uses
+            // logical desktop units on macOS, independently of the snapshot's DPR.
+            require(editor.image == expected &&
+                        editor.canvasRect == QRectF(QPointF(), QSizeF(expected.size())),
                     "editing receives the complete converted snapshot");
             auto* border = Access::decoration(window);
             require(!border->property("cropped").toBool() &&
