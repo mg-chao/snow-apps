@@ -177,6 +177,44 @@ fn window_path_is_deepest_first_with_window_last() {
 }
 
 #[test]
+fn desktop_elements_crossing_monitors_are_clipped_in_results_and_progress() {
+    let monitors = [rect(-1920, 0, 0, 1080), rect(0, -200, 2560, 1440)];
+    for bounds in monitors {
+        let mut provider = FakeProvider {
+            call_cost: Duration::from_millis(40),
+            ..Default::default()
+        };
+        provider
+            .children
+            .insert(0, vec![Spec::new(1, rect(-1920, -200, 2560, 1440))]);
+        provider
+            .children
+            .insert(1, vec![Spec::new(2, rect(-100, 20, 100, 120))]);
+        let expected = rect(bounds.left.max(-100), 20, bounds.right.min(100), 120);
+        let clock = provider.clock.clone();
+        let mut progress = Vec::new();
+        let result = tree(bounds).query(
+            &mut provider,
+            POINT {
+                x: expected.left,
+                y: 50,
+            },
+            &clock,
+            &QueryControl::refinement(&|| false),
+            &mut |path| progress.push(path),
+        );
+        assert_eq!(result, (vec![expected, bounds], StopReason::Complete));
+        assert!(progress.contains(&vec![expected, bounds]));
+        assert!(
+            progress
+                .iter()
+                .flatten()
+                .all(|r| intersect_rect(*r, bounds) == Some(*r))
+        );
+    }
+}
+
+#[test]
 fn empty_provider_returns_window_and_is_not_requeried() {
     let bounds = rect(0, 0, 100, 100);
     let mut tree = tree(bounds);
