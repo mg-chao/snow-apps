@@ -52,7 +52,7 @@ pub(crate) fn hover_cursor_for_arrow_target(target: ArrowHitTarget) -> CursorSty
         ArrowHitTarget::Endpoint(_) | ArrowHitTarget::Point(_) | ArrowHitTarget::FocusPoint(_) => {
             CursorStyle::Grab
         }
-        ArrowHitTarget::Segment(_) => CursorStyle::Move,
+        ArrowHitTarget::Segment(_) => CursorStyle::Grab,
         ArrowHitTarget::AngleArc | ArrowHitTarget::BracketGuide => CursorStyle::Grab,
     }
 }
@@ -128,6 +128,15 @@ mod tests {
                 CursorStyle::Crosshair
             );
         }
+
+        assert_eq!(
+            hover_cursor_for_arrow_target(ArrowHitTarget::Segment(1)),
+            CursorStyle::Grab
+        );
+        assert_eq!(
+            active_cursor_for_arrow_target(ArrowHitTarget::Segment(1)),
+            CursorStyle::Move
+        );
     }
 
     #[test]

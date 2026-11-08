@@ -276,7 +276,7 @@ mod tests {
         arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle},
     };
     use snow_draw_engine_document::{
-        ArrowData, CanvasFilterType, ElementMeta, FilterData, PenFilterData, Transaction,
+        ArrowData, CanvasFilterType, ElementMeta, FillStyle, FilterData, PenFilterData, Transaction,
     };
     use snow_draw_engine_interaction::{
         InputEvent, PointerButtons, PointerDevice, PointerEvent, PointerEventType,
@@ -379,6 +379,198 @@ mod tests {
     }
 
     #[test]
+    fn arrow_control_hover_tracks_visible_handles_without_repainting_the_scene() {
+        for arrow_type in [ArrowType::Straight, ArrowType::Curve, ArrowType::Elbow] {
+            for line in [false, true] {
+                let mut document = DocumentModel::new();
+                let points = if arrow_type == ArrowType::Elbow {
+                    vec![
+                        Point::new(-160.0, -80.0),
+                        Point::new(0.0, -80.0),
+                        Point::new(0.0, 80.0),
+                        Point::new(160.0, 80.0),
+                    ]
+                } else {
+                    vec![Point::new(-160.0, -80.0), Point::new(160.0, 80.0)]
+                };
+                let mut arrow = ArrowData::from_global_points(
+                    &points,
+                    opaque_color(),
+                    2.0,
+                    StrokeStyle::Solid,
+                    arrow_type,
+                    None,
+                    None,
+                )
+                .unwrap();
+                if line {
+                    arrow = arrow.into_line(opaque_color(), FillStyle::Solid);
+                }
+                let id = insert_arrow(&mut document, arrow);
+                let mut editor = selected_arrow_editor(&document, id);
+                editor.set_surface_size(800, 600).unwrap();
+                for zoom in [0.5, 1.0, 2.0, 4.0] {
+                    editor
+                        .set_camera(Camera {
+                            zoom,
+                            ..editor.camera()
+                        })
+                        .unwrap();
+                    let handles = editor.presentation_state(&document).arrow_handles;
+                    assert!(
+                        handles
+                            .iter()
+                            .any(|handle| handle.kind == ArrowHandleKind::Segment)
+                    );
+                    for handle in handles {
+                        let view_point = snow_draw_engine_core::canvas_to_view(
+                            handle.center,
+                            &editor.camera(),
+                            editor.surface_size(),
+                        );
+                        let scene_revision = editor.scene_input_revision();
+                        let update = editor
+                            .process_input(&document, pointer_hover_at(view_point))
+                            .unwrap();
+                        assert_eq!(
+                            update.interaction.cursor,
+                            CursorCommand::Set(CursorStyle::Grab)
+                        );
+                        let hovered = editor
+                            .presentation_state(&document)
+                            .arrow_handles
+                            .into_iter()
+                            .filter(|handle| handle.hovered)
+                            .collect::<Vec<_>>();
+                        assert_eq!(hovered.len(), 1, "{arrow_type:?}, line={line}, zoom={zoom}");
+                        assert_eq!(hovered[0].center, handle.center);
+                        assert_eq!(hovered[0].kind, handle.kind);
+                        assert_eq!(editor.scene_input_revision(), scene_revision);
+                        let overlay_revision = editor.overlay_input_revision();
+                        editor
+                            .process_input(
+                                &document,
+                                pointer_hover_at(Point::new(view_point.x + 0.25, view_point.y)),
+                            )
+                            .unwrap();
+                        assert_eq!(editor.overlay_input_revision(), overlay_revision);
+                    }
+                    editor
+                        .process_input(&document, pointer_hover_at(Point::new(-1000.0, -1000.0)))
+                        .unwrap();
+                    assert!(
+                        editor
+                            .presentation_state(&document)
+                            .arrow_handles
+                            .iter()
+                            .all(|handle| !handle.hovered)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn arrow_control_hover_clears_on_drag_leave_focus_tool_and_selection_changes() {
+        for action in 0..6 {
+            let mut document = DocumentModel::new();
+            let id = insert_arrow(
+                &mut document,
+                test_arrow(&[Point::new(-100.0, 0.0), Point::new(100.0, 0.0)]),
+            );
+            let mut editor = selected_arrow_editor(&document, id);
+            editor.set_surface_size(400, 300).unwrap();
+            let point = Point::new(200.0, 150.0);
+            editor
+                .process_input(&document, pointer_hover_at(point))
+                .unwrap();
+            assert!(
+                editor
+                    .presentation_state(&document)
+                    .arrow_handles
+                    .iter()
+                    .any(|handle| handle.hovered)
+            );
+            let revision = editor.overlay_input_revision();
+            match action {
+                0 => {
+                    editor
+                        .process_input(&document, pointer_down_at(point))
+                        .unwrap();
+                }
+                1 | 2 => {
+                    let InputEvent::Pointer(mut pointer) = pointer_hover_at(point) else {
+                        unreachable!()
+                    };
+                    pointer.event_type = if action == 1 {
+                        PointerEventType::Leave
+                    } else {
+                        PointerEventType::Cancel
+                    };
+                    editor
+                        .process_input(&document, InputEvent::Pointer(pointer))
+                        .unwrap();
+                }
+                3 => {
+                    editor
+                        .process_input(&document, InputEvent::FocusLost)
+                        .unwrap();
+                }
+                4 => {
+                    editor.set_active_tool(ActiveTool::Arrow).unwrap();
+                }
+                _ => {
+                    editor.clear_selection();
+                }
+            }
+            assert!(editor.overlay_input_revision() > revision);
+            assert!(
+                editor
+                    .presentation_state(&document)
+                    .arrow_handles
+                    .iter()
+                    .all(|handle| !handle.hovered)
+            );
+        }
+    }
+
+    #[test]
+    fn bent_line_control_hover_highlights_only_the_hit_vertex_or_segment() {
+        let mut document = DocumentModel::new();
+        let arrow = test_arrow(&[
+            Point::new(-150.0, 0.0),
+            Point::new(0.0, 100.0),
+            Point::new(150.0, 0.0),
+        ])
+        .into_line(opaque_color(), FillStyle::Solid);
+        let id = insert_arrow(&mut document, arrow);
+        let mut editor = selected_arrow_editor(&document, id);
+        editor.set_surface_size(800, 600).unwrap();
+        for center in [
+            Point::new(0.0, 100.0),
+            Point::new(-75.0, 50.0),
+            Point::new(75.0, 50.0),
+        ] {
+            let point = snow_draw_engine_core::canvas_to_view(
+                center,
+                &editor.camera(),
+                editor.surface_size(),
+            );
+            editor
+                .process_input(&document, pointer_hover_at(point))
+                .unwrap();
+            let hovered = editor
+                .presentation_state(&document)
+                .arrow_handles
+                .into_iter()
+                .filter(|handle| handle.hovered)
+                .collect::<Vec<_>>();
+            assert_eq!(hovered.len(), 1);
+            assert_eq!(hovered[0].center, center);
+        }
+    }
+
+    #[test]
     fn angle_arc_controls_keep_point_priority_and_separate_arc_drag_from_arm_move() {
         use snow_draw_engine_document::{angle_arc_control_point, angle_geometry};
         let mut document = DocumentModel::new();
@@ -389,7 +581,7 @@ mod tests {
         ]);
         crate::AngleStyle::default().apply_to_arrow(&mut arrow);
         let id = insert_arrow(&mut document, arrow.clone());
-        let editor = selected_arrow_editor(&document, id);
+        let mut editor = selected_arrow_editor(&document, id);
         let control = angle_arc_control_point(&arrow).unwrap();
         assert_eq!(
             editor.arrow_hit_target(&document, id, &arrow, control),
@@ -403,6 +595,25 @@ mod tests {
             editor.arrow_hit_target(&document, id, &arrow, arc_body),
             Some(ArrowHitTarget::AngleArc)
         );
+        editor.set_surface_size(800, 600).unwrap();
+        for (point, highlighted) in [(control, true), (arc_body, false)] {
+            let view_point = snow_draw_engine_core::canvas_to_view(
+                point,
+                &editor.camera(),
+                editor.surface_size(),
+            );
+            editor
+                .process_input(&document, pointer_hover_at(view_point))
+                .unwrap();
+            assert_eq!(
+                editor
+                    .presentation_state(&document)
+                    .arrow_handles
+                    .iter()
+                    .any(|handle| handle.hovered),
+                highlighted
+            );
+        }
         assert_eq!(
             editor.arrow_hit_target(&document, id, &arrow, Point::new(80.0, 0.0)),
             Some(ArrowHitTarget::Move)

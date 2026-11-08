@@ -276,6 +276,66 @@ void createArrow(SnowCanvasWidget& canvas, SnowCanvasRuntime& runtime,
     require(canvas.setCanvasTool(SnowCanvasTool::Select), "activate selection tool");
 }
 
+void arrowAndLineControlsShowHandCursorsAndHoverHalos() {
+    for (const auto tool : {SnowCanvasTool::Arrow, SnowCanvasTool::Line}) {
+        for (const auto type : {SnowCanvasArrowType::Straight, SnowCanvasArrowType::Curve,
+                                SnowCanvasArrowType::Elbow}) {
+            SnowCanvasRuntime runtime;
+            SnowCanvasWidget canvas(runtime);
+            canvas.resize(600, 360);
+            canvas.show();
+            QApplication::processEvents();
+            require(canvas.setCanvasTool(tool), "activate control hover tool");
+            SnowCanvasShapeStyle style;
+            style.arrowType = type;
+            require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyArrowType,
+                                                    tool == SnowCanvasTool::Arrow
+                                                        ? SnowCanvasShapeKind::Arrow
+                                                        : SnowCanvasShapeKind::Line),
+                    "configure control hover geometry");
+            mouse(canvas, QEvent::MouseButtonPress, {70.0, 180.0}, Qt::LeftButton, Qt::LeftButton);
+            mouse(canvas, QEvent::MouseMove, {490.0, 180.0}, Qt::NoButton, Qt::LeftButton);
+            mouse(canvas, QEvent::MouseButtonRelease, {490.0, 180.0}, Qt::LeftButton, Qt::NoButton);
+            require(canvas.setCanvasTool(SnowCanvasTool::Select), "select control hover tool");
+            mouse(canvas, QEvent::MouseButtonPress, {150.0, 180.0}, Qt::LeftButton, Qt::LeftButton);
+            mouse(canvas, QEvent::MouseButtonRelease, {150.0, 180.0}, Qt::LeftButton, Qt::NoButton);
+            const auto render = [&](int dpr) {
+                QImage image(canvas.size() * dpr, QImage::Format_ARGB32_Premultiplied);
+                image.setDevicePixelRatio(dpr);
+                image.fill(Qt::transparent);
+                canvas.render(&image);
+                return image;
+            };
+            for (int dpr : {1, 2}) {
+                mouse(canvas, QEvent::MouseMove, {40.0, 40.0}, Qt::NoButton, Qt::NoButton);
+                const QImage normal = render(dpr);
+                for (const QPointF point :
+                     {QPointF(70.0, 180.0), QPointF(280.0, 180.0), QPointF(490.0, 180.0)}) {
+                    mouse(canvas, QEvent::MouseMove, point, Qt::NoButton, Qt::NoButton);
+#ifdef Q_OS_WIN
+                    require(canvas.cursor().shape() == Qt::PointingHandCursor,
+                            "endpoints and insertion controls must show a pointing hand");
+#else
+                    require(canvas.cursor().shape() == Qt::OpenHandCursor,
+                            "endpoints and insertion controls must show the platform grab cursor");
+#endif
+                    const QImage hovered = render(dpr);
+                    const QRect haloBand(qRound((point.x() - 3.0) * dpr),
+                                         qRound((point.y() + 7.0) * dpr), 6 * dpr, 2 * dpr);
+                    require(normal.copy(haloBand) != hovered.copy(haloBand),
+                            "hover must paint a halo outside the normal control circle");
+                    mouse(canvas, QEvent::MouseMove, {40.0, 40.0}, Qt::NoButton, Qt::NoButton);
+                    require(render(dpr) == normal, "moving away must erase the hover halo");
+                }
+                mouse(canvas, QEvent::MouseMove, {280.0, 180.0}, Qt::NoButton, Qt::NoButton);
+                QEvent leave(QEvent::Leave);
+                QApplication::sendEvent(&canvas, &leave);
+                require(render(dpr) == normal, "leaving the canvas must erase the hover halo");
+            }
+        }
+    }
+}
+
 void openLabel(SnowCanvasWidget& canvas) {
     mouse(canvas, QEvent::MouseButtonDblClick, {280.0, 180.0}, Qt::LeftButton, Qt::LeftButton);
     require(canvas.hasActiveTextEditing(), "double-click opens an attached text editor");
@@ -1573,6 +1633,10 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--control-hover-only"))) {
+        arrowAndLineControlsShowHandCursorsAndHoverHalos();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--arrow-outline-only"))) {
         arrowOutlineEditsRenderAndRoundTrip();
         return 0;
@@ -1590,6 +1654,7 @@ int main(int argc, char** argv) {
     if (app.arguments().contains(QStringLiteral("--layout-cache-only")))
         return 0;
     arrowLabelRemeasuresAfterHostFontChange();
+    arrowAndLineControlsShowHandCursorsAndHoverHalos();
     arrowRatioEditsRenderAndRoundTrip();
     arrowOutlineEditsRenderAndRoundTrip();
     arrowRatioFallbackRendering();

@@ -123,6 +123,34 @@ impl Editor {
         }
     }
 
+    pub(crate) fn update_hover_feedback_for_primary_pointer_intent(
+        &mut self,
+        document: &DocumentModel,
+        policy: ToolPolicy,
+        intent: PrimaryPointerIntent,
+        canvas_point: Point<f64>,
+    ) -> CursorStyle {
+        let (cursor, hovered_element) =
+            self.hover_feedback_for_primary_pointer_intent(document, policy, intent);
+        self.set_hovered_element(hovered_element);
+        let hovered_handle = match intent {
+            PrimaryPointerIntent::BeginSelectedArrowInteraction {
+                target: ArrowHitTarget::AngleArc,
+            } => self
+                .selected_single_arrow_snapshot(document)
+                .and_then(|(_, arrow)| snow_draw_engine_document::angle_arc_control_point(&arrow))
+                .filter(|center| {
+                    point_distance(*center, canvas_point)
+                        <= selection_handle_hit_size(self.camera().zoom) / 2.0 * 1.11
+                })
+                .map(|_| ArrowHitTarget::AngleArc),
+            PrimaryPointerIntent::BeginSelectedArrowInteraction { target } => Some(target),
+            _ => None,
+        };
+        self.set_hovered_arrow_handle(hovered_handle);
+        cursor
+    }
+
     pub(crate) fn hover_feedback_for_primary_pointer_intent(
         &self,
         document: &DocumentModel,

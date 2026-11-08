@@ -631,9 +631,12 @@ impl Editor {
         let canvas_point = view_to_canvas(event.position, &self.camera(), self.surface_size());
         let intent =
             self.resolve_primary_pointer_intent(document, policy, canvas_point, event.modifiers);
-        let (cursor, hovered_element) =
-            self.hover_feedback_for_primary_pointer_intent(document, policy, intent);
-        self.set_hovered_element(hovered_element);
+        let cursor = self.update_hover_feedback_for_primary_pointer_intent(
+            document,
+            policy,
+            intent,
+            canvas_point,
+        );
         if self.state.active_tool == ActiveTool::FreeDraw {
             self.state.ui.free_draw_hover_position = Some(event.position);
             self.bump_overlay_state_revision();

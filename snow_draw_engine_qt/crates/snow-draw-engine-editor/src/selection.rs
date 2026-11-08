@@ -10,7 +10,9 @@ use crate::{
         selection_frame_padding_for_members, selection_outline_for_rect,
         text_selection_frame_padding,
     },
-    state::{AxisAlignedBounds, InteractionState, SelectionState, ToolSelectionScope},
+    state::{
+        ArrowHitTarget, AxisAlignedBounds, InteractionState, SelectionState, ToolSelectionScope,
+    },
 };
 
 impl Editor {
@@ -199,6 +201,7 @@ impl Editor {
                 self.cancel_interaction();
             }
             self.state.selection = next;
+            self.state.ui.hovered_arrow_handle = None;
             if document.is_none_or(|document| {
                 self.hovered_rect(document).is_none()
                     && self.hovered_magnifier(document).is_none()
@@ -287,6 +290,7 @@ impl Editor {
         };
         if self.state.selection != next {
             self.state.selection = next;
+            self.state.ui.hovered_arrow_handle = None;
             if self.hovered_rect(document).is_none()
                 && self.hovered_magnifier(document).is_none()
                 && self.hovered_free_draw(document).is_none()
@@ -296,6 +300,20 @@ impl Editor {
             {
                 self.state.ui.hovered_element = None;
             }
+            self.bump_overlay_state_revision();
+        }
+    }
+
+    pub(crate) fn set_hovered_arrow_handle(&mut self, target: Option<ArrowHitTarget>) {
+        let target = target.filter(|target| {
+            matches!(self.state.interaction, InteractionState::Idle)
+                && !matches!(
+                    target,
+                    ArrowHitTarget::Move | ArrowHitTarget::Label | ArrowHitTarget::BracketGuide
+                )
+        });
+        if self.state.ui.hovered_arrow_handle != target {
+            self.state.ui.hovered_arrow_handle = target;
             self.bump_overlay_state_revision();
         }
     }
