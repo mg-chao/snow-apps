@@ -4,10 +4,12 @@
 Snow Shot's capture, annotation, pinning, local OCR, and recording workflows.
 They are conceptual artwork, not screenshots or exact representations of the UI.
 The README uses a `<picture>` element to follow the reader's light or dark theme.
-The existing app logo is referenced directly from `snow_shot/resources/app-icon.svg`.
+The header logo reuses `docs/imgs/app-icon.png`, the original Tauri-era README
+artwork with a transparent background and baked-in drop shadow.
 
 Keep the two illustrations and the English / Simplified Chinese READMEs aligned.
-Use local, self-contained SVGs with a title, description, and meaningful alt text.
+Use local, self-contained SVGs for the illustrations, with a title, description,
+and meaningful alt text.
 Do not embed scripts, external fonts, or real user content.
 
 ## Design references

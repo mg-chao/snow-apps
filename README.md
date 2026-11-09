@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://snowshot.top">
-    <img src="snow_shot/resources/app-icon.svg" width="112" height="112" alt="Snow Shot logo">
+    <img src="docs/imgs/app-icon.png" width="112" height="112" alt="Snow Shot logo">
   </a>
 
   <h1>Snow Shot</h1>
