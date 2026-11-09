@@ -20544,6 +20544,7 @@ void regionSwitcherRetranslatesAndRenders() {
 } // namespace
 
 void runScreenshotStyleBindingTests();
+void runSyncToolColorTests();
 void runScreenshotTextAlignmentTests();
 void runAngleStyleBindingTests();
 void runBracketStyleBindingTests();
@@ -20836,6 +20837,10 @@ int main(int argc, char** argv) {
         customColorPresetsRefreshCurrentAndLazyDrawingEditors();
         customHighlightPresetsRefreshCurrentAndReusedEditors();
         colorPresetEditorsPreserveCommandsAcrossRebinding();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--sync-tool-colors-only"))) {
+        runSyncToolColorTests();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--pressure-brush-only"))) {

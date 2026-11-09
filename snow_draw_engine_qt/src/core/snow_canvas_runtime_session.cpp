@@ -81,6 +81,13 @@ void applyDrawingPolicy(SnowRuntime runtime, const SnowCanvasRuntimeConfig& conf
     ScopedChangedViewportList selectionChanges;
     static_cast<void>(snow_runtime_set_automatically_select_newly_created_elements_ex(
         runtime, config.automaticallySelectNewlyCreatedElements, selectionChanges.outParam()));
+    const bool sharedColor = config.sharedCreationColor && config.sharedCreationColor->isValid();
+    ScopedChangedViewportList colorChanges;
+    static_cast<void>(snow_runtime_set_creation_color_ex(
+        runtime, sharedColor,
+        sharedColor ? snow_canvas_types::toEngineColor(*config.sharedCreationColor)
+                    : SnowColorRgba8{},
+        colorChanges.outParam()));
 }
 
 ScopedRuntimeHandle createRuntime(const SnowCanvasRuntimeConfig& config) {
@@ -415,6 +422,20 @@ void RuntimeSession::clearRenderState() {
     m_smartErase.clearCache();
     m_clients.clearRenderState();
     clearDrawingCachesForCurrentThread();
+}
+
+bool RuntimeSession::setSharedCreationColor(const std::optional<QColor>& color) {
+    if (m_runtime.get() == nullptr || (color && !color->isValid()))
+        return false;
+    ScopedChangedViewportList changes;
+    if (snow_runtime_set_creation_color_ex(m_runtime.get(), color.has_value(),
+                                           color ? snow_canvas_types::toEngineColor(*color)
+                                                 : SnowColorRgba8{},
+                                           changes.outParam()) != SNOW_OK)
+        return false;
+    m_config.sharedCreationColor = color;
+    syncChangedViewports(changes.get());
+    return true;
 }
 
 bool RuntimeSession::setAutomaticallySelectNewlyCreatedElements(bool enabled) {

@@ -1126,6 +1126,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::DrawingSettings().deleteTextAfterCursor();
     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
         return storage::DrawingSettings().rememberLastUsedTool();
+    case SettingsSwitchBinding::DrawingSyncToolColors:
+        return storage::DrawingSettings().syncToolColors();
     case SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton:
         return storage::DrawingSettings().alwaysShowFirstToolbarGroupButton();
     }
@@ -1379,6 +1381,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::DrawingRememberLastUsedTool) {
         return storage::DrawingSettings().setRememberLastUsedTool(value);
     }
+    if (binding == SettingsSwitchBinding::DrawingSyncToolColors) {
+        return storage::DrawingSettings().setSyncToolColors(value);
+    }
     if (binding == SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton) {
         return storage::DrawingSettings().setAlwaysShowFirstToolbarGroupButton(value);
     }
@@ -1585,6 +1590,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::DrawingAutomaticallySelectNewlyCreatedElements:
     case SettingsSwitchBinding::DrawingDeleteTextAfterCursor:
     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
+    case SettingsSwitchBinding::DrawingSyncToolColors:
     case SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton:
         return false;
     }
@@ -2986,7 +2992,9 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                  QStringLiteral("screenshot_toolbar/layout"))},
         });
     case SettingsSectionReset::DrawingQuickSelection:
-        return storage::ApplicationStorage::instance().configuration().setValues({
+        return storage::setDrawingStyleValues({
+            {QStringLiteral("drawing/sync_tool_colors"), false},
+            {QStringLiteral("drawing/shared_tool_color"), QString()},
             {QStringLiteral("screenshot/stroke_color_presets"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/stroke_color_presets"))},

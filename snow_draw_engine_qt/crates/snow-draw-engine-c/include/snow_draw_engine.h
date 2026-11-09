@@ -1576,6 +1576,11 @@ SnowError snow_runtime_end_presentation_update_ex(SnowRuntime runtime,
 SnowError snow_runtime_set_automatically_select_newly_created_elements_ex(
     SnowRuntime runtime, uint8_t enabled, SnowChangedViewportList* out_changed_viewports);
 
+// Creation preferences only; preserves document content, selection, drafts and history.
+SnowError snow_runtime_set_creation_color_ex(SnowRuntime runtime, uint8_t enabled,
+                                             SnowColorRgba8 color,
+                                             SnowChangedViewportList* out_changed_viewports);
+
 SnowError snow_runtime_set_automatic_selection_excluded_tools_ex(
     SnowRuntime runtime, uint64_t tools, SnowChangedViewportList* out_changed_viewports);
 SnowError

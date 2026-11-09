@@ -40,9 +40,20 @@ inline void bindCanvasDrawingPreferences(
         }
     };
     apply();
+    const auto applyColor = [&runtime]() {
+        const storage::DrawingSettings settings;
+        if (!runtime.setSharedCreationColor(settings.syncToolColors()
+                                                ? std::optional<QColor>(settings.sharedToolColor())
+                                                : std::nullopt))
+            qWarning("Failed to apply canvas shared creation color");
+    };
+    applyColor();
     QObject::connect(
         &applicationStorage.configuration(), &storage::ConfigurationStore::valueChanged, &context,
-        [apply](const QString& key, const QJsonValue&) {
+        [apply, applyColor](const QString& key, const QJsonValue&) {
+            if (key == QStringLiteral("drawing/sync_tool_colors") ||
+                key == QStringLiteral("drawing/shared_tool_color"))
+                applyColor();
             if (key == QStringLiteral("drawing/quick_selection_disabled_tools") ||
                 key == QStringLiteral("drawing/automatic_selection_excluded_tools") ||
                 key == QStringLiteral("drawing/automatically_select_newly_created_elements")) {

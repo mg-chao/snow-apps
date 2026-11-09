@@ -41,6 +41,7 @@ class RuntimeSession final {
     bool setAutomaticallySelectNewlyCreatedElements(bool enabled);
     bool setAutomaticSelectionExcludedTools(const QSet<SnowCanvasTool>& tools);
     bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
+    bool setSharedCreationColor(const std::optional<QColor>& color);
     void destroyAsync(SnowCanvasRuntime& owner);
     void destroyForOwnerDestruction(SnowCanvasRuntime& owner, OwnerDestructionPolicy policy);
 

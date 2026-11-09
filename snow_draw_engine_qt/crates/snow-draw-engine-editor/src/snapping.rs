@@ -278,7 +278,7 @@ impl Editor {
         };
         let highlight = self.state.active_tool == ActiveTool::RectangleHighlight;
         let spotlight = self.state.active_tool == ActiveTool::Spotlight;
-        let style = if self.state.active_tool == ActiveTool::SpeechBubble {
+        let mut style = if self.state.active_tool == ActiveTool::SpeechBubble {
             self.state.default_speech_bubble_style
         } else if highlight {
             self.state
@@ -287,6 +287,8 @@ impl Editor {
         } else {
             self.state.default_rectangle_shape_style
         };
+        style.stroke = self.creation_stroke(style.stroke);
+        style.fill = self.creation_fill(style.fill);
         let constrained_current = if modifiers.shift {
             square_constrained_rectangle_end(start, current)
         } else {

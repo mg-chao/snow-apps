@@ -4,6 +4,7 @@ mod arrow_ops;
 mod arrow_text;
 mod auto_filter_workflow;
 pub use arrow_text::ArrowTextLayoutRequest;
+mod creation_colors;
 mod creation_workflow;
 pub use creation_workflow::SerialNumberLabelLayoutRequest;
 mod speech_bubble;
@@ -434,6 +435,7 @@ impl Editor {
                 | InteractionState::CreatingFreeDraw(_)
         );
         self.state.interaction = InteractionState::Idle;
+        self.state.creation_colors = None;
         if had_selection_edit {
             self.bump_scene_state_revision();
             self.bump_overlay_state_revision();

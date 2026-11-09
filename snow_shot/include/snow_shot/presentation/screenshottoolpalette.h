@@ -309,6 +309,7 @@ class ScreenshotToolPalette final : public QWidget,
     void prepareForDisplay();
     void resetStyleState();
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
+    void setSharedCreationColor(const std::optional<QColor>& color);
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     void rememberStyleEdit(const SnowCanvasStyleEdit& edit);
     void setStyleEditHandler(std::function<bool(const SnowCanvasStyleEdit&)> handler);

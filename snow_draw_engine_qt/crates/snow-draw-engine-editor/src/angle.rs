@@ -1,5 +1,6 @@
 use crate::{
-    ApplyTransactionCommand, Editor, EditorCommand, ElementCreationPreview, SelectionArrowState,
+    ActiveTool, ApplyTransactionCommand, Editor, EditorCommand, ElementCreationPreview,
+    SelectionArrowState,
 };
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::{
@@ -272,15 +273,22 @@ impl Editor {
             updates.push(SelectionArrowState { id, arrow: next });
         }
         self.state.default_angle_style = next_default;
+        self.edit_creation_colors(
+            ActiveTool::Angle,
+            (properties & ANGLE_STYLE_PROPERTY_STROKE != 0).then_some(style.stroke),
+            None,
+        );
+        let mut preview_style = next_default;
+        preview_style.stroke = self.creation_stroke(preview_style.stroke);
         if let Some(ElementCreationPreview::Arrow(arrow)) = &mut self.state.creation_preview
             && self.state.active_tool == crate::ActiveTool::Angle
         {
             let previous = arrow.clone();
             if arrow.points.len() == 3 {
-                next_default.apply_to_arrow(arrow);
+                preview_style.apply_to_arrow(arrow);
             } else {
-                arrow.stroke = next_default.stroke;
-                arrow.stroke_width = next_default.stroke_width;
+                arrow.stroke = preview_style.stroke;
+                arrow.stroke_width = preview_style.stroke_width;
             }
             if *arrow != previous {
                 self.bump_scene_state_revision();
@@ -413,7 +421,8 @@ impl Editor {
         if event.modifiers.shift && state.committed_points.len() == 1 {
             point = crate::lock_linear_point_to_discrete_angle(state.committed_points[0], point);
         }
-        let style = self.state.default_angle_style;
+        let mut style = self.state.default_angle_style;
+        style.stroke = self.creation_stroke(style.stroke);
         let preview = if let [first, vertex] = state.committed_points.as_slice() {
             let shape = if let Some((_, sweep)) = state.angle_wheel_lock {
                 AngleShape::from_points([*first, *vertex, *first], false)

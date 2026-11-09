@@ -346,9 +346,16 @@ impl Editor {
             }
         }
         self.state.default_magnifier_style = next_default;
+        self.edit_creation_colors(
+            ActiveTool::Magnifier,
+            (properties & MAGNIFIER_STYLE_PROPERTY_STROKE != 0).then_some(style.stroke),
+            None,
+        );
+        let mut preview_style = next_default;
+        preview_style.stroke = self.creation_stroke(preview_style.stroke);
         if let Some(ElementCreationPreview::Magnifier(value)) = &mut self.state.creation_preview {
             let previous = *value;
-            next_default.apply(value);
+            preview_style.apply(value);
             if *value != previous {
                 self.bump_scene_state_revision();
             }
@@ -370,7 +377,9 @@ impl Editor {
             rotation: rect.rotation,
             ..MagnifierData::default()
         };
-        self.state.default_magnifier_style.apply(&mut value);
+        let mut style = self.state.default_magnifier_style;
+        style.stroke = self.creation_stroke(style.stroke);
+        style.apply(&mut value);
         value
     }
     pub(crate) fn magnifier_snapshot(
