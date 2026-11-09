@@ -188,6 +188,7 @@ enum class SettingsSwitchBinding {
     DrawingAutomaticallySelectNewlyCreatedElements,
     DrawingDeleteTextAfterCursor,
     DrawingRememberLastUsedTool,
+    DrawingSyncToolColors,
     DrawingAlwaysShowFirstToolbarGroupButton,
 };
 

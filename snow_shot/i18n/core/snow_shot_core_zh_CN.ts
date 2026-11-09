@@ -186,6 +186,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>QQ 交流群 3</translation>
         </message>
         <message>
+            <source>QQ group 4</source>
+            <translation>QQ 交流群 4</translation>
+        </message>
+        <message>
             <source>Ready to install %1</source>
             <translation>已准备好安装 %1</translation>
         </message>

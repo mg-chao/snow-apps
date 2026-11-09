@@ -648,6 +648,8 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
         bounded(defaults.spotlightCornerRadii.bottomRight, 0.0, 83.0);
     defaults.spotlightCornerRadii.bottomLeft =
         bounded(defaults.spotlightCornerRadii.bottomLeft, 0.0, 83.0);
+    if (storage::DrawingSettings().syncToolColors())
+        snowCanvasSetCreationColor(defaults, storage::DrawingSettings().sharedToolColor());
     return defaults;
 }
 
@@ -686,7 +688,7 @@ bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
         return false;
     }
     values.insert(additionalValues);
-    return configuration.setValues(values);
+    return storage::setDrawingStyleValues(std::move(values));
 }
 } // namespace
 
@@ -703,6 +705,14 @@ bool persistScreenshotCanvasStyleEdit(const SnowCanvasStyleEdit& edit) {
     auto defaults = screenshotCanvasToolStyleDefaults();
     snowCanvasMergeStyleEdit(defaults, edit);
     QMap<QString, QJsonValue> additionalValues;
+    if (storage::DrawingSettings().syncToolColors()) {
+        if (const auto color = snowCanvasCreationColorEdit(edit)) {
+            if (!color->isValid())
+                return false;
+            additionalValues.insert(QStringLiteral("drawing/shared_tool_color"),
+                                    colorValue(*color));
+        }
+    }
     if (const auto* watermark = std::get_if<SnowCanvasWatermarkEdit>(&edit);
         watermark != nullptr &&
         (watermark->properties & (SnowCanvasWatermarkText | SnowCanvasWatermarkTemplate)) != 0) {

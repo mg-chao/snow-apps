@@ -4452,6 +4452,10 @@
             <translation>切换窗口分组</translation>
         </message>
         <message>
+            <source>Sync tool colors</source>
+            <translation>同步工具颜色</translation>
+        </message>
+        <message>
             <source>System</source>
             <translation>系统</translation>
         </message>
@@ -4746,6 +4750,10 @@
         <message>
             <source>Use one letter (A–Z) or digit (0–9) when the classic Windows context menu is open</source>
             <translation>在经典 Windows 右键菜单打开时，使用一个字母（A–Z）或数字（0–9）</translation>
+        </message>
+        <message>
+            <source>Use one shared stroke, fill, and highlight color for newly created annotations</source>
+            <translation>为新建标注使用统一的描边、填充和高亮颜色</translation>
         </message>
         <message>
             <source>Use regular icon settings</source>

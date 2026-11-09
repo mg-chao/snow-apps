@@ -99,6 +99,69 @@ inline quint32 snowCanvasCreationStyleProperties(const SnowCanvasStyleEdit& edit
         edit);
 }
 
+// Shared creation color deliberately excludes decorative arrow outlines and document effects.
+inline void snowCanvasSetCreationColor(SnowCanvasStyleDefaults& defaults, const QColor& color) {
+    for (auto* style : {&defaults.rectangle, &defaults.speechBubble, &defaults.line,
+                        &defaults.freeDraw, &defaults.rectangleHighlight, &defaults.penHighlight}) {
+        style->stroke = color;
+        style->fill = color;
+    }
+    defaults.arrow.stroke = color;
+    defaults.distance.stroke = color;
+    defaults.angle.stroke = color;
+    defaults.bracket.stroke = color;
+    defaults.magnifier.stroke = color;
+    defaults.text.color = color;
+    defaults.text.stroke = color;
+    defaults.text.fill = color;
+    defaults.serialNumber.color = color;
+    defaults.serialNumber.fill = color;
+}
+
+// Only explicit color properties may change the shared preference. If a compound edit
+// supplies several colors, use its primary stroke/foreground, then its fill.
+inline std::optional<QColor> snowCanvasCreationColorEdit(const SnowCanvasStyleEdit& edit) {
+    return std::visit(
+        [](const auto& patch) -> std::optional<QColor> {
+            using T = std::decay_t<decltype(patch)>;
+            if constexpr (std::is_same_v<T, SnowCanvasShapeEdit>) {
+                if (patch.kind == SnowCanvasShapeKind::Spotlight)
+                    return std::nullopt;
+                if (patch.properties & SnowCanvasShapeStylePropertyStrokeColor)
+                    return patch.style.stroke;
+                if (patch.kind != SnowCanvasShapeKind::Arrow &&
+                    (patch.properties & SnowCanvasShapeStylePropertyFillColor))
+                    return patch.style.fill;
+            } else if constexpr (std::is_same_v<T, SnowCanvasTextEdit>) {
+                if (patch.properties & SnowCanvasTextStyleMixedColor)
+                    return patch.style.color;
+                if (patch.properties & SnowCanvasTextStyleMixedStroke)
+                    return patch.style.stroke;
+                if (patch.properties & SnowCanvasTextStyleMixedFill)
+                    return patch.style.fill;
+            } else if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit>) {
+                if (patch.properties & SnowCanvasSerialNumberStyleMixedColor)
+                    return patch.style.color;
+                if (patch.properties & SnowCanvasSerialNumberStyleMixedFill)
+                    return patch.style.fill;
+            } else if constexpr (std::is_same_v<T, SnowCanvasDistanceEdit>) {
+                if (patch.properties & SnowCanvasDistanceStylePropertyStrokeColor)
+                    return patch.style.stroke;
+            } else if constexpr (std::is_same_v<T, SnowCanvasAngleStyleEdit>) {
+                if (patch.properties & static_cast<quint32>(SnowCanvasAngleStyleProperty::Stroke))
+                    return patch.style.stroke;
+            } else if constexpr (std::is_same_v<T, SnowCanvasBracketStyleEdit>) {
+                if (patch.properties & static_cast<quint32>(SnowCanvasBracketStyleProperty::Stroke))
+                    return patch.style.stroke;
+            } else if constexpr (std::is_same_v<T, SnowCanvasMagnifierEdit>) {
+                if (patch.properties & SnowCanvasMagnifierStylePropertyStrokeColor)
+                    return patch.style.stroke;
+            }
+            return std::nullopt;
+        },
+        edit);
+}
+
 inline void snowCanvasMergeStyle(SnowCanvasBracketStyle& target,
                                  const SnowCanvasBracketStyle& value, quint32 properties) {
     if (properties & 1u)

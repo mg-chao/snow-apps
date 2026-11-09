@@ -388,6 +388,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
 
     bool stepFontSize(int direction);
     bool applyStyleEdit(const SnowCanvasStyleEdit& edit);
+    bool setSharedCreationColor(const std::optional<QColor>& color);
     bool rememberDraftStyle(const SnowCanvasStyleEdit& edit);
     void initializeWidget();
     void initializeViewport();
@@ -4159,6 +4160,15 @@ bool SnowCanvasWidget::stepFontSize(int direction) {
 
 bool SnowCanvasWidget::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
     return m_impl->applyStyleEdit(edit);
+}
+
+bool SnowCanvasWidget::setSharedCreationColor(const std::optional<QColor>& color) {
+    return m_impl->setSharedCreationColor(color);
+}
+
+bool SnowCanvasWidget::Impl::setSharedCreationColor(const std::optional<QColor>& color) {
+    auto* runtime = runtimeBinding.runtimeOwner();
+    return runtime != nullptr && runtime->setSharedCreationColor(color);
 }
 
 bool SnowCanvasWidget::Impl::stepFontSize(int direction) {

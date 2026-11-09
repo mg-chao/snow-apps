@@ -4,6 +4,8 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotcanvastoolmapping.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include <QDebug>
 #include <QPointer>
 #include <numbers>
@@ -13,6 +15,32 @@ ScreenshotStyleBinding::ScreenshotStyleBinding(ScreenshotToolPalette& palette,
                                                SnowCanvasWidget& canvas, QObject* parent,
                                                Replicate replicate, Save save)
     : QObject(parent) {
+    auto& storage = storage::ApplicationStorage::instance();
+    if (storage.isInitialized()) {
+        const auto refreshColor = [source = QPointer<ScreenshotToolPalette>(&palette),
+                                   target = QPointer<SnowCanvasWidget>(&canvas)] {
+            if (!source || !target)
+                return;
+            const storage::DrawingSettings settings;
+            const auto color = settings.syncToolColors()
+                                   ? std::optional<QColor>(settings.sharedToolColor())
+                                   : std::nullopt;
+            if (!target->setSharedCreationColor(color)) {
+                qWarning("Unable to apply shared creation color");
+                return;
+            }
+            source->setSharedCreationColor(color);
+            if (color)
+                source->setStyleToolbarState(target->canvasStyleToolbarState());
+        };
+        refreshColor();
+        connect(&storage.configuration(), &storage::ConfigurationStore::valueChanged, this,
+                [refreshColor](const QString& key, const QJsonValue&) {
+                    if (key == QStringLiteral("drawing/sync_tool_colors") ||
+                        key == QStringLiteral("drawing/shared_tool_color"))
+                        refreshColor();
+                });
+    }
     connect(&canvas, &SnowCanvasWidget::angleAdjustmentTargetChanged, this,
             [source = QPointer<ScreenshotToolPalette>(&palette)] {
                 if (source != nullptr)
@@ -47,13 +75,23 @@ ScreenshotStyleBinding::ScreenshotStyleBinding(ScreenshotToolPalette& palette,
                     source->restoreWatermarkContentForActivation(target->canvasWatermarkConfig());
             });
     connect(&canvas, &SnowCanvasWidget::styleEditCommitted, this,
-            [this, source = QPointer<ScreenshotToolPalette>(&palette), replicate,
+            [this, source = QPointer<ScreenshotToolPalette>(&palette),
+             target = QPointer<SnowCanvasWidget>(&canvas), replicate,
              save](const SnowCanvasStyleEdit& edit) {
                 if (source == nullptr)
                     return;
                 if (snowCanvasCreationStyleProperties(edit) == 0)
                     return;
                 source->rememberStyleEdit(edit);
+                if (target && storage::ApplicationStorage::instance().isInitialized() &&
+                    storage::DrawingSettings().syncToolColors()) {
+                    const auto color = snowCanvasCreationColorEdit(edit);
+                    if (color && color->isValid()) {
+                        if (!target->setSharedCreationColor(color))
+                            qWarning("Unable to apply shared creation color");
+                        source->setStyleToolbarState(target->canvasStyleToolbarState());
+                    }
+                }
                 if (replicate)
                     replicate(edit);
                 m_lastSaveSucceeded = save ? save(edit) : persistScreenshotCanvasStyleEdit(edit);

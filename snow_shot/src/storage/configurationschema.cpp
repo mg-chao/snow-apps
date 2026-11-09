@@ -1208,6 +1208,8 @@ constexpr SchemaEntryDescriptor kEntryDescriptors[] = {
      ConfigurationValueKind::StringList, nullptr, &kSchemaAllowed30},
     {u"drawing/delete_text_after_cursor", booleanDefault(true), ConfigurationValueKind::Boolean},
     {u"drawing/remember_last_used_tool", booleanDefault(false), ConfigurationValueKind::Boolean},
+    {u"drawing/sync_tool_colors", booleanDefault(false), ConfigurationValueKind::Boolean},
+    {u"drawing/shared_tool_color", stringDefault(u""), ConfigurationValueKind::String},
     {u"drawing/always_show_first_toolbar_group_button", booleanDefault(false),
      ConfigurationValueKind::Boolean},
     {u"drawing/shape_style", emptyObjectDefault(), ConfigurationValueKind::Structured},
@@ -2879,6 +2881,10 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     if (key == QStringLiteral("pin_to_screen/text_font_family") &&
         (!value.isString() || value.toString().size() > 1024)) {
         return {};
+    }
+    if (key == QStringLiteral("drawing/shared_tool_color")) {
+        return value == QJsonValue(QString()) ? ConfigurationNormalization{value, true, false}
+                                              : normalizeRgbaColor(value);
     }
     if (isRgbaColorKey(key)) {
         return normalizeRgbaColor(value);

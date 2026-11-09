@@ -294,6 +294,7 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     void rememberStyleEdit(const SnowCanvasStyleEdit& edit);
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
+    void setSharedCreationColor(const std::optional<QColor>& color);
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config, bool refreshEditors = false);
     [[nodiscard]] std::optional<SnowCanvasWatermarkTemplateApplicationTime>
@@ -526,6 +527,8 @@ class ScreenshotToolPaletteStyleControls final {
     ScreenshotToolPaletteStyleState m_state;
     ScreenshotToolPaletteStyleControlCallbacks m_callbacks;
     const SnowCanvasStyleDefaults m_defaults;
+    std::optional<QColor> m_sharedCreationColor;
+    void rememberCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     std::function<QDateTime()> m_watermarkTemplateClock;
     QSet<QObject*> m_openTextStylePopups;
     QVector<QPointer<QObject>> m_controlCallbackContexts;

@@ -24,7 +24,8 @@ impl Editor {
         } else {
             end
         };
-        let style = self.state.default_pen_highlight_style;
+        let mut style = self.state.default_pen_highlight_style;
+        style.stroke = self.creation_stroke(style.stroke);
         ArrowData::from_global_points(
             &[start, end],
             style.stroke,
@@ -424,7 +425,9 @@ impl Editor {
         finalize: bool,
     ) -> Option<BoundArrowPreview> {
         let arrow = if self.state.active_tool == ActiveTool::Line {
-            let style = self.state.default_line_style;
+            let mut style = self.state.default_line_style;
+            style.stroke = self.creation_stroke(style.stroke);
+            style.fill = self.creation_fill(style.fill);
             preview_arrow_from_points(
                 points,
                 ArrowStyle {
@@ -444,7 +447,9 @@ impl Editor {
             )?
             .into_line(style.fill, style.fill_style)
         } else {
-            preview_arrow_from_points(points, self.state.default_arrow_style)?
+            let mut style = self.state.default_arrow_style;
+            style.stroke = self.creation_stroke(style.stroke);
+            preview_arrow_from_points(points, style)?
         };
         let arrow_id = document.peek_next_element_id();
         let bindables = self.bindable_elements(document, &[]);
@@ -590,6 +595,11 @@ impl Editor {
             current_canvas,
             event.modifiers,
         );
+        let magnifier = if self.active_tool() == ActiveTool::Magnifier {
+            preview.map(|rect| self.magnifier_creation_data(rect))
+        } else {
+            None
+        };
         self.cancel_interaction();
 
         if let Some(rect) = preview {
@@ -612,8 +622,7 @@ impl Editor {
                     cursor: CursorCommand::Set(self.tool_policy().default_cursor),
                 });
             }
-            if self.active_tool() == ActiveTool::Magnifier {
-                let value = self.magnifier_creation_data(rect);
+            if let Some(value) = magnifier {
                 snow_draw_engine_document::validate_magnifier(&value)?;
                 let mut transaction = Transaction::new("create magnifier");
                 transaction.insert_magnifier(
@@ -1058,6 +1067,11 @@ impl Editor {
             // toolbar's Create Text button uses, so both paths style and size
             // the bound label identically before the host measurement lands.
             let mut text = crate::text::new_serial_bound_label(&self.state.default_text)?;
+            if let Some(colors) = self.state.creation_colors {
+                text.color = colors.foreground;
+                text.stroke = colors.stroke;
+                text.fill = colors.fill;
+            }
             text.center = current_canvas;
             serial.text_element_id = Some(text_id);
             let mut transaction = Transaction::new("create serial number text");
