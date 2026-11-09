@@ -2,6 +2,7 @@
 #include "snow_shot/app/applicationinputguard.h"
 #include "snow_shot/app/shellimagelaunch.h"
 #include "snow_shot/update/startupupdate.h"
+#include "snow_shot/update/relaunchintent.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -209,6 +210,36 @@ int main(int argc, char** argv) {
 
     const QStringList original{QStringLiteral("snow-shot"), QStringLiteral("--autostart"),
                                QStringLiteral("--skip-startup-update")};
+    {
+        using namespace snow_shot::update;
+        const auto maximum = static_cast<int>(kMaximumRelaunchArgumentsBytes);
+        require(relaunchIntentFits({QString(maximum - 4, u'x')}, QStringLiteral("app.exe")),
+                "relaunch budget includes the compact JSON array delimiters");
+        require(!relaunchIntentFits({QString(maximum - 3, u'x')}, QStringLiteral("app.exe")),
+                "relaunch budget refuses the first byte beyond its boundary");
+        require(!relaunchIntentFits({QString(maximum / 2, u'\\')}, QStringLiteral("app.exe")) &&
+                    !relaunchIntentFits({QString(maximum / 3, QChar(0x96ea))},
+                                        QStringLiteral("app.exe")),
+                "escaping and UTF-8 bytes consume capacity rather than UTF-16 characters");
+        require(!relaunchIntentFits({QStringLiteral("--autostart")}, QString(32751, u'x')),
+                "native command line admission includes executable quoting and terminating NUL");
+        QStringList supplementary{QStringLiteral("--edit-with-snow-shot"),
+                                  QDir::temp().filePath(QStringLiteral("image "))};
+        const auto remaining = maximum - QJsonDocument(QJsonArray::fromStringList(supplementary))
+                                             .toJson(QJsonDocument::Compact)
+                                             .size();
+        supplementary.last().append(QString::fromUcs4(U"\U0001f642").repeated(remaining / 4));
+        supplementary.last().append(QString(remaining % 4, u'x'));
+        require(relaunchIntentFits(supplementary, QStringLiteral("app.exe")),
+                "supplementary Unicode fits at the exact serialized UTF-8 boundary");
+        supplementary.last().append(u'x');
+        require(!relaunchIntentFits(supplementary, QStringLiteral("app.exe")),
+                "supplementary Unicode cannot be budgeted as UTF-16 units");
+        UpdateService bounded(UpdateService::Options{});
+        require(bounded.setRelaunchArguments({QStringLiteral("--autostart")}) &&
+                    !bounded.setRelaunchArguments({QString(maximum, u'x')}),
+                "oversized intent is explicitly refused before mutating service state");
+    }
     require(snow_shot::update::isStartupUpdateRelaunch(original), "detect updater relaunch guard");
     require(snow_shot::update::startupUpdateMayDelayLaunch(original) &&
                 !snow_shot::update::startupUpdateMayDelayLaunch(
@@ -256,6 +287,35 @@ int main(int argc, char** argv) {
 
     const QStringList initialImages{directory.filePath(QStringLiteral("\u56fe\u7247 one.png")),
                                     directory.filePath(QStringLiteral("second image.avif"))};
+    {
+        auto value = options(QStringLiteral("ready"));
+        const QString cache = value.cacheDirectory;
+        UpdateService service(std::move(value));
+        service.setMode(QStringLiteral("next_launch"));
+        const QStringList acceptedPaths{
+            directory.filePath(QString(snow_shot::update::kMaximumRelaunchArgumentsBytes, u'x'))};
+        int commits = 0;
+        QString reportedReason;
+        QObject::connect(&service, &UpdateService::statusChanged, &app, [&] {
+            if (!service.status().error.isEmpty())
+                reportedReason = service.status().error;
+        });
+        QObject::connect(&service, &UpdateService::handoffCommitted, &app, [&] { ++commits; });
+        require(snow_shot::update::runStartupUpdate(
+                    service, [] { return true; }, {}, std::chrono::seconds(5),
+                    [&] {
+                        return snow_shot::update::startupUpdateRelaunchArguments(false,
+                                                                                 acceptedPaths);
+                    }) == StartupUpdateResult::ContinueStartup &&
+                    commits == 0 && !service.handoffPending(),
+                "already accepted oversized intent refuses handoff before helper commitment");
+        require(!handoff(cache).value(QStringLiteral("proceed")).toBool(true) &&
+                    acceptedPaths.size() == 1 &&
+                    reportedReason ==
+                        QCoreApplication::translate(
+                            "UpdateErrors", "The selected files exceed the update restart limit"),
+                "refused update preserves the caller's complete intent for normal startup");
+    }
     const auto initialIntent =
         snow_shot::update::startupUpdateRelaunchArguments(false, initialImages);
     require(!initialIntent.contains(QStringLiteral("--autostart")) &&

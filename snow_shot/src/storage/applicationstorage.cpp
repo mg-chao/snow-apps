@@ -26,6 +26,7 @@
 
 #include <chrono>
 #include <optional>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -106,6 +107,37 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
     return QDir::cleanPath(QDir(executableDirectory).absoluteFilePath(value));
 }
 
+// Progress is a UI snapshot, not a transaction event log. Retain the latest snapshot while
+// the owner thread is busy, with at most one queued delivery for this operation.
+class DirectoryChangeProgressMailbox {
+  public:
+    bool publish(const StorageDirectoryProgress& progress) {
+        const std::lock_guard lock(m_mutex);
+        if (m_closed)
+            return false;
+        m_latest = progress;
+        return !std::exchange(m_queued, true);
+    }
+
+    std::optional<StorageDirectoryProgress> take() {
+        const std::lock_guard lock(m_mutex);
+        m_queued = false;
+        return m_closed ? std::nullopt : std::exchange(m_latest, std::nullopt);
+    }
+
+    std::optional<StorageDirectoryProgress> close() {
+        const std::lock_guard lock(m_mutex);
+        m_closed = true;
+        return std::exchange(m_latest, std::nullopt);
+    }
+
+  private:
+    std::mutex m_mutex;
+    std::optional<StorageDirectoryProgress> m_latest;
+    bool m_queued = false;
+    bool m_closed = false;
+};
+
 } // namespace
 
 struct ApplicationStorage::DirectoryChange {
@@ -116,6 +148,8 @@ struct ApplicationStorage::DirectoryChange {
     std::optional<StorageDirectoryChangeResult> outcome;
     std::future<StorageDirectoryChangeResult> worker;
     std::unique_ptr<QTimer> poll;
+    std::shared_ptr<DirectoryChangeProgressMailbox> progress =
+        std::make_shared<DirectoryChangeProgressMailbox>();
 };
 
 ApplicationStorage::ApplicationStorage(QObject* parent) : QObject(parent) {
@@ -258,6 +292,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     }
     m_lastPinnedNotifiedRevision = 0;
     m_configuration.reset();
+    m_isolateAuxiliaryStorage = options.isolateAuxiliaryStorage;
     const auto selection = resolveDirectory(options);
     m_executableDirectory = selection.executableDirectory;
     m_bootstrapDirectory =
@@ -415,7 +450,9 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     requestPinnedWindowRetentionCleanup();
     // These pages now generate thumbnails only in memory. Reclaim files left by
     // older versions on the usage worker without delaying application startup.
-    const QString legacyThumbnails = StorageUsageTracker::defaultThumbnailCacheDirectory();
+    const QString legacyThumbnails = m_isolateAuxiliaryStorage
+                                         ? QString()
+                                         : StorageUsageTracker::defaultThumbnailCacheDirectory();
     if (!legacyThumbnails.isEmpty() && QFileInfo::exists(legacyThumbnails)) {
         static_cast<void>(requestThumbnailCacheClearAsync());
     }
@@ -429,9 +466,13 @@ void ApplicationStorage::createUsageTracker() {
     const auto generation = ++m_usageGeneration;
     StorageUsageTrackerOptions usageOptions;
     usageOptions.appDataDirectory = m_status.effectiveDirectory;
-    usageOptions.thumbnailCacheDirectory = StorageUsageTracker::defaultThumbnailCacheDirectory();
-    usageOptions.recordingTempDirectory = StorageUsageTracker::defaultRecordingTempDirectory();
-    usageOptions.diagnosticsDirectories = diagnostics::DiagnosticsService::instance().directories();
+    if (!m_isolateAuxiliaryStorage) {
+        usageOptions.thumbnailCacheDirectory =
+            StorageUsageTracker::defaultThumbnailCacheDirectory();
+        usageOptions.recordingTempDirectory = StorageUsageTracker::defaultRecordingTempDirectory();
+        usageOptions.diagnosticsDirectories =
+            diagnostics::DiagnosticsService::instance().directories();
+    }
     usageOptions.activeFileCutoff = QDateTime::currentDateTime();
     usageOptions.historyBytesProvider = [this]() {
         return m_captureHistory != nullptr ? m_captureHistory->usage().totalBytes : 0;
@@ -740,7 +781,8 @@ std::shared_future<StorageResult> ApplicationStorage::requestCaptureHistoryClear
 void ApplicationStorage::requestStorageUsageRefresh() {
     if (m_status.directoryChanging)
         return;
-    diagnostics::DiagnosticsService::instance().requestMaintenance();
+    if (!m_isolateAuxiliaryStorage)
+        diagnostics::DiagnosticsService::instance().requestMaintenance();
     if (m_usageTracker != nullptr) {
         m_usageTracker->requestRefresh();
     }
@@ -911,7 +953,9 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
             finishDirectoryChange();
     });
     const StorageStatus before = operation->before;
-    const auto diagnosticOptions = diagnostics::DiagnosticsService::instance().options();
+    const auto diagnosticOptions = m_isolateAuxiliaryStorage
+                                       ? diagnostics::DiagnosticsOptions{}
+                                       : diagnostics::DiagnosticsService::instance().options();
     if (m_suspendForDirectoryChange) {
         const auto suspended = m_suspendForDirectoryChange();
         if (!suspended.success)
@@ -1001,10 +1045,13 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                        expectedPins.contains(path.mid(prefix.size()).section(u'/', 0, 0));
             };
             options.preparedFiles = {QStringLiteral("pinned_windows_v2/index.json")};
-            options.progress = [this](const StorageDirectoryProgress& progress) {
+            options.progress = [this, mailbox = active->progress](const auto& progress) {
+                if (!mailbox->publish(progress))
+                    return;
                 QMetaObject::invokeMethod(this,
-                                          snow_shot::runtime::trackRuntimeWork([this, progress] {
-                                              emit directoryChangeProgress(progress);
+                                          snow_shot::runtime::trackRuntimeWork([this, mailbox] {
+                                              if (const auto latest = mailbox->take())
+                                                  emit directoryChangeProgress(*latest);
                                           }),
                                           Qt::QueuedConnection);
             };
@@ -1108,6 +1155,9 @@ void ApplicationStorage::finishDirectoryChange() {
         else
             result.error = error;
     }
+    // The executor is finished. Retire its pending callback before restoration can start
+    // a new operation, and publish its last snapshot before the completion notification.
+    const auto finalProgress = operation->progress->close();
     m_status = operation->before;
     if (result.success) {
         m_status.requestedDirectory = operation->destination;
@@ -1126,6 +1176,8 @@ void ApplicationStorage::finishDirectoryChange() {
     emit pinnedWindowsChanged();
     emitStatusChanged();
     requestStorageUsageRefresh();
+    if (finalProgress)
+        emit directoryChangeProgress(*finalProgress);
     // Resume/status callbacks may run nested application code while the old operation still
     // updates shared state. Only the final notification is safe for chaining another move.
     m_finishingDirectoryChange = false;

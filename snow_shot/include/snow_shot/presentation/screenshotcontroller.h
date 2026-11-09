@@ -71,7 +71,9 @@ class ScreenshotController : public QObject {
     [[nodiscard]] bool captureAvailable() const;
     void setCaptureSuspended(bool suspended);
     [[nodiscard]] bool captureAcquisitionActive() const;
-    [[nodiscard]] bool blocksApplicationUpdate() const;
+    // Final handoff revalidation already owns capture suspension; it must still observe actual
+    // work without treating its own closed admission as newly admitted work.
+    [[nodiscard]] bool blocksApplicationUpdate(bool includeCaptureSuspension = true) const;
     [[nodiscard]] bool blocksMemoryTrimming() const;
     [[nodiscard]] bool beginGlobalMouseCapture(
         snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,

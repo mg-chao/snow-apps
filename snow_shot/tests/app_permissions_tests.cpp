@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/apppermissionservice.h"
-#include "snow_shot/app/featureavailability.h"
+#include "snow_shot/app/applicationactiongate.h"
+#include "snow_shot/presentation/globalactiontraits.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
@@ -271,8 +272,7 @@ void freshSettingsActions() {
 }
 void routingPolicy() {
     using A = GlobalShortcutAction;
-    require(snow_shot::app::featureFamilyFor(A::ScreenshotScrolling) ==
-                snow_shot::app::FeatureFamily::Screenshot,
+    require(globalActionTraits(A::ScreenshotScrolling)->family == GlobalActionFamily::Screenshot,
             "scrolling screenshot must use the screenshot feature gate");
     for (auto action :
          {A::Screenshot, A::ScreenshotDelay, A::ScreenshotPinToScreen, A::ScreenshotOcr,
@@ -325,7 +325,7 @@ void routingPolicy() {
             "startup navigation happens once per service lifetime");
     int blocked = 0;
     int dispatched = 0;
-    snow_shot::app::FeatureActionRouter featureRouter;
+    const snow_shot::app::ApplicationActionGate actionGate([] { return true; });
     for (int i = 0; i < 100; ++i) {
         if (service.allow(requiredPermissions(A::Screenshot, false),
                           [&](const AppPermissions& permissions) {
@@ -333,8 +333,7 @@ void routingPolicy() {
                                       "redirect identifies the missing permission");
                               ++blocked;
                           }))
-            static_cast<void>(featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot,
-                                                     [&] { ++dispatched; }));
+            static_cast<void>(actionGate.dispatch([&] { ++dispatched; }));
     }
     require(blocked == 100 && dispatched == 0 && native->queries == 101,
             "each action checks current permissions before feature dispatch");
@@ -344,8 +343,7 @@ void routingPolicy() {
     require(dispatched == 0, "granting access must not replay an action");
     require(service.allow({P::ScreenRecording}, {}),
             "a fresh user action can proceed to feature dispatch");
-    static_cast<void>(
-        featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot, [&] { ++dispatched; }));
+    static_cast<void>(actionGate.dispatch([&] { ++dispatched; }));
     require(dispatched == 1,
             "granted screen access must allow capture on every supported platform");
 }

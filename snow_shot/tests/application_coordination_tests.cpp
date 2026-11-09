@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <stdexcept>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -85,7 +86,10 @@ void verifyLifecycleInterleavings() {
     int starts = 0;
     int stops = 0;
     std::vector<std::function<void()>> drains;
-    McpRuntimeLifecycle lifecycle({[&] { ++starts; },
+    McpRuntimeLifecycle lifecycle({[&] {
+                                       ++starts;
+                                       return McpRuntimeLifecycle::StartOutcome{true, {}};
+                                   },
                                    [&](auto done) { drains.push_back(std::move(done)); },
                                    [&] { ++stops; }});
     lifecycle.setSuspended(true);
@@ -114,13 +118,108 @@ void verifyLifecycleInterleavings() {
 
     int immediateStarts = 0;
     int immediateStops = 0;
-    McpRuntimeLifecycle immediate(
-        {[&] { ++immediateStarts; }, [](auto done) { done(); }, [&] { ++immediateStops; }});
+    McpRuntimeLifecycle immediate({[&] {
+                                       ++immediateStarts;
+                                       return McpRuntimeLifecycle::StartOutcome{true, {}};
+                                   },
+                                   [](auto done) { done(); }, [&] { ++immediateStops; }});
     immediate.setEnabled(true);
     immediate.setEnabled(false);
     immediate.setEnabled(true);
     require(immediateStarts == 2 && immediateStops == 1,
             "inline empty-drain completion leaves a restartable stopped graph");
+}
+
+void verifyLifecycleStartOutcomes() {
+    using Lifecycle = snow_shot::app::mcp::McpRuntimeLifecycle;
+    int starts = 0;
+    int stops = 0;
+    bool available = false;
+    Lifecycle lifecycle({[&] {
+                             ++starts;
+                             return Lifecycle::StartOutcome{available, QStringLiteral("locked")};
+                         },
+                         [](auto done) { done(); }, [&] { ++stops; }});
+    lifecycle.setEnabled(true);
+    require(lifecycle.state() == Lifecycle::State::Failed &&
+                lifecycle.error() == QStringLiteral("locked") && starts == 1 && stops == 1,
+            "failed construction reports unavailability and retires its partial graph once");
+    lifecycle.setEnabled(true);
+    require(starts == 1 && stops == 1,
+            "unchanged desired state cannot spin on a failed synchronous start");
+    lifecycle.retry();
+    require(starts == 2 && stops == 2 && lifecycle.state() == Lifecycle::State::Failed,
+            "explicit retry can fail without leaking a partial graph");
+    available = true;
+    lifecycle.retry();
+    require(starts == 3 && stops == 2 && lifecycle.state() == Lifecycle::State::Running &&
+                lifecycle.error().isEmpty(),
+            "successful retry publishes running only after actual availability");
+    lifecycle.setEnabled(false);
+    lifecycle.retry();
+    require(starts == 3 && stops == 3 && lifecycle.state() == Lifecycle::State::Stopped,
+            "retry cannot reopen disabled admission");
+    available = false;
+    lifecycle.setEnabled(true);
+    lifecycle.setSuspended(true);
+    lifecycle.retry();
+    require(starts == 4 && stops == 4, "retry while suspended cannot construct a graph");
+    lifecycle.setEnabled(false);
+    lifecycle.setEnabled(true);
+    available = true;
+    lifecycle.setSuspended(false);
+    require(starts == 5 && lifecycle.state() == Lifecycle::State::Running,
+            "resume reconciles the latest desire after retiring a failed graph");
+    lifecycle.shutdown();
+    lifecycle.retry();
+    lifecycle.setEnabled(true);
+    require(starts == 5 && stops == 5, "terminal failure recovery cannot reopen admission");
+
+    int exceptionStops = 0;
+    Lifecycle throwing({[]() -> Lifecycle::StartOutcome { throw std::runtime_error("startup"); },
+                        [](auto done) { done(); }, [&] { ++exceptionStops; }});
+    throwing.setEnabled(true);
+    require(throwing.state() == Lifecycle::State::Failed && exceptionStops == 1,
+            "throwing construction also retires acquired resources exactly once");
+    throwing.shutdown();
+    require(exceptionStops == 1, "shutdown does not retire an already failed graph twice");
+
+    bool constructing = false;
+    int suspendedStops = 0;
+    std::unique_ptr<Lifecycle> suspended;
+    suspended = std::make_unique<Lifecycle>(Lifecycle::Hooks{
+        [&] {
+            constructing = true;
+            require(suspended->state() == Lifecycle::State::Starting,
+                    "availability remains pending while synchronous construction runs");
+            suspended->setEnabled(false);
+            suspended->setEnabled(true);
+            suspended->setSuspended(true);
+            require(suspendedStops == 0,
+                    "reentrant suspension cannot destroy a graph still being constructed");
+            constructing = false;
+            return Lifecycle::StartOutcome{true, {}};
+        },
+        [](auto done) { done(); },
+        [&] {
+            require(!constructing, "retirement waits until synchronous start returns");
+            ++suspendedStops;
+        }});
+    suspended->setEnabled(true);
+    require(suspendedStops == 1 && suspended->state() == Lifecycle::State::Stopped,
+            "suspension during construction leaves no active graph after start returns");
+
+    std::unique_ptr<Lifecycle> retiring;
+    int retiringStops = 0;
+    retiring = std::make_unique<Lifecycle>(
+        Lifecycle::Hooks{[&] {
+                             retiring.reset();
+                             return Lifecycle::StartOutcome{true, {}};
+                         },
+                         [](auto done) { done(); }, [&] { ++retiringStops; }});
+    retiring->setEnabled(true);
+    require(!retiring && retiringStops == 1,
+            "destruction inside start retires resources without dereferencing an expired owner");
 }
 } // namespace
 int main() {
@@ -151,10 +250,14 @@ int main() {
     require(released.size() == 2, "committed handoff never reopens admission during destruction");
     verifyAdmissionMatrix();
     verifyLifecycleInterleavings();
+    verifyLifecycleStartOutcomes();
     int starts = 0;
     int stops = 0;
     std::vector<std::function<void()>> drains;
-    mcp::McpRuntimeLifecycle lifecycle({[&] { ++starts; },
+    mcp::McpRuntimeLifecycle lifecycle({[&] {
+                                            ++starts;
+                                            return mcp::McpRuntimeLifecycle::StartOutcome{true, {}};
+                                        },
                                         [&](auto done) { drains.push_back(std::move(done)); },
                                         [&] { ++stops; }});
     lifecycle.setEnabled(true);
@@ -185,7 +288,8 @@ int main() {
     require(starts == 4 && stops == 4, "terminal shutdown cannot be undone by configuration");
     {
         mcp::McpRuntimeLifecycle temporary(
-            {[] {}, [&](auto done) { drains.push_back(done); }, [] {}});
+            {[] { return mcp::McpRuntimeLifecycle::StartOutcome{true, {}}; },
+             [&](auto done) { drains.push_back(done); }, [] {}});
         temporary.setEnabled(true);
         temporary.setEnabled(false);
     }
@@ -199,6 +303,7 @@ int main() {
             [&] {
                 require(!stopping, "replacement starts only after the old graph finishes stopping");
                 ++replacementStarts;
+                return mcp::McpRuntimeLifecycle::StartOutcome{true, {}};
             },
             [&](auto done) { drained = std::move(done); },
             [&] {
@@ -216,7 +321,8 @@ int main() {
         // Stop callbacks may also destroy the lifecycle. Its completion must not dereference it.
         std::unique_ptr<mcp::McpRuntimeLifecycle> retiring;
         retiring = std::make_unique<mcp::McpRuntimeLifecycle>(mcp::McpRuntimeLifecycle::Hooks{
-            [] {}, [&](auto done) { drained = std::move(done); }, [&] { retiring.reset(); }});
+            [] { return mcp::McpRuntimeLifecycle::StartOutcome{true, {}}; },
+            [&](auto done) { drained = std::move(done); }, [&] { retiring.reset(); }});
         retiring->setEnabled(true);
         retiring->setEnabled(false);
         drained();

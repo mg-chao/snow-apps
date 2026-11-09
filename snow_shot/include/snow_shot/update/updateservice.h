@@ -85,13 +85,21 @@ class UpdateService final : public QObject {
     // Applies only an update that was already verified and ready before this launch.
     // Does not start network checks, downloads, or the background schedule.
     void applyAtStartup();
-    void setRelaunchArguments(const QStringList& arguments);
+    // Refusal leaves previously accepted intent unchanged. Callers retain their
+    // complete list for normal startup/replay if precommit approval is refused.
+    // Admission closes before handoffCommitted observers can reenter application code.
+    bool setRelaunchArguments(const QStringList& arguments);
+    [[nodiscard]] bool acceptsRelaunchArguments(const QStringList& arguments) const;
     void clearRelaunchArguments();
     void reportBlocked(const QString& reason);
     // Runs synchronously on this service's thread before input suspension or helper commitment.
     // A missing handler, expired context, or exception rejects handoff.
     // Approval may prepare relaunch arguments and report a specific refusal with reportBlocked().
     void setHandoffApproval(QObject* context, std::function<bool()> approval);
+    // Runs after all synchronous handoffPendingChanged(true) observers have closed admission.
+    // Recheck work/editor state created by those observers before the helper can commit.
+    // Missing/expired/throwing validation refuses handoff and releases pending suspension.
+    void setHandoffValidation(QObject* context, std::function<bool()> validation);
 
   signals:
     void statusChanged();

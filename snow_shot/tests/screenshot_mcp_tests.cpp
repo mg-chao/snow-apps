@@ -313,7 +313,13 @@ void transport() {
     descriptor.close();
     require(data.value(QStringLiteral("token")).toString().size() == 64, "256-bit token");
     ScreenshotMcpServer competing(nullptr, directory.path());
-    require(!competing.start(), "exclusive endpoint owner");
+    require(!competing.start(&error) &&
+                competing.startupError() == McpStartupError::EndpointOwned &&
+                error == mcpStartupErrorText(McpStartupError::EndpointOwned),
+            "exclusive endpoint owner reports a stable error and a localized explanation");
+    competing.stop();
+    require(competing.startupError() == McpStartupError::EndpointOwned,
+            "failed graph cleanup retains the startup failure identity");
     QLocalSocket invalid;
     invalid.connectToServer(server.socketName());
     require(invalid.waitForConnected(2000), "invalid peer connects");
@@ -419,7 +425,13 @@ void transport() {
     server.stop();
     require(!QFile::exists(server.descriptorPath()), "descriptor removed on disable");
     await([&] { return client.state() == QLocalSocket::UnconnectedState; });
-    require(server.start(), "runtime re-enable");
+    require(competing.start(&error) && competing.startupError() == McpStartupError::None &&
+                error.isEmpty(),
+            "successful retry clears the retained failure identity and localized output");
+    competing.stop();
+    require(server.start(&error) && server.startupError() == McpStartupError::None &&
+                error.isEmpty(),
+            "runtime re-enable clears the previous error output");
     server.stop();
     require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount == baseline,
             "completed socket work and shutdown release activity leases");
@@ -475,19 +487,27 @@ void descriptorOverride() {
         scopedDirectory = QFileInfo(scoped.socketName()).absolutePath();
     }
     require(!QFileInfo::exists(scopedDirectory), "destruction releases the socket directory");
+#endif
     // An existing directory cannot be replaced by the descriptor's atomic file publication.
     const QString unpublishable = directory.filePath(QStringLiteral("failed/descriptor.json"));
     require(QDir().mkpath(unpublishable), "create unpublishable descriptor destination");
     qputenv("SNOW_SHOT_MCP_DESCRIPTOR", unpublishable.toUtf8());
     ScreenshotMcpServer failedPublication;
-    require(!failedPublication.start(&error), "descriptor publication failure is reported");
+    require(!failedPublication.start(&error) &&
+                failedPublication.startupError() == McpStartupError::Descriptor &&
+                error == mcpStartupErrorText(McpStartupError::Descriptor),
+            "descriptor publication failure reports its stable error after listener cleanup");
+#ifdef Q_OS_MACOS
     const QString failedDirectory = QFileInfo(failedPublication.socketName()).absolutePath();
     require(!failedPublication.socketName().isEmpty() && !QFileInfo::exists(failedDirectory),
             "failed publication releases the listening socket and its directory");
 #endif
     qputenv("SNOW_SHOT_MCP_DESCRIPTOR", QByteArrayLiteral("relative/descriptor.json"));
     ScreenshotMcpServer relativeOverride;
-    require(!relativeOverride.start(), "relative override rejected");
+    require(!relativeOverride.start(&error) &&
+                relativeOverride.startupError() == McpStartupError::RuntimeDirectory &&
+                error == mcpStartupErrorText(McpStartupError::RuntimeDirectory),
+            "relative override reports an invalid runtime directory");
     if (wasSet)
         qputenv("SNOW_SHOT_MCP_DESCRIPTOR", previous);
     else
@@ -1150,12 +1170,6 @@ void completeToolStyleContract() {
         }
         bool setDistanceStyleFromToolbar(const SnowCanvasDistanceStyle& value, quint32 flags) {
             state.distanceStyle = value;
-            properties = flags;
-            ++updates;
-            return true;
-        }
-        bool setBracketStyleFromToolbar(const SnowCanvasBracketStyle& value, quint32 flags) {
-            state.bracketStyle = value;
             properties = flags;
             ++updates;
             return true;

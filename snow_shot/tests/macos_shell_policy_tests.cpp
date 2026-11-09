@@ -1,4 +1,5 @@
-#include "snow_shot/app/featureavailability.h"
+#include "snow_shot/app/applicationactiongate.h"
+#include "snow_shot/presentation/globalactiontraits.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -7,9 +8,8 @@
 #include <vector>
 
 namespace {
-using snow_shot::app::FeatureFamily;
+using FeatureFamily = snow_shot::presentation::GlobalActionFamily;
 using snow_shot::presentation::GlobalShortcutAction;
-using snow_shot::presentation::settings::SettingsGlobalMouseAction;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -56,26 +56,8 @@ void shortcutFamiliesAreComplete() {
     require(expected.size() == snow_shot::presentation::globalActionTraitsCatalog.size(),
             "every stable shortcut has an explicit family contract");
     for (const auto& [action, family] : expected) {
-        require(snow_shot::app::featureFamilyFor(action) == family,
+        require(snow_shot::presentation::globalActionTraits(action)->family == family,
                 "every shortcut action must have the expected feature family");
-    }
-}
-
-void globalMouseFamiliesAreComplete() {
-    using Pair = std::pair<SettingsGlobalMouseAction, FeatureFamily>;
-    const std::vector<Pair> expected{
-        {SettingsGlobalMouseAction::ScreenshotCopy, FeatureFamily::Screenshot},
-        {SettingsGlobalMouseAction::ScreenshotPinToScreen, FeatureFamily::PinToScreen},
-        {SettingsGlobalMouseAction::ScreenshotOcr, FeatureFamily::Screenshot},
-        {SettingsGlobalMouseAction::ScreenshotOcrCopy, FeatureFamily::Screenshot},
-        {SettingsGlobalMouseAction::ScreenshotTranslation, FeatureFamily::Screenshot},
-        {SettingsGlobalMouseAction::ScreenshotQuickSave, FeatureFamily::Screenshot},
-        {SettingsGlobalMouseAction::ScreenshotSave, FeatureFamily::Screenshot},
-        {SettingsGlobalMouseAction::ScreenRecording, FeatureFamily::ScreenRecording},
-    };
-    for (const auto& [action, family] : expected) {
-        require(snow_shot::app::featureFamilyFor(action) == family,
-                "every global-mouse action must have the expected feature family");
     }
 }
 
@@ -84,30 +66,26 @@ void macosRouterAllowsAllFeatures() {
     int pinDispatches = 0;
     int recordingDispatches = 0;
     int restorationDispatches = 0;
-    const snow_shot::app::FeatureActionRouter router;
+    const snow_shot::app::ApplicationActionGate gate([] { return true; });
 
-    require(router.dispatch(FeatureFamily::Screenshot, [&]() { ++screenshotDispatches; }),
+    require(gate.dispatch([&]() { ++screenshotDispatches; }),
             "macOS screenshot routing must reach capture");
-    require(router.dispatch(FeatureFamily::PinToScreen, [&]() { ++pinDispatches; }),
-            "macOS pin routing must reach capture");
-    require(router.dispatch(FeatureFamily::ScreenRecording, [&]() { ++recordingDispatches; }),
+    require(gate.dispatch([&]() { ++pinDispatches; }), "macOS pin routing must reach capture");
+    require(gate.dispatch([&]() { ++recordingDispatches; }),
             "macOS recording routing must reach capture");
     require(screenshotDispatches == 1 && pinDispatches == 1 && recordingDispatches == 1,
             "macOS actions must reach every supported feature handler");
 
-    require(router.dispatch(FeatureFamily::PinToScreen, [&]() { ++restorationDispatches; }) &&
-                restorationDispatches == 1,
+    require(gate.dispatch([&]() { ++restorationDispatches; }) && restorationDispatches == 1,
             "startup restoration must run through feature dispatch");
 }
 
 void macosRouterDispatchesRecordingGesture() {
     int cancellations = 0;
     int gestureDispatches = 0;
-    const snow_shot::app::FeatureActionRouter router;
+    const snow_shot::app::ApplicationActionGate gate([] { return true; });
 
-    require(router.beginGesture(
-                FeatureFamily::ScreenRecording, [&]() { ++cancellations; },
-                [&]() { ++gestureDispatches; }),
+    require(gate.beginGesture([&]() { ++cancellations; }, [&]() { ++gestureDispatches; }),
             "an available global-mouse recording gesture must be dispatched");
     require(cancellations == 0, "an available recording gesture must not be cancelled");
     require(gestureDispatches == 1, "an available recording gesture must reach capture handling");
@@ -116,7 +94,6 @@ void macosRouterDispatchesRecordingGesture() {
 
 int main() {
     shortcutFamiliesAreComplete();
-    globalMouseFamiliesAreComplete();
     macosRouterAllowsAllFeatures();
     macosRouterDispatchesRecordingGesture();
     return 0;

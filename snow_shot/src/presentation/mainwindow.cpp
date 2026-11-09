@@ -430,6 +430,12 @@ void MainWindow::showTranslation(const QString& text) {
     }
 }
 
+void MainWindow::openTranslationPage() {
+    if (m_contentCard != nullptr)
+        m_contentCard->setCurrentRoute(QStringLiteral("/tools/translation"));
+    showAndActivate();
+}
+
 void MainWindow::showScreenshotHistory() {
     showAndActivate();
     if (m_contentCard != nullptr) {

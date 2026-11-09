@@ -56,23 +56,25 @@ struct OperationAdmission {
         if (condition)
             result.blockers |= static_cast<std::uint32_t>(reason);
     };
-    const bool restart =
+    const bool restartOrRelocation =
         operation == ApplicationOperation::Restart || operation == ApplicationOperation::Relocation;
     const bool trim = operation == ApplicationOperation::Trim;
     const bool store = operation == ApplicationOperation::Store;
     const bool relocation = operation == ApplicationOperation::Relocation;
     const bool handoff = operation == ApplicationOperation::UpdateHandoff;
-    // Final handoff and cooperative Store admission run before acquiring their own pause.
-    // Any existing pause therefore belongs to a competing transition, including preparation.
-    block((restart || trim || handoff || store) && facts.suspended, OperationBlocker::Suspended);
-    block((restart || trim || store || handoff) && facts.storageChanging,
+    // A reported pause belongs to a competing transition. Post-pause handoff validation
+    // excludes only its own acquired reservation when collecting these live facts.
+    block((restartOrRelocation || trim || handoff || store) && facts.suspended,
+          OperationBlocker::Suspended);
+    block((restartOrRelocation || trim || store || handoff) && facts.storageChanging,
           OperationBlocker::Storage);
-    block((restart && facts.updaterUnavailableOrApplying) || (trim && facts.updaterBusy),
+    block((restartOrRelocation && facts.updaterUnavailableOrApplying) ||
+              (trim && facts.updaterBusy),
           OperationBlocker::Updater);
     block((trim || store) ? facts.captureInteracting : facts.captureBusy,
           OperationBlocker::Capture);
     block(facts.directCaptureBusy, OperationBlocker::DirectCapture);
-    block((restart || handoff) && facts.unsavedEditors, OperationBlocker::Editors);
+    block((restartOrRelocation || handoff) && facts.unsavedEditors, OperationBlocker::Editors);
     block((relocation || trim || store) && facts.ocrBusy, OperationBlocker::Ocr);
     block((relocation || trim || store || handoff) && facts.mcpBusy, OperationBlocker::Mcp);
     block((relocation || trim || store) && facts.diagnosticsBusy, OperationBlocker::Diagnostics);

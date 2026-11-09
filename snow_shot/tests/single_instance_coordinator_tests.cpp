@@ -311,6 +311,66 @@ void repeatedRequestReceiptsDoNotRepeatDispatch() {
     }
 }
 
+void refusedIntentIsNotDispatchedOrRemembered() {
+    single_instance::SingleInstanceCoordinator primary;
+    require(primary.acquireOrForward({QStringLiteral("snow-shot-test")}).outcome ==
+                single_instance::SingleInstanceOutcome::Primary,
+            "admission fixture owns storage");
+    bool allow = false;
+    int admissions = 0;
+    int received = 0;
+    primary.setLaunchRequestAdmission([&](const QStringList&) {
+        ++admissions;
+        return allow;
+    });
+    QObject::connect(&primary, &single_instance::SingleInstanceCoordinator::launchRequestReceived,
+                     [&] { ++received; });
+    const auto send = [&](const QString& id) {
+        QLocalSocket socket;
+        socket.connectToServer(launchServer(primary)->serverName(), QIODevice::ReadWrite);
+        require(socket.waitForConnected(1000), "admission client connects");
+        const auto request = requestFrame(id, 2);
+        require(socket.write(request) == request.size(), "admission client writes");
+        require(waitUntil(
+                    [&] {
+                        if (socket.bytesAvailable() < static_cast<qint64>(sizeof(quint32)))
+                            return false;
+                        const auto header = socket.peek(sizeof(quint32));
+                        return socket.bytesAvailable() >=
+                               static_cast<qint64>(sizeof(quint32)) +
+                                   qFromBigEndian<quint32>(header.constData());
+                    },
+                    1000),
+                "admission returns a receipt");
+        const auto response = socket.readAll();
+        require(response.size() > static_cast<qsizetype>(sizeof(quint32)), "receipt is framed");
+        return QJsonDocument::fromJson(response.mid(sizeof(quint32)))
+            .object()
+            .value(QStringLiteral("accepted"))
+            .toBool();
+    };
+    require(!send(QStringLiteral("capacity-request")) && received == 0,
+            "refused intent receives a negative receipt without dispatch");
+    allow = true;
+    require(send(QStringLiteral("capacity-request")) && received == 1,
+            "a refused ID is eligible for later admission");
+    allow = false;
+    require(send(QStringLiteral("capacity-request")) && received == 1 && admissions == 2,
+            "an accepted retry keeps its receipt even after admission closes");
+    int queued = 0;
+    primary.setLaunchRequestHandler([&](const QStringList&) { ++queued; });
+    require(queued == 1, "only accepted intent survives for deferred dispatch");
+
+    QProcess secondary;
+    secondary.start(QCoreApplication::applicationFilePath(),
+                    {QStringLiteral("--single-instance-refused-forward")});
+    require(secondary.waitForStarted(3000) &&
+                waitUntil([&] { return secondary.state() == QProcess::NotRunning; }, 5000) &&
+                secondary.exitStatus() == QProcess::NormalExit && secondary.exitCode() == 0 &&
+                admissions == 3 && received == 1,
+            "a modern negative receipt fails once without retry or legacy downgrade");
+}
+
 void legacyClientCanForwardToModernPrimary() {
     single_instance::SingleInstanceCoordinator primary;
     require(primary.acquireOrForward({QStringLiteral("snow-shot-test")}).outcome ==
@@ -636,6 +696,14 @@ int main(int argc, char** argv) {
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("single-instance-coordinator"));
     QCoreApplication application(argc, argv);
+    if (application.arguments().value(1) == QStringLiteral("--single-instance-refused-forward")) {
+        single_instance::SingleInstanceCoordinator secondary;
+        const auto result = secondary.acquireOrForward({QStringLiteral("snow-shot-test")});
+        return result.outcome == single_instance::SingleInstanceOutcome::Failed &&
+                       !result.error.isEmpty()
+                   ? EXIT_SUCCESS
+                   : EXIT_FAILURE;
+    }
     if (application.arguments().value(1) == QStringLiteral("--single-instance-large-forward") ||
         application.arguments().value(1) ==
             QStringLiteral("--single-instance-large-modern-forward")) {
@@ -743,6 +811,7 @@ int main(int argc, char** argv) {
     liveUnreachableOwnerIsNotBypassed();
     stoppingPrimaryRetainsLockAndAllowsRetry();
     repeatedRequestReceiptsDoNotRepeatDispatch();
+    refusedIntentIsNotDispatchedOrRemembered();
     legacyClientCanForwardToModernPrimary();
     modernEndpointRequiresVersionAndReceiptId();
     largeModernRequestIsFullyWritten();

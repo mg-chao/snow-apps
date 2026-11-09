@@ -530,25 +530,28 @@ ScreenshotMcpServer::~ScreenshotMcpServer() {
 }
 bool ScreenshotMcpServer::start(QString* error) {
     Q_ASSERT(QThread::currentThread() == thread());
+    m_startupError = McpStartupError::None;
+    if (error)
+        error->clear();
+    const auto fail = [this, error](McpStartupError reason) {
+        m_startupError = reason;
+        if (error)
+            *error = mcpStartupErrorText(reason);
+        return false;
+    };
     if (m_running)
         return true;
     if (m_runtimeDirectory.isEmpty() || !QFileInfo(m_descriptorPath).isAbsolute()) {
-        if (error)
-            *error = tr("Could not secure the MCP runtime directory");
-        return false;
+        return fail(McpStartupError::RuntimeDirectory);
     }
     if (!privateDirectory(m_runtimeDirectory)) {
-        if (error)
-            *error = tr("Could not secure the MCP runtime directory");
-        return false;
+        return fail(McpStartupError::RuntimeDirectory);
     }
     m_lock = std::make_unique<QLockFile>(
         QDir(m_runtimeDirectory).filePath(QStringLiteral("endpoint.lock")));
     if (!m_lock->tryLock(0)) {
-        if (error)
-            *error = tr("Another Snow Shot instance owns the MCP endpoint");
         m_lock.reset();
-        return false;
+        return fail(McpStartupError::EndpointOwned);
     }
     ++m_epoch;
     m_generation = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -563,11 +566,9 @@ bool ScreenshotMcpServer::start(QString* error) {
         QStringLiteral("/tmp/") + edition::productId() + QStringLiteral("-mcp-") + m_generation +
         QStringLiteral("-XXXXXX"));
     if (!m_socketDirectory->isValid()) {
-        if (error)
-            *error = tr("Could not secure the MCP runtime directory");
         m_socketDirectory.reset();
         m_lock.reset();
-        return false;
+        return fail(McpStartupError::RuntimeDirectory);
     }
     m_socketName = m_socketDirectory->filePath(QStringLiteral("socket"));
 #else
@@ -611,16 +612,18 @@ bool ScreenshotMcpServer::start(QString* error) {
                                   listenError = m_worker->start();
                               }),
                               Qt::BlockingQueuedConnection);
-    if (!listenError.isEmpty() || !writeDescriptor(error)) {
-        if (error && !listenError.isEmpty())
-            *error = tr("Could not open the local MCP endpoint");
+    if (!listenError.isEmpty() || !writeDescriptor()) {
         stop();
-        return false;
+        return fail(listenError.isEmpty() ? McpStartupError::Descriptor
+                                          : McpStartupError::LocalEndpoint);
     }
     m_running = true;
     QCoreApplication::instance()->setProperty("snowShotMcpRunning", true);
     emit runningChanged(true);
     return true;
+}
+McpStartupError ScreenshotMcpServer::startupError() const {
+    return m_startupError;
 }
 void ScreenshotMcpServer::stop() {
     Q_ASSERT(QThread::currentThread() == thread());
@@ -767,13 +770,11 @@ void ScreenshotMcpServer::sendResponse(quint64 id, ScreenshotMcpResponse respons
                               }),
                               Qt::QueuedConnection);
 }
-bool ScreenshotMcpServer::writeDescriptor(QString* error) {
+bool ScreenshotMcpServer::writeDescriptor() {
     QSaveFile file(m_descriptorPath);
     file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly) ||
         !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
-        if (error)
-            *error = tr("Could not write the private MCP descriptor");
         return false;
     }
     const QJsonObject object{
@@ -785,12 +786,7 @@ bool ScreenshotMcpServer::writeDescriptor(QString* error) {
         {QStringLiteral("generation"), m_generation},
         {QStringLiteral("max_frame_bytes"), static_cast<qint64>(kMaximumFrameBytes)}};
     const QByteArray bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
-    if (file.write(bytes) != bytes.size() || !file.commit()) {
-        if (error)
-            *error = tr("Could not write the private MCP descriptor");
-        return false;
-    }
-    return true;
+    return file.write(bytes) == bytes.size() && file.commit();
 }
 void ScreenshotMcpServer::removeDescriptor() {
     // Never remove a replacement descriptor owned by another generation.

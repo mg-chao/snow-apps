@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -492,6 +493,72 @@ void completionPreventsEarlyReentryAndAllowsFinalChaining() {
     app.shutdown();
 }
 
+void progressDeliveryIsBoundedAndRetiredBeforeCompletion() {
+    for (const bool deliverBeforeCompletion : {false, true}) {
+        QTemporaryDir fixture;
+        auto& app = storage::ApplicationStorage::instance();
+        const auto source = fixture.filePath(QStringLiteral("source"));
+        const auto target = fixture.filePath(QStringLiteral("target"));
+        require(app.initialize({fixture.filePath(QStringLiteral("bin")), source, 60000}).success,
+                "progress fixture initialized");
+        for (int index = 0; index < 100; ++index)
+            write(QDir(source).filePath(QStringLiteral("assets/ocr/%1").arg(index)), "model");
+
+        std::promise<void> transactionFinished;
+        auto transactionReady = transactionFinished.get_future();
+        std::promise<void> releaseWorker;
+        auto workerReleased = releaseWorker.get_future().share();
+        app.setDirectoryChangeHooks(
+            {}, {}, {}, [&](storage::ApplicationStorage::DirectoryChangeTask work) {
+                return std::async(std::launch::async, [&, work = std::move(work)] {
+                    const auto result = work();
+                    transactionFinished.set_value();
+                    workerReleased.wait();
+                    return result;
+                });
+            });
+        int notifications = 0;
+        int completions = 0;
+        storage::StorageDirectoryProgress latest;
+        const auto progressConnection = QObject::connect(
+            &app, &storage::ApplicationStorage::directoryChangeProgress, &app,
+            [&](const auto& progress) {
+                require(completions == 0, "retired progress never arrives after completion");
+                ++notifications;
+                latest = progress;
+            });
+        const auto finishedConnection = QObject::connect(
+            &app, &storage::ApplicationStorage::directoryChangeFinished, &app,
+            [&](const auto& result) {
+                require(result.success, "progress fixture transaction commits");
+                require(notifications == 1 &&
+                            latest.stage == storage::StorageDirectoryProgress::Stage::Cleaning &&
+                            latest.total >= 100 && latest.completed == latest.total - 1,
+                        "latest terminal progress is delivered before completion");
+                ++completions;
+            });
+        require(app.requestDirectoryChange(target, true).success, "progress transaction starts");
+        // Withhold owner-thread event processing until the worker has published every file.
+        // The worker's future stays unready so the completion poll cannot race this assertion.
+        require(transactionReady.wait_for(std::chrono::seconds(10)) == std::future_status::ready,
+                "transaction can finish without owner-thread progress delivery");
+        if (deliverBeforeCompletion) {
+            QCoreApplication::sendPostedEvents(&app, QEvent::MetaCall);
+            require(notifications == 1,
+                    "hundreds of file reports retain only one pending GUI snapshot");
+        }
+        releaseWorker.set_value();
+        app.waitForDirectoryChange();
+        QCoreApplication::sendPostedEvents(&app, QEvent::MetaCall);
+        require(completions == 1 && notifications == 1 && app.configurationDirectory() == target,
+                "completion retires queued progress without changing committed root");
+        QObject::disconnect(progressConnection);
+        QObject::disconnect(finishedConnection);
+        app.setDirectoryChangeHooks({}, {});
+        app.shutdown();
+    }
+}
+
 void liveSwitch(bool migrate) {
     QTemporaryDir dir;
     auto& app = storage::ApplicationStorage::instance();
@@ -642,4 +709,5 @@ int main(int argc, char** argv) {
     flushFailureRestoresAvailability();
     asynchronousExceptionsRestoreParticipants();
     completionPreventsEarlyReentryAndAllowsFinalChaining();
+    progressDeliveryIsBoundedAndRetiredBeforeCompletion();
 }

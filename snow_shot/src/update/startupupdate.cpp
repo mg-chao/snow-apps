@@ -78,13 +78,21 @@ StartupUpdateResult runStartupUpdate(UpdateService& service, const std::function
                 "Your settings could not be saved. Please retry before updating"));
             return false;
         }
-        service.setRelaunchArguments(
-            relaunchArguments
-                ? relaunchArguments()
-                : startupUpdateRelaunchArguments(foregroundRequested && foregroundRequested()));
+        if (!service.setRelaunchArguments(
+                relaunchArguments ? relaunchArguments()
+                                  : startupUpdateRelaunchArguments(foregroundRequested &&
+                                                                   foregroundRequested()))) {
+            service.reportBlocked(QCoreApplication::translate(
+                "UpdateErrors", "The selected files exceed the update restart limit"));
+            return false;
+        }
         return true;
     });
-    const auto clearApproval = qScopeGuard([&] { service.setHandoffApproval(nullptr, {}); });
+    service.setHandoffValidation(&loop, [&] { return !finished; });
+    const auto clearApproval = qScopeGuard([&] {
+        service.setHandoffApproval(nullptr, {});
+        service.setHandoffValidation(nullptr, {});
+    });
     QObject::connect(&service, &UpdateService::handoffCommitted, &loop, [&] {
         result = StartupUpdateResult::ExitForUpdate;
         finish();
