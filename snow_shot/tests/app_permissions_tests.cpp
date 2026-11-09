@@ -293,7 +293,9 @@ void routingPolicy() {
     for (auto action :
          {A::OpenScreenRecordingFolder, A::OpenCaptureHistory, A::OpenPinToScreenManagement,
           A::GlobalCanvas, A::StitchSelectedImages, A::SplitSelectedImages, A::EditSelectedImages,
-          A::OpenSettings, A::PinClipboardContent, A::PinSelectedFiles, A::HideShowAllWindows})
+          A::OpenSettings, A::PinClipboardContent, A::PinSelectedFiles, A::HideShowAllWindows,
+          A::RestoreLastClosedWindows, A::SwitchWindowGroup, A::ToggleGlobalShortcuts,
+          A::ToggleDisableOnFocusedFullscreenWindow, A::ToggleWindowUnderCursorAlwaysOnTop})
         require(requiredPermissions(action, true).isEmpty(),
                 "permission-free actions must remain usable");
     using M = settings::SettingsGlobalMouseAction;
@@ -323,9 +325,7 @@ void routingPolicy() {
             "startup navigation happens once per service lifetime");
     int blocked = 0;
     int dispatched = 0;
-    int unavailable = 0;
-    snow_shot::app::FeatureActionRouter featureRouter(
-        [&](snow_shot::app::FeatureFamily) { ++unavailable; });
+    snow_shot::app::FeatureActionRouter featureRouter;
     for (int i = 0; i < 100; ++i) {
         if (service.allow(requiredPermissions(A::Screenshot, false),
                           [&](const AppPermissions& permissions) {
@@ -336,17 +336,17 @@ void routingPolicy() {
             static_cast<void>(featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot,
                                                      [&] { ++dispatched; }));
     }
-    require(blocked == 100 && dispatched == 0 && unavailable == 0 && native->queries == 101,
+    require(blocked == 100 && dispatched == 0 && native->queries == 101,
             "each action checks current permissions before feature dispatch");
     native->value.statuses[0] = S::Granted;
     service.refresh();
     flush();
     require(dispatched == 0, "granting access must not replay an action");
     require(service.allow({P::ScreenRecording}, {}),
-            "a fresh user action can proceed to the existing availability gate");
+            "a fresh user action can proceed to feature dispatch");
     static_cast<void>(
         featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot, [&] { ++dispatched; }));
-    require(unavailable == 0 && dispatched == 1,
+    require(dispatched == 1,
             "granted screen access must allow capture on every supported platform");
 }
 class PermissionTranslator final : public QTranslator {

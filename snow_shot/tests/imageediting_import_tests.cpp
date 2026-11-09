@@ -347,6 +347,28 @@ void failedSelectionsAndClose(const QString& first) {
         require(coordinator.windows().isEmpty(), "late query completion cannot create editors");
     }
 }
+void importedWindowsParticipateInUpdateHandoff(const QString& first, const QString& second) {
+    ImageEditingWindowCoordinator coordinator({});
+    coordinator.presentFiles({first, second});
+    awaitCondition([&] { return coordinator.windows().size() == 2; },
+                   "multi-file import registers both windows with the coordinator");
+    const auto windows = coordinator.windows();
+    loaded(*windows[0]);
+    loaded(*windows[1]);
+    require(coordinator.prepareForUpdateHandoff(), "clean imported windows allow update handoff");
+    require(windows[1]->document()->crop(ImageEditingDocument::CropAxis::Rows, 2, 5) &&
+                !coordinator.prepareForUpdateHandoff(),
+            "unsaved changes in an additional imported window block update handoff");
+    delete windows[0].data();
+    require(!windows[0] && coordinator.windows().size() == 1 &&
+                coordinator.windows().first() == windows[1] &&
+                !coordinator.prepareForUpdateHandoff(),
+            "destroyed imported windows leave no stale entries or bypass remaining edits");
+    coordinator.shutdown();
+    require(coordinator.windows().isEmpty() && coordinator.prepareForUpdateHandoff(),
+            "shutdown releases all imported windows from update admission");
+}
+
 void supersededFilesAndChooserLifetime(const QString& first, const QString& second) {
     ImageEditingWindow window;
     window.presentFile(first);
@@ -400,6 +422,7 @@ void runImageEditingImportTests() {
     emptyAndChooser(first, second);
     selectionAndDrop(first, second, broken, folder);
     failedSelectionsAndClose(first);
+    importedWindowsParticipateInUpdateHandoff(first, second);
     supersededFilesAndChooserLifetime(first, second);
     QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }

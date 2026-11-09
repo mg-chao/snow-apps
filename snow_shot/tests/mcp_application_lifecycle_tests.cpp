@@ -1,10 +1,18 @@
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
+#include "snow_shot/app/mcp/mcpdocumentservice.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/update/updateservice.h"
 #include "widgets/platform_compatibility.h"
+#ifdef Q_OS_WIN
+#include "snow_shot/app/shellimagelaunch.h"
+#include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/storage/pinnedwindowrepository.h"
+#include <QImage>
+#endif
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -13,9 +21,10 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 
-#include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 
 int runMcpApplicationLifecycleTests(int argc, char** argv);
 
@@ -31,8 +40,7 @@ class TestApplication final : public QApplication {
 
 void require(bool condition, const char* message) {
     if (!condition) {
-        std::cerr << message << '\n';
-        std::exit(1);
+        throw std::runtime_error(message);
     }
 }
 template <typename Predicate> void await(Predicate predicate) {
@@ -44,10 +52,21 @@ template <typename Predicate> void await(Predicate predicate) {
     }
     require(predicate(), "MCP application lifecycle transition completes");
 }
+#ifdef Q_OS_WIN
+QList<ScreenshotPinnedWindow*> visiblePins() {
+    QList<ScreenshotPinnedWindow*> pins;
+    for (auto* window : QApplication::topLevelWidgets()) {
+        auto* pin = qobject_cast<ScreenshotPinnedWindow*>(window);
+        if (pin && pin->isVisible() && !pin->persistenceSnapshot().image.isNull())
+            pins.append(pin);
+    }
+    return pins;
+}
+#endif
 } // namespace
 
 // Linked only into test builds, before startup can access the user's configuration.
-int runMcpApplicationLifecycleTests(int argc, char** argv) {
+int runMcpApplicationLifecycleTests(int argc, char** argv) try {
     using namespace snow_shot;
     using namespace snow_shot::app::mcp;
     QStandardPaths::setTestModeEnabled(true);
@@ -59,11 +78,17 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) {
     application.setQuitOnLastWindowClosed(false);
     adqt::widgets::initializePlatformCompatibility(application);
     auto& storage = storage::ApplicationStorage::instance();
-    require(storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+    require(storage
+                .initialize({temporary.filePath(QStringLiteral("bin")),
+                             temporary.filePath(QStringLiteral("data")), 60000})
+                .success,
             "initialize MCP lifecycle storage");
     auto& configuration = storage.configuration();
     require(configuration.setValues(
-                {{QStringLiteral("mcp/enabled"), true}, {QStringLiteral("tray/enabled"), false}}),
+                {{QStringLiteral("mcp/enabled"), true},
+                 {QStringLiteral("tray/enabled"), false},
+                 {QStringLiteral("pin_to_screen/automatic_text_recognition"), false},
+                 {QStringLiteral("screenshot/copy_after_pinning_to_screen"), false}}),
             "enable MCP without a tray");
     presentation::LanguageManager::instance().initialize();
     presentation::styles::ThemeManager::instance().initialize(application);
@@ -95,9 +120,158 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) {
                     "re-enable MCP through application configuration");
             await([&] { return server->isRunning(); });
         }
+
+        // Process only the controller's queued configuration callbacks. The listener's drain
+        // completion targets the application and cannot retire this graph between these steps.
+        auto* server = controller.findChild<ScreenshotMcpServer*>();
+        QPointer<ScreenshotMcpSession> oldSession = controller.findChild<ScreenshotMcpSession*>();
+        QPointer<McpDocumentService> oldDocuments = controller.findChild<McpDocumentService*>();
+        require(server && oldSession && oldDocuments, "MCP graph exists before interleaving");
+        ScreenshotMcpRequest delayed;
+        delayed.connectionId = 17;
+        delayed.requestId = QStringLiteral("delayed-capture-before-disable");
+        delayed.idempotencyKey = delayed.requestId;
+        delayed.method = QStringLiteral("snow_shot_document_open");
+        delayed.params = {{QStringLiteral("source"), QStringLiteral("capture")},
+                          {QStringLiteral("delay_seconds"), 10}};
+        bool admitted = false;
+        oldDocuments->request(delayed, [&](auto response) {
+            require(response.ok && response.result.contains(QStringLiteral("job_id")),
+                    "delayed capture is admitted as a cancellable job without native acquisition");
+            admitted = true;
+        });
+        require(admitted, "delayed source admission returns before execution");
+#ifdef Q_OS_WIN
+        require(
+            !storage.requestDirectoryChange(temporary.filePath(QStringLiteral("busy-target")), true)
+                    .success &&
+                !storage.directoryChanging() && server->isRunning() && oldSession,
+            "pending delayed job vetoes relocation without pausing live services");
+#endif
+        require(configuration.setValue(QStringLiteral("mcp/enabled"), false),
+                "disable with delayed source pending");
+        QCoreApplication::sendPostedEvents(&controller, QEvent::MetaCall);
+        require(server->isRunning() && oldSession,
+                "disable starts asynchronous drain before disposing the old graph");
+        require(configuration.setValue(QStringLiteral("mcp/enabled"), true),
+                "re-enable before old graph has drained");
+        QCoreApplication::sendPostedEvents(&controller, QEvent::MetaCall);
+        require(oldSession && oldDocuments,
+                "re-enable does not reuse or prematurely dispose the draining graph");
+        await([&] { return !oldSession && !oldDocuments && server->isRunning(); });
+        require(controller.findChild<ScreenshotMcpSession*>() &&
+                    controller.findChild<McpDocumentService*>() &&
+                    application.quitObserverCount() == quitObservers,
+                "drain completion cancels delayed sources and starts a fresh service graph once");
+
+#ifdef Q_OS_WIN
+        // A settings mutation can still be queued when a synchronous storage move begins.
+        // Restore must read its desired value before reopening listener admission.
+        int unexpectedStarts = 0;
+        int firstFileAttempts = 0;
+        bool shellInjected = false;
+        bool pinPresentedDuringPreparation = false;
+        const QString shellPath =
+            temporary.filePath(QStringLiteral("shell-during-preparation.png"));
+        QImage shellImage(32, 24, QImage::Format_RGBA8888);
+        shellImage.fill(QColor(46, 91, 172));
+        require(shellImage.save(shellPath, "PNG"), "write isolated deferred shell file");
+        const auto runningConnection = QObject::connect(
+            server, &ScreenshotMcpServer::runningChanged, &controller, [&](bool running) {
+                unexpectedStarts += running ? 1 : 0;
+                if (!running && !shellInjected) {
+                    shellInjected = true;
+                    require(!storage.directoryChanging(),
+                            "listener shutdown reenters launch before storage publishes moving");
+                    controller.handleLaunchRequest(app::shellImageLaunchArguments({shellPath}),
+                                                   [&] { ++firstFileAttempts; });
+                    pinPresentedDuringPreparation = !visiblePins().isEmpty();
+                }
+            });
+        require(configuration.setValue(QStringLiteral("mcp/enabled"), false),
+                "queue disable immediately before relocation");
+        const QString relocatedRoot = temporary.filePath(QStringLiteral("relocated"));
+        require(storage.requestDirectoryChange(relocatedRoot, true).success &&
+                    storage.directoryChanging() && !server->isRunning(),
+                "relocation synchronously closes MCP admission before worker launch");
+        require(shellInjected && firstFileAttempts == 1 && !pinPresentedDuringPreparation &&
+                    visiblePins().isEmpty(),
+                "preparation preserves shell intent without pin presentation or repeated callback");
+        require(!configuration.setValue(QStringLiteral("mcp/enabled"), true),
+                "configuration writes remain frozen during relocation");
+        storage.waitForDirectoryChange();
+        require(!storage.directoryChanging() && storage.configurationDirectory() == relocatedRoot &&
+                    !server->isRunning() && unexpectedStarts == 0 &&
+                    !configuration.value(QStringLiteral("mcp/enabled")).toBool(),
+                "resume respects latest disabled policy without a transient listener restart");
+        QCoreApplication::sendPostedEvents(&controller, QEvent::MetaCall);
+        require(!server->isRunning() && unexpectedStarts == 0,
+                "delayed configuration reconciliation cannot reopen disabled MCP");
+        await([&] {
+            const auto pins = visiblePins();
+            return pins.size() == 1 &&
+                   pins.first()->automationState().value(QStringLiteral("ready")).toBool();
+        });
+        auto* replayedPin = visiblePins().first();
+        const auto samePixels = [](const QImage& image, const QImage& expected) {
+            return image.convertToFormat(QImage::Format_ARGB32_Premultiplied) ==
+                   expected.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        };
+        require(firstFileAttempts == 1 &&
+                    samePixels(replayedPin->persistenceSnapshot().image, shellImage) &&
+                    storage.configurationDirectory() == relocatedRoot,
+                "accepted file replays exactly once with original pixels after root commitment");
+        replayedPin->checkpointStorage();
+        require(storage.pinnedWindows().flush().success,
+                "replayed file checkpoint flushes through relocated repository");
+        const auto persisted = storage.pinnedWindows().loadRecord(replayedPin->persistenceId());
+        require(persisted && samePixels(persisted->image, shellImage),
+                "replayed pin persists on the authoritative storage root");
+        replayedPin->close();
+        await([] { return visiblePins().isEmpty(); });
+        require(configuration.setValue(QStringLiteral("mcp/enabled"), true),
+                "enable MCP after resources have rebound to relocated storage");
+        await([&] { return server->isRunning(); });
+        require(unexpectedStarts == 1 && controller.findChild<ScreenshotMcpSession*>(),
+                "post-relocation enable starts one fresh graph on the authoritative root");
+        QObject::disconnect(runningConnection);
+#endif
+
+        // Drive the controller's committed transition without launching a native updater.
+        // The helper protocol/authority is covered separately by the adapter fixtures.
+        auto* updates =
+            application.findChild<update::UpdateService*>(QStringLiteral("snowShotUpdateService"));
+        require(updates && server->isRunning(), "running services exist before committed handoff");
+        bool suspendedWithoutListener = false;
+        bool watchdogFired = false;
+        int listenerRestarts = 0;
+        const auto committedRunningConnection =
+            QObject::connect(server, &ScreenshotMcpServer::runningChanged, &controller,
+                             [&](bool running) { listenerRestarts += running ? 1 : 0; });
+        QTimer watchdog;
+        watchdog.setSingleShot(true);
+        QObject::connect(&watchdog, &QTimer::timeout, &application, [&] {
+            watchdogFired = true;
+            application.exit(79); // Direct exit ends a failed test even if Quit is still filtered.
+        });
+        watchdog.start(3000);
+        QTimer::singleShot(0, &application, [&] {
+            updates->handoffPendingChanged(true);
+            suspendedWithoutListener = !server->isRunning();
+            updates->handoffCommitted();
+        });
+        const int quitResult = application.exec();
+        watchdog.stop();
+        QObject::disconnect(committedRunningConnection);
+        require(quitResult == 0 && !watchdogFired && suspendedWithoutListener &&
+                    listenerRestarts == 0 && !server->isRunning(),
+                "committed handoff permits terminal Quit while keeping feature resources closed");
     }
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     storage.shutdown();
     std::cout << "MCP application lifecycle tests passed\n";
     return 0;
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
 }

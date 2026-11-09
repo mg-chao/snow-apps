@@ -5107,6 +5107,10 @@ Unavailable: %2</source>
             <translation>请输入存储目录的绝对路径</translation>
         </message>
         <message>
+            <source>Could not change the storage directory</source>
+            <translation>无法更改存储目录</translation>
+        </message>
+        <message>
             <source>Could not copy %1</source>
             <translation>无法复制 %1</translation>
         </message>

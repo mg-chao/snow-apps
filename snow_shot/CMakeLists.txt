@@ -1962,6 +1962,7 @@ set(PROJECT_CXX_SOURCES
     src/app/mcp/screenshotmcpserver.cpp
     src/app/mcp/mcpapplicationservice.cpp
     src/app/mcp/mcpdocumentservice.cpp
+    src/app/mcp/mcpsourceresolver.cpp
     src/app/mcp/mcpjobregistry.cpp
     src/app/mcp/mcpmediaservice.cpp
     src/app/mcp/mcppinnedstate.cpp
@@ -2176,7 +2177,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_compile_definitions(snow_shot PRIVATE SNOW_SHOT_CONTROLLER_LIFETIME_TESTS=1)
     target_sources(snow_shot PRIVATE tests/screenshot_controller_lifetime_tests.cpp
         tests/screenshot_controller_clipboard_tests.cpp
-        tests/mcp_application_lifecycle_tests.cpp)
+        tests/mcp_application_lifecycle_tests.cpp
+        tests/mcp_source_resolver_tests.cpp)
     snow_shot_import_offscreen_platform(snow_shot)
 endif()
 
@@ -11779,6 +11781,16 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-feature-action-router-tests COMMAND snow-shot-feature-action-router-tests)
     set_tests_properties(snow-shot-feature-action-router-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE)
+    add_executable(snow-shot-application-coordination-tests tests/application_coordination_tests.cpp)
+    target_include_directories(snow-shot-application-coordination-tests PRIVATE include)
+    target_link_libraries(snow-shot-application-coordination-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-application-coordination-tests COMMAND snow-shot-application-coordination-tests)
+    set_tests_properties(snow-shot-application-coordination-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE)
+    add_test(NAME snow-shot-mcp-source-resolver-tests COMMAND snow_shot --mcp-source-resolver-tests)
+    set_tests_properties(snow-shot-mcp-source-resolver-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-screenshot-controller-lifetime-tests
         COMMAND snow_shot --controller-lifetime-tests)
     set_tests_properties(snow-shot-screenshot-controller-lifetime-tests PROPERTIES

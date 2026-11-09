@@ -47,9 +47,14 @@ void shortcutFamiliesAreComplete() {
         {GlobalShortcutAction::TranslateSelectedText, std::nullopt},
         {GlobalShortcutAction::PinSelectedFiles, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::HideShowAllWindows, FeatureFamily::PinToScreen},
+        {GlobalShortcutAction::RestoreLastClosedWindows, FeatureFamily::PinToScreen},
+        {GlobalShortcutAction::SwitchWindowGroup, std::nullopt},
+        {GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop, std::nullopt},
         {GlobalShortcutAction::ToggleGlobalShortcuts, std::nullopt},
         {GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow, std::nullopt},
     };
+    require(expected.size() == snow_shot::presentation::globalActionTraitsCatalog.size(),
+            "every stable shortcut has an explicit family contract");
     for (const auto& [action, family] : expected) {
         require(snow_shot::app::featureFamilyFor(action) == family,
                 "every shortcut action must have the expected feature family");
@@ -75,47 +80,35 @@ void globalMouseFamiliesAreComplete() {
 }
 
 void macosRouterAllowsAllFeatures() {
-    int notices = 0;
     int screenshotDispatches = 0;
     int pinDispatches = 0;
     int recordingDispatches = 0;
     int restorationDispatches = 0;
-    std::optional<FeatureFamily> lastNotice;
-    const snow_shot::app::FeatureActionRouter router([&](FeatureFamily feature) {
-        ++notices;
-        lastNotice = feature;
-    });
+    const snow_shot::app::FeatureActionRouter router;
 
     require(router.dispatch(FeatureFamily::Screenshot, [&]() { ++screenshotDispatches; }),
             "macOS screenshot routing must reach capture");
-    require(!lastNotice.has_value(), "supported screenshots must not show an unavailable notice");
     require(router.dispatch(FeatureFamily::PinToScreen, [&]() { ++pinDispatches; }),
             "macOS pin routing must reach capture");
-    require(!lastNotice.has_value(), "supported pinning must not show an unavailable notice");
     require(router.dispatch(FeatureFamily::ScreenRecording, [&]() { ++recordingDispatches; }),
             "macOS recording routing must reach capture");
-    require(!lastNotice.has_value(), "supported recording must not show an unavailable notice");
     require(screenshotDispatches == 1 && pinDispatches == 1 && recordingDispatches == 1,
             "macOS actions must reach every supported feature handler");
-    require(notices == 0, "supported macOS actions must not emit unavailable notices");
 
-    require(router.dispatch(
-                FeatureFamily::PinToScreen, [&]() { ++restorationDispatches; }, false) &&
-                restorationDispatches == 1 && notices == 0,
-            "silent startup restoration must run without emitting a notice");
+    require(router.dispatch(FeatureFamily::PinToScreen, [&]() { ++restorationDispatches; }) &&
+                restorationDispatches == 1,
+            "startup restoration must run through feature dispatch");
 }
 
 void macosRouterDispatchesRecordingGesture() {
-    int notices = 0;
     int cancellations = 0;
     int gestureDispatches = 0;
-    const snow_shot::app::FeatureActionRouter router([&](FeatureFamily) { ++notices; });
+    const snow_shot::app::FeatureActionRouter router;
 
     require(router.beginGesture(
                 FeatureFamily::ScreenRecording, [&]() { ++cancellations; },
                 [&]() { ++gestureDispatches; }),
             "an available global-mouse recording gesture must be dispatched");
-    require(notices == 0, "an available recording gesture must not emit a notice");
     require(cancellations == 0, "an available recording gesture must not be cancelled");
     require(gestureDispatches == 1, "an available recording gesture must reach capture handling");
 }

@@ -150,6 +150,14 @@ runApplicationRestartTransaction(const ApplicationRestartTransactionOperations& 
             QT_TRANSLATE_NOOP("ApplicationRestart",
                               "Your settings could not be saved. Please retry before restarting")));
     }
+    // Flush can synchronously checkpoint live UI and dispatch application callbacks. Revalidate
+    // the facts immediately before giving the prepared replacement authority to continue.
+    if (!operations.guard()) {
+        cancel();
+        return failure(translated(QT_TRANSLATE_NOOP(
+            "ApplicationRestart",
+            "Finish capturing, recording, exporting, or updating before restarting")));
+    }
     const ApplicationRestartResult committed = operations.commit();
     if (!committed.success) {
         cancel();

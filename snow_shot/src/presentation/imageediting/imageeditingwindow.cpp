@@ -48,6 +48,8 @@
 #include <QPainter>
 #include <QScreen>
 #include <QScopedValueRollback>
+#include <QScopeGuard>
+#include <QThread>
 #include <QStackedLayout>
 #include <QTextDocument>
 #include <QTimer>
@@ -1585,12 +1587,12 @@ QByteArray ImageEditingWindow::contentCheckpoint() const {
     }
     return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
 }
-bool ImageEditingWindow::preparePendingEdits() {
+bool ImageEditingWindow::preparePendingEdits(bool requireCanvasCommit) {
     if (m_impl->closing)
         return false;
     const QPointer<ImageEditingWindow> lifetime(this);
-    static_cast<void>(m_impl->canvas->resetEditingStatePreservingTool());
-    if (!lifetime || m_impl->closing)
+    const bool canvasPrepared = m_impl->canvas->resetEditingStatePreservingTool();
+    if (!lifetime || m_impl->closing || (requireCanvasCommit && !canvasPrepared))
         return false;
     if (m_impl->session && m_impl->session->active() && m_impl->session->tableModeActive() &&
         m_impl->recognitionView)
@@ -1786,9 +1788,16 @@ ImageEditingWindowCoordinator::~ImageEditingWindowCoordinator() {
 ImageEditingWindow* ImageEditingWindowCoordinator::createWindow() {
     auto* window = new ImageEditingWindow(m_services, this);
     m_windows.append(window);
+    ++m_windowRevision;
     connect(window, &ImageEditingWindow::closed, this, [this, window] {
-        m_windows.removeAll(window);
+        if (m_windows.removeAll(window) != 0)
+            ++m_windowRevision;
         window->deleteLater();
+    });
+    connect(window, &QObject::destroyed, this, [this, window] {
+        if (m_windows.removeIf(
+                [window](const auto& entry) { return !entry || entry.data() == window; }) != 0)
+            ++m_windowRevision;
     });
     connect(window, &ImageEditingWindow::additionalFilesRequested, this,
             [this](const QStringList& paths) {
@@ -1904,8 +1913,33 @@ bool ImageEditingWindowCoordinator::hasUnsavedChanges() const {
     return std::any_of(m_windows.cbegin(), m_windows.cend(),
                        [](const auto& window) { return window && window->dirty(); });
 }
+bool ImageEditingWindowCoordinator::prepareForUpdateHandoff() {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (m_handoffPreparing || m_reviewPending)
+        return false;
+    const QPointer<ImageEditingWindowCoordinator> lifetime(this);
+    m_handoffPreparing = true;
+    const auto preparing = qScopeGuard([lifetime] {
+        if (lifetime)
+            lifetime->m_handoffPreparing = false;
+    });
+    const auto revision = m_windowRevision;
+    const auto windows = m_windows;
+    for (auto window : windows) {
+        if (!window)
+            return false;
+        const bool prepared = window->preparePendingEdits(true);
+        if (!lifetime || !window || !prepared)
+            return false;
+        if (m_windowRevision != revision || m_reviewPending || window->dirty())
+            return false;
+    }
+    return m_windowRevision == revision && !m_reviewPending && !hasUnsavedChanges();
+}
 void ImageEditingWindowCoordinator::shutdown() {
     const auto windows = std::exchange(m_windows, {});
+    if (!windows.isEmpty())
+        ++m_windowRevision;
     for (auto window : windows) {
         if (!window)
             continue;

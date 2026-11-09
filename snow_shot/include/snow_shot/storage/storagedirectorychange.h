@@ -22,6 +22,8 @@ struct StorageDirectoryChangeResult {
 
 // The caller suspends producers and drains repositories before running this transaction.
 // Hooks run on the transaction worker. Activation must preserve repository identities.
+// Hook exceptions before selector commit roll back; exceptions after commit retain the new
+// root and report success with a warning. Rollback must restore runtime state and not throw.
 struct StorageDirectoryChangeOptions {
     QString source;
     QString destination;

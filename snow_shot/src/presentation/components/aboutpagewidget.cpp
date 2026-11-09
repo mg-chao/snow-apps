@@ -567,11 +567,10 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
             using snow_shot::update::UpdateState;
             switch (m_ui->updates->status().state) {
             case UpdateState::Available:
-#ifdef Q_OS_MACOS
-                openProjectLink(m_ui->updates->status().downloadUrl);
-#else
-                m_ui->updates->download();
-#endif
+                if (m_ui->updates->capabilities().download)
+                    m_ui->updates->download();
+                else
+                    openProjectLink(m_ui->updates->status().downloadUrl);
                 break;
             case UpdateState::Ready:
                 m_ui->updates->requestRestart();
@@ -1035,12 +1034,10 @@ void AboutPageWidget::refreshUpdateStatus() {
         break;
     case UpdateState::Available:
         text = tr("Update available: %1").arg(status.version);
-#ifdef Q_OS_MACOS
-        action = status.downloadUrl.host() == u"gitee.com" ? tr("Download from Gitee")
-                                                           : tr("Download from GitHub");
-#else
-        action = tr("Download update");
-#endif
+        action = m_ui->updates->capabilities().download
+                     ? tr("Download update")
+                     : (status.downloadUrl.host() == u"gitee.com" ? tr("Download from Gitee")
+                                                                  : tr("Download from GitHub"));
         statusIcon = outlined::CloudDownload();
         actionIcon = outlined::Download();
         statusColor = colors.colorInfoText;

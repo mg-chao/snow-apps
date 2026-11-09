@@ -76,6 +76,12 @@ class ApplicationStorage final : public QObject {
     Q_OBJECT
 
   public:
+    using DirectoryChangeTask = std::function<StorageDirectoryChangeResult()>;
+    // The executor starts work asynchronously at most once and returns a future that becomes
+    // ready only after work has stopped using storage. Throwing or returning an invalid future
+    // must leave no work in flight. Empty selects the production std::async executor.
+    using DirectoryChangeExecutor =
+        std::function<std::future<StorageDirectoryChangeResult>(DirectoryChangeTask)>;
     static ApplicationStorage& instance();
     static StorageDirectorySelection
     resolveDirectory(const StorageInitializationOptions& options = {});
@@ -84,10 +90,17 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] StorageResult initialize(const StorageInitializationOptions& options = {});
     [[nodiscard]] bool isInitialized() const;
     [[nodiscard]] StorageResult flushNow();
+    // Suspend/resume run on the owner thread; drain runs on the worker. A failed suspend
+    // leaves participants unchanged. Suspend and resume must not throw. Resume receives
+    // the authoritative root and runs once after an acquired suspension, including failure.
     void setDirectoryChangeHooks(std::function<StorageResult()> suspend,
                                  std::function<void(const QString&)> resume,
-                                 std::function<void()> drain = {});
+                                 std::function<void()> drain = {},
+                                 DirectoryChangeExecutor executor = {});
     [[nodiscard]] StorageResult requestDirectoryChange(const QString& directory, bool migrate);
+    // Owner-thread teardown barrier: finish the worker and restore participants before
+    // replacing hooks or destroying the objects borrowed by them.
+    void waitForDirectoryChange();
     [[nodiscard]] bool directoryChanging() const {
         return m_status.directoryChanging;
     }
@@ -168,13 +181,18 @@ class ApplicationStorage final : public QObject {
     void finishCacheClear(StorageCacheKind kind, const StorageResult& result);
     void emitStatusChanged();
     void createUsageTracker();
+    void finishDirectoryChange();
+    struct DirectoryChange;
     quint64 m_usageGeneration = 0;
     QString m_bootstrapDirectory;
     QString m_executableDirectory;
     std::function<StorageResult()> m_suspendForDirectoryChange;
     std::function<void()> m_drainForDirectoryChange;
     std::function<void(const QString&)> m_resumeAfterDirectoryChange;
-    std::future<StorageDirectoryChangeResult> m_directoryWorker;
+    DirectoryChangeExecutor m_directoryChangeExecutor;
+    std::unique_ptr<DirectoryChange> m_directoryChange;
+    bool m_preparingDirectoryChange = false;
+    bool m_finishingDirectoryChange = false;
 
     StorageStatus m_status;
     std::unique_ptr<ConfigurationStore> m_configuration;

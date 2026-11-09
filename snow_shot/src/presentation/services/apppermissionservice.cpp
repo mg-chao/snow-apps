@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/apppermissionservice.h"
+#include "snow_shot/presentation/globalactiontraits.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include <QCoreApplication>
 #include <QPointer>
@@ -38,45 +39,17 @@ QString appPermissionName(AppPermission permission) {
     return {};
 }
 AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphoneEnabled*/) {
-    using Action = GlobalShortcutAction;
-    using P = AppPermission;
-    switch (action) {
-    case Action::Screenshot:
-    case Action::ScreenshotDelay:
-    case Action::ScreenshotPinToScreen:
-    case Action::ScreenshotOcr:
-    case Action::ScreenshotOcrCopy:
-    case Action::ScreenshotTranslation:
-    case Action::ScreenshotScrolling:
-    case Action::ScreenshotCopy:
-    case Action::ScreenshotSave:
-    case Action::ScreenshotQuickSave:
-    case Action::ScreenshotFullScreen:
-    case Action::ScreenshotFocusedWindow:
-        return {P::ScreenRecording};
-    case Action::ScreenRecord:
-    case Action::ScreenRecordCopy:
-        // This action opens selection. The recording controller checks microphone
-        // and effect permissions against the final toolbar settings at start.
-        return {P::ScreenRecording};
-    case Action::TranslateSelectedText:
-        return {P::Accessibility};
-    case Action::OpenScreenRecordingFolder:
-    case Action::OpenCaptureHistory:
-    case Action::GlobalCanvas:
-    case Action::StitchSelectedImages:
-    case Action::SplitSelectedImages:
-    case Action::EditSelectedImages:
-    case Action::SwitchWindowGroup:
-    case Action::OpenPinToScreenManagement:
-    case Action::OpenSettings:
-    case Action::PinClipboardContent:
-    case Action::RestoreLastClosedWindows:
-    case Action::HideShowAllWindows:
-    case Action::PinSelectedFiles:
-    case Action::ToggleGlobalShortcuts:
-    case Action::ToggleWindowUnderCursorAlwaysOnTop:
-    case Action::ToggleDisableOnFocusedFullscreenWindow:
+    const auto* traits = globalActionTraits(action);
+    if (!traits)
+        return {};
+    switch (traits->permission) {
+    case InitialActionPermission::ScreenRecording:
+        // Selection is admitted here. The recording owner checks microphone and
+        // effects against final toolbar options immediately before starting.
+        return {AppPermission::ScreenRecording};
+    case InitialActionPermission::Accessibility:
+        return {AppPermission::Accessibility};
+    case InitialActionPermission::None:
         return {};
     }
     return {};
