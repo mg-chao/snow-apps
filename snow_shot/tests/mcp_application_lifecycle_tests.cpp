@@ -2,8 +2,11 @@
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/app/mcp/mcpdocumentservice.h"
+#include "snow_shot/app/mcp/mcpjobregistry.h"
+#include "snow_shot/app/mcp/mcpruntimegraph.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/mainwindow.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
@@ -19,7 +22,10 @@
 #include <QEvent>
 #include <QLockFile>
 #include <QImage>
+#include <QKeyEvent>
 #include <QPointer>
+#include <QScopeGuard>
+#include <QSemaphore>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
@@ -55,6 +61,18 @@ template <typename Predicate> void await(Predicate predicate) {
     require(predicate(), "MCP application lifecycle transition completes");
 }
 #ifdef Q_OS_WIN
+class InputProbe final : public QObject {
+  public:
+    bool received = false;
+    bool event(QEvent* event) override {
+        if (event->type() == QEvent::KeyPress) {
+            received = true;
+            return true;
+        }
+        return QObject::event(event);
+    }
+};
+
 QList<ScreenshotPinnedWindow*> visiblePins() {
     QList<ScreenshotPinnedWindow*> pins;
     for (auto* window : QApplication::topLevelWidgets()) {
@@ -100,11 +118,14 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
         QLockFile endpointLock(temporary.filePath(QStringLiteral("endpoint.lock")));
         require(endpointLock.tryLock(0), "fixture reserves only its isolated MCP endpoint");
         app::ApplicationController controller(application);
+        auto* runtime = controller.findChild<McpRuntimeGraph*>();
         auto* initiallyUnavailable = controller.findChild<ScreenshotMcpServer*>();
-        require(initiallyUnavailable && !initiallyUnavailable->isRunning() &&
+        require(runtime && initiallyUnavailable && !initiallyUnavailable->isRunning() &&
                     !controller.findChild<ScreenshotMcpSession*>() &&
                     !controller.findChild<McpDocumentService*>() &&
+                    !controller.findChild<McpJobRegistry*>() && !runtime->busy() &&
                     initiallyUnavailable->startupError() == McpStartupError::EndpointOwned &&
+                    runtime->startupError() == McpStartupError::EndpointOwned &&
                     application.property("snowShotMcpStartError").value<McpStartupError>() ==
                         McpStartupError::EndpointOwned &&
                     configuration.value(QStringLiteral("mcp/enabled")).toBool(),
@@ -179,7 +200,9 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
         auto* server = controller.findChild<ScreenshotMcpServer*>();
         QPointer<ScreenshotMcpSession> oldSession = controller.findChild<ScreenshotMcpSession*>();
         QPointer<McpDocumentService> oldDocuments = controller.findChild<McpDocumentService*>();
-        require(server && oldSession && oldDocuments, "MCP graph exists before interleaving");
+        QPointer<McpJobRegistry> oldJobs = controller.findChild<McpJobRegistry*>();
+        require(server && oldSession && oldDocuments && oldJobs && !runtime->busy(),
+                "MCP graph exists and has no reserved work before interleaving");
         ScreenshotMcpRequest delayed;
         delayed.connectionId = 17;
         delayed.requestId = QStringLiteral("delayed-capture-before-disable");
@@ -194,6 +217,8 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
             admitted = true;
         });
         require(admitted, "delayed source admission returns before execution");
+        require(runtime->busy(),
+                "graph admission accounts for a delayed source through its running job");
 #ifdef Q_OS_WIN
         require(
             !storage.requestDirectoryChange(temporary.filePath(QStringLiteral("busy-target")), true)
@@ -211,13 +236,64 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
         QCoreApplication::sendPostedEvents(&controller, QEvent::MetaCall);
         require(oldSession && oldDocuments,
                 "re-enable does not reuse or prematurely dispose the draining graph");
-        await([&] { return !oldSession && !oldDocuments && server->isRunning(); });
+        await([&] { return !oldSession && !oldDocuments && !oldJobs && server->isRunning(); });
         require(controller.findChild<ScreenshotMcpSession*>() &&
                     controller.findChild<McpDocumentService*>() &&
+                    controller.findChild<McpJobRegistry*>() && !runtime->busy() &&
                     application.quitObserverCount() == quitObservers,
                 "drain completion cancels delayed sources and starts a fresh service graph once");
 
 #ifdef Q_OS_WIN
+        // Synchronous suspension publishes signals before relocation owns any storage state.
+        // New work admitted by such an observer must veto the final preparation check.
+        {
+            auto gate = std::make_shared<QSemaphore>();
+            const auto release = qScopeGuard([gate] { gate->release(); });
+            auto& exports = ScreenshotExportCoordinator::shared();
+            require(exports.pendingJobCount() == 0,
+                    "relocation initially observes no export reservation");
+            ScreenshotExportJobHandle lateExport;
+            bool injected = false;
+            bool completed = false;
+            bool inputClosed = false;
+            InputProbe input;
+            const auto connection = QObject::connect(
+                server, &ScreenshotMcpServer::runningChanged, &controller, [&](bool running) {
+                    if (running || injected)
+                        return;
+                    injected = true;
+                    QKeyEvent key(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);
+                    QCoreApplication::sendEvent(&input, &key);
+                    inputClosed = !input.received;
+                    lateExport = exports.submit(
+                        &controller, ScreenshotExportCoordinator::Priority::Foreground,
+                        [gate](const auto&) {
+                            gate->acquire();
+                            return ScreenshotExportTaskResult{};
+                        },
+                        [&](auto result) {
+                            require(result.succeeded(),
+                                    "independently admitted export survives relocation rejection");
+                            completed = true;
+                        });
+                });
+            const QString originalRoot = storage.configurationDirectory();
+            const auto refused = storage.requestDirectoryChange(
+                temporary.filePath(QStringLiteral("late-export-target")), true);
+            QObject::disconnect(connection);
+            require(
+                !refused.success && injected && inputClosed && lateExport.isValid() &&
+                    exports.pendingJobCount() == 1 && !completed && !storage.directoryChanging() &&
+                    storage.configurationDirectory() == originalRoot && server->isRunning() &&
+                    !runtime->busy(),
+                "new work during suspension rejects relocation and restores the original graph");
+            QKeyEvent key(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);
+            QCoreApplication::sendEvent(&input, &key);
+            require(input.received, "rejected preparation restores input admission");
+            gate->release();
+            await([&] { return completed && exports.pendingJobCount() == 0; });
+        }
+
         // A settings mutation can still be queued when a synchronous storage move begins.
         // Restore must read its desired value before reopening listener admission.
         int unexpectedStarts = 0;

@@ -3423,6 +3423,150 @@ void failedWriteCanBeRetried() {
             "configuration write did not recover on retry");
 }
 
+void checkpointAttemptsIndependentWrites() {
+    for (const bool blockConfiguration : {false, true}) {
+        QTemporaryDir fixture;
+        require(fixture.isValid(), "checkpoint needs isolated storage");
+        const QString root = fixture.filePath(QStringLiteral("data"));
+        auto& app = storage::ApplicationStorage::instance();
+        storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")), root,
+                                                      60000};
+        options.isolateAuxiliaryStorage = true;
+        require(app.initialize(options).success && app.checkpoint().result().success,
+                "checkpoint fixture initialized and settled");
+        const QString config = QDir(root).filePath(QStringLiteral("config.json"));
+        const QString pinIndex =
+            QDir(root).filePath(QStringLiteral("pinned_windows_v2/index.json"));
+        require(!QFileInfo::exists(pinIndex) || QFile::remove(pinIndex),
+                "remove only the isolated pin manifest before blocking publication");
+        require(QDir().mkpath(pinIndex), "block atomic pin manifest publication");
+        auto groups = app.pinnedWindows().groups();
+        groups.append({QStringLiteral("00000000-0000-0000-0000-000000000001"),
+                       QStringLiteral("Checkpoint"), false});
+        require(app.pinnedWindows().setGroups(groups, QStringLiteral("default")).success,
+                "valid pin group change accepted before the checkpoint");
+        require(app.configuration().setValue(QStringLiteral("interface/theme_mode"),
+                                             QStringLiteral("dark")),
+                "independent configuration change accepted before the checkpoint");
+        if (blockConfiguration) {
+            require(QFile::remove(config) && QDir().mkdir(config),
+                    "block only the isolated configuration publication");
+        }
+        const auto checkpoint = app.checkpoint();
+        require(!checkpoint.pinnedWindows.success &&
+                    checkpoint.configuration.success == !blockConfiguration &&
+                    !checkpoint.result().success &&
+                    checkpoint.result().error == checkpoint.pinnedWindows.error &&
+                    app.configuration().isDirty() == blockConfiguration,
+                "pin failure cannot skip independent configuration attempt or hide either result");
+        if (!blockConfiguration) {
+            require(readObject(config)
+                            .value(QStringLiteral("interface"))
+                            .toObject()
+                            .value(QStringLiteral("theme_mode")) == QStringLiteral("dark"),
+                    "configuration is durable despite failed pin checkpoint");
+        }
+        require(QDir().rmdir(pinIndex) && (!blockConfiguration || QDir().rmdir(config)) &&
+                    app.checkpoint().result().success,
+                "explicit checkpoint retries each failed repository after fixture recovery");
+        app.shutdown();
+    }
+
+    QTemporaryDir fixture;
+    const QString root = fixture.filePath(QStringLiteral("data"));
+    const QString config = QDir(root).filePath(QStringLiteral("config.json"));
+    const QByteArray future =
+        QByteArrayLiteral("{\"storage\":{\"schema_version\":999},\"future\":true}");
+    writeBytes(config, future);
+    auto& app = storage::ApplicationStorage::instance();
+    storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")), root,
+                                                  60000};
+    options.isolateAuxiliaryStorage = true;
+    require(app.initialize(options).success, "future read-only checkpoint fixture initialized");
+    const auto checkpoint = app.checkpoint();
+    require(checkpoint.configuration.success && !checkpoint.pinnedWindows.success &&
+                !checkpoint.result().success && readBytes(config) == future,
+            "clean read-only configuration is a no-op and pin writeability policy stays explicit");
+    app.shutdown();
+}
+
+void checkpointReservesItsSnapshotAndWrites() {
+    QTemporaryDir fixture;
+    auto& app = storage::ApplicationStorage::instance();
+    storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")),
+                                                  fixture.filePath(QStringLiteral("data")), 60000};
+    options.isolateAuxiliaryStorage = true;
+    require(app.initialize(options).success, "reentrant checkpoint fixture initialized");
+    int snapshots = 0;
+    const auto connection =
+        QObject::connect(&app, &storage::ApplicationStorage::checkpointRequested, &app, [&] {
+            ++snapshots;
+            require(!app.checkpoint().result().success,
+                    "nested checkpoint cannot recursively acquire the same snapshot");
+#ifdef Q_OS_WIN
+            require(!app.requestDirectoryChange(fixture.filePath(QStringLiteral("target")), true)
+                         .success,
+                    "relocation cannot change roots while a checkpoint is taking its snapshot");
+#endif
+            require(app.configuration().setValue(QStringLiteral("interface/theme_mode"),
+                                                 QStringLiteral("dark")),
+                    "snapshot callbacks can capture their final metadata");
+        });
+    require(app.checkpoint().result().success && snapshots == 1 && !app.configuration().isDirty() &&
+                app.configurationDirectory() == options.appDataDirectory,
+            "one checkpoint persists the GUI snapshot against its original root");
+    QObject::disconnect(connection);
+    require(app.checkpoint().result().success,
+            "checkpoint reservation is released after completion");
+    app.shutdown();
+}
+
+void checkpointRevalidatesStorageAfterSnapshot() {
+    enum class Change { Shutdown, ReplaceRoot, ReplaceRepositories };
+    for (const auto change : {Change::Shutdown, Change::ReplaceRoot, Change::ReplaceRepositories}) {
+        QTemporaryDir fixture;
+        auto& app = storage::ApplicationStorage::instance();
+        storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")),
+                                                      fixture.filePath(QStringLiteral("source")),
+                                                      60000};
+        options.isolateAuxiliaryStorage = true;
+        require(app.initialize(options).success && app.checkpoint().result().success,
+                "snapshot lifecycle fixture initialized and settled");
+        const QString currentRoot = change == Change::ReplaceRoot
+                                        ? fixture.filePath(QStringLiteral("replacement"))
+                                        : options.appDataDirectory;
+        int snapshots = 0;
+        const auto connection =
+            QObject::connect(&app, &storage::ApplicationStorage::checkpointRequested, &app, [&] {
+                ++snapshots;
+                app.shutdown();
+                if (change != Change::Shutdown) {
+                    auto next = options;
+                    next.appDataDirectory = currentRoot;
+                    require(app.initialize(next).success &&
+                                app.configuration().setValue(QStringLiteral("interface/theme_mode"),
+                                                             QStringLiteral("dark")),
+                            "snapshot callback replaces storage and accepts a new mutation");
+                }
+            });
+        const auto checkpoint = app.checkpoint();
+        require(snapshots == 1 && !checkpoint.configuration.success &&
+                    !checkpoint.pinnedWindows.success &&
+                    app.isInitialized() == (change != Change::Shutdown) &&
+                    app.configurationDirectory() == currentRoot,
+                "checkpoint rejects changed lifecycle ownership after its GUI snapshot");
+        if (change != Change::Shutdown)
+            require(app.configuration().isDirty(),
+                    "aborted checkpoint does not persist replacement repositories");
+        QObject::disconnect(connection);
+        if (change == Change::Shutdown)
+            require(app.initialize(options).success, "restore shutdown checkpoint fixture");
+        require(app.checkpoint().result().success,
+                "rejected snapshot releases its reservation for the current storage owner");
+        app.shutdown();
+    }
+}
+
 void concurrentFlushKeepsLatestRevision() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create concurrency directory");
@@ -4402,6 +4546,12 @@ int main(int argc, char** argv) {
         saveFormatSchemaSupportsTiff();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--checkpoint-only"))) {
+        checkpointAttemptsIndependentWrites();
+        checkpointReservesItsSnapshotAndWrites();
+        checkpointRevalidatesStorageAfterSnapshot();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--smart-selection-only"))) {
         QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
         QCoreApplication::setApplicationName(QStringLiteral("smart-selection-storage-tests"));
@@ -4592,6 +4742,9 @@ int main(int argc, char** argv) {
     malformedConfigurationIsCopiedAndReplaced();
     futureVersionIsReadOnly();
     failedWriteCanBeRetried();
+    checkpointAttemptsIndependentWrites();
+    checkpointReservesItsSnapshotAndWrites();
+    checkpointRevalidatesStorageAfterSnapshot();
     concurrentFlushKeepsLatestRevision();
     persistedSelectionCodecIsCanonicalAndStrict();
     asynchronousMutationResultsAreObservable();

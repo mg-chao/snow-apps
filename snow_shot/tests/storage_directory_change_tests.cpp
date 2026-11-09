@@ -493,6 +493,131 @@ void completionPreventsEarlyReentryAndAllowsFinalChaining() {
     app.shutdown();
 }
 
+void preparationClosesStorageAdmission() {
+    QTemporaryDir fixture;
+    auto& app = storage::ApplicationStorage::instance();
+    const QString source = fixture.filePath(QStringLiteral("source"));
+    const QString target = fixture.filePath(QStringLiteral("target"));
+    storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")), source,
+                                                  60000};
+    options.isolateAuxiliaryStorage = true;
+    require(app.initialize(options).success && app.flushNow().success,
+            "preparation admission fixture initialized and settled");
+    QCoreApplication::processEvents();
+    const auto oldHistoryPolicy = app.captureHistoryPolicy();
+    const auto oldPinnedPolicy = app.pinnedWindowPolicy();
+    auto historyPolicy = oldHistoryPolicy;
+    historyPolicy.enabled = !historyPolicy.enabled;
+    auto pinnedPolicy = oldPinnedPolicy;
+    pinnedPolicy.enabled = !pinnedPolicy.enabled;
+    int pinRequests = 0;
+    const auto showConnection =
+        QObject::connect(&app, &storage::ApplicationStorage::pinnedWindowShowRequested, &app,
+                         [&](const auto&) { ++pinRequests; });
+    const auto showsConnection =
+        QObject::connect(&app, &storage::ApplicationStorage::pinnedWindowsShowRequested, &app,
+                         [&](const auto&) { ++pinRequests; });
+    const auto deleteConnection =
+        QObject::connect(&app, &storage::ApplicationStorage::pinnedWindowDeleteRequested, &app,
+                         [&](const auto&) { ++pinRequests; });
+    const auto checkBlocked = [&] {
+        require(!app.requestCaptureHistoryPolicyAsync(historyPolicy).get().success &&
+                    !app.requestCaptureHistoryClearAsync().get().success &&
+                    !app.requestPinnedWindowPolicy(pinnedPolicy) &&
+                    !app.requestPinnedWindowClear() &&
+                    !app.requestThumbnailCacheClearAsync().get().success &&
+                    !app.requestRecordingTempClearAsync().get().success &&
+                    !app.requestSmartSelectionModeAsync(snow_shot::SmartSelectionMode::Disabled)
+                         .get()
+                         .success &&
+                    !app.checkpoint().result().success,
+                "preparation and restoration reject new storage producers before draining");
+        app.requestPinnedWindowShow(QStringLiteral("pin"));
+        app.requestPinnedWindowsShow({QStringLiteral("pin")});
+        app.requestPinnedWindowDelete({QStringLiteral("pin")});
+        app.requestPinnedWindowRetentionCleanup();
+        app.requestStorageUsageRefresh();
+        app.requestStorageUsageRefreshIfStale();
+        const auto status = app.status();
+        require(pinRequests == 0 && app.captureHistoryPolicy() == oldHistoryPolicy &&
+                    app.pinnedWindowPolicy() == oldPinnedPolicy && !status.historyClearing &&
+                    !status.pinnedClearing && !status.cacheClearing &&
+                    !status.historyPolicyUpdating && !status.pinnedPolicyUpdating,
+                "blocked requests leave policies, command publication and busy flags unchanged");
+    };
+    int phases = 0;
+    app.setDirectoryChangeHooks(
+        [&] {
+            require(!app.directoryChanging(), "application admission precedes public busy state");
+            checkBlocked();
+            ++phases;
+            return storage::StorageResult::ok();
+        },
+        [&](const QString& root) {
+            require(root == target, "restoration receives committed destination");
+            checkBlocked();
+            ++phases;
+        });
+    require(app.requestDirectoryChange(target, true).success, "prepared migration starts");
+    app.waitForDirectoryChange();
+    require(phases == 2 && app.configurationDirectory() == target && !app.directoryChanging() &&
+                app.checkpoint().result().success && app.requestPinnedWindowPolicy(pinnedPolicy) &&
+                app.requestCaptureHistoryPolicyAsync(historyPolicy).get().success,
+            "final completion releases admission with original policies intact");
+    app.requestPinnedWindowShow(QStringLiteral("pin"));
+    require(pinRequests == 1, "pin commands reopen only after restoration finishes");
+    QObject::disconnect(showConnection);
+    QObject::disconnect(showsConnection);
+    QObject::disconnect(deleteConnection);
+    app.setDirectoryChangeHooks({}, {});
+    app.shutdown();
+}
+
+void preparationRevalidatesTheLiveStorageOwner() {
+    enum class Change { Shutdown, ReplaceRoot, ReplaceRepositories };
+    for (const auto change : {Change::Shutdown, Change::ReplaceRoot, Change::ReplaceRepositories}) {
+        QTemporaryDir fixture;
+        auto& app = storage::ApplicationStorage::instance();
+        const QString source = fixture.filePath(QStringLiteral("source"));
+        const QString replacement = fixture.filePath(QStringLiteral("replacement"));
+        const QString currentRoot = change == Change::ReplaceRoot ? replacement : source;
+        storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")),
+                                                      source, 60000};
+        options.isolateAuxiliaryStorage = true;
+        require(app.initialize(options).success, "live-owner admission fixture initialized");
+        int resumes = 0;
+        bool launched = false;
+        app.setDirectoryChangeHooks(
+            [&] {
+                app.shutdown();
+                if (change != Change::Shutdown) {
+                    auto next = options;
+                    next.appDataDirectory = currentRoot;
+                    require(app.initialize(next).success, "nested lifecycle replaces storage");
+                }
+                return storage::StorageResult::ok();
+            },
+            [&](const QString& root) {
+                ++resumes;
+                require(root == currentRoot,
+                        "rejected preparation restores against the current authoritative root");
+            },
+            {},
+            [&](storage::ApplicationStorage::DirectoryChangeTask work) {
+                launched = true;
+                return std::async(std::launch::async, std::move(work));
+            });
+        require(
+            !app.requestDirectoryChange(fixture.filePath(QStringLiteral("target")), true).success &&
+                resumes == 1 && !launched && !app.directoryChanging() &&
+                app.isInitialized() == (change != Change::Shutdown) &&
+                app.configurationDirectory() == currentRoot,
+            "final admission rejects changed ownership without launching or restoring stale state");
+        app.setDirectoryChangeHooks({}, {});
+        app.shutdown();
+    }
+}
+
 void progressDeliveryIsBoundedAndRetiredBeforeCompletion() {
     for (const bool deliverBeforeCompletion : {false, true}) {
         QTemporaryDir fixture;
@@ -709,5 +834,7 @@ int main(int argc, char** argv) {
     flushFailureRestoresAvailability();
     asynchronousExceptionsRestoreParticipants();
     completionPreventsEarlyReentryAndAllowsFinalChaining();
+    preparationClosesStorageAdmission();
+    preparationRevalidatesTheLiveStorageOwner();
     progressDeliveryIsBoundedAndRetiredBeforeCompletion();
 }
