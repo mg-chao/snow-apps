@@ -1136,8 +1136,18 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
 
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {
+        const auto refreshColor = [this] {
+            const snow_shot::storage::DrawingSettings settings;
+            setSharedCreationColor(settings.syncToolColors()
+                                       ? std::optional<QColor>(settings.sharedToolColor())
+                                       : std::nullopt);
+        };
+        refreshColor();
         connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
-                this, [this](const QString& key, const QJsonValue& value) {
+                this, [this, refreshColor](const QString& key, const QJsonValue& value) {
+                    if (key == QStringLiteral("drawing/sync_tool_colors") ||
+                        key == QStringLiteral("drawing/shared_tool_color"))
+                        refreshColor();
                     if (key == QStringLiteral("cloud_upload/configuration")) {
                         setCloudUploadBusy(m_cloudUploadBusy);
                     } else if (key ==
@@ -1378,6 +1388,10 @@ void ScreenshotToolPalette::setCreationStyleDefaults(const SnowCanvasStyleDefaul
     m_styleControls->setCreationStyleDefaults(defaults);
     refreshFilterEditorState(m_filterEditor, false);
     refreshFilterEditorState(m_brushFilterEditor, true);
+}
+
+void ScreenshotToolPalette::setSharedCreationColor(const std::optional<QColor>& color) {
+    m_styleControls->setSharedCreationColor(color);
 }
 
 void ScreenshotToolPalette::setStyleEditHandler(

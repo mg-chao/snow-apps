@@ -321,6 +321,10 @@ class ScreenshotSettings final {
 
 class DrawingSettings final {
   public:
+    [[nodiscard]] bool syncToolColors() const;
+    bool setSyncToolColors(bool enabled) const;
+    // The remembered shared color, or the Shape creation stroke before first use.
+    [[nodiscard]] QColor sharedToolColor() const;
     [[nodiscard]] bool automaticallySelectNewlyCreatedElements() const;
     bool setAutomaticallySelectNewlyCreatedElements(bool enabled) const;
     [[nodiscard]] QStringList automaticSelectionExcludedTools() const;
@@ -338,6 +342,10 @@ class DrawingSettings final {
 // Applies partial updates across local shortcut scopes in one commit. Each affected
 // scope is validated against its complete resulting assignment before any values change.
 [[nodiscard]] bool setLocalShortcutValuesAtomic(const QMap<QString, QJsonValue>& values);
+
+// Keeps the shared color and per-tool appearance preferences consistent in one commit.
+// Also accepts drawing section reset values; disabling materializes the current color.
+[[nodiscard]] bool setDrawingStyleValues(QMap<QString, QJsonValue> values);
 
 class ScreenshotShortcutSettings final {
   public:

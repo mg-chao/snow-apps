@@ -5178,7 +5178,10 @@ void ScreenshotToolPaletteStyleControls::updateRectangleOnlyControlsVisibility()
 
 void ScreenshotToolPaletteStyleControls::reset() {
     clearTextStylePopupInteractions();
-    m_state.reset(m_defaults);
+    auto defaults = m_defaults;
+    if (m_sharedCreationColor)
+        snowCanvasSetCreationColor(defaults, *m_sharedCreationColor);
+    m_state.reset(defaults);
     updateSpotlightShapeControls();
     updateRectangleStyleControls();
     updateArrowStyleControls();
@@ -5469,7 +5472,10 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     const SnowCanvasStyleDefaults& defaults) {
     const SnowCanvasWatermarkConfig watermark = m_state.m_watermarkConfig;
     const SnowCanvasSpotlightConfig spotlight = m_state.spotlightConfig;
-    m_state.reset(defaults);
+    auto effective = defaults;
+    if (m_sharedCreationColor)
+        snowCanvasSetCreationColor(effective, *m_sharedCreationColor);
+    m_state.reset(effective);
     m_state.m_watermarkConfig = watermark;
     m_state.spotlightConfig = spotlight;
     updateSpotlightShapeControls();
@@ -5901,6 +5907,8 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.spotlight = m_state.creationSpotlightConfig;
     defaults.spotlightShape = m_state.creationSpotlightShape;
     defaults.spotlightCornerRadii = m_state.creationSpotlightCornerRadii;
+    if (m_sharedCreationColor)
+        snowCanvasSetCreationColor(defaults, *m_sharedCreationColor);
     return defaults;
 }
 
@@ -5914,6 +5922,15 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
         // receive the selected number's successor from the runtime on deselection.
         defaults.serialNumber.number = serial->style.number;
     }
+    rememberCreationStyleDefaults(defaults);
+    if (m_sharedCreationColor) {
+        const auto color = snowCanvasCreationColorEdit(edit);
+        setSharedCreationColor(color && color->isValid() ? color : m_sharedCreationColor);
+    }
+}
+
+void ScreenshotToolPaletteStyleControls::rememberCreationStyleDefaults(
+    const SnowCanvasStyleDefaults& defaults) {
     const ScreenshotToolPaletteStyleState remembered(defaults);
     m_state.m_creationRectangleStyle = remembered.m_creationRectangleStyle;
     m_state.m_creationSpeechBubbleStyle = remembered.m_creationSpeechBubbleStyle;
@@ -5935,6 +5952,51 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
     m_state.creationSpotlightConfig = defaults.spotlight;
     m_state.creationSpotlightShape = defaults.spotlightShape;
     m_state.creationSpotlightCornerRadii = defaults.spotlightCornerRadii;
+}
+
+void ScreenshotToolPaletteStyleControls::setSharedCreationColor(
+    const std::optional<QColor>& color) {
+    if (color && !color->isValid())
+        return;
+    if (!color && m_sharedCreationColor)
+        rememberCreationStyleDefaults(creationStyleDefaults());
+    m_sharedCreationColor = color;
+    if (!color)
+        return;
+    const auto defaults = creationStyleDefaults();
+    rememberCreationStyleDefaults(defaults);
+    using Source = SnowCanvasStyleToolbarSource;
+    const auto refresh = [this](auto& displayed, const auto& creation, Source selected) {
+        if (m_state.m_styleSource != selected)
+            displayed = creation;
+    };
+    refresh(m_state.m_rectangleStyle, m_state.m_creationRectangleStyle, Source::SelectedRectangle);
+    refresh(m_state.m_speechBubbleStyle, m_state.m_creationSpeechBubbleStyle,
+            Source::SelectedSpeechBubble);
+    refresh(m_state.m_lineStyle, m_state.m_creationLineStyle, Source::SelectedLine);
+    refresh(m_state.m_brushStyle, m_state.m_creationBrushStyle, Source::SelectedFreeDraw);
+    refresh(m_state.m_highlightStyle, m_state.m_creationHighlightStyle,
+            Source::SelectedRectangleHighlight);
+    refresh(m_state.m_brushHighlightStyle, m_state.m_creationBrushHighlightStyle,
+            Source::SelectedPenHighlight);
+    refresh(m_state.m_arrowStyle, m_state.m_creationArrowStyle, Source::SelectedArrow);
+    refresh(m_state.distanceStyle, m_state.creationDistanceStyle, Source::SelectedDistance);
+    refresh(m_state.angleStyle, m_state.creationAngleStyle, Source::SelectedAngle);
+    refresh(m_state.bracketStyle, m_state.creationBracketStyle, Source::SelectedBracket);
+    refresh(m_state.magnifierStyle, m_state.creationMagnifierStyle, Source::SelectedMagnifier);
+    refresh(m_state.m_textStyle, m_state.m_creationTextStyle, Source::SelectedText);
+    refresh(m_state.m_sequenceNumberStyle, m_state.m_creationSequenceNumberStyle,
+            Source::SelectedSerialNumber);
+    updateRectangleStyleControls();
+    updateArrowStyleControls();
+    updateDistanceStyleControls();
+    updateAngleStyleControls();
+    updateBracketStyleControls();
+    updateMagnifierStyleControls();
+    updateHighlightStyleControls();
+    updateBrushHighlightStyleControls();
+    updateTextStyleControls();
+    updateSequenceNumberStyleControls();
 }
 
 void ScreenshotToolPaletteStyleControls::setRectangleStyle(const SnowCanvasShapeStyle& style) {

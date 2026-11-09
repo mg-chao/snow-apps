@@ -4452,6 +4452,10 @@
             <translation>Switch window group</translation>
         </message>
         <message>
+            <source>Sync tool colors</source>
+            <translation>Sync tool colors</translation>
+        </message>
+        <message>
             <source>System</source>
             <translation>System</translation>
         </message>
@@ -4746,6 +4750,10 @@
         <message>
             <source>Use one letter (A–Z) or digit (0–9) when the classic Windows context menu is open</source>
             <translation>Use one letter (A–Z) or digit (0–9) when the classic Windows context menu is open</translation>
+        </message>
+        <message>
+            <source>Use one shared stroke, fill, and highlight color for newly created annotations</source>
+            <translation>Use one shared stroke, fill, and highlight color for newly created annotations</translation>
         </message>
         <message>
             <source>Use regular icon settings</source>

@@ -1305,7 +1305,7 @@ void builtInCatalogIsCompleteAndValid() {
                 settings::SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton &&
             !storage::ConfigurationSchema::defaultValue(firstToolbarGroupButton->configurationKey)
                  .toBool() &&
-            drawingSettingsSection.items.size() == 9 &&
+            drawingSettingsSection.items.size() == 10 &&
             drawingSettingsSection.items.at(4).id == rememberLastUsedTool->id &&
             drawingSettingsSection.items.at(5).id == firstToolbarGroupButton->id,
         "the default-off first toolbar group button switch must follow Remember last used tool");
@@ -1357,8 +1357,8 @@ void builtInCatalogIsCompleteAndValid() {
                             .colorCount == 5,
                 "stroke, fill and highlight palettes expose five resettable color settings");
     }
-    const auto& highlightPresets = drawingSettingsSection.items.at(8);
-    require(drawingSettingsSection.items.at(7).id == QStringLiteral("drawing.fill-color-presets") &&
+    const auto& highlightPresets = drawingSettingsSection.items.at(9);
+    require(drawingSettingsSection.items.at(8).id == QStringLiteral("drawing.fill-color-presets") &&
                 highlightPresets.id == QStringLiteral("drawing.highlight-color-presets") &&
                 highlightPresets.title.translated() == QStringLiteral("Highlight color presets") &&
                 highlightPresets.configurationKey ==

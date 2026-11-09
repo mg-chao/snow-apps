@@ -816,6 +816,10 @@ impl EditorSession {
         self.editor.set_text_creation_style(style, properties)
     }
 
+    pub fn set_creation_color(&mut self, color: snow_draw_engine_core::ColorRgba8) {
+        self.editor.set_creation_color(color);
+    }
+
     pub fn set_text_style(
         &mut self,
         document: &DocumentModel,

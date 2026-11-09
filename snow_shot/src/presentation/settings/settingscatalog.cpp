@@ -616,6 +616,17 @@ SettingsItemDefinition screenshotColorItem(const QString& id, const char* title,
             SettingsColorDefinition{binding, true}};
 }
 
+SettingsItemDefinition syncToolColorsItem() {
+    return {QStringLiteral("drawing.sync-tool-colors"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Sync tool colors")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Use one shared stroke, fill, and highlight color for newly created annotations")),
+            {},
+            QStringLiteral("drawing/sync_tool_colors"),
+            SettingsSwitchDefinition{SettingsSwitchBinding::DrawingSyncToolColors}};
+}
+
 SettingsItemDefinition strokeColorPresetsItem() {
     return {QStringLiteral("drawing.stroke-color-presets"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Stroke color presets")),
@@ -4213,6 +4224,7 @@ constexpr CatalogItemFactory catalogPageScreenshotsSectionDrawingSettingsItems[]
     {drawingDeleteTextAfterCursorItem},
     {drawingRememberLastUsedToolItem},
     {drawingAlwaysShowFirstToolbarGroupButtonItem},
+    {syncToolColorsItem},
     {strokeColorPresetsItem},
     {fillColorPresetsItem},
     {highlightColorPresetsItem},
@@ -6501,6 +6513,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
                         expectedKey = QStringLiteral("drawing/remember_last_used_tool");
+                        break;
+                    case SettingsSwitchBinding::DrawingSyncToolColors:
+                        expectedKey = QStringLiteral("drawing/sync_tool_colors");
                         break;
                     case SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton:
                         expectedKey =

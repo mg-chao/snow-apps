@@ -109,6 +109,8 @@ set(SNOW_SHOT_PROJECT_URL "https://github.com/mg-chao/snow-apps" CACHE STRING
     "Public Snow Shot source repository URL.")
 set(SNOW_SHOT_QQ_GROUP_3_URL "https://qm.qq.com/q/Ts3cwNdykW" CACHE STRING
     "QQ group 3 join URL.")
+set(SNOW_SHOT_QQ_GROUP_4_URL "https://qm.qq.com/q/GfZvSHi6E" CACHE STRING
+    "QQ group 4 join URL.")
 unset(SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE CACHE)
 set(
     SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE
@@ -1206,6 +1208,7 @@ target_compile_definitions(snow_shot_settings PRIVATE
     SNOW_SHOT_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
     SNOW_SHOT_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
     SNOW_SHOT_QQ_GROUP_3_URL="${SNOW_SHOT_QQ_GROUP_3_URL}"
+    SNOW_SHOT_QQ_GROUP_4_URL="${SNOW_SHOT_QQ_GROUP_4_URL}"
 )
 target_link_libraries(snow_shot_settings PRIVATE snow_shot_image_codec Qt6::Svg Qt6::Network snow_shot_administrator)
 add_library(snow_shot_global_mouse STATIC
@@ -3219,6 +3222,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         SNOW_SHOT_TEST_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
         SNOW_SHOT_TEST_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
         SNOW_SHOT_TEST_QQ_GROUP_3_URL="${SNOW_SHOT_QQ_GROUP_3_URL}"
+        SNOW_SHOT_TEST_QQ_GROUP_4_URL="${SNOW_SHOT_QQ_GROUP_4_URL}"
     )
     add_dependencies(snow-shot-about-page-tests snow_shot_release_translations)
     snow_shot_import_offscreen_platform(snow-shot-about-page-tests)
@@ -6039,6 +6043,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    add_executable(snow-shot-sync-tool-color-settings-tests
+        tests/sync_tool_color_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-sync-tool-color-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-sync-tool-color-settings-tests)
+    add_test(NAME snow-shot-sync-tool-color-settings-tests
+        COMMAND snow-shot-sync-tool-color-settings-tests)
+    set_tests_properties(snow-shot-sync-tool-color-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-remember-last-used-tool-settings-tests
         tests/remember_last_used_tool_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
@@ -6905,6 +6922,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-screenshot-tool-palette-tests
         tests/screenshot_tool_palette_tests.cpp
         tests/screenshot_style_binding_tests.cpp
+        tests/sync_tool_colors_tests.cpp
         tests/screenshot_selected_filter_style_tests.cpp
         include/snow_shot/presentation/languagemanager.h
         include/snow_shot/presentation/screenshottoolpalette.h
@@ -7013,6 +7031,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-style-commit-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --style-commit-only -platform offscreen)
     set_tests_properties(snow-shot-style-commit-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-sync-tool-colors-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --sync-tool-colors-only -platform offscreen)
+    set_tests_properties(snow-shot-sync-tool-colors-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-canvas-tool-bindings-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --canvas-tool-bindings-only
             -platform offscreen)
