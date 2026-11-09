@@ -198,7 +198,7 @@ impl Editor {
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreateSerialNumber,
                 allow_shift_toggle: true,
-                default_cursor: CursorStyle::Crosshair,
+                default_cursor: CursorStyle::SerialNumber,
             },
         }
     }
@@ -279,6 +279,14 @@ impl Editor {
 #[cfg(test)]
 mod line_policy_tests {
     use super::*;
+
+    #[test]
+    fn serial_number_uses_its_native_creation_cursor() {
+        assert_eq!(
+            Editor::tool_policy_for(ActiveTool::SerialNumber).default_cursor,
+            CursorStyle::SerialNumber
+        );
+    }
 
     #[test]
     fn shape_uses_a_crosshair_creation_cursor() {

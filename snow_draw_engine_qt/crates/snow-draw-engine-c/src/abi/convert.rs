@@ -1875,6 +1875,7 @@ pub(crate) fn snow_cursor_style_from_rust(value: CursorStyle) -> SnowCursorStyle
         CursorStyle::Hidden => SnowCursorStyle::Hidden,
         CursorStyle::Stroke => SnowCursorStyle::Stroke,
         CursorStyle::Eraser => SnowCursorStyle::Eraser,
+        CursorStyle::SerialNumber => SnowCursorStyle::SerialNumber,
     }
 }
 
@@ -1965,6 +1966,7 @@ mod tests {
         for (style, expected) in [
             (CursorStyle::Stroke, SnowCursorStyle::Stroke),
             (CursorStyle::Eraser, SnowCursorStyle::Eraser),
+            (CursorStyle::SerialNumber, SnowCursorStyle::SerialNumber),
         ] {
             let output = snow_interaction_output_from_rust(InteractionOutput {
                 cursor: CursorCommand::Set(style),

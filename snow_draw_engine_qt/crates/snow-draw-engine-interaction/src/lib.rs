@@ -149,4 +149,5 @@ pub enum CursorStyle {
     Hidden,
     Stroke,
     Eraser,
+    SerialNumber,
 }

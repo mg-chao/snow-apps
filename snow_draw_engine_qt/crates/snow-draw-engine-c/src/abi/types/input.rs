@@ -149,6 +149,7 @@ pub enum SnowCursorStyle {
     Hidden = 12,
     Stroke = 13,
     Eraser = 14,
+    SerialNumber = 15,
 }
 
 #[repr(C)]

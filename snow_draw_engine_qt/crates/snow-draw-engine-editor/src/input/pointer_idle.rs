@@ -470,7 +470,7 @@ impl Editor {
                 Ok(InteractionOutput {
                     consumed: true,
                     capture: self.capture_command_for_start(event.pointer_id),
-                    cursor: CursorCommand::Set(policy.default_cursor),
+                    cursor: CursorCommand::Set(CursorStyle::Default),
                 })
             }
         }
