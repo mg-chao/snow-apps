@@ -29,8 +29,9 @@ try {
     const asset = (version, host, suffix = '', product = 'snow-shot') => {
         const tag = `v${version}_snow-shot`;
         const name = `${product}-${version}-macos-arm64.dmg${suffix}`;
+        const repository = host === 'github.com' ? 'snow-shot' : 'snow-apps';
         return {name, browser_download_url:
-            `https://${host}/mg-chao/snow-apps/releases/download/${tag}/${name}`};
+            `https://${host}/mg-chao/${repository}/releases/download/${tag}/${name}`};
     };
     const release = (version, host, id) => ({tag_name: `v${version}_snow-shot`, draft: false,
         prerelease: version.includes('-'), id,

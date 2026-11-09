@@ -471,7 +471,7 @@ void updatePolicyAndUnavailableCopy() {
         {},
         0,
         0,
-        QUrl(QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"))};
+        QUrl(QStringLiteral("https://github.com/mg-chao/snow-shot/releases/tag/v2.0.0_snow-shot"))};
     updates.statusChanged();
     auto* action = child<adqt::widgets::AdButton>(page, "aboutUpdateAction");
     require(action->text() == QStringLiteral("Download from GitHub"),

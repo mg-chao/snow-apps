@@ -3687,7 +3687,7 @@ mod tests {
                     file["browser_download_url"]
                         .as_str()
                         .unwrap()
-                        .replace("github.com", "gitee.com")
+                        .replace(github::REPOSITORY, "https://gitee.com/mg-chao/snow-apps")
                 );
             }
             let rejected_signed = crate::contract::tests::sign_payload(&rejected, &private, 32);
@@ -4028,7 +4028,7 @@ mod tests {
             release.update_package("portable").unwrap().sha256.clone();
         service.persisted.source = Some(ReleaseSource::GitHub);
         service.persisted.partial_url =
-            "https://github.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/package.zip"
+            "https://github.com/mg-chao/snow-shot/releases/download/v2.0.0_snow-shot/package.zip"
                 .to_owned();
         write_persisted(&service.options, &service.persisted).unwrap();
         service.persisted = read_persisted(&cache_path(&service.options, "state.json"));

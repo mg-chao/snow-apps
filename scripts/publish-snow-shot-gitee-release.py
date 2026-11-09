@@ -18,6 +18,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 
+GITHUB_REPOSITORY = "mg-chao/snow-shot"
 GITEE_REPOSITORY = "mg-chao/snow-apps"
 GITEE_API = f"https://gitee.com/api/v5/repos/{GITEE_REPOSITORY}/releases"
 GITEE_GIT = f"https://gitee.com/{GITEE_REPOSITORY}.git"
@@ -93,7 +94,7 @@ def release_marker(tag: str, commit: str, directory: Path) -> str:
     """Create a deterministic root commit without application source or history."""
     run("git", "init", "--bare", "--quiet", "--object-format=sha1", str(directory))
     record = json.dumps({"schema": 1, "tag": tag, "sourceCommit": commit,
-                         "sourceRepository": f"https://github.com/{GITEE_REPOSITORY}"},
+                         "sourceRepository": f"https://github.com/{GITHUB_REPOSITORY}"},
                         sort_keys=True, indent=2) + "\n"
     blob = subprocess.check_output(("git", "-C", str(directory), "hash-object", "-w", "--stdin"),
                                    input=record.encode('utf-8')).decode('ascii').strip()

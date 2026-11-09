@@ -4,8 +4,8 @@ use reqwest::Url;
 use serde_json::Value;
 
 #[cfg(test)]
-pub const API: &str = "https://api.github.com/repos/mg-chao/snow-apps/releases";
-pub const REPOSITORY: &str = "https://github.com/mg-chao/snow-apps";
+pub const API: &str = "https://api.github.com/repos/mg-chao/snow-shot/releases";
+pub const REPOSITORY: &str = "https://github.com/mg-chao/snow-shot";
 
 pub fn error() -> UpdateError {
     UpdateError::new(
@@ -88,7 +88,7 @@ pub fn asset_origin(url: &Url) -> bool {
         && url.password().is_none()
         && url
             .path()
-            .starts_with("/mg-chao/snow-apps/releases/download/")
+            .starts_with("/mg-chao/snow-shot/releases/download/")
 }
 
 pub fn redirect_allowed(origin: &Url, target: &Url) -> bool {

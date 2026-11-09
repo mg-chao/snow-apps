@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param([ValidateSet('Publish', 'Verify')][string]$Operation = 'Publish', [switch]$SkipBuild, [switch]$AuditOnly, [switch]$SkipGitee, [switch]$DeployWebsite, [string]$ReleaseNotesPath, [switch]$WhatIf)
 $releaseSettings = @{
-    GitHubRepository = 'mg-chao/snow-apps'
+    GitHubRepository = 'mg-chao/snow-shot'
     SigningKeyPath = 'C:/private/snow-shot-release/private.pem'
     # With MacHost configured, both platforms package concurrently and publish together.
     MacHost = 'YOUR_MAC_SSH_HOST'

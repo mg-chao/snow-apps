@@ -57,7 +57,7 @@ class UpdateService final : public QObject {
         QString installedVersion;
         // Production discovery endpoint; loopback overrides require allowLocalHttp.
         QUrl githubApiUrl =
-            QUrl(QStringLiteral("https://api.github.com/repos/mg-chao/snow-apps/releases"));
+            QUrl(QStringLiteral("https://api.github.com/repos/mg-chao/snow-shot/releases"));
         QUrl giteeApiUrl =
             QUrl(QStringLiteral("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases"));
         std::chrono::milliseconds requestTimeout = std::chrono::seconds(30);

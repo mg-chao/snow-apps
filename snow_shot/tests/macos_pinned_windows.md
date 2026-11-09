@@ -251,7 +251,7 @@ suite was run.
 
 ## Safe-area content alignment — 2026-10-22
 
-Investigation of [issue #2129](https://github.com/mg-chao/snow-apps/issues/2129)
+Investigation of [issue #2129](https://github.com/mg-chao/snow-shot/issues/2129)
 found a reproducible content-layout defect consistent with the reported border
 and image displacement near the menu bar. Qt enables safe-area contents margins
 for top-level widgets by default. Its Cocoa adapter includes the screen's notch
