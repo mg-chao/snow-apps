@@ -382,6 +382,22 @@ impl Engine {
             .serial_number_toolbar_state(&self.model, &slot.view))
     }
 
+    pub fn viewport_serial_number_cursor_preview(
+        &self,
+        id: ViewportId,
+        position: Point<f64>,
+        modifiers: snow_draw_engine_interaction::Modifiers,
+    ) -> Result<snow_draw_engine_display::SceneDisplayItem, ErrorCode> {
+        let slot = self.viewport_slot(id)?;
+        let serial = self.editor.serial_number_cursor_preview(
+            &self.model,
+            &slot.view,
+            position,
+            modifiers,
+        )?;
+        Ok(snow_draw_engine_scene::serial_number_preview_item(serial))
+    }
+
     pub fn viewport_rectangle_shape_style(
         &self,
         id: ViewportId,

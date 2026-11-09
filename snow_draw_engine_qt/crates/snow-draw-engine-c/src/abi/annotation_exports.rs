@@ -1,6 +1,42 @@
 use crate::abi::{handles::*, types::*};
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_visit_serial_number_cursor_preview(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    view_x: f64,
+    view_y: f64,
+    modifiers: SnowModifiers,
+    visitor: Option<unsafe extern "C" fn(*mut std::ffi::c_void, *const SnowSceneDisplayItem)>,
+    context: *mut std::ffi::c_void,
+) -> SnowError {
+    ffi_error(|| {
+        let Some(visitor) = visitor else {
+            return SnowError::InvalidArgument;
+        };
+        ffi_status(with_runtime_viewport_ref(
+            runtime,
+            viewport,
+            |runtime, id| {
+                let item = runtime
+                    .viewport_serial_number_cursor_preview(
+                        id,
+                        snow_draw_engine::Point::new(view_x, view_y),
+                        crate::abi::convert::snow_modifiers_to_rust(modifiers),
+                    )
+                    .map_err(SnowError::from)?;
+                let converted =
+                    crate::abi::convert::snow_scene_display_item_from_rust(&item, false, false);
+                unsafe {
+                    visitor(context, &converted.view);
+                }
+                Ok(())
+            },
+        ))
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_runtime_document_revision(runtime: SnowRuntime) -> u64 {
     ffi_value(0, || {
         with_runtime_ref(runtime, |r| Ok(r.document_revision())).unwrap_or(0)
@@ -75,6 +111,97 @@ pub unsafe extern "C" fn snow_annotation_result_destroy(bytes: *mut u8, size: us
 mod tests {
     use super::*;
     use crate::*;
+    #[test]
+    fn serial_number_cursor_visitor_validates_inputs_and_borrows_complete_item() {
+        unsafe extern "C" fn visit(
+            context: *mut std::ffi::c_void,
+            item: *const SnowSceneDisplayItem,
+        ) {
+            let item = unsafe { &*item };
+            assert_eq!(item.kind, SnowSceneDisplayItemKind::SerialNumber);
+            assert!(item.width > 0.0 && item.font_size > 0.0);
+            assert!(item.text_utf8_len > 0 && !item.text_utf8.is_null());
+            unsafe {
+                *context.cast::<u32>() += 1;
+            }
+        }
+        unsafe {
+            let mut runtime = std::ptr::null_mut();
+            let mut viewport = std::ptr::null_mut();
+            assert_eq!(snow_runtime_create(&mut runtime), SnowError::Ok);
+            let config = SnowEngineConfig {
+                min_zoom: 0.1,
+                max_zoom: 8.0,
+                zoom_focus: SnowZoomFocus::Pointer,
+                wheel_zoom_sensitivity: 0.001,
+                clear_color: SnowColorRgba8::default(),
+                snap: SnowSnapConfig::default(),
+                grid: SnowGridConfig::default(),
+                enable_pointer_capture: 0,
+                reserved: [0; 7],
+            };
+            assert_eq!(
+                snow_viewport_create(runtime, &config, &mut viewport),
+                SnowError::Ok
+            );
+            let mut calls = 0u32;
+            let context = (&mut calls as *mut u32).cast();
+            for (runtime_arg, viewport_arg, x, visitor) in [
+                (
+                    runtime,
+                    viewport,
+                    10.0,
+                    Some(visit as unsafe extern "C" fn(_, _)),
+                ),
+                (
+                    std::ptr::null_mut(),
+                    viewport,
+                    10.0,
+                    Some(visit as unsafe extern "C" fn(_, _)),
+                ),
+                (
+                    runtime,
+                    std::ptr::null_mut(),
+                    10.0,
+                    Some(visit as unsafe extern "C" fn(_, _)),
+                ),
+                (
+                    runtime,
+                    viewport,
+                    f64::NAN,
+                    Some(visit as unsafe extern "C" fn(_, _)),
+                ),
+                (runtime, viewport, 10.0, None),
+            ] {
+                let expected = if calls == 0
+                    && !runtime_arg.is_null()
+                    && !viewport_arg.is_null()
+                    && x.is_finite()
+                    && visitor.is_some()
+                {
+                    SnowError::Ok
+                } else {
+                    SnowError::InvalidArgument
+                };
+                assert_eq!(
+                    snow_viewport_visit_serial_number_cursor_preview(
+                        runtime_arg,
+                        viewport_arg,
+                        x,
+                        10.0,
+                        SnowModifiers::default(),
+                        visitor,
+                        context
+                    ),
+                    expected
+                );
+            }
+            assert_eq!(calls, 1);
+            snow_viewport_destroy(runtime, viewport);
+            snow_runtime_destroy(runtime);
+        }
+    }
+
     #[test]
     fn annotation_ffi_applies_once_and_handles_invalid_pointers() {
         unsafe {

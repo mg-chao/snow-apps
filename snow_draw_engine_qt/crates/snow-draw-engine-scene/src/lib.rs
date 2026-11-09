@@ -61,6 +61,18 @@ use snow_draw_engine_model::DocumentModel;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Uses the committed badge conversion without adding a retained scene node.
+pub fn serial_number_preview_item(serial: SerialNumberData) -> SceneDisplayItem {
+    scene_item_from_serial_number(
+        ElementId {
+            index: 0,
+            generation: 0,
+        },
+        serial,
+        None,
+    )
+}
+
 #[derive(Clone, Debug)]
 pub struct ViewportComposer {
     frame_view: FrameView,

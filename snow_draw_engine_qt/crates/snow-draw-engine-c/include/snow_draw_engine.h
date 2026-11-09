@@ -309,7 +309,8 @@ typedef enum SnowCursorStyle {
     SNOW_CURSOR_STYLE_CORNER_RADIUS = 11,
     SNOW_CURSOR_STYLE_HIDDEN = 12,
     SNOW_CURSOR_STYLE_STROKE = 13,
-    SNOW_CURSOR_STYLE_ERASER = 14
+    SNOW_CURSOR_STYLE_ERASER = 14,
+    SNOW_CURSOR_STYLE_SERIAL_NUMBER = 15
 } SnowCursorStyle;
 
 typedef enum SnowSceneDisplayItemKind {
@@ -1490,6 +1491,15 @@ SnowError snow_runtime_visit_smart_erase(SnowRuntime runtime,
                                          void (*visitor)(void* context,
                                                          const SnowSceneDisplayItem* item),
                                          void* context);
+
+/* Read-only next badge at the pointer's view position, using current creation defaults.
+ * The visitor borrows the item and its pointer fields only for the callback's duration,
+ * must copy retained data, and must not reenter the runtime. Placement snapping is
+ * resolved for stroke seeds; the native cursor remains centered on its hotspot. */
+SnowError snow_viewport_visit_serial_number_cursor_preview(
+    SnowRuntime runtime, SnowViewport viewport, double view_x, double view_y,
+    SnowModifiers modifiers, void (*visitor)(void* context, const SnowSceneDisplayItem* item),
+    void* context);
 
 typedef struct SnowOverlayDisplayItem {
     SnowOverlayDisplayItemKind kind;

@@ -2,10 +2,14 @@
 #include "snow_draw_engine_qt/snow_canvas_cursor.h"
 #include "icons/draw_engine_icons.h"
 #include "icon_renderer.h"
+#include "snow_canvas_render_geometry.h"
+#include "snow_canvas_renderer.h"
 
 #include <QKeyEvent>
 #include <QPainter>
 #include <QPixmap>
+#include <QDataStream>
+#include <QIODevice>
 #include <cmath>
 #include <algorithm>
 #include <QMouseEvent>
@@ -21,6 +25,70 @@ QCursor snowCanvasCornerRadiusCursor(qreal devicePixelRatio) {
 }
 
 namespace snow_canvas_input {
+
+QByteArray serialNumberCursorKey(const SnowCanvasSceneItem& item, const QFont& font, double zoom) {
+    QByteArray key;
+    QDataStream stream(&key, QIODevice::WriteOnly);
+    const auto color = [&stream](SnowColorRgba8 value) {
+        stream << value.r << value.g << value.b << value.a;
+    };
+    const bool rough = (item.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE ||
+                        item.serial_number_type == SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE) &&
+                       item.stroke_rendering_style != SNOW_STROKE_RENDERING_STYLE_ARCHITECT;
+    stream << font << zoom << item.width << item.height << item.rotation << item.opacity
+           << item.font_size << item.stroke_width << quint32(item.serial_number_type)
+           << quint32(item.fill_style) << quint32(item.stroke_style)
+           << quint32(item.stroke_rendering_style) << (rough ? item.stroke_rendering_seed : 0u)
+           << item.corner_radii.top_left
+           << QByteArray(item.text_utf8, static_cast<qsizetype>(item.text_utf8_len))
+           << QByteArray(item.font_family_utf8, static_cast<qsizetype>(item.font_family_utf8_len));
+    color(item.stroke);
+    color(item.fill);
+    color(item.text_color);
+    return key;
+}
+
+QCursor serialNumberCursor(const SnowCanvasSceneItem& preview, const QFont& font, double zoom,
+                           qreal devicePixelRatio) {
+    SnowCanvasSceneItem item(preview);
+    item.center_x = 0.0;
+    item.center_y = 0.0;
+    SceneDisplayInfo info;
+    info.camera_zoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
+    QRectF bounds = snow_canvas_render_geometry::sceneItemBounds(info, item);
+    double extent = 2.0 * std::max({std::abs(bounds.left()), std::abs(bounds.right()),
+                                    std::abs(bounds.top()), std::abs(bounds.bottom())});
+    if (!std::isfinite(extent) || extent <= 0.0) {
+        return QCursor(Qt::CrossCursor);
+    }
+    // Match the stroke cursor's allocation guard, scaling the entire badge together.
+    if (extent > 1024.0) {
+        info.camera_zoom *= 1024.0 / extent;
+        extent = 1024.0;
+    }
+    const qreal dpr =
+        std::isfinite(devicePixelRatio) && devicePixelRatio > 0.0 ? devicePixelRatio : 1.0;
+    const int radius = static_cast<int>(std::ceil(extent / 2.0)) + 2;
+    const int size = radius * 2 + 1;
+    QPixmap pixmap(static_cast<int>(std::ceil(size * dpr)),
+                   static_cast<int>(std::ceil(size * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    info.surface_width = radius * 2;
+    info.surface_height = radius * 2;
+    QPainter painter(&pixmap);
+    painter.setFont(font);
+    painter.setRenderHint(QPainter::Antialiasing);
+    snow_canvas_renderer::SceneRenderRequest request;
+    request.painter = &painter;
+    request.displayInfo = &info;
+    request.sceneItems = &item;
+    request.sceneItemCount = 1;
+    request.exposedRegion = QRegion(0, 0, size, size);
+    snow_canvas_renderer::renderSceneItems(request);
+    painter.end();
+    return QCursor(pixmap, radius, radius);
+}
 
 QCursor strokeCursor(double diameter, const std::optional<QColor>& color, bool crosshair,
                      qreal devicePixelRatio) {
@@ -66,6 +134,7 @@ QCursor cursorForSnowCursor(SnowCursorStyle style, qreal devicePixelRatio) {
     case SNOW_CURSOR_STYLE_ERASER:
         return strokeCursor(16.0, std::nullopt, false, devicePixelRatio);
     case SNOW_CURSOR_STYLE_CROSSHAIR:
+    case SNOW_CURSOR_STYLE_SERIAL_NUMBER:
         return QCursor(Qt::CrossCursor);
     case SNOW_CURSOR_STYLE_CORNER_RADIUS:
         return snowCanvasCornerRadiusCursor(devicePixelRatio);

@@ -282,6 +282,21 @@ impl Editor {
         )))
     }
 
+    pub(crate) fn serial_number_cursor_preview(
+        &self,
+        document: &DocumentModel,
+        view_position: Point<f64>,
+        modifiers: Modifiers,
+    ) -> Result<SerialNumberData, ErrorCode> {
+        if !view_position.x.is_finite() || !view_position.y.is_finite() {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        let canvas_point = view_to_canvas(view_position, &self.camera(), self.surface_size());
+        let (center, _) =
+            self.snap_serial_number_creation_center(document, canvas_point, modifiers);
+        self.serial_number_creation_preview(center)
+    }
+
     pub(crate) fn serial_number_creation_preview(
         &self,
         center: Point<f64>,
@@ -1087,6 +1102,11 @@ impl Editor {
         };
         let text = state.text.clone();
         let serial_id = state.serial_id;
+        let cursor = if text.is_none() {
+            self.tool_policy().default_cursor
+        } else {
+            CursorStyle::Default
+        };
         self.cancel_interaction();
         // The badge is inserted on pointer down. Selecting it after the drag finishes
         // preserves the gesture that creates and positions its attached label.
@@ -1107,7 +1127,7 @@ impl Editor {
         Ok(InteractionOutput {
             consumed: true,
             capture: self.release_capture_command(),
-            cursor: CursorCommand::Set(CursorStyle::Default),
+            cursor: CursorCommand::Set(cursor),
         })
     }
 

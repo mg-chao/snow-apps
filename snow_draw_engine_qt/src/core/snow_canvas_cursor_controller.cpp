@@ -20,6 +20,7 @@ void SnowCanvasCursorController::setCursor(SnowCanvasCursorLayer layer, const QC
 void SnowCanvasCursorController::clearCursor(SnowCanvasCursorLayer layer) {
     if (layer == SnowCanvasCursorLayer::CanvasTool) {
         m_engineCursorStyle.reset();
+        configureSerialNumberCursor(nullptr);
     }
     cursorForLayer(layer).reset();
     applyResolvedCursor(m_widget.devicePixelRatioF());
@@ -86,6 +87,7 @@ void SnowCanvasCursorController::setEngineCursor(SnowCursorStyle style, qreal dp
         m_cursorDevicePixelRatio = dpr;
         m_strokeCursor.reset();
         m_eraserCursor.reset();
+        m_serialNumberCursor.reset();
     }
     if (style == SNOW_CURSOR_STYLE_STROKE || style == SNOW_CURSOR_STYLE_ERASER) {
         auto& cached = style == SNOW_CURSOR_STYLE_STROKE ? m_strokeCursor : m_eraserCursor;
@@ -96,6 +98,12 @@ void SnowCanvasCursorController::setEngineCursor(SnowCursorStyle style, qreal dp
                 style == SNOW_CURSOR_STYLE_STROKE, dpr);
         }
         m_canvasToolCursor = *cached;
+    } else if (style == SNOW_CURSOR_STYLE_SERIAL_NUMBER && m_serialNumberPreview) {
+        if (!m_serialNumberCursor) {
+            m_serialNumberCursor = snow_canvas_input::serialNumberCursor(
+                *m_serialNumberPreview, m_widget.font(), m_serialNumberZoom, dpr);
+        }
+        m_canvasToolCursor = *m_serialNumberCursor;
     } else {
         m_canvasToolCursor = snow_canvas_input::cursorForSnowCursor(style, dpr);
     }
@@ -123,4 +131,24 @@ void SnowCanvasCursorController::refreshDevicePixelRatio(qreal devicePixelRatio)
     } else {
         applyResolvedCursor(devicePixelRatio);
     }
+}
+
+void SnowCanvasCursorController::configureSerialNumberCursor(const SnowCanvasSceneItem* preview,
+                                                             double zoom) {
+    if (preview == nullptr) {
+        m_serialNumberPreview.reset();
+        m_serialNumberCursorKey.clear();
+        m_serialNumberCursor.reset();
+        return;
+    }
+    const QByteArray key =
+        snow_canvas_input::serialNumberCursorKey(*preview, m_widget.font(), zoom);
+    if (m_serialNumberPreview && key == m_serialNumberCursorKey) {
+        return;
+    }
+    m_serialNumberPreview = *preview;
+    m_serialNumberCursorKey = key;
+    m_serialNumberZoom = zoom;
+    m_serialNumberCursor.reset();
+    refreshDevicePixelRatio(m_widget.devicePixelRatioF());
 }

@@ -5,6 +5,7 @@
 #include <QCursor>
 #include <QColor>
 #include "snow_draw_engine.h"
+#include "snow_canvas_display_item.h"
 
 #include <optional>
 #include <functional>
@@ -21,6 +22,7 @@ class SnowCanvasCursorController final {
     void setCrosshairCursorFactory(CrosshairCursorFactory factory);
     void setEngineCursor(SnowCursorStyle style);
     void configureStrokeCursor(double diameter, const std::optional<QColor>& color);
+    void configureSerialNumberCursor(const SnowCanvasSceneItem* preview, double zoom = 1.0);
     void refreshDevicePixelRatio(qreal devicePixelRatio);
 
   private:
@@ -36,6 +38,10 @@ class SnowCanvasCursorController final {
     qreal m_cursorDevicePixelRatio = 0.0;
     std::optional<QCursor> m_strokeCursor;
     std::optional<QCursor> m_eraserCursor;
+    std::optional<SnowCanvasSceneItem> m_serialNumberPreview;
+    QByteArray m_serialNumberCursorKey;
+    double m_serialNumberZoom = 1.0;
+    std::optional<QCursor> m_serialNumberCursor;
     std::optional<QCursor> m_canvasToolCursor;
     std::optional<QCursor> m_hostCursor;
     CrosshairCursorFactory m_crosshairCursorFactory;
