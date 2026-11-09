@@ -61,7 +61,10 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::function<void(const QVector<ScreenshotPinnedImageSnapshot>&)> imageStitchingRequested =
             {},
         std::function<void(const ScreenshotPinnedImageSnapshot&)> imageSplittingRequested = {},
-        std::function<void(const QString&)> imageEditingRequested = {});
+        std::function<void(const QString&)> imageEditingRequested = {},
+        // Hosts with application suspension route automatic visibility intent through their
+        // admission owner. Standalone hosts retain immediate automatic restoration.
+        std::function<void()> automaticRestoreRequested = {});
     ~ScreenshotSelectionExportUiServices() override;
 
     [[nodiscard]] bool publishClipboard(QObject* receiver, ScreenshotClipboardPayload payload,
@@ -72,6 +75,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void cancelClipboardPublication();
     // Prepares one hidden native shell for the next Pin to Screen presentation.
     void prewarmPinnedWindow(QScreen* screen = nullptr);
+    // Stop native shell acquisition and retain pool retry/replenishment intent until resume.
+    void setPresentationSuspended(bool suspended);
     [[nodiscard]] bool
     presentLiveWindow(std::shared_ptr<snow_shot::presentation::LiveWindowSource> source,
                       QScreen* screen, const QRect& nativeGeometry, const QSize& initialWindowSize,
@@ -124,6 +129,11 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                PinnedCompletion completion = {},
                                std::optional<ScreenshotAutomaticSaveRequest> automaticSave = {});
     void restorePersistedWindows();
+    // Accepted restoration owns its load and native presentation until settlement. A pause
+    // admission check must observe it even after the worker has posted its GUI completion.
+    [[nodiscard]] bool restoringWindows() const {
+        return !m_restoringIds.isEmpty();
+    }
     // Returns whether restoration was queued; completion and failures are asynchronous.
     bool restoreRecord(const QString& id, bool activateGroup = true);
     // Validates the whole selection before activating its common group once.
@@ -215,6 +225,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     std::function<void()> m_showMainWindowRequested;
     std::function<void(const ScreenshotPinnedImageSnapshot&)> m_imageSplittingRequested;
     std::function<void(const QString&)> m_imageEditingRequested;
+    std::function<void()> m_automaticRestoreRequested;
     std::function<void(const ScreenshotExportSource&)> m_liveImageEditingRequested;
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;

@@ -2,6 +2,8 @@
 #pragma once
 
 #include <QtGlobal>
+#include <QCoreApplication>
+#include <QThread>
 
 #include <algorithm>
 #include <list>
@@ -10,9 +12,13 @@
 // GUI-thread retention only. Commands own immutable results independently, so eviction never
 // cancels work or invalidates a consumer. Pending jobs must not enter this cache: their source
 // donors and scratch storage can be much larger than the eventual output.
+// clear() drops optional completed retention only; it is not an admission/drain barrier.
+// The application owns trim safety and must separately reserve against competing producers.
 class ScreenshotExportCache final {
   public:
-    explicit ScreenshotExportCache(qint64 maximumBytes) : m_maximumBytes(maximumBytes) {}
+    explicit ScreenshotExportCache(qint64 maximumBytes) : m_maximumBytes(maximumBytes) {
+        assertOwnerThread();
+    }
 
     static ScreenshotExportCache& pinnedPixels() {
         static ScreenshotExportCache cache(64 * 1024 * 1024);
@@ -30,6 +36,7 @@ class ScreenshotExportCache final {
     }
 
     void retain(std::shared_ptr<void> value, qint64 bytes) {
+        assertOwnerThread();
         if (!value)
             return;
         remove(value.get());
@@ -44,12 +51,14 @@ class ScreenshotExportCache final {
     }
 
     void touch(const void* value) {
+        assertOwnerThread();
         const auto found = find(value);
         if (found != m_entries.end())
             m_entries.splice(m_entries.end(), m_entries, found);
     }
 
     void remove(const void* value) {
+        assertOwnerThread();
         const auto found = find(value);
         if (found != m_entries.end()) {
             m_bytes -= found->bytes;
@@ -58,15 +67,21 @@ class ScreenshotExportCache final {
     }
 
     void clear() {
+        assertOwnerThread();
         m_entries.clear();
         m_bytes = 0;
     }
 
     [[nodiscard]] qint64 retainedBytes() const {
+        assertOwnerThread();
         return m_bytes;
     }
 
   private:
+    static void assertOwnerThread() {
+        Q_ASSERT(!QCoreApplication::instance() ||
+                 QThread::currentThread() == QCoreApplication::instance()->thread());
+    }
     struct Entry {
         std::shared_ptr<void> value;
         qint64 bytes;

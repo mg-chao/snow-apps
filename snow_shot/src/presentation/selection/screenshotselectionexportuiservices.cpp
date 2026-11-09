@@ -155,6 +155,10 @@ class ScreenshotPinnedWindowPool final : public QObject {
         if (screen != nullptr) {
             m_targetScreen = screen;
         }
+        if (m_suspended) {
+            schedulePrewarm(screen);
+            return nullptr;
+        }
 
         ScreenshotPinnedWindow* window = m_spare;
         [[maybe_unused]] bool usedSpare = false;
@@ -195,6 +199,11 @@ class ScreenshotPinnedWindowPool final : public QObject {
         if (screen != nullptr) {
             m_targetScreen = screen;
         }
+        if (m_suspended) {
+            m_prewarmPending = true;
+            return;
+        }
+        m_prewarmPending = false;
         QScreen* targetScreen = resolvedTargetScreen();
         if (targetScreen == nullptr) {
             return;
@@ -224,16 +233,23 @@ class ScreenshotPinnedWindowPool final : public QObject {
         if (screen != nullptr) {
             m_targetScreen = screen;
         }
-        if (m_prewarmScheduled) {
+        m_prewarmPending = true;
+        if (m_suspended || m_prewarmScheduled) {
             return;
         }
         m_prewarmScheduled = true;
         QTimer::singleShot(0, this, snow_shot::runtime::trackRuntimeWork([this]() {
                                m_prewarmScheduled = false;
-                               if (m_spare == nullptr) {
+                               if (!m_suspended && m_prewarmPending && m_spare == nullptr) {
                                    prewarm(m_targetScreen.data());
                                }
                            }));
+    }
+
+    void setSuspended(bool suspended) {
+        m_suspended = suspended;
+        if (!suspended && m_prewarmPending)
+            schedulePrewarm(m_targetScreen.data());
     }
 
   private:
@@ -250,6 +266,9 @@ class ScreenshotPinnedWindowPool final : public QObject {
     QPointer<ScreenshotPinnedWindow> m_spare;
     QPointer<QScreen> m_targetScreen;
     bool m_prewarmScheduled = false;
+    // This resource owner retains its own retry/replenishment intent across application pauses.
+    bool m_prewarmPending = false;
+    bool m_suspended = false;
 };
 
 class ScreenshotPendingPinCoordinator final : public QObject {
@@ -607,19 +626,25 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
     snow_shot::presentation::PinnedWindowGroupManager* groupManager,
     std::function<void(const QVector<ScreenshotPinnedImageSnapshot>&)> imageStitchingRequested,
     std::function<void(const ScreenshotPinnedImageSnapshot&)> imageSplittingRequested,
-    std::function<void(const QString&)> imageEditingRequested)
+    std::function<void(const QString&)> imageEditingRequested,
+    std::function<void()> automaticRestoreRequested)
     : m_recognition(recognition), m_qrRecognition(qrRecognition),
       m_tableRecognition(tableRecognition),
       m_showMainWindowRequested(std::move(showMainWindowRequested)),
       m_imageSplittingRequested(std::move(imageSplittingRequested)),
       m_imageEditingRequested(std::move(imageEditingRequested)),
+      m_automaticRestoreRequested(std::move(automaticRestoreRequested)),
       m_recognitionProvider(std::move(recognitionProvider)), m_groupManager(groupManager),
       m_selectionController(
           std::make_unique<snow_shot::presentation::PinnedWindowSelectionController>(
               nullptr, [this](const QVector<QString>& ids) { return tryDestroyRecords(ids); })),
       m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()),
-      m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>(
-          [this]() { restorePersistedWindows(); })) {
+      m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>([this]() {
+          if (m_automaticRestoreRequested)
+              m_automaticRestoreRequested();
+          else
+              restorePersistedWindows();
+      })) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!m_groupManager && storage.isInitialized())
         m_ownedStacking =
@@ -687,6 +712,11 @@ void ScreenshotSelectionExportUiServices::prewarmPinnedWindow(QScreen* screen) {
     if (m_windowPool != nullptr) {
         m_windowPool->prewarm(screen);
     }
+}
+
+void ScreenshotSelectionExportUiServices::setPresentationSuspended(bool suspended) {
+    if (m_windowPool)
+        m_windowPool->setSuspended(suspended);
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedSelection(

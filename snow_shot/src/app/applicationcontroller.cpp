@@ -1,10 +1,9 @@
 #include "snow_shot/app/edition.h"
 #include "snow_shot/app/applicationcontroller.h"
-#include <QScopeGuard>
 #include "snow_shot/app/distribution.h"
 #include "snow_shot/app/storeupdatelifecycle.h"
 #include "snow_shot/app/shellimagelaunch.h"
-#include "snow_shot/app/supportedpinfiles.h"
+#include "snow_shot/app/shelllaunchcoordinator.h"
 #include "snow_shot/runtime/memoryoptimizationcontroller.h"
 #include "snow_shot/runtime/memoryoptimizationuisafety.h"
 #include "snow_shot/app/applicationrestart.h"
@@ -77,7 +76,6 @@
 #include <QApplication>
 #include <QEvent>
 #include <QDir>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QPointer>
@@ -458,18 +456,13 @@ class ApplicationController::Impl {
                 if (ocrRecognition)
                     ocrRecognition->drainStorage();
             });
-        QObject::connect(
-            &applicationStorage, &storage::ApplicationStorage::directoryChangeFinished, &q, [this] {
-                const auto paths = std::move(deferredStorageShellFilePaths);
-                deferredStorageShellFilePaths.clear();
-                const bool foreground = std::exchange(deferredStorageShellForeground, false);
-                if (paths.isEmpty())
-                    return;
-                auto arguments = shellImageLaunchArguments(paths);
-                if (foreground)
-                    arguments.append(QStringLiteral("--show-main-window"));
-                q.handleLaunchRequest(arguments);
-            });
+        QObject::connect(&applicationStorage, &storage::ApplicationStorage::directoryChangeFinished,
+                         &q, [this] {
+                             const auto intent = shellLaunches.takeStorage();
+                             if (intent.paths.isEmpty())
+                                 return;
+                             q.handleLaunchRequest(intent.replayArguments());
+                         });
 #endif
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
             if (platform::windows::administratorOperationPending())
@@ -825,13 +818,11 @@ class ApplicationController::Impl {
             handoffPause.reset();
             reconcileMcpConfiguration();
 #ifdef Q_OS_WIN
-            const auto deferredPaths = std::move(deferredShellFilePaths);
-            deferredShellFilePaths.clear();
-            const bool foreground = std::exchange(deferredShellForeground, false);
+            const auto intent = shellLaunches.takeUpdate();
             updates->clearRelaunchArguments();
-            if (!deferredPaths.isEmpty())
-                pinShellFiles(deferredPaths);
-            if (foreground)
+            if (!intent.paths.isEmpty())
+                pinShellFiles(intent.paths);
+            if (intent.foreground)
                 showMainWindow();
 #endif
         }
@@ -863,13 +854,12 @@ class ApplicationController::Impl {
             finished();
     }
 
-    void preserveShellLaunchForUpdate(const QStringList& paths, bool foreground) {
-        deferredShellFilePaths.append(paths);
-        deferredShellForeground = deferredShellForeground || foreground;
+    void preserveShellLaunchForUpdate(const ShellLaunchCoordinator::Request& request) {
+        const auto intent = shellLaunches.retainUpdate(request);
         // Transport admission checked the cumulative intent before its receipt. Retain
         // accepted paths until helper acknowledgement or normal replay after failure.
-        updates->setRelaunchArguments(update::startupUpdateRelaunchArguments(
-            deferredShellForeground, deferredShellFilePaths));
+        updates->setRelaunchArguments(
+            update::startupUpdateRelaunchArguments(intent.foreground, intent.paths));
     }
 #endif
 
@@ -1968,10 +1958,7 @@ class ApplicationController::Impl {
     std::unique_ptr<StoreUpdateLifecycle> storeLifecycle;
     update::UpdateService* updates = nullptr;
 #ifdef Q_OS_WIN
-    QStringList deferredShellFilePaths;
-    bool deferredShellForeground = false;
-    QStringList deferredStorageShellFilePaths;
-    bool deferredStorageShellForeground = false;
+    ShellLaunchCoordinator shellLaunches;
 #endif
 };
 
@@ -1992,22 +1979,12 @@ void ApplicationController::showMainWindow() {
 bool ApplicationController::acceptsLaunchRequest(const QStringList& arguments) const {
 #ifdef Q_OS_WIN
     if (m_impl->updates && m_impl->updates->handoffPending()) {
-        if (!m_impl->updates->acceptsRelaunchArguments({}))
-            return false; // Terminal commitment has already closed launch admission.
-        const auto request = parseShellImageLaunchRequest(arguments);
-        if (!request.valid)
-            return true; // The normal handler owns validation feedback.
-        auto paths = m_impl->deferredShellFilePaths;
-        const auto supported = supportedPinFileExtensions();
-        for (const auto& path : request.paths)
-            if (supported.contains(QFileInfo(path).suffix().toLower()))
-                paths.append(path);
-        const bool foreground =
-            m_impl->deferredShellForeground ||
-            arguments.contains(QStringLiteral("--show-main-window")) ||
-            (!request.requested && !arguments.contains(QStringLiteral("--autostart")));
-        return m_impl->updates->acceptsRelaunchArguments(
-            update::startupUpdateRelaunchArguments(foreground, paths));
+        return m_impl->shellLaunches.acceptsUpdate(
+            ShellLaunchCoordinator::parse(arguments), m_impl->updates->acceptsRelaunchArguments({}),
+            [this](const auto& intent) {
+                return m_impl->updates->acceptsRelaunchArguments(
+                    update::startupUpdateRelaunchArguments(intent.foreground, intent.paths));
+            });
     }
 #else
     static_cast<void>(arguments);
@@ -2017,45 +1994,32 @@ bool ApplicationController::acceptsLaunchRequest(const QStringList& arguments) c
 
 void ApplicationController::handleLaunchRequest(const QStringList& arguments,
                                                 std::function<void()> firstFileFinished) {
-    const auto finishUnhandled = qScopeGuard([&] {
-        if (firstFileFinished)
-            firstFileFinished();
-    });
+    ShellLaunchCoordinator::FirstFileCompletion completion(std::move(firstFileFinished));
     if (!acceptsLaunchRequest(arguments)) {
         m_impl->reportSelectedFilePinFailure(QCoreApplication::translate(
             "UpdateErrors", "The selected files exceed the update restart limit"));
         return;
     }
 #ifdef Q_OS_WIN
-    const auto request = parseShellImageLaunchRequest(arguments);
-    if (request.requested) {
+    const auto request = ShellLaunchCoordinator::parse(arguments);
+    if (request.filesRequested) {
         if (!request.valid) {
             m_impl->reportSelectedFilePinFailure(tr("The selected file path is invalid"));
             return;
         }
-        QStringList supportedPaths;
-        const auto supported = supportedPinFileExtensions();
-        for (const QString& path : request.paths) {
-            if (supported.contains(QFileInfo(path).suffix().toLower()))
-                supportedPaths.append(path);
-            else
-                m_impl->reportSelectedFilePinFailure(
-                    tr("Could not open the selected file: %1").arg(path));
-        }
-        const bool foreground = arguments.contains(QStringLiteral("--show-main-window"));
+        for (const QString& path : request.unsupportedPaths)
+            m_impl->reportSelectedFilePinFailure(
+                tr("Could not open the selected file: %1").arg(path));
         if (storage::ApplicationStorage::instance().directoryChanging() ||
             (m_impl->migrationInput && m_impl->migrationInput->active)) {
-            m_impl->deferredStorageShellFilePaths.append(supportedPaths);
-            m_impl->deferredStorageShellForeground =
-                m_impl->deferredStorageShellForeground || foreground;
+            m_impl->shellLaunches.retainStorage(request);
         } else if ((m_impl->updates && m_impl->updates->handoffPending()) ||
                    (m_impl->handoffInput && m_impl->handoffInput->active)) {
-            m_impl->preserveShellLaunchForUpdate(supportedPaths, foreground);
+            m_impl->preserveShellLaunchForUpdate(request);
         } else {
-            if (!supportedPaths.isEmpty())
-                m_impl->pinShellFiles(std::move(supportedPaths),
-                                      std::exchange(firstFileFinished, {}));
-            if (foreground)
+            if (!request.paths.isEmpty())
+                m_impl->pinShellFiles(request.paths, completion.take());
+            if (request.foreground)
                 m_impl->showMainWindow();
         }
         return;
@@ -2070,7 +2034,7 @@ void ApplicationController::handleLaunchRequest(const QStringList& arguments,
 #ifdef Q_OS_WIN
     if ((m_impl->updates && m_impl->updates->handoffPending()) ||
         (m_impl->handoffInput && m_impl->handoffInput->active)) {
-        m_impl->preserveShellLaunchForUpdate({}, true);
+        m_impl->preserveShellLaunchForUpdate(request);
         return;
     }
 #endif

@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
 #include "snow_shot/presentation/screenshotselectionsettingsstore.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
@@ -49,11 +50,13 @@
 #include <QInputMethodEvent>
 #include <QPainter>
 #include <QScopeGuard>
+#include <QSemaphore>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
+#include <QUuid>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -66,6 +69,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -1195,6 +1199,51 @@ void capturePinCopiesOnlyWhenEnabled() {
             "restore screenshot copy settings");
 }
 
+void historyPinAccountsForDecodeBeforeDelivery() {
+    auto& history = snow_shot::storage::ApplicationStorage::instance().captureHistory();
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    qint64 previousWorkingBytes = 0;
+    for (const QSize size : {QSize(24, 16), QSize(120, 80)}) {
+        require(coordinator.pendingJobCount() == 0 && coordinator.activeWorkingBytes() == 0,
+                "history admission starts without unrelated export work");
+        QImage image(size, QImage::Format_RGBA8888);
+        image.fill(QColor(23, 117, 209, 127));
+        image.setColorSpace(QColorSpace::SRgb);
+        snow_shot::storage::CaptureHistoryDraft draft;
+        draft.contentKind = snow_shot::storage::CaptureHistoryContentKind::Image;
+        draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        draft.createdUtc = QDateTime::currentDateTimeUtc();
+        draft.canvasBounds = QRect(QPoint(), size);
+        draft.selection.rectangle = draft.canvasBounds;
+        draft.selection.shadowColor = Qt::black;
+        draft.canvasHistory = QByteArrayLiteral("{}");
+        draft.displays.append(
+            {QStringLiteral("history-admission"), QStringLiteral("Display"), image});
+        draft.resultImage = image;
+        const auto published = history.publish(std::move(draft)).get();
+        require(published.storage.success && published.record.result,
+                "publish a real isolated history image for decode admission");
+        ScreenshotController controller;
+        controller.pinHistoryRecord(published.record.id);
+        // Submission accounts for bytes immediately, and completion releases them only on
+        // GUI delivery. No timing assumption about the worker is needed for this observation.
+        const qint64 workingBytes = coordinator.activeWorkingBytes();
+        require(workingBytes >= image.sizeInBytes() + published.record.result->encodedBytes &&
+                    workingBytes > previousWorkingBytes,
+                "history pin reserves encoded input, decoded pixels and size-dependent scratch");
+        previousWorkingBytes = workingBytes;
+        waitUntil(
+            [&] {
+                return visiblePins().size() == 1 && coordinator.pendingJobCount() == 0 &&
+                       coordinator.activeWorkingBytes() == 0;
+            },
+            "history decode releases its working reservation after completing presentation");
+        require(samePixels(visiblePins().first()->persistenceSnapshot().image, image),
+                "accounted history decode preserves the requested image pixels");
+        closePins();
+    }
+}
+
 ScreenshotScrollingSnapshot scrollingSnapshot(QImage image) {
     SnowStitchConfig config{};
     require(snow_stitch_config_default(&config) != 0, "initialize scrolling fixture config");
@@ -1212,6 +1261,106 @@ ScreenshotScrollingSnapshot scrollingSnapshot(QImage image) {
     snow_stitch_session_destroy(session);
     require(snapshot != nullptr, "create immutable scrolling fixture snapshot");
     return ScreenshotScrollingSnapshot::adoptNative(snapshot, size);
+}
+
+void scrollingMcpExportCompletesWhenMaterializationIsRejected() {
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    ScreenshotController controller;
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(10, 12, 80, 50);
+    ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+    const auto snapshot = scrollingSnapshot(fixture());
+    ScreenshotControllerTestAccess::prepareScrollingSnapshot(controller, snapshot);
+    const auto rejected = controller.mcpExportArtifact(1.0);
+    require(rejected && rejected->isValid(), "create an accepted scrolling MCP source");
+    require(coordinator.pendingJobCount() == 0, "scrolling admission starts without export work");
+
+    QObject receiver;
+    const auto gate = std::make_shared<QSemaphore>();
+    std::vector<ScreenshotExportJobHandle> blockers;
+    const auto unblock = qScopeGuard([&] { gate->release(int(blockers.size())); });
+    // Keep both active workers and every pending slot occupied. None can retire before
+    // release, so rejection is independent of worker speed and owner-thread timer ordering.
+    for (int index = 0; index < 16; ++index) {
+        auto blocker = coordinator.submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+            [gate](const auto&) {
+                gate->acquire();
+                return ScreenshotExportTaskResult{};
+            },
+            [](auto) {});
+        require(blocker.isValid(), "fill the bounded export coordinator");
+        blockers.push_back(std::move(blocker));
+    }
+    require(!coordinator
+                 .submit(
+                     &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                     [](const auto&) { return ScreenshotExportTaskResult{}; }, [](auto) {})
+                 .isValid(),
+            "the scrolling materialization will encounter a full coordinator");
+
+    int completions = 0;
+    require(rejected->requestImage(&receiver,
+                                   [&](ScreenshotExportImageResult result) {
+                                       require(
+                                           !result.succeeded() && result.image.isNull(),
+                                           "rejected scrolling materialization reports failure");
+                                       ++completions;
+                                   }),
+            "scrolling snapshot acquisition accepts the artifact request");
+    waitUntil([&] { return completions == 1; },
+              "queue rejection must terminalize the accepted scrolling MCP loader");
+    QCoreApplication::processEvents();
+    require(completions == 1 && coordinator.pendingJobCount() == int(blockers.size()),
+            "rejection completes once without adding work or waiting for unrelated exports");
+
+    gate->release(int(blockers.size()));
+    waitUntil([&] { return coordinator.pendingJobCount() == 0; },
+              "release every saturated export slot");
+    const auto retry = controller.mcpExportArtifact(1.0);
+    bool recovered = false;
+    require(retry && retry->requestImage(&receiver,
+                                         [&](ScreenshotExportImageResult result) {
+                                             require(result.succeeded() &&
+                                                         samePixels(result.image, fixture()),
+                                                     "a later scrolling export keeps its pixels");
+                                             recovered = true;
+                                         }),
+            "accept a new scrolling export after capacity returns");
+    waitUntil([&] { return recovered; }, "scrolling capture remains usable after queue rejection");
+}
+
+void scrollingMcpExportCompletesWhenSnapshotIsCancelled() {
+    ScreenshotController controller;
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(10, 12, 80, 50);
+    ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+    ScreenshotControllerTestAccess::prepareScrollingSnapshot(controller,
+                                                             scrollingSnapshot(fixture()));
+    const auto artifact = controller.mcpExportArtifact(1.0);
+    QObject receiver;
+    int completions = 0;
+    require(artifact &&
+                artifact->requestImage(&receiver,
+                                       [&](ScreenshotExportImageResult result) {
+                                           require(!result.succeeded(),
+                                                   "cancelled snapshot fails its live export");
+                                           ++completions;
+                                       }),
+            "accept the scrolling snapshot before capture cancellation");
+    require(completions == 0,
+            "cached scrolling snapshot completion is queued before capture cancellation");
+    controller.mcpCancelCapture();
+    waitUntil([&] { return completions == 1; },
+              "snapshot cancellation terminalizes the live artifact without an MCP timeout");
+    QCoreApplication::processEvents();
+    require(completions == 1 && !artifact->isCancelled() &&
+                !controller.mcpState()
+                     .value(QStringLiteral("scrolling"))
+                     .toObject()
+                     .value(QStringLiteral("active"))
+                     .toBool(),
+            "late cached snapshot cannot revive cancelled acquisition or finish it twice");
 }
 
 void scrollingCopyUsesHiDpiScalingWithEveryFileOption() {
@@ -1644,6 +1793,17 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
                 settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
             "clipboard controller settings must be isolated and deterministic");
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
+    if (application.arguments().contains(QStringLiteral("--history-pin-admission-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        historyPinAccountsForDecodeBeforeDelivery();
+        return EXIT_SUCCESS;
+    }
+    if (application.arguments().contains(QStringLiteral("--mcp-scrolling-admission-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        scrollingMcpExportCompletesWhenMaterializationIsRejected();
+        scrollingMcpExportCompletesWhenSnapshotIsCancelled();
+        return EXIT_SUCCESS;
+    }
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (application.arguments().contains(QStringLiteral("--formula-only"))) {
         {

@@ -209,7 +209,14 @@ ScreenshotExportCoordinator::ScreenshotExportCoordinator(int shutdownTimeoutMill
                                                          qint64 maximumWorkingBytes,
                                                          QObject* parent)
     : QObject(parent), m_impl(std::make_shared<Impl>(std::max(1, shutdownTimeoutMilliseconds),
-                                                     std::max(qint64{1}, maximumWorkingBytes))) {}
+                                                     std::max(qint64{1}, maximumWorkingBytes))) {
+    assertOwnerThread();
+}
+
+void ScreenshotExportCoordinator::assertOwnerThread() const {
+    Q_ASSERT(QThread::currentThread() == thread());
+    Q_ASSERT(!QCoreApplication::instance() || thread() == QCoreApplication::instance()->thread());
+}
 
 ScreenshotExportCoordinator::~ScreenshotExportCoordinator() {
     shutdown();
@@ -226,6 +233,7 @@ ScreenshotExportCoordinator& ScreenshotExportCoordinator::shared() {
 ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver, Priority priority,
                                                               Work work, Completion completion,
                                                               qint64 estimatedWorkingBytes) {
+    assertOwnerThread();
     if (receiver == nullptr || !work || !completion || estimatedWorkingBytes < 0 ||
         m_impl->shuttingDown.load(std::memory_order_acquire) || !m_impl->reservePending()) {
         return {};
@@ -334,6 +342,7 @@ bool ScreenshotExportCoordinator::acceptingSubmissions() const {
 }
 
 void ScreenshotExportCoordinator::dispatchQueues() {
+    assertOwnerThread();
     const auto queues = m_impl->queues;
     for (const auto& queue : queues)
         if (queue)
@@ -341,6 +350,7 @@ void ScreenshotExportCoordinator::dispatchQueues() {
 }
 
 void ScreenshotExportCoordinator::shutdown() {
+    assertOwnerThread();
     if (m_impl == nullptr || m_impl->shuttingDown.exchange(true, std::memory_order_acq_rel)) {
         return;
     }
@@ -382,10 +392,13 @@ void ScreenshotExportCoordinator::shutdown() {
 ScreenshotExportQueue::ScreenshotExportQueue(ScreenshotExportCoordinator& coordinator,
                                              QObject* parent)
     : QObject(parent), m_coordinator(&coordinator) {
+    coordinator.assertOwnerThread();
+    Q_ASSERT(QThread::currentThread() == thread());
     coordinator.m_impl->queues.append(this);
 }
 
 ScreenshotExportQueue::~ScreenshotExportQueue() {
+    Q_ASSERT(QThread::currentThread() == thread());
     cancel();
     if (m_coordinator)
         m_coordinator->m_impl->queues.removeAll(this);
@@ -395,6 +408,7 @@ bool ScreenshotExportQueue::enqueue(ScreenshotExportCoordinator::Priority priori
                                     ScreenshotExportCoordinator::Work work,
                                     ScreenshotExportCoordinator::Completion completion,
                                     qint64 estimatedWorkingBytes) {
+    Q_ASSERT(QThread::currentThread() == thread());
     if (!m_coordinator || !m_coordinator->acceptingSubmissions() || !work || !completion ||
         estimatedWorkingBytes < 0)
         return false;
@@ -404,6 +418,7 @@ bool ScreenshotExportQueue::enqueue(ScreenshotExportCoordinator::Priority priori
 }
 
 void ScreenshotExportQueue::cancel() {
+    Q_ASSERT(QThread::currentThread() == thread());
     ++m_generation;
     m_requests.clear();
     const auto jobs = std::exchange(m_jobs, {});
@@ -412,10 +427,12 @@ void ScreenshotExportQueue::cancel() {
 }
 
 bool ScreenshotExportQueue::active() const {
+    Q_ASSERT(QThread::currentThread() == thread());
     return !m_requests.isEmpty() || !m_jobs.isEmpty();
 }
 
 void ScreenshotExportQueue::dispatch() {
+    Q_ASSERT(QThread::currentThread() == thread());
     constexpr qsizetype maximumConcurrentJobs = 2;
     while (m_coordinator && m_coordinator->acceptingSubmissions() &&
            m_jobs.size() < maximumConcurrentJobs && !m_requests.isEmpty()) {

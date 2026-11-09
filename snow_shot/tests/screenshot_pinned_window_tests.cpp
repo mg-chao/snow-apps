@@ -22218,9 +22218,44 @@ void pinnedHiddenWindowsPersistAndRestore() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void pinnedPoolPrewarmWaitsForPresentationResume() {
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    const auto existing = topLevelPinnedWindows();
+    const auto addedWindows = [&] {
+        auto windows = topLevelPinnedWindows();
+        windows.removeIf([&](auto* window) { return existing.contains(window); });
+        return windows;
+    };
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen, "paused pool fixture needs a screen");
+    {
+        ScreenshotSelectionExportUiServices services;
+        services.setPresentationSuspended(true);
+        services.prewarmPinnedWindow(screen);
+        require(addedWindows().isEmpty(),
+                "prewarm while suspended retains intent without constructing a native shell");
+        services.setPresentationSuspended(false); // posts the pool's deferred retry
+        services.setPresentationSuspended(true);
+        for (int i = 0; i != 12; ++i)
+            QCoreApplication::processEvents();
+        require(addedWindows().isEmpty(),
+                "a pause acquired after scheduling closes native pool replenishment");
+        services.prewarmPinnedWindow(screen);
+        services.setPresentationSuspended(false);
+        services.setPresentationSuspended(false);
+        for (int i = 0; i != 12; ++i)
+            QCoreApplication::processEvents();
+        const auto windows = addedWindows();
+        require(windows.size() == 1 && !windows.front()->isVisible(),
+                "resume prepares exactly one hidden shell from retained pool intent");
+    }
+    require(addedWindows().isEmpty(), "pool teardown owns its hidden native spare");
+}
+
 void pinnedHideBeforeFirstSaveKeepsLatestVisibility() {
-    enum class ShowRequest { None, All, Record };
-    for (const auto showRequest : {ShowRequest::None, ShowRequest::All, ShowRequest::Record}) {
+    enum class ShowRequest { None, All, Record, RoutedRecord };
+    for (const auto showRequest :
+         {ShowRequest::None, ShowRequest::All, ShowRequest::Record, ShowRequest::RoutedRecord}) {
         const bool showBeforeSource = showRequest != ShowRequest::None;
         IsolatedPinnedStorage isolated;
         using namespace snow_shot;
@@ -22228,7 +22263,13 @@ void pinnedHideBeforeFirstSaveKeepsLatestVisibility() {
         require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
                 "disable recognition for pending hidden lifecycle");
         presentation::PinnedWindowGroupManager groups(&repository);
-        ScreenshotSelectionExportUiServices services(nullptr, nullptr, nullptr, {}, {}, &groups);
+        bool automaticRestoreRequested = false;
+        const std::function<void()> automaticRestore =
+            showRequest == ShowRequest::RoutedRecord
+                ? std::function<void()>([&] { automaticRestoreRequested = true; })
+                : std::function<void()>{};
+        ScreenshotSelectionExportUiServices services(nullptr, nullptr, nullptr, {}, {}, &groups, {},
+                                                     {}, {}, automaticRestore);
         QScreen* screen = QGuiApplication::primaryScreen();
         require(screen, "pending Hide needs a screen");
         QImage image(120, 80, QImage::Format_RGB32);
@@ -22292,6 +22333,13 @@ void pinnedHideBeforeFirstSaveKeepsLatestVisibility() {
                         !showBeforeSource,
                 "MCP lists the pin exactly once after its first source save");
         if (showBeforeSource) {
+            if (showRequest == ShowRequest::RoutedRecord) {
+                require(automaticRestoreRequested && !groups.hasWindow(id) &&
+                            !services.restoringWindows(),
+                        "pending source completion signals automatic intent without bypassing "
+                        "the host's paused admission");
+                services.restorePersistedWindows();
+            }
             wait([&] { return groups.hasWindow(id); },
                  "Show before first save restores when persistence completes");
             require(!repository.loadRecord(id)->hidden,
@@ -29023,6 +29071,7 @@ int main(int argc, char* argv[]) {
             pinnedHideClosesOnlyAfterPersistenceSucceeds();
             pinnedVisibilityActionsUseServicePorts();
             pinnedHiddenWindowsPersistAndRestore();
+            pinnedPoolPrewarmWaitsForPresentationResume();
             pinnedHideBeforeFirstSaveKeepsLatestVisibility();
             pinnedHideCancelsRestoreAndRejectsStaleCallbacks();
             return 0;
