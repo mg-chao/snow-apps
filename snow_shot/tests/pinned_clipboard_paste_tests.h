@@ -163,6 +163,98 @@ void pinnedClipboardPasteTests() {
                 Access::dragDocument(window) == document &&
                 Access::drawingHistory(window) == history,
             "text Paste replaces source content while retaining annotations");
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    const auto beforeFormula = window.persistenceSnapshot();
+    clipboard->setText(QStringLiteral("$$\\frac{x^2}{y}$$"));
+    paste(*canvas, combination);
+    waitForReplacement(window);
+    const auto formula = window.persistenceSnapshot();
+    require(
+        formula.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ImageData &&
+            formula.originalText.isEmpty() && formula.originalHtml.isEmpty() &&
+            formula.image.pixelColor(0, 0) == QColor(Qt::white) &&
+            formula.opacityPercent == beforeFormula.opacityPercent &&
+            formula.imageTransform == beforeFormula.imageTransform &&
+            Access::dragDocument(window) == document && Access::drawingHistory(window) == history &&
+            samePixels(Access::originalImage(peer), original),
+        "formula Paste replaces only the receiving source with an image and retains annotations");
+    Access::copyOriginalContent(window);
+    const auto copyArtifact = Access::exportArtifact(window);
+    std::optional<ScreenshotExportImageResult> copied;
+    require(copyArtifact && copyArtifact->requestImage(&window,
+                                                       [&](ScreenshotExportImageResult result) {
+                                                           copied = std::move(result);
+                                                       }),
+            "Copy Original Content must prepare an image export for formula pins");
+    live_pinned_tests::wait([&] { return copied.has_value(); }, "formula copy image finishes");
+    require(copied->succeeded() && samePixels(copied->image, formula.image),
+            "Copy Original Content exports the rendered formula without annotations or opacity");
+    const QImage renderedFormula = Access::originalImage(window);
+
+    clipboard->setText(QStringLiteral("$x") + QString(32000, QLatin1Char('\n')) +
+                       QStringLiteral("$"));
+    paste(*canvas, combination);
+    waitForReplacement(window);
+    require(window.persistenceSnapshot().sourceKind ==
+                    snow_shot::storage::PinnedWindowSourceKind::ImageData &&
+                window.persistenceSnapshot().originalText.isEmpty() &&
+                !samePixels(Access::originalImage(window), renderedFormula),
+            "formula Paste succeeds without rendering an oversized text fallback");
+
+    // Hold the formula completion at its queued GUI event so the superseding Paste
+    // is exercised during rendering, independently of how quickly MicroTeX finishes.
+    struct BeforeFormulaCompletion final : QObject {
+        ScreenshotPinnedWindow& window;
+        std::function<void()> action;
+        bool fired = false;
+        explicit BeforeFormulaCompletion(ScreenshotPinnedWindow& target) : window(target) {}
+        bool eventFilter(QObject* watched, QEvent* event) override {
+            if (watched == qApp && event->type() == QEvent::MetaCall && !fired &&
+                ScreenshotPinnedWindowTestAccess::formulaPending(window)) {
+                fired = true;
+                action();
+            }
+            return false;
+        }
+    } observer(window);
+    observer.action = [&] {
+        clipboard->setImage(original);
+        paste(*canvas, combination);
+    };
+    qApp->installEventFilter(&observer);
+    clipboard->setText(QStringLiteral("$\\alpha+\\beta$"));
+    paste(*canvas, combination);
+    waitForReplacement(window);
+    qApp->removeEventFilter(&observer);
+    require(observer.fired && samePixels(Access::originalImage(window), original),
+            "a newer Paste cancels pending formulas without publishing stale pixels");
+    clipboard->setText(QStringLiteral("$\\snowUndefined$"));
+    paste(*canvas, combination);
+    waitForReplacement(window);
+    require(window.persistenceSnapshot().originalText == QStringLiteral("$\\snowUndefined$") &&
+                window.persistenceSnapshot().sourceKind ==
+                    snow_shot::storage::PinnedWindowSourceKind::ClipboardText &&
+                !samePixels(Access::originalImage(window), renderedFormula),
+            "invalid formula Paste falls back to text content");
+
+    {
+        ScreenshotPinnedWindow closing;
+        Access::prepareReplacement(closing, config);
+        closing.show();
+        focus(closing);
+        BeforeFormulaCompletion closingObserver(closing);
+        closingObserver.action = [&] { closing.close(); };
+        qApp->installEventFilter(&closingObserver);
+        clipboard->setText(QStringLiteral("$\\sqrt{x}$"));
+        paste(closing, combination);
+        waitForReplacement(closing);
+        qApp->removeEventFilter(&closingObserver);
+        require(closingObserver.fired && !Access::replacementPending(closing) &&
+                    samePixels(Access::originalImage(closing), original),
+                "closing a pin cancels pending formula replacement");
+    }
+    focus(*canvas);
+#endif
     const QImage textImage = Access::originalImage(window);
     for (bool unsupported : {false, true}) {
         auto* data = new QMimeData;

@@ -51,7 +51,8 @@ struct Result final {
 };
 
 Result render(ScreenshotLatexRenderer& renderer, const QString& source, qreal dpr = 1,
-              QSize viewport = QSize(480, 360), QColor foreground = Qt::black) {
+              QSize viewport = QSize(480, 360), QColor foreground = Qt::black,
+              QColor background = Qt::transparent) {
     Result result;
     bool completed = false;
     quint64 expectedToken = 0;
@@ -62,7 +63,7 @@ Result render(ScreenshotLatexRenderer& renderer, const QString& source, qreal dp
                              result = {image, error};
                              completed = true;
                          });
-    expectedToken = renderer.request(source, viewport, dpr, foreground);
+    expectedToken = renderer.request(source, viewport, dpr, foreground, background);
     until([&]() { return completed; });
     QObject::disconnect(connection);
     return result;
@@ -248,6 +249,18 @@ void rasterCacheAndResources() {
     require(render(renderer, QStringLiteral("x^2"), 1, QSize(480, 360), Qt::red).image !=
                 first.image,
             "foreground/theme changes must invalidate cached pixels");
+    const auto transparent = render(renderer, QStringLiteral("x^2"));
+    const auto white =
+        render(renderer, QStringLiteral("x^2"), 1, QSize(480, 360), Qt::black, Qt::white);
+    require(transparent.image.pixelColor(0, 0).alpha() == 0 &&
+                white.image.pixelColor(0, 0) == QColor(Qt::white) &&
+                transparent.image.cacheKey() != white.image.cacheKey(),
+            "background changes must keep opaque pins separate from transparent previews");
+    require(render(renderer, QStringLiteral("x^2")).image.cacheKey() ==
+                    transparent.image.cacheKey() &&
+                render(renderer, QStringLiteral("x^2"), 1, QSize(480, 360), Qt::black, Qt::white)
+                        .image.cacheKey() == white.image.cacheKey(),
+            "both background variants must retain independent reusable cache entries");
     tinyxml2::XMLDocument missing;
     require(tex::snowLoadXml(missing, ":/snow-shot/microtex/missing.xml") ==
                 tinyxml2::XML_ERROR_FILE_NOT_FOUND,

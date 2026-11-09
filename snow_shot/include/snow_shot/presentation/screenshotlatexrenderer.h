@@ -21,9 +21,9 @@ class ScreenshotLatexRenderer final : public QObject {
     explicit ScreenshotLatexRenderer(QObject* parent = nullptr);
     ~ScreenshotLatexRenderer() override;
 
-    // viewportSize is in logical pixels. The returned transparent image has the requested DPR.
+    // viewportSize is in logical pixels. The returned image has the requested DPR.
     [[nodiscard]] quint64 request(const QString& source, QSize viewportSize, qreal devicePixelRatio,
-                                  QColor foreground);
+                                  QColor foreground, QColor background = Qt::transparent);
     void cancel();
     // Cancel pending work and release the per-preview raster cache on the worker.
     void clearCache();

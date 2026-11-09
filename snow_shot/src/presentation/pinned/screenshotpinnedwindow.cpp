@@ -7103,10 +7103,17 @@ void ScreenshotPinnedWindow::cancelContentReplacement() {
     ++m_contentReplacementGeneration;
     m_contentReplacementJob.cancel();
     m_contentReplacementJob = {};
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_clipboardFormulaRenderer.cancel();
+#endif
     m_queuedAnimationReplacement.reset();
 }
 
 bool ScreenshotPinnedWindow::blocksMemoryTrimming() const {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_clipboardFormulaRenderer.active())
+        return true;
+#endif
     if (m_animationPlayback &&
         (m_animationPlayback->effectivePlaying() || m_animationPlayback->busy()))
         return true;
@@ -7225,12 +7232,13 @@ void ScreenshotPinnedWindow::loadClipboardContent() {
     if (!paths.isEmpty()) {
         requestContentReplacement(paths);
     } else {
-        requestContentReplacement({}, m_clipboard->snapshot(devicePixelRatioF()));
+        requestContentReplacement({}, m_clipboard->snapshot(devicePixelRatioF()), true);
     }
 }
 
 void ScreenshotPinnedWindow::requestContentReplacement(
-    QStringList paths, std::optional<ScreenshotClipboardContentSnapshot> snapshot) {
+    QStringList paths, std::optional<ScreenshotClipboardContentSnapshot> snapshot,
+    bool clipboardFormula) {
     if (!m_firstContentFramePublished || m_originalImage.isNull() || m_closing) {
         return;
     }
@@ -7243,11 +7251,17 @@ void ScreenshotPinnedWindow::requestContentReplacement(
     }
     const quint64 generation = m_contentReplacementGeneration;
     const QTransform imageTransform = m_imageTransform;
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    auto content =
+        std::make_shared<std::optional<ScreenshotClipboardFormulaRenderer::PreparedContent>>();
+#else
     auto content = std::make_shared<std::optional<ScreenshotClipboardContent>>();
+#endif
     m_contentReplacementJob = ScreenshotExportCoordinator::shared().submit(
         this, ScreenshotExportCoordinator::Priority::Foreground,
         [paths = std::move(paths), snapshot = std::move(snapshot), content, imageTransform,
-         textStyle, colorSwatchStyle](const ScreenshotExportCancellation& token) mutable {
+         clipboardFormula, textStyle,
+         colorSwatchStyle](const ScreenshotExportCancellation& token) mutable {
             const auto cancelled = [&token]() { return token.isCancellationRequested(); };
             if (!paths.isEmpty()) {
                 const auto files =
@@ -7267,15 +7281,30 @@ void ScreenshotPinnedWindow::requestContentReplacement(
                     }
                 }
             } else if (snapshot.has_value()) {
-                *content =
-                    ScreenshotClipboardContentReader::decode(std::move(*snapshot), cancelled);
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+                if (clipboardFormula)
+                    *content = ScreenshotClipboardFormulaRenderer::prepare(std::move(*snapshot),
+                                                                           cancelled);
+                else
+#else
+                Q_UNUSED(clipboardFormula);
+#endif
+                    *content =
+                        ScreenshotClipboardContentReader::decode(std::move(*snapshot), cancelled);
             }
-            if (content->has_value() && !ScreenshotClipboardContentReader::prepareAnimationDisplay(
-                                            **content, imageTransform, cancelled))
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            auto* decoded = content->has_value()
+                                ? std::get_if<ScreenshotClipboardContent>(&content->value())
+                                : nullptr;
+#else
+            auto* decoded = content->has_value() ? &content->value() : nullptr;
+#endif
+            if (decoded && !ScreenshotClipboardContentReader::prepareAnimationDisplay(
+                               *decoded, imageTransform, cancelled))
                 content->reset();
             return ScreenshotExportTaskResult{};
         },
-        [this, generation, content](const ScreenshotExportTaskResult& result) {
+        [this, generation, content, clipboardFormula](const ScreenshotExportTaskResult& result) {
             if (m_closing || generation != m_contentReplacementGeneration) {
                 return;
             }
@@ -7284,7 +7313,27 @@ void ScreenshotPinnedWindow::requestContentReplacement(
                 showPinnedRecognitionMessage(this, tr("The new content could not be loaded"), true);
                 return;
             }
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            if (clipboardFormula) {
+                m_clipboardFormulaRenderer.convert(
+                    std::move(**content), devicePixelRatioF(),
+                    [this, generation](std::optional<ScreenshotClipboardContent> decoded) {
+                        if (m_closing || generation != m_contentReplacementGeneration)
+                            return;
+                        if (decoded)
+                            finishContentReplacement(std::move(*decoded), generation);
+                        else
+                            showPinnedRecognitionMessage(
+                                this, tr("The new content could not be loaded"), true);
+                    });
+                return;
+            }
+            finishContentReplacement(std::get<ScreenshotClipboardContent>(std::move(**content)),
+                                     generation);
+#else
+            Q_UNUSED(clipboardFormula);
             finishContentReplacement(std::move(**content), generation);
+#endif
         });
     if (!m_contentReplacementJob.isValid()) {
         showPinnedRecognitionMessage(this, tr("The new content could not be loaded"), true);

@@ -47,6 +47,9 @@
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include "snow_shot/app/editionfeatures.h"
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#include "snow_shot/presentation/screenshotclipboardformularenderer.h"
+#endif
 
 #include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/platform/windowcaptureexclusion.h"
@@ -469,6 +472,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void pinHistoryRecord(const QString& recordId);
     void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     void cancelContentPin();
+    [[nodiscard]] bool clipboardPinPending() const;
     void cancelHistoryPins();
     ScreenshotFilePinBatch::Present
     filePinPresenter(QScreen* screen, snow_shot::storage::PinnedWindowCreationSource source,
@@ -674,6 +678,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::vector<ScreenshotExportJobHandle> m_exportJobs;
     ScreenshotClipboardCommitScope m_clipboardScope;
     ScreenshotExportJobHandle m_clipboardPinJob;
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    ScreenshotClipboardFormulaRenderer m_clipboardFormulaRenderer;
+#endif
     ScreenshotFilePinBatch m_filePinBatch;
     ScreenshotFilePinQueue m_filePinQueue;
     quint64 m_clipboardPinGeneration = 0;
@@ -3765,10 +3772,21 @@ void ScreenshotController::Impl::setScrollingScreenshotRecognitionMode(
     static_cast<void>(m_scrollingCaptureController->setRecognitionMode(mode));
 }
 
+bool ScreenshotController::Impl::clipboardPinPending() const {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_clipboardFormulaRenderer.active())
+        return true;
+#endif
+    return m_clipboardPinJob.isValid();
+}
+
 void ScreenshotController::Impl::cancelContentPin() {
     m_filePinBatch.cancel();
     m_clipboardPinJob.cancel();
     m_clipboardPinJob = {};
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_clipboardFormulaRenderer.cancel();
+#endif
     ++m_clipboardPinGeneration;
     m_pendingClipboardIdentity = {};
     m_pendingClipboardGroup.clear();
@@ -4056,7 +4074,7 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     const QString group =
         m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
     if (action != QStringLiteral("repeat_action") && m_clipboardDecodeBeforePresentation &&
-        m_clipboardPinJob.isValid() && m_pendingClipboardIdentity == sourceIdentity &&
+        clipboardPinPending() && m_pendingClipboardIdentity == sourceIdentity &&
         m_pendingClipboardGroup == group) {
         if (action == QStringLiteral("restore_last_closed_window"))
             m_selectionExportUiServices->restoreLastClosedWindow();
@@ -4317,7 +4335,12 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     }
 
     m_clipboardDecodeBeforePresentation = true;
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    auto content =
+        std::make_shared<std::optional<ScreenshotClipboardFormulaRenderer::PreparedContent>>();
+#else
     auto content = std::make_shared<std::optional<ScreenshotClipboardContent>>();
+#endif
     const QPointer<ScreenshotController> receiver(&owner);
     const QPointer<QScreen> guardedScreen(screen);
     m_clipboardPinJob = ScreenshotExportCoordinator::shared().submit(
@@ -4325,11 +4348,18 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
         [snapshot = std::move(*snapshot),
          content](const ScreenshotExportCancellation& cancellation) mutable {
             SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.decode_started");
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            *content =
+                ScreenshotClipboardFormulaRenderer::prepare(std::move(snapshot), [&cancellation]() {
+                    return cancellation.isCancellationRequested();
+                });
+#else
             *content =
                 ScreenshotClipboardContentReader::decode(std::move(snapshot), [&cancellation]() {
                     return cancellation.isCancellationRequested();
                 });
-            if (!content->has_value() || !content->value().isValid()) {
+#endif
+            if (!content->has_value()) {
                 return ScreenshotExportTaskResult::failure(
                     cancellation.isCancellationRequested() ? ScreenshotExportFailureStage::Cancelled
                                                            : ScreenshotExportFailureStage::Source,
@@ -4346,8 +4376,8 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                 return;
             }
             receiver->m_impl->m_clipboardPinJob = {};
-            receiver->m_impl->m_clipboardDecodeBeforePresentation = false;
             if (!result.succeeded() || !content->has_value()) {
+                receiver->m_impl->m_clipboardDecodeBeforePresentation = false;
                 if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
                     receiver->m_impl->m_messages->error(
                         QString::fromLatin1(kPinClipboardMessageKey),
@@ -4359,50 +4389,73 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
             }
 
             SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.decode_finished");
-            ScreenshotClipboardContent decoded = std::move(content->value());
-            QScreen* fallback =
-                guardedScreen ? guardedScreen.data() : QGuiApplication::primaryScreen();
-            const qreal rasterScale = decoded.isFormattedText()
-                                          ? decoded.formattedTextDevicePixelRatio
-                                          : (fallback ? fallback->devicePixelRatio() : 1.0);
-            const auto pinGeometry = screenshotClipboardPinGeometry(
-                decoded.placement, decoded.image.size(),
-                snow_shot::presentation::pinnedImageWindowSize(decoded.image, rasterScale),
-                fallback, autoResizeWindow);
-            const auto fit = pinGeometry.fit;
-            SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");
-            if (!fit.valid || receiver->m_impl->m_selectionExportUiServices == nullptr ||
-                !receiver->m_impl->m_selectionExportUiServices->presentPinnedImage(
-                    decoded.image, pinGeometry.screen, fit.nativeGeometry, fit.initialWindowSize,
-                    std::move(decoded.formattedDocument), decoded.plainText,
-                    decoded.formattedTextDevicePixelRatio, std::move(decoded.originalContent), {},
-                    [receiver, generation, sourceIdentity](bool success, QImage) {
-                        if (success && receiver &&
-                            generation == receiver->m_impl->m_clipboardPinGeneration &&
-                            std::exchange(receiver->m_impl->m_pendingClipboardShake, false)) {
-                            bool restored = false;
-                            receiver->m_impl->m_selectionExportUiServices->handleDuplicatePin(
-                                sourceIdentity, QStringLiteral("shake_window"), restored);
-                        }
-                        SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_complete");
-                        SNOW_SHOT_PIN_PERF_FINISH(success);
-                    },
-                    decoded.appearance ? decoded.appearance->borderAppearance : std::nullopt,
-                    decoded.appearance ? std::optional(decoded.appearance->checkerboardEnabled)
-                                       : std::nullopt,
-                    snow_shot::storage::PinnedWindowCreationSource::Clipboard, sourceIdentity,
-                    decoded.appearance ? decoded.appearance->showBorder : std::nullopt,
-                    decoded.appearance ? decoded.appearance->showShadow : std::nullopt,
-                    std::move(decoded.animationSource))) {
-                SNOW_SHOT_PIN_PERF_FINISH(false);
-                receiver->m_impl->m_messages->error(
-                    QString::fromLatin1(kPinClipboardMessageKey),
-                    QCoreApplication::translate("ScreenshotController",
-                                                "The clipboard pin could not be presented"));
-            }
+            auto present = [receiver, guardedScreen, generation, autoResizeWindow,
+                            sourceIdentity](std::optional<ScreenshotClipboardContent> ready) {
+                if (!receiver || generation != receiver->m_impl->m_clipboardPinGeneration)
+                    return;
+                receiver->m_impl->m_clipboardDecodeBeforePresentation = false;
+                if (!ready) {
+                    SNOW_SHOT_PIN_PERF_FINISH(false);
+                    receiver->m_impl->m_messages->error(
+                        QString::fromLatin1(kPinClipboardMessageKey),
+                        QCoreApplication::translate("ScreenshotController",
+                                                    "The clipboard content could not be pinned"));
+                    return;
+                }
+                ScreenshotClipboardContent decoded = std::move(*ready);
+                QScreen* fallback =
+                    guardedScreen ? guardedScreen.data() : QGuiApplication::primaryScreen();
+                const qreal rasterScale = decoded.isFormattedText()
+                                              ? decoded.formattedTextDevicePixelRatio
+                                              : (fallback ? fallback->devicePixelRatio() : 1.0);
+                const auto pinGeometry = screenshotClipboardPinGeometry(
+                    decoded.placement, decoded.image.size(),
+                    snow_shot::presentation::pinnedImageWindowSize(decoded.image, rasterScale),
+                    fallback, autoResizeWindow);
+                const auto fit = pinGeometry.fit;
+                SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");
+                if (!fit.valid || receiver->m_impl->m_selectionExportUiServices == nullptr ||
+                    !receiver->m_impl->m_selectionExportUiServices->presentPinnedImage(
+                        decoded.image, pinGeometry.screen, fit.nativeGeometry,
+                        fit.initialWindowSize, std::move(decoded.formattedDocument),
+                        decoded.plainText, decoded.formattedTextDevicePixelRatio,
+                        std::move(decoded.originalContent), {},
+                        [receiver, generation, sourceIdentity](bool success, QImage) {
+                            if (success && receiver &&
+                                generation == receiver->m_impl->m_clipboardPinGeneration &&
+                                std::exchange(receiver->m_impl->m_pendingClipboardShake, false)) {
+                                bool restored = false;
+                                receiver->m_impl->m_selectionExportUiServices->handleDuplicatePin(
+                                    sourceIdentity, QStringLiteral("shake_window"), restored);
+                            }
+                            SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_complete");
+                            SNOW_SHOT_PIN_PERF_FINISH(success);
+                        },
+                        decoded.appearance ? decoded.appearance->borderAppearance : std::nullopt,
+                        decoded.appearance ? std::optional(decoded.appearance->checkerboardEnabled)
+                                           : std::nullopt,
+                        snow_shot::storage::PinnedWindowCreationSource::Clipboard, sourceIdentity,
+                        decoded.appearance ? decoded.appearance->showBorder : std::nullopt,
+                        decoded.appearance ? decoded.appearance->showShadow : std::nullopt,
+                        std::move(decoded.animationSource))) {
+                    SNOW_SHOT_PIN_PERF_FINISH(false);
+                    receiver->m_impl->m_messages->error(
+                        QString::fromLatin1(kPinClipboardMessageKey),
+                        QCoreApplication::translate("ScreenshotController",
+                                                    "The clipboard pin could not be presented"));
+                }
+            };
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            receiver->m_impl->m_clipboardFormulaRenderer.convert(
+                std::move(content->value()),
+                guardedScreen ? guardedScreen->devicePixelRatio() : 1.0, std::move(present));
+#else
+            present(std::move(content->value()));
+#endif
         });
     SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.decode_scheduled");
     if (!m_clipboardPinJob.isValid()) {
+        m_clipboardDecodeBeforePresentation = false;
         SNOW_SHOT_PIN_PERF_FINISH(false);
         m_messages->error(
             QString::fromLatin1(kPinClipboardMessageKey),
@@ -6617,7 +6670,8 @@ void ScreenshotController::setCaptureSuspended(bool suspended) {
 
 bool ScreenshotController::blocksApplicationUpdate(bool includeCaptureSuspension) const {
     return !m_impl->canBeginCapture(includeCaptureSuspension) || m_impl->m_filePinQueue.active() ||
-           m_impl->m_historyPinQueue.active() || !m_impl->m_activeImageExports.isEmpty() ||
+           m_impl->clipboardPinPending() || m_impl->m_historyPinQueue.active() ||
+           !m_impl->m_activeImageExports.isEmpty() ||
            static_cast<bool>(m_impl->m_cancelSaveDialog) ||
            ScreenshotExportCoordinator::shared().pendingJobCount() > 0 ||
            (m_impl->m_screenRecordingController != nullptr &&
@@ -6628,9 +6682,9 @@ bool ScreenshotController::blocksApplicationUpdate(bool includeCaptureSuspension
 bool ScreenshotController::blocksMemoryTrimming() const {
     const auto& state = *m_impl;
     return !state.canBeginCapture() || state.m_recaptureBusy || state.m_globalMouseDrag.active() ||
-           state.m_filePinBatch.active() || state.m_filePinQueue.active() ||
-           state.m_historyPinQueue.active() || !state.m_activeImageExports.isEmpty() ||
-           static_cast<bool>(state.m_cancelSaveDialog) ||
+           state.clipboardPinPending() || state.m_filePinBatch.active() ||
+           state.m_filePinQueue.active() || state.m_historyPinQueue.active() ||
+           !state.m_activeImageExports.isEmpty() || static_cast<bool>(state.m_cancelSaveDialog) ||
            (state.m_historyService && state.m_historyService->navigationInProgress()) ||
            (state.m_scrollingCaptureController && state.m_scrollingCaptureController->active()) ||
            (state.m_screenRecordingController &&
@@ -6969,6 +7023,21 @@ void ScreenshotController::mcpPinSelectionToScreen() {
 }
 
 #ifdef SNOW_SHOT_CONTROLLER_LIFETIME_TESTS
+quint64
+ScreenshotControllerTestAccess::clipboardPinGeneration(const ScreenshotController& controller) {
+    return controller.m_impl->m_clipboardPinGeneration;
+}
+
+bool ScreenshotControllerTestAccess::clipboardFormulaPending(
+    const ScreenshotController& controller) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    return controller.m_impl->m_clipboardFormulaRenderer.active();
+#else
+    Q_UNUSED(controller);
+    return false;
+#endif
+}
+
 void ScreenshotControllerTestAccess::prepareSelection(ScreenshotController& controller,
                                                       QImage image,
                                                       const ScreenshotSelectionParams& selection) {
