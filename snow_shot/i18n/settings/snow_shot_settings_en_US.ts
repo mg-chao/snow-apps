@@ -2148,6 +2148,10 @@
             <translation>Customize the quick-set buttons for annotation fill colors</translation>
         </message>
         <message>
+            <source>Customize the quick-set buttons for annotation highlight colors</source>
+            <translation>Customize the quick-set buttons for annotation highlight colors</translation>
+        </message>
+        <message>
             <source>Customize the quick-set buttons for annotation stroke colors</source>
             <translation>Customize the quick-set buttons for annotation stroke colors</translation>
         </message>
@@ -2698,6 +2702,14 @@
         <message>
             <source>Highlight</source>
             <translation>Highlight</translation>
+        </message>
+        <message>
+            <source>Highlight color preset %1</source>
+            <translation>Highlight color preset %1</translation>
+        </message>
+        <message>
+            <source>Highlight color presets</source>
+            <translation>Highlight color presets</translation>
         </message>
         <message>
             <source>Icon</source>

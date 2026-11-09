@@ -453,6 +453,8 @@ constexpr SchemaString kSchemaStrings0[] = {u"#F5222DFF", u"#52C41AFF", u"#1677F
                                             u"#000000FF"};
 constexpr SchemaString kSchemaStrings1[] = {u"#FFFFFF00", u"#FFCCC7FF", u"#D9F7BEFF", u"#BAE0FFFF",
                                             u"#FFF1B8FF"};
+constexpr SchemaString kHighlightColorPresets[] = {u"#FF7875FF", u"#D3F261FF", u"#69B1FFFF",
+                                                   u"#FFF566FF", u"#B37FEBFF"};
 constexpr SchemaString kSchemaStrings2[] = {u"Ctrl+U"};
 constexpr ConfigurationIntegerRange kSchemaRange0{10, 100, 1};
 constexpr SchemaString kSchemaStrings3[] = {u"icon", u"toolbar"};
@@ -834,6 +836,8 @@ constexpr SchemaEntryDescriptor kEntryDescriptors[] = {
     {u"screenshot/stroke_color_presets", stringsDefault(kSchemaStrings0),
      ConfigurationValueKind::StringList},
     {u"screenshot/fill_color_presets", stringsDefault(kSchemaStrings1),
+     ConfigurationValueKind::StringList},
+    {u"screenshot/highlight_color_presets", stringsDefault(kHighlightColorPresets),
      ConfigurationValueKind::StringList},
     {u"cloud_upload/configuration", factoryDefault(SchemaDefaultFactory::CloudUpload),
      ConfigurationValueKind::Structured},
@@ -2880,7 +2884,8 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return normalizeRgbaColor(value);
     }
     if (key == QStringLiteral("screenshot/stroke_color_presets") ||
-        key == QStringLiteral("screenshot/fill_color_presets")) {
+        key == QStringLiteral("screenshot/fill_color_presets") ||
+        key == QStringLiteral("screenshot/highlight_color_presets")) {
         return normalizeColorPresets(value);
     }
     if (isFilenameFormatKey(key)) {

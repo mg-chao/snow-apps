@@ -18,6 +18,10 @@ QVector<QColor> shapeFillColors() {
     return snow_shot::storage::ScreenshotColorPresetSettings{}.fillColors();
 }
 
+QVector<QColor> highlightColors() {
+    return snow_shot::storage::ScreenshotColorPresetSettings{}.highlightColors();
+}
+
 QVector<QColor> textColors() {
     return strokeColors();
 }

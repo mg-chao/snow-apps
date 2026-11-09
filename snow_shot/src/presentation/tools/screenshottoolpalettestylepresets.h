@@ -17,8 +17,10 @@ namespace snow_shot::presentation::style_presets {
 // Customizable fill color palette shared by the shape fill editor.
 [[nodiscard]] QVector<QColor> shapeFillColors();
 
-// Color palette shared by the text, serial number, watermark, highlight,
-// pen-highlight and spotlight editors.
+// Customizable palette shared by the rectangle, brush and text annotation highlights.
+[[nodiscard]] QVector<QColor> highlightColors();
+
+// Color palette shared by the text, serial number, watermark and spotlight editors.
 [[nodiscard]] QVector<QColor> textColors();
 
 // Fill color palette shared by the text and serial number fill editors. The

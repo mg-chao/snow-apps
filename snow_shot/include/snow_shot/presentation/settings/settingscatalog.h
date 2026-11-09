@@ -271,6 +271,7 @@ struct SettingsColorDefinition {
 enum class SettingsColorPaletteBinding {
     StrokeColors,
     FillColors,
+    HighlightColors,
 };
 
 struct SettingsColorPaletteDefinition {

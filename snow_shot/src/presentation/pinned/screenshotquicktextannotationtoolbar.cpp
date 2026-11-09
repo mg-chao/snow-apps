@@ -59,14 +59,15 @@ QString toolKey(Tool tool) {
     return {};
 }
 
-Style defaultStyle() {
+Style defaultStyle(Tool tool) {
     const auto defaults = screenshotCanvasStyleDefaults();
-    return {defaults.rectangle.stroke, defaults.rectangle.strokeWidth,
-            defaults.rectangle.strokeStyle, defaults.rectangle.strokeRenderingStyle};
+    return {tool == Tool::Highlight ? defaults.rectangleHighlight.fill : defaults.rectangle.stroke,
+            defaults.rectangle.strokeWidth, defaults.rectangle.strokeStyle,
+            defaults.rectangle.strokeRenderingStyle};
 }
 
-Style readStyle(const QJsonObject& object) {
-    Style style = defaultStyle();
+Style readStyle(Tool tool, const QJsonObject& object) {
+    Style style = defaultStyle(tool);
     const QColor color(object.value(QStringLiteral("color")).toString());
     if (color.isValid())
         style.color = color;
@@ -195,9 +196,11 @@ struct ScreenshotQuickTextAnnotationToolbar::Private final {
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
         if (storage.isInitialized())
             values = storage.configuration().value(kPreferencesKey).toObject();
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 4; ++i) {
+            const Tool tool = static_cast<Tool>(i);
             preferences[static_cast<size_t>(i)] =
-                readStyle(values.value(toolKey(static_cast<Tool>(i))).toObject());
+                readStyle(tool, values.value(toolKey(tool)).toObject());
+        }
     }
 
     void persistPreference(Tool tool, const Style& style) {
@@ -360,8 +363,8 @@ struct ScreenshotQuickTextAnnotationToolbar::Private final {
                 services, kStyleMetrics);
             ScreenshotToolPaletteColorEditorConfig colorConfig;
             colorConfig.accessibleName = QStringLiteral("Stroke color");
-            colorConfig.presetValues = style_presets::strokeColors();
-            colorConfig.presetSource = ScreenshotToolPaletteColorPresetSource::Stroke;
+            colorConfig.presetValues = style_presets::highlightColors();
+            colorConfig.presetSource = ScreenshotToolPaletteColorPresetSource::Highlight;
             colorConfig.presetTooltip = strokeConfig.colorTooltip;
             highlightEditor = std::make_unique<ScreenshotToolPaletteColorEditor>();
             highlightEditor->build(

@@ -17839,6 +17839,7 @@ void screenshotProductStyleProfileIsComplete() {
         snow_shot::presentation::screenshotCanvasStyleDefaults();
     const QColor red(0xf5, 0x22, 0x2d, 255);
     const QColor redAccent(0xf4, 0x21, 0x2c, 255);
+    const QColor highlight(0xff, 0x78, 0x75, 255);
     const QColor fill(0xff, 0xcc, 0xc7, 255);
     const QColor transparent(0xff, 0xff, 0xff, 0);
     const auto exact = [](double left, double right) {
@@ -17875,10 +17876,10 @@ void screenshotProductStyleProfileIsComplete() {
         {&defaults.freeDraw, fill, red, 2.0, 1.0, SnowCanvasArrowType::Straight,
          SnowCanvasHighlightShape::Rectangle,
          "free-draw defaults should match the Snow Shot product profile"},
-        {&defaults.rectangleHighlight, red, redAccent, 0.0, 1.0, SnowCanvasArrowType::Straight,
-         SnowCanvasHighlightShape::Rectangle,
+        {&defaults.rectangleHighlight, highlight, redAccent, 0.0, 1.0,
+         SnowCanvasArrowType::Straight, SnowCanvasHighlightShape::Rectangle,
          "rectangle-highlight defaults should match the Snow Shot product profile"},
-        {&defaults.penHighlight, transparent, red, 30.0, 1.0, SnowCanvasArrowType::Straight,
+        {&defaults.penHighlight, transparent, highlight, 30.0, 1.0, SnowCanvasArrowType::Straight,
          SnowCanvasHighlightShape::Rectangle,
          "pen-highlight defaults should match the Snow Shot product profile"},
     };
@@ -19217,29 +19218,44 @@ void customColorPresetSettingsPersistAndValidate(
     auto& configuration = applicationStorage.configuration();
     const QString strokeKey = QStringLiteral("screenshot/stroke_color_presets");
     const QString fillKey = QStringLiteral("screenshot/fill_color_presets");
+    const QString highlightKey = QStringLiteral("screenshot/highlight_color_presets");
     const auto defaultStroke = settings.strokeColors();
     const auto defaultFill = settings.fillColors();
+    const auto defaultHighlight = settings.highlightColors();
     require(defaultStroke.size() == 5 && defaultFill.size() == 5 &&
                 defaultStroke.first() == QColor(QStringLiteral("#f5222d")) &&
                 defaultFill.first() == QColor(255, 255, 255, 0),
             "color preset defaults must preserve the five existing drawing swatches");
+    require(defaultHighlight == QVector<QColor>{QColor(QStringLiteral("#ff7875")),
+                                                QColor(QStringLiteral("#d3f261")),
+                                                QColor(QStringLiteral("#69b1ff")),
+                                                QColor(QStringLiteral("#fff566")),
+                                                QColor(QStringLiteral("#b37feb"))},
+            "highlight presets must default to the five ordered opaque highlight colors");
     auto stroke = defaultStroke;
     auto fill = defaultFill;
+    auto highlight = defaultHighlight;
     stroke[1] = QColor(12, 34, 56, 78);
     fill[0] = QColor(90, 80, 70, 0);
     fill[2] = QColor(98, 76, 54, 123);
+    highlight[3] = QColor(12, 34, 56, 78);
     require(settings.setStrokeColors(stroke) && settings.setFillColors(fill) &&
-                settings.strokeColors() == stroke && settings.fillColors() == fill,
-            "custom stroke and fill presets must retain alpha and transparent RGB");
+                settings.setHighlightColors(highlight) && settings.strokeColors() == stroke &&
+                settings.fillColors() == fill && settings.highlightColors() == highlight,
+            "custom presets must retain alpha and transparent RGB independently");
     require(configuration.value(strokeKey).toArray().at(1) == QStringLiteral("#0C22384E") &&
-                configuration.value(fillKey).toArray().at(0) == QStringLiteral("#5A504600"),
+                configuration.value(fillKey).toArray().at(0) == QStringLiteral("#5A504600") &&
+                configuration.value(highlightKey).toArray().at(3) == QStringLiteral("#0C22384E"),
             "preset storage must serialize each color as an RGBA string");
     const auto revision = configuration.revision();
     auto invalidColors = stroke;
     invalidColors[2] = QColor();
     require(!settings.setStrokeColors(stroke.first(4)) &&
                 !settings.setFillColors(fill + QVector<QColor>{QColor(Qt::red)}) &&
-                !settings.setStrokeColors(invalidColors),
+                !settings.setStrokeColors(invalidColors) &&
+                !settings.setHighlightColors(highlight.first(4)) &&
+                !settings.setHighlightColors(highlight + QVector<QColor>{QColor(Qt::red)}) &&
+                !settings.setHighlightColors(invalidColors),
             "typed writes must reject incorrect slot counts and invalid colors");
     QJsonArray invalidEntries = configuration.value(strokeKey).toArray();
     invalidEntries[2] = QStringLiteral("#notcolor");
@@ -19249,23 +19265,34 @@ void customColorPresetSettingsPersistAndValidate(
                 !configuration.setValue(strokeKey, invalidType) &&
                 !configuration.setValue(fillKey, QJsonArray{}) &&
                 !configuration.setValue(fillKey, QStringLiteral("#FF0000FF")) &&
+                !configuration.setValue(highlightKey, invalidEntries) &&
+                !configuration.setValue(highlightKey, invalidType) &&
+                !configuration.setValue(highlightKey, QJsonArray{}) &&
+                !configuration.setValue(highlightKey, QStringLiteral("#FF0000FF")) &&
                 configuration.revision() == revision && settings.strokeColors() == stroke &&
-                settings.fillColors() == fill,
-            "invalid preset configuration writes must preserve both palettes without revisions");
+                settings.fillColors() == fill && settings.highlightColors() == highlight,
+            "invalid preset writes must preserve all palettes without revisions");
     QJsonArray normalizedStroke = configuration.value(strokeKey).toArray();
     normalizedStroke[1] = QStringLiteral("  #0c22384e  ");
     require(configuration.setValue(strokeKey, normalizedStroke) &&
                 configuration.value(strokeKey).toArray().at(1) == QStringLiteral("#0C22384E"),
             "valid RGBA arrays must normalize whitespace and case");
+    QJsonArray normalizedHighlight = configuration.value(highlightKey).toArray();
+    normalizedHighlight[3] = QStringLiteral("  #0c22384e  ");
+    require(configuration.setValue(highlightKey, normalizedHighlight) &&
+                configuration.value(highlightKey).toArray().at(3) == QStringLiteral("#0C22384E"),
+            "highlight presets must normalize RGBA whitespace and case");
     require(applicationStorage.flushNow().success, "custom color presets must flush to disk");
     applicationStorage.shutdown();
     require(applicationStorage.initialize(options).success && settings.strokeColors() == stroke &&
-                settings.fillColors() == fill,
-            "both palettes must survive an application storage restart");
+                settings.fillColors() == fill && settings.highlightColors() == highlight,
+            "all palettes must survive an application storage restart");
     require(applicationStorage.configuration().setValues(
                 {{strokeKey, storage::ConfigurationSchema::defaultValue(strokeKey)},
-                 {fillKey, storage::ConfigurationSchema::defaultValue(fillKey)}}) &&
-                settings.strokeColors() == defaultStroke && settings.fillColors() == defaultFill,
+                 {fillKey, storage::ConfigurationSchema::defaultValue(fillKey)},
+                 {highlightKey, storage::ConfigurationSchema::defaultValue(highlightKey)}}) &&
+                settings.strokeColors() == defaultStroke && settings.fillColors() == defaultFill &&
+                settings.highlightColors() == defaultHighlight,
             "reset must restore the original ordered palettes");
 }
 
@@ -19434,6 +19461,114 @@ void customColorPresetsRefreshCurrentAndLazyDrawingEditors() {
                 style_presets::shapeFillColors() == defaultFill &&
                 style_presets::textFillColors() == defaultFill,
             "all shared drawing color providers must reflect the latest settings");
+}
+
+void customHighlightPresetsRefreshCurrentAndReusedEditors() {
+    using namespace snow_shot::presentation;
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotColorPresetSettings settings;
+    const auto defaultStroke = settings.strokeColors();
+    const auto defaultFill = settings.fillColors();
+    const auto defaultHighlight = settings.highlightColors();
+    const auto swatches = [](QWidget* host, const QString& prefix) {
+        require(host != nullptr, "highlight swatches require a materialized editor");
+        QVector<ColorSwatchButton*> buttons;
+        for (auto* button : host->findChildren<adqt::widgets::AdButton*>()) {
+            if (auto* swatch = dynamic_cast<ColorSwatchButton*>(button);
+                swatch != nullptr && swatch->toolTip().startsWith(prefix))
+                buttons.push_back(swatch);
+        }
+        return buttons;
+    };
+    const auto requireColors = [](const QVector<ColorSwatchButton*>& buttons,
+                                  const QVector<QColor>& colors) {
+        require(buttons.size() == colors.size(), "highlight controls expose five preset slots");
+        for (int index = 0; index < colors.size(); ++index)
+            require(buttons.at(index)->swatchColor() == colors.at(index),
+                    "highlight swatches display their own configured RGBA colors");
+    };
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(Tool::RectangleHighlight);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto buttons = swatches(palette.stylePanel(), QStringLiteral("Highlight color "));
+    requireColors(buttons, defaultHighlight);
+    auto* outline = colorPickerWithAccessibleName(palette, "Highlight outline width");
+    require(outline != nullptr, "rectangle highlights expose an outline editor");
+    outline->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto outlineButtons =
+        swatches(outline->popupContent(), QStringLiteral("Highlight outline color "));
+    requireColors(outlineButtons, defaultStroke);
+    int commands = 0;
+    SnowCanvasShapeEdit lastEdit;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        ++commands;
+        if (const auto* shape = std::get_if<SnowCanvasShapeEdit>(&edit))
+            lastEdit = *shape;
+        palette.rememberStyleEdit(edit);
+        return true;
+    });
+    const auto originalStyles = palette.creationStyleDefaults();
+    auto stroke = defaultStroke;
+    auto fill = defaultFill;
+    auto highlight = defaultHighlight;
+    stroke[1] = QColor(11, 22, 33, 44);
+    fill[1] = QColor(55, 66, 77, 88);
+    require(settings.setStrokeColors(stroke) && settings.setFillColors(fill),
+            "stroke and fill presets can change independently of highlight presets");
+    requireColors(buttons, defaultHighlight);
+    requireColors(outlineButtons, stroke);
+    highlight[1] = QColor(99, 110, 121, 132);
+    require(settings.setHighlightColors(highlight), "highlight presets accept live changes");
+    requireColors(buttons, highlight);
+    requireColors(outlineButtons, stroke);
+    require(commands == 0 &&
+                palette.creationStyleDefaults().rectangleHighlight ==
+                    originalStyles.rectangleHighlight &&
+                palette.creationStyleDefaults().penHighlight == originalStyles.penHighlight,
+            "palette refresh preserves creation styles and rectangle outline presets");
+    outline->setPopupVisible(false);
+    int pass = 0;
+    for (Tool tool : {Tool::RectangleHighlight, Tool::BrushHighlight, Tool::RectangleHighlight,
+                      Tool::BrushHighlight}) {
+        palette.setActiveTool(tool);
+        const bool brush = tool == Tool::BrushHighlight;
+        buttons = swatches(palette.stylePanel(), brush ? QStringLiteral("Brush highlight color ")
+                                                       : QStringLiteral("Highlight color "));
+        requireColors(buttons, highlight);
+        const auto before = palette.creationStyleDefaults();
+        highlight[1] = QColor(45 + pass, 67, 89, 101);
+        require(settings.setHighlightColors(highlight), "reused highlight editors follow settings");
+        requireColors(buttons, highlight);
+        require(commands == pass &&
+                    palette.creationStyleDefaults().rectangleHighlight ==
+                        before.rectangleHighlight &&
+                    palette.creationStyleDefaults().penHighlight == before.penHighlight,
+                "live updates of reused editors must not emit style commands");
+        buttons.at(1)->click();
+        ++pass;
+        require(commands == pass &&
+                    lastEdit.kind == (brush ? SnowCanvasShapeKind::PenHighlight
+                                            : SnowCanvasShapeKind::RectangleHighlight) &&
+                    (brush ? lastEdit.style.stroke : lastEdit.style.fill) == highlight.at(1),
+                "a reused highlight swatch commits its refreshed alpha color exactly once");
+    }
+    ScreenshotToolPalette fresh(ScreenshotToolPalette::Options{});
+    fresh.setActiveTool(Tool::RectangleHighlight);
+    requireColors(swatches(fresh.stylePanel(), QStringLiteral("Highlight color ")), highlight);
+    const auto stylesBeforeReset = palette.creationStyleDefaults();
+    require(settings.setHighlightColors(defaultHighlight), "restore highlight presets");
+    requireColors(buttons, defaultHighlight);
+    require(commands == pass &&
+                palette.creationStyleDefaults().rectangleHighlight ==
+                    stylesBeforeReset.rectangleHighlight &&
+                palette.creationStyleDefaults().penHighlight == stylesBeforeReset.penHighlight &&
+                settings.strokeColors() == stroke && settings.fillColors() == fill &&
+                style_presets::highlightColors() == defaultHighlight,
+            "reset refreshes open highlight editors without changing styles or other palettes");
+    require(settings.setStrokeColors(defaultStroke) && settings.setFillColors(defaultFill),
+            "restore independent stroke and fill presets");
 }
 
 void colorPresetEditorsPreserveCommandsAcrossRebinding() {
@@ -20699,6 +20834,7 @@ int main(int argc, char** argv) {
         customColorPresetSettingsPersistAndValidate(
             {executableDirectory, storageDirectory.path(), 60000});
         customColorPresetsRefreshCurrentAndLazyDrawingEditors();
+        customHighlightPresetsRefreshCurrentAndReusedEditors();
         colorPresetEditorsPreserveCommandsAcrossRebinding();
         return 0;
     }

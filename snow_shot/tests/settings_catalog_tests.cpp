@@ -1305,7 +1305,7 @@ void builtInCatalogIsCompleteAndValid() {
                 settings::SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton &&
             !storage::ConfigurationSchema::defaultValue(firstToolbarGroupButton->configurationKey)
                  .toBool() &&
-            drawingSettingsSection.items.size() == 8 &&
+            drawingSettingsSection.items.size() == 9 &&
             drawingSettingsSection.items.at(4).id == rememberLastUsedTool->id &&
             drawingSettingsSection.items.at(5).id == firstToolbarGroupButton->id,
         "the default-off first toolbar group button switch must follow Remember last used tool");
@@ -1345,7 +1345,8 @@ void builtInCatalogIsCompleteAndValid() {
         "automatic selection exclusions must have a registered resettable multi-select binding");
     const auto& paletteRegistry = settings::builtInSettingsRegistry();
     for (const auto binding : {settings::SettingsColorPaletteBinding::StrokeColors,
-                               settings::SettingsColorPaletteBinding::FillColors}) {
+                               settings::SettingsColorPaletteBinding::FillColors,
+                               settings::SettingsColorPaletteBinding::HighlightColors}) {
         const auto* field = paletteRegistry.fieldForColorPalette(binding);
         require(field != nullptr && field->pageId == QStringLiteral("screenshots") &&
                     field->sectionId == QStringLiteral("drawing-settings") &&
@@ -1354,8 +1355,17 @@ void builtInCatalogIsCompleteAndValid() {
                     field->defaultValue.toArray().size() == 5 &&
                     std::get<settings::SettingsColorPaletteDefinition>(field->definition->payload)
                             .colorCount == 5,
-                "stroke and fill quick-set palettes expose five resettable color settings");
+                "stroke, fill and highlight palettes expose five resettable color settings");
     }
+    const auto& highlightPresets = drawingSettingsSection.items.at(8);
+    require(drawingSettingsSection.items.at(7).id == QStringLiteral("drawing.fill-color-presets") &&
+                highlightPresets.id == QStringLiteral("drawing.highlight-color-presets") &&
+                highlightPresets.title.translated() == QStringLiteral("Highlight color presets") &&
+                highlightPresets.configurationKey ==
+                    QStringLiteral("screenshot/highlight_color_presets") &&
+                std::get<settings::SettingsColorPaletteDefinition>(highlightPresets.payload)
+                        .buttonLabel.translated() == QStringLiteral("Highlight color preset %1"),
+            "highlight presets must immediately follow fill presets with accessible slot labels");
 
     const auto* pinDoubleClick =
         catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen-settings"),

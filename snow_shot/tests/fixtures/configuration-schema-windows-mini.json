@@ -38,6 +38,22 @@
     },
     {
       "allowedStringValues": [],
+      "defaultJsonType": 4,
+      "defaultStringIsNull": false,
+      "defaultValue": [
+        "#FF7875FF",
+        "#D3F261FF",
+        "#69B1FFFF",
+        "#FFF566FF",
+        "#B37FEBFF"
+      ],
+      "integerRange": null,
+      "key": "screenshot/highlight_color_presets",
+      "maximumListItems": -1,
+      "valueKind": "StringList"
+    },
+    {
+      "allowedStringValues": [],
       "defaultJsonType": 5,
       "defaultStringIsNull": false,
       "defaultValue": {
@@ -150,7 +166,12 @@
       "defaultStringIsNull": false,
       "defaultValue": {
         "hidden": [
-          "save-as-file"
+          "save-as-file",
+          "screenshot-history",
+          "global-canvas",
+          "stitch-selected-images",
+          "split-selected-images",
+          "edit-selected-images"
         ],
         "positions": [
           [

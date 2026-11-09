@@ -2148,6 +2148,10 @@
             <translation>自定义标注填充颜色的快捷设置按钮</translation>
         </message>
         <message>
+            <source>Customize the quick-set buttons for annotation highlight colors</source>
+            <translation>自定义标注高亮颜色的快捷设置按钮</translation>
+        </message>
+        <message>
             <source>Customize the quick-set buttons for annotation stroke colors</source>
             <translation>自定义标注描边颜色的快捷设置按钮</translation>
         </message>
@@ -2698,6 +2702,14 @@
         <message>
             <source>Highlight</source>
             <translation>高亮</translation>
+        </message>
+        <message>
+            <source>Highlight color preset %1</source>
+            <translation>高亮颜色预设 %1</translation>
+        </message>
+        <message>
+            <source>Highlight color presets</source>
+            <translation>高亮颜色预设</translation>
         </message>
         <message>
             <source>Icon</source>

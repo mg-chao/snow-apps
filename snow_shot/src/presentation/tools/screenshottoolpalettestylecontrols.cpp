@@ -3159,9 +3159,9 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
 
         ScreenshotToolPaletteColorEditorConfig highlightColorConfig;
         highlightColorConfig.accessibleName = QStringLiteral("Highlight color");
-        highlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
+        highlightColorConfig.presetValues = style_presets::highlightColors();
         highlightColorConfig.presetSource =
-            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Highlight;
         highlightColorConfig.presetTooltip = [](const QColor& color) {
             return ScreenshotToolPaletteTranslationText("Highlight color %1").arg(color.name());
         };
@@ -3252,9 +3252,9 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
 
         ScreenshotToolPaletteColorEditorConfig brushHighlightColorConfig;
         brushHighlightColorConfig.accessibleName = QStringLiteral("Brush highlight color");
-        brushHighlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
+        brushHighlightColorConfig.presetValues = style_presets::highlightColors();
         brushHighlightColorConfig.presetSource =
-            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Highlight;
         brushHighlightColorConfig.presetTooltip = [](const QColor& color) {
             return ScreenshotToolPaletteTranslationText("Brush highlight color %1")
                 .arg(color.name());
