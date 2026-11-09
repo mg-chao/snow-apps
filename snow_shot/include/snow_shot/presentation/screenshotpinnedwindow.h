@@ -3,6 +3,9 @@
 
 #include "snow_shot/presentation/screenshotclouduploadservice.h"
 #include "snow_shot/app/editionfeatures.h"
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#include "snow_shot/presentation/screenshotclipboardformularenderer.h"
+#endif
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
@@ -534,7 +537,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void loadImageFile();
     void loadClipboardContent();
     void requestContentReplacement(QStringList paths,
-                                   std::optional<ScreenshotClipboardContentSnapshot> snapshot = {});
+                                   std::optional<ScreenshotClipboardContentSnapshot> snapshot = {},
+                                   bool clipboardFormula = false);
     bool replaceContent(ScreenshotClipboardContent content, bool* rejectedByLock = nullptr);
     void finishContentReplacement(ScreenshotClipboardContent content, quint64 generation);
     void finishQueuedContentReplacement();
@@ -739,6 +743,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_airDropPending = false;
     ScreenshotExportJobHandle m_materializationJob;
     ScreenshotExportJobHandle m_contentReplacementJob;
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    ScreenshotClipboardFormulaRenderer m_clipboardFormulaRenderer;
+#endif
     quint64 m_contentReplacementGeneration = 0;
     ScreenshotExportJobHandle m_fileSaveJob;
     ScreenshotExportJobHandle m_recognitionSaveJob;
