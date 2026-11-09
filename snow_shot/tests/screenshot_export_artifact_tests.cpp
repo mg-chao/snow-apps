@@ -3340,6 +3340,70 @@ void cancelledEncodersRetainEveryConsumerLease() {
     }
 }
 
+void cancelledEncodersDestroyArtifactOnGuiThread() {
+    enum class Output { Clipboard, Png, Bmp, Jpeg };
+    QTemporaryDir directory;
+    require(directory.isValid(), "cancelled artifact fixture needs an output directory");
+    QObject receiver;
+    for (const auto output : {Output::Clipboard, Output::Png, Output::Bmp, Output::Jpeg}) {
+        const auto entered = std::make_shared<std::atomic_bool>(false);
+        const auto released = std::make_shared<std::atomic_bool>(false);
+        const auto unblock = qScopeGuard([released] { released->store(true); });
+        auto rows = rowSourceFor(testImage(), {});
+        rows.readRows = [read = rows.readRows, entered, released](int first, int count,
+                                                                  qsizetype stride, uchar* target,
+                                                                  qsizetype capacity) {
+            entered->store(true);
+            while (!released->load())
+                QThread::msleep(1);
+            return read(first, count, stride, target, capacity);
+        };
+        auto artifact = std::make_shared<ScreenshotExportArtifact>(
+            ScreenshotExportSource::fromProducer({}, [rows](std::function<bool()> cancellation) {
+                auto source = rows;
+                source.cancellationRequested = std::move(cancellation);
+                return source;
+            }));
+        const auto destroyedOn = std::make_shared<std::atomic<QThread*>>(nullptr);
+        QObject::connect(artifact.get(), &QObject::destroyed,
+                         [destroyedOn] { destroyedOn->store(QThread::currentThread()); });
+        int callbacks = 0;
+        const bool accepted = [&] {
+            const auto complete = [artifact, &callbacks](auto) {
+                Q_UNUSED(artifact);
+                ++callbacks;
+            };
+            switch (output) {
+            case Output::Clipboard:
+                return artifact->requestClipboard(&receiver, complete);
+            case Output::Png:
+                return artifact->requestCanonicalPng(&receiver, complete);
+            case Output::Bmp:
+            case Output::Jpeg:
+                return artifact->requestSaveToPath(
+                    &receiver, directory.filePath(QStringLiteral("cancelled")),
+                    output == Output::Bmp ? ScreenshotImageFileFormat::Bmp
+                                          : ScreenshotImageFileFormat::Jpeg,
+                    {}, complete);
+            }
+            return false;
+        }();
+        require(accepted, "accept the encoding whose consumer owns its artifact");
+        processUntil([&] { return entered->load(); });
+        const std::weak_ptr<ScreenshotExportArtifact> weak = artifact;
+        artifact->cancel();
+        artifact.reset();
+        require(!weak.expired() && !destroyedOn->load(),
+                "cancellation keeps the consumer-owned artifact alive while the worker reads");
+        released->store(true);
+        processUntil([&] { return destroyedOn->load() != nullptr; });
+        require(weak.expired() && destroyedOn->load() == QCoreApplication::instance()->thread() &&
+                    callbacks == 0,
+                "worker retirement destroys the cancelled artifact on the GUI thread without "
+                "delivering its consumer callback");
+    }
+}
+
 void pinnedTextAnnotationsExportBelowOrdinaryDrawingAndInsideCrop() {
     QImage background(80, 60, QImage::Format_ARGB32_Premultiplied);
     background.fill(Qt::white);
@@ -4430,6 +4494,8 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         if (application.arguments().contains(QStringLiteral("--subscriber-lifecycle-only"))) {
+            cancelledEncodersDestroyArtifactOnGuiThread();
+            cancelledEncodersRetainEveryConsumerLease();
             subscriberCallbacksMayRetireArtifact();
             queuedSubscribersRespectArtifactRetirement();
             queuedOutputCallbacksRespectArtifactRetirement();
@@ -4596,6 +4662,7 @@ int main(int argc, char** argv) {
         rowRequestFailureAndCancellationFanOut();
         cancellationSuppressesPendingCallbacks();
         cancelledEncodersRetainEveryConsumerLease();
+        cancelledEncodersDestroyArtifactOnGuiThread();
         pinnedViewportSourceRendersExpectedPixels();
         pinnedTextAnnotationsExportBelowOrdinaryDrawingAndInsideCrop();
         pinnedTextAnnotationsProjectAtOutputResolutionAndKeepDonorsPristine();

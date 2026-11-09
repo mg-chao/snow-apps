@@ -23,6 +23,7 @@
 #include "screenshotprintinteractionguard.h"
 #include "screenshotprintcompletion.h"
 #include "screenshotairdropcompletion.h"
+#include "screenshotdeferredpresentation_p.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
@@ -150,6 +151,7 @@
 
 #include <algorithm>
 #include <QHash>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -601,6 +603,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setSelectionToolbarPopupVisible(bool visible) override;
 
     ScreenshotController& owner;
+    ScreenshotDeferredPresentation m_deferredPresentation;
     ScreenshotSelectorCoordinator* m_selectorCoordinator = nullptr;
     ScreenshotCaptureState m_captureState;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_windowShortcutManager;
@@ -740,7 +743,22 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                                  snow_shot::presentation::PinnedWindowGroupManager* groupManager,
                                  ScreenshotOcrRecognitionService* sharedOcrRecognition,
                                  SnowShotApiClient* sharedApiClient)
-    : owner(controller), m_groupManager(groupManager), m_ocrRecognition(sharedOcrRecognition),
+    : owner(controller),
+      m_deferredPresentation(controller,
+                             {[this] { m_captureWorkflow->prewarmResources(); },
+                              [this] {
+                                  if (!ensureExportFeature() || !m_selectionExportUiServices)
+                                      return;
+                                  QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+                                  if (!screen)
+                                      screen = QGuiApplication::primaryScreen();
+                                  m_selectionExportUiServices->prewarmPinnedWindow(screen);
+                              },
+                              [this] {
+                                  if (ensureExportFeature() && m_selectionExportUiServices)
+                                      m_selectionExportUiServices->restorePersistedWindows();
+                              }}),
+      m_groupManager(groupManager), m_ocrRecognition(sharedOcrRecognition),
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
     SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
       m_tableRecognition(sharedApiClient),
@@ -1567,7 +1585,10 @@ bool ScreenshotController::Impl::ensureExportFeature() {
         [controller = QPointer<ScreenshotController>(&owner)](const QString& id) {
             if (controller)
                 emit controller->pinnedImageEditingRequested(id);
-        });
+        },
+        [this] { m_deferredPresentation.requestRestore(); });
+    exportUiServices->setPresentationSuspended(m_captureWorkflow &&
+                                               m_captureWorkflow->captureSuspended());
     exportUiServices->setLiveImageEditingHandler(
         [controller =
              QPointer<ScreenshotController>(&owner)](const ScreenshotExportSource& source) {
@@ -3853,6 +3874,20 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
     const QPointer<ScreenshotController> receiver(&owner);
     const QPointer<QScreen> guardedScreen(cursorScreen);
     const quint64 epoch = m_historyPinEpoch;
+    // loadResultImage reads the encoded PNG and decodes into packed RGBA8/BGRA8. Account for
+    // that input, the output and two output-sized scratch surfaces plus codec headroom, as in
+    // the image library's decode estimate. This covers preparation, not the consumer's pin.
+    const auto& resultRecord = *record.result;
+    const qint64 pixels = qint64(resultRecord.imageSize.width()) * resultRecord.imageSize.height();
+    constexpr qint64 headroom = 8 * 1024 * 1024;
+    constexpr qint64 bytesPerPixel = 3 * 4;
+    qint64 workingBytes = std::numeric_limits<qint64>::max();
+    if (!resultRecord.imageSize.isEmpty() && resultRecord.encodedBytes >= 0 &&
+        resultRecord.encodedBytes <= workingBytes - headroom &&
+        pixels <= (workingBytes - headroom - resultRecord.encodedBytes) / bytesPerPixel)
+        workingBytes = resultRecord.encodedBytes + pixels * bytesPerPixel + headroom;
+    // Unknown/overflowing metadata remains admissible through the existing oversized-alone
+    // rule, instead of silently bypassing byte admission or changing legacy read failures.
     const bool queued = m_historyPinQueue.enqueue(
         ScreenshotExportCoordinator::Priority::Foreground,
         [record](const ScreenshotExportCancellation& cancellation) {
@@ -3952,7 +3987,8 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
                                                     "The screenshot could not be pinned"));
                 }
             }
-        });
+        },
+        workingBytes);
     if (!queued) {
         qWarning("Screenshot history pin failed: the export queue is unavailable");
         reportFailed();
@@ -6534,6 +6570,7 @@ void ScreenshotController::Impl::handleSelectionConfirmed() {
 }
 
 void ScreenshotController::Impl::shutdown() {
+    m_deferredPresentation.stop();
 #ifdef Q_OS_MACOS
     m_sessionFocus->discard();
     m_recaptureKeyboardOwner.clear();
@@ -6623,17 +6660,7 @@ ScreenshotController::~ScreenshotController() {
 }
 
 void ScreenshotController::prewarmResources() {
-    QTimer::singleShot(0, this, [this]() {
-        m_impl->m_captureWorkflow->prewarmResources();
-        if (!m_impl->ensureExportFeature() || m_impl->m_selectionExportUiServices == nullptr) {
-            return;
-        }
-        QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
-        if (screen == nullptr) {
-            screen = QGuiApplication::primaryScreen();
-        }
-        m_impl->m_selectionExportUiServices->prewarmPinnedWindow(screen);
-    });
+    m_impl->m_deferredPresentation.requestPrewarm();
 }
 
 void ScreenshotController::restoreLastClosedPinnedWindow() {
@@ -6661,19 +6688,11 @@ void ScreenshotController::destroyPinnedRecords(const QVector<QString>& ids) {
 }
 
 void ScreenshotController::restorePinnedWindows() {
-    QTimer::singleShot(0, this, [this]() {
-        if (m_impl->ensureExportFeature() && m_impl->m_selectionExportUiServices != nullptr) {
-            m_impl->m_selectionExportUiServices->restorePersistedWindows();
-        }
-    });
+    m_impl->m_deferredPresentation.requestRestore();
 }
 
 void ScreenshotController::restoreActivePinnedGroupWindows() {
-    QTimer::singleShot(0, this, [this]() {
-        if (m_impl->ensureExportFeature() && m_impl->m_selectionExportUiServices != nullptr) {
-            m_impl->m_selectionExportUiServices->restorePersistedWindows();
-        }
-    });
+    m_impl->m_deferredPresentation.requestRestore();
 }
 
 bool ScreenshotController::captureAvailable() const {
@@ -6683,6 +6702,9 @@ bool ScreenshotController::captureAvailable() const {
 void ScreenshotController::setCaptureSuspended(bool suspended) {
     if (!m_impl->m_captureWorkflow || m_impl->m_captureWorkflow->captureSuspended() == suspended)
         return;
+    m_impl->m_deferredPresentation.setSuspended(suspended);
+    if (m_impl->m_selectionExportUiServices)
+        m_impl->m_selectionExportUiServices->setPresentationSuspended(suspended);
     m_impl->m_captureWorkflow->setCaptureSuspended(suspended);
     emit captureAvailabilityChanged(captureAvailable());
 }
@@ -6690,6 +6712,8 @@ void ScreenshotController::setCaptureSuspended(bool suspended) {
 bool ScreenshotController::blocksApplicationUpdate(bool includeCaptureSuspension) const {
     return !m_impl->canBeginCapture(includeCaptureSuspension) || m_impl->m_filePinQueue.active() ||
            m_impl->clipboardPinPending() || m_impl->m_historyPinQueue.active() ||
+           (m_impl->m_selectionExportUiServices &&
+            m_impl->m_selectionExportUiServices->restoringWindows()) ||
            !m_impl->m_activeImageExports.isEmpty() ||
            static_cast<bool>(m_impl->m_cancelSaveDialog) ||
            ScreenshotExportCoordinator::shared().pendingJobCount() > 0 ||
@@ -6703,6 +6727,8 @@ bool ScreenshotController::blocksMemoryTrimming() const {
     return !state.canBeginCapture() || state.m_recaptureBusy || state.m_globalMouseDrag.active() ||
            state.clipboardPinPending() || state.m_filePinBatch.active() ||
            state.m_filePinQueue.active() || state.m_historyPinQueue.active() ||
+           (state.m_selectionExportUiServices &&
+            state.m_selectionExportUiServices->restoringWindows()) ||
            !state.m_activeImageExports.isEmpty() || static_cast<bool>(state.m_cancelSaveDialog) ||
            (state.m_historyService && state.m_historyService->navigationInProgress()) ||
            (state.m_scrollingCaptureController && state.m_scrollingCaptureController->active()) ||
@@ -7581,18 +7607,37 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotController::mcpExportArtifac
                     return false;
                 scrolling->setExportPaused(true);
                 const QPointer<QObject> target(receiver);
+                struct PendingImage {
+                    std::function<void(QImage)> done;
+                    bool snapshotAccepted = false;
+                    bool snapshotCancelled = false;
+
+                    void complete(QImage image) {
+                        if (auto callback = std::exchange(done, {}))
+                            callback(std::move(image));
+                    }
+                    void cancelSnapshot() {
+                        snapshotCancelled = true;
+                        if (snapshotAccepted)
+                            complete({});
+                    }
+                };
+                auto pending = std::make_shared<PendingImage>();
+                pending->done = std::move(done);
                 const bool accepted = scrolling->requestTrimmedSnapshot(
-                    [guard, target, scale,
-                     done = std::move(done)](ScreenshotScrollingSnapshot snapshot) mutable {
+                    [guard, target, scale, pending](ScreenshotScrollingSnapshot snapshot) mutable {
                         if (guard && guard->m_impl->m_scrollingCaptureController)
                             guard->m_impl->m_scrollingCaptureController->setExportPaused(false);
                         if (!target)
                             return;
                         if (!snapshot.isValid()) {
-                            done({});
+                            pending->complete({});
                             return;
                         }
-                        static_cast<void>(ScreenshotExportCoordinator::shared().submit(
+                        auto complete = [pending](ScreenshotExportTaskResult result) mutable {
+                            pending->complete(std::move(result.image));
+                        };
+                        const auto job = ScreenshotExportCoordinator::shared().submit(
                             target, ScreenshotExportCoordinator::Priority::Foreground,
                             [snapshot = std::move(snapshot),
                              scale](const ScreenshotExportCancellation& cancellation) {
@@ -7606,10 +7651,24 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotController::mcpExportArtifac
                                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                                 return result;
                             },
-                            [done = std::move(done)](ScreenshotExportTaskResult result) {
-                                done(std::move(result.image));
-                            }));
+                            complete);
+                        // Snapshot acceptance is only the acquisition stage. A rejected
+                        // materialization has no coordinator callback, so terminalize the
+                        // accepted loader here instead of leaving MCP export pending forever.
+                        if (!job.isValid())
+                            complete({});
+                    },
+                    [guard, target, pending] {
+                        if (guard && guard->m_impl->m_scrollingCaptureController)
+                            guard->m_impl->m_scrollingCaptureController->setExportPaused(false);
+                        if (target)
+                            pending->cancelSnapshot();
                     });
+                // Snapshot rejection can cancel synchronously before returning false. Only
+                // an accepted request may terminalize through this cancellation callback.
+                pending->snapshotAccepted = accepted;
+                if (accepted && pending->snapshotCancelled)
+                    pending->complete({});
                 if (!accepted)
                     scrolling->setExportPaused(false);
                 return accepted;

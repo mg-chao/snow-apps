@@ -98,7 +98,14 @@ struct ScreenshotExportClipboardResult final {
 
 class ScreenshotExportSource final {
   public:
+    // Called on the artifact's GUI thread. False rejects without a completion; true accepts
+    // and permits an inline completion. An accepted, live, uncancelled request must complete
+    // once on that same thread; receiver destruction may retire its callback. Freeze mutable
+    // UI state before construction; the loader must not hand live widgets to a worker.
     using ImageLoader = std::function<bool(QObject*, std::function<void(QImage)>)>;
+    // These synchronous callbacks run on export workers. Captured sources/row readers must
+    // own their immutable inputs and remain valid until execution actually retires, including
+    // after cancellation. They must not access GUI objects or artifact/cache request APIs.
     using ImageProducer = std::function<QImage(const ScreenshotExportCancellation& cancellation)>;
     using ImagePreparation = std::function<QImage(QImage, const ScreenshotExportCancellation&)>;
     using RowSourceFactory =
@@ -170,6 +177,15 @@ class ScreenshotExportSource final {
     friend class ScreenshotExportArtifact;
 };
 
+// Construct, request, inspect cached products, cancel and destroy on the GUI thread. Internal
+// mutexes protect worker/delivery handoffs, not arbitrary-thread access to the shared brokers
+// and completed-output caches. Keep the artifact's QObject affinity on that thread.
+//
+// A false request result rejects without invoking its callback. Accepted results may arrive
+// inline on the receiver's thread, otherwise delivery is queued there. Destroying the receiver
+// or cancelling the artifact suppresses undelivered callbacks; it does not join active workers
+// or release their source/resource leases early. Consumer-owned completed results survive
+// artifact destruction and application idle-cache trimming independently.
 class ScreenshotExportArtifact final : public QObject {
   public:
     struct PngCachePolicy {
@@ -285,6 +301,7 @@ class ScreenshotExportArtifact final : public QObject {
                          QDateTime requestedAt, ScreenshotExportCoordinator::Priority priority);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+    void assertOwnerThread() const;
 
     void startImage();
     void prepareLoadedImage(QImage image);

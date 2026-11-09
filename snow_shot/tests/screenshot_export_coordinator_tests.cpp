@@ -104,7 +104,7 @@ void workingBytesGateJobsWithoutOccupyingWorkers() {
         },
         6);
     payload.reset();
-    const auto small = coordinator.submit(
+    const auto compatibleJob = coordinator.submit(
         &receiver, ScreenshotExportCoordinator::Priority::Foreground,
         [gate, &smallStarted](const auto&) {
             ++smallStarted;
@@ -112,7 +112,7 @@ void workingBytesGateJobsWithoutOccupyingWorkers() {
             return ScreenshotExportTaskResult{};
         },
         [&](auto) { ++completions; }, 1);
-    require(large.isValid() && small.isValid() && coordinator.activeWorkingBytes() == 6 &&
+    require(large.isValid() && compatibleJob.isValid() && coordinator.activeWorkingBytes() == 6 &&
                 coordinator.pendingJobCount() == 3,
             "a large head request waits fairly without admitting smaller followers");
     large.cancel();
@@ -166,6 +166,30 @@ void completionRunsOnceOnGuiThread() {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(completionCount == 1 && completionSucceeded && workThread != guiThread,
             "coordinator completion was not exactly once on the GUI thread");
+}
+
+void receiverAffinityDoesNotMoveCoordinatorCompletion() {
+    ScreenshotExportCoordinator coordinator;
+    QThread receiverThread;
+    auto* receiver = new QObject;
+    receiver->moveToThread(&receiverThread);
+    QObject::connect(&receiverThread, &QThread::finished, receiver, &QObject::deleteLater);
+    receiverThread.start();
+    const auto stopReceiver = qScopeGuard([&] {
+        receiverThread.quit();
+        receiverThread.wait();
+    });
+    int completions = 0;
+    const auto handle = coordinator.submit(
+        receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [](const auto&) { return ScreenshotExportTaskResult{}; },
+        [&](auto result) {
+            require(result.succeeded() && QThread::currentThread() == coordinator.thread(),
+                    "the receiver guards lifetime without changing coordinator dispatch affinity");
+            ++completions;
+        });
+    require(handle.isValid() && processUntil([&] { return completions == 1; }),
+            "a foreign-thread receiver still gets one owner-thread completion");
 }
 
 void cancellationPropagates() {
@@ -837,6 +861,7 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         completionRunsOnceOnGuiThread();
+        receiverAffinityDoesNotMoveCoordinatorCompletion();
         exportCacheBoundsAggregateRetention();
         workingBytesGateJobsWithoutOccupyingWorkers();
         cancellationPropagates();

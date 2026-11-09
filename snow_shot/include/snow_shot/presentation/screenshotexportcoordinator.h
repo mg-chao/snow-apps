@@ -56,6 +56,9 @@ class ScreenshotExportJobHandle final {
   public:
     ScreenshotExportJobHandle() = default;
 
+    // Handles may be copied, observed, cancelled and promoted from any thread. Cancellation
+    // retires queued work; active work keeps its admission and captured resource owners until
+    // it returns. It never joins the worker.
     void cancel() const;
     // Raise queued work without submitting a second job or interrupting a running worker.
     void promoteToForeground() const;
@@ -74,6 +77,9 @@ class ScreenshotExportJobHandle final {
 
 class ScreenshotExportQueue;
 
+// GUI-thread owner: construct, submit, register queues, shut down and destroy here. Worker
+// execution and handle cancellation are synchronized separately; that does not make the
+// GUI-owned queue registry available to arbitrary threads. Do not move QObject affinity.
 class ScreenshotExportCoordinator final : public QObject {
   public:
     enum class Priority { Background, Foreground };
@@ -88,12 +94,19 @@ class ScreenshotExportCoordinator final : public QObject {
                                 QObject* parent = nullptr);
     ~ScreenshotExportCoordinator() override;
 
+    // First access constructs the shared owner on the GUI thread. Later worker-side access
+    // is limited to the synchronized observations below, not submission or shutdown.
     [[nodiscard]] static ScreenshotExportCoordinator& shared();
+    // Invalid handle: rejected, no callback. Accepted work runs off the GUI thread and its
+    // completion is queued to this coordinator's GUI thread if the receiver is still alive.
+    // Receiver is a lifetime guard, not the completion's dispatch thread. Freeze GUI inputs
+    // before submission; cancellation/receiver destruction cannot release worker owners early.
     [[nodiscard]] ScreenshotExportJobHandle submit(QObject* receiver, Priority priority, Work work,
                                                    Completion completion,
                                                    qint64 estimatedWorkingBytes = 0);
     // Estimates bound concurrent scratch/output preparation, separately from cached or externally
     // owned results. A job larger than the budget runs alone so existing large exports still work.
+    // These three observations are synchronized and may also be used by worker instrumentation.
     [[nodiscard]] qint64 activeWorkingBytes() const;
     [[nodiscard]] int pendingJobCount() const;
     [[nodiscard]] bool acceptingSubmissions() const;
@@ -101,6 +114,7 @@ class ScreenshotExportCoordinator final : public QObject {
 
   private:
     friend class ScreenshotExportQueue;
+    void assertOwnerThread() const;
     void dispatchQueues();
     struct Impl;
     std::shared_ptr<Impl> m_impl;
