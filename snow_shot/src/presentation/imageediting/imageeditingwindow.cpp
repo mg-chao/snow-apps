@@ -17,6 +17,7 @@
 #include "widgets/color_picker.h"
 #include "widgets/select.h"
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QtMath>
 #include <QMouseEvent>
 #include "snow_shot/presentation/screenshotcanvasoperations.h"
@@ -39,6 +40,7 @@
 #include "icon_renderer.h"
 #include "widgets/button.h"
 #include <QApplication>
+#include <QClipboard>
 #include <QCursor>
 #include <QMimeData>
 #include <QDragEnterEvent>
@@ -429,7 +431,31 @@ struct ImageEditingWindow::Impl {
                          [this] { exportContent(ExportOperation::Print); });
         QObject::connect(palette, &ScreenshotToolPalette::cloudUploadRequested, &q,
                          [this] { exportContent(ExportOperation::Upload); });
+        WindowShortcutManager::Binding paste;
+        paste.id = QStringLiteral("imageEditingPaste");
+        for (const auto& sequence : QKeySequence::keyBindings(QKeySequence::Paste)) {
+            if (sequence.count() == 1)
+                paste.keyCombinations.append(sequence[0]);
+        }
+        paste.priority = WindowShortcutManager::StandardPriority::WindowCommand;
+        paste.canActivate = [this](const auto& context) {
+            const auto* receiver = qobject_cast<QWidget*>(context.receiver);
+            return canPaste() && receiver &&
+                   (receiver->window() == editorWindow || receiver->window() == floating) &&
+                   !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
+                   !canvas->hasActiveTextEditing();
+        };
+        paste.activate = [this](const auto&) {
+            q.paste();
+            return true;
+        };
+        static_cast<void>(shortcuts.addBinding(&q, std::move(paste)));
         retranslate();
+    }
+    bool canPaste() const {
+        return modal->isOpen() && !closing && !loading && !choosingFiles && !cropBusy &&
+               !exporter.busy() && !confirmation && !shortcuts.inputSuspended() &&
+               !(colorSampling && colorSampling->active());
     }
     bool canImport() const {
         return !closing && !loading && !choosingFiles && document.image().isNull();
@@ -1290,6 +1316,119 @@ void ImageEditingWindow::openFiles(const QStringList& paths) {
         d.setLoading(false);
         d.showNotice(Impl::Notice::LoadError);
     }
+}
+void ImageEditingWindow::paste() {
+    auto& d = *m_impl;
+    if (!d.canPaste())
+        return;
+    auto* clipboard = QApplication::clipboard();
+    const auto paths = ScreenshotClipboardContentReader::localImageFilePaths(clipboard->mimeData());
+    struct PastedImage {
+        ImageEditingSource source;
+        QStringList additionalFiles;
+        std::shared_ptr<ImageStitchingImportReservation> reservation;
+        bool rejected = false;
+    };
+    auto pasted = std::make_shared<PastedImage>();
+    pasted->reservation = reserveImageStitchingImport(0);
+    pasted->rejected = !pasted->reservation;
+    std::optional<ScreenshotClipboardContentSnapshot> snapshot;
+    if (paths.isEmpty()) {
+        snapshot = ScreenshotClipboardContentReader::snapshotImage(
+            clipboard, d.surface->devicePixelRatioF(), [pasted](qint64 bytes) {
+                pasted->rejected = pasted->rejected || !pasted->reservation->resize(bytes);
+                return !pasted->rejected;
+            });
+        if (!snapshot && !pasted->rejected)
+            return;
+    }
+    const auto generation = ++d.loadGeneration;
+    d.cancelLoading();
+    d.errorSource = nullptr;
+    d.setLoading(true);
+    const auto finish = [this, pasted, generation](ScreenshotExportTaskResult result) {
+        auto& impl = *m_impl;
+        if (impl.closing || impl.loadGeneration != generation)
+            return;
+        const QPointer<ImageEditingWindow> guard(this);
+        if (!result.succeeded() || pasted->source.image.isNull()) {
+            impl.setLoading(false);
+            impl.sourceError(
+                pasted->rejected
+                    ? QT_TRANSLATE_NOOP(
+                          "ImageEditingWindow",
+                          "The image is too large or there is not enough memory to load it")
+                    : QT_TRANSLATE_NOOP("ImageEditingWindow", "The image could not be loaded"));
+            if (!guard)
+                return;
+            emit loaded(false);
+            if (guard && !impl.closing && impl.loadGeneration == generation &&
+                !pasted->additionalFiles.isEmpty())
+                emit additionalFilesRequested(pasted->additionalFiles);
+            return;
+        }
+        confirmDiscard([guard, pasted, generation](bool accepted) {
+            if (!guard || guard->m_impl->closing || guard->m_impl->loadGeneration != generation)
+                return;
+            if (!accepted) {
+                guard->m_impl->setLoading(false);
+                return;
+            }
+            guard->present(std::move(pasted->source));
+            if (!guard || guard->m_impl->closing || guard->m_impl->loadGeneration != generation + 1)
+                return;
+            guard->m_impl->fileReservation = std::move(pasted->reservation);
+            if (!pasted->additionalFiles.isEmpty())
+                emit guard->additionalFilesRequested(pasted->additionalFiles);
+        });
+    };
+    if (pasted->rejected) {
+        finish({});
+        return;
+    }
+    d.loadJob = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [paths, snapshot = std::move(snapshot), pasted](const auto& cancellation) mutable {
+            const auto cancelled = [&cancellation] {
+                return cancellation.isCancellationRequested();
+            };
+            const auto allocate = [pasted](qint64 bytes) {
+                pasted->rejected = pasted->rejected || !pasted->reservation->resize(bytes);
+                return !pasted->rejected;
+            };
+            if (snapshot) {
+                auto content = ScreenshotClipboardContentReader::decode(std::move(*snapshot),
+                                                                        cancelled, allocate);
+                if (content)
+                    pasted->source.image = std::move(content->image);
+            } else {
+                const auto files = imageFilePaths(paths, cancelled);
+                if (!files.isEmpty()) {
+                    const auto captured = ScreenshotClipboardContentReader::snapshotLocalFiles(
+                        {files.first()}, cancelled,
+                        ScreenshotClipboardContentReader::FilePurpose::ImageImport);
+                    if (!captured.isEmpty())
+                        pasted->source.image = ScreenshotClipboardContentReader::decodeImageFile(
+                            captured.first(), cancelled, allocate);
+                    pasted->source.originalFileName = QFileInfo(files.first()).fileName();
+                    pasted->additionalFiles = files.mid(1);
+                }
+            }
+            if (!pasted->source.image.isNull()) {
+                const auto bytes = imageStitchingImageImportBytes(pasted->source.image.size());
+                pasted->rejected =
+                    bytes == 0 || !allocate(std::max(bytes, pasted->source.image.sizeInBytes()));
+                if (pasted->rejected)
+                    pasted->source.image = {};
+            }
+            pasted->source.pixelSize = pasted->source.image.size();
+            pasted->source.canvasRect = QRectF(QPointF(), QSizeF(pasted->source.pixelSize));
+            pasted->source.flattened = true;
+            return ScreenshotExportTaskResult{};
+        },
+        finish);
+    if (!d.loadJob.isValid())
+        finish({});
 }
 void ImageEditingWindow::presentFile(QString path) {
     auto& d = *m_impl;

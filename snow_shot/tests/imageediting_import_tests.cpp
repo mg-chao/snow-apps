@@ -8,14 +8,20 @@
 #include "widgets/button.h"
 #include "widgets/message.h"
 #include "widgets/modal.h"
+#include "physical_key_test_support.h"
 
 #include <QApplication>
+#include <QBuffer>
+#include <QClipboard>
+#include <QColorSpace>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QKeySequence>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMimeData>
 #include <QTemporaryDir>
 #include <QThread>
@@ -398,6 +404,213 @@ void supersededFilesAndChooserLifetime(const QString& first, const QString& seco
     QApplication::processEvents();
     require(choosing.windows().isEmpty(), "late chooser completion cannot reopen a closed editor");
 }
+
+QImage clipboardImage(QSize size = QSize(50, 40)) {
+    QImage image(size, QImage::Format_RGBA8888);
+    image.fill(QColor(40, 120, 200, 128));
+    image.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
+    image.setDevicePixelRatio(2);
+    return image;
+}
+void requireImage(const ImageEditingWindow& window, const QImage& expected) {
+    const auto& actual = window.document()->image();
+    require(actual.size() == expected.size() && actual.colorSpace() == expected.colorSpace() &&
+                actual.convertToFormat(QImage::Format_RGBA8888) ==
+                    expected.convertToFormat(QImage::Format_RGBA8888),
+            "pasting retains physical pixels, alpha and color profile");
+}
+void keyPaste(QWidget* receiver, bool repeat = false, bool focusReceiver = true) {
+    if (focusReceiver) {
+        receiver->window()->activateWindow();
+        receiver->setFocus();
+        QApplication::processEvents();
+        require(receiver->hasFocus(), "paste receiver has keyboard focus");
+    }
+    const auto key = QKeySequence::keyBindings(QKeySequence::Paste).first()[0];
+    PhysicalKeyEvent press(QEvent::KeyPress, key.key(), key.keyboardModifiers(), {}, repeat);
+    QApplication::sendEvent(receiver, &press);
+    PhysicalKeyEvent release(QEvent::KeyRelease, key.key(), key.keyboardModifiers());
+    QApplication::sendEvent(receiver, &release);
+}
+adqt::widgets::AdModal* discardDialog(ImageEditingWindow& window) {
+    for (auto* dialog : window.findChildren<adqt::widgets::AdModal*>())
+        if (dialog != window.modal() && dialog->isOpen())
+            return dialog;
+    return nullptr;
+}
+void encodedClipboard(const QByteArray& bytes) {
+    auto* mime = new QMimeData;
+    mime->setData(QStringLiteral("image/png"), bytes);
+    mime->setHtml(QStringLiteral("<b>Do not import this fallback</b>"));
+    mime->setText(QStringLiteral("Do not import this fallback"));
+    QApplication::clipboard()->setMimeData(mime);
+}
+
+void clipboardPixelsAndReplacement() {
+    ImageEditingWindow window;
+    window.presentEmpty();
+    const auto first = clipboardImage();
+    QApplication::clipboard()->setImage(first);
+    auto* add = surface(window)->findChild<AdButton*>(QStringLiteral("imageEditingAddImages"));
+    keyPaste(add);
+    require(window.loading(), "Paste in an empty editor starts asynchronous import");
+    const auto second = clipboardImage(QSize(70, 60));
+    QApplication::clipboard()->setImage(second);
+    window.paste();
+    loaded(window);
+    requireImage(window, first);
+    require(!window.dirty() && window.canvas()->isVisible(),
+            "pasted image opens a clean editable document and ignores busy Paste");
+
+    require(window.document()->crop(ImageEditingDocument::CropAxis::Rows, 2, 5),
+            "edit the pasted image");
+    const auto checkpoint = window.contentCheckpoint();
+    window.paste();
+    awaitCondition([&] { return discardDialog(window) != nullptr; },
+                   "pasted replacement confirms unsaved edits");
+    require(window.contentCheckpoint() == checkpoint,
+            "decoding replacement preserves the existing document");
+    window.paste();
+    discardDialog(window)->reject();
+    awaitCondition([&] { return !window.loading(); }, "replacement cancellation completes");
+    require(window.contentCheckpoint() == checkpoint && window.dirty(),
+            "Continue editing preserves the image and crop history");
+    window.paste();
+    awaitCondition([&] { return discardDialog(window) != nullptr; }, "replacement can be retried");
+    discardDialog(window)->accept();
+    loaded(window);
+    requireImage(window, second);
+    require(!window.dirty() && !window.document()->undo(),
+            "accepted replacement starts a clean independent editing history");
+
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    require(buffer.open(QIODevice::WriteOnly) && first.save(&buffer, "PNG"),
+            "encode clipboard fixture");
+    encodedClipboard(bytes);
+    window.paste();
+    QApplication::clipboard()->clear();
+    loaded(window);
+    requireImage(window, first);
+    require(window.document()->crop(ImageEditingDocument::CropAxis::Columns, 2, 5),
+            "edit image before a failed clipboard replacement");
+    const auto unchanged = window.contentCheckpoint();
+    encodedClipboard(QByteArray("corrupt PNG"));
+    window.paste();
+    awaitCondition([&] { return !window.loading(); }, "corrupt clipboard import completes");
+    require(window.contentCheckpoint() == unchanged && status(window) && window.dirty() &&
+                !discardDialog(window),
+            "corrupt image reports an error without importing text or losing existing pixels");
+    auto* text = new QMimeData;
+    text->setText(QStringLiteral("plain text"));
+    text->setHtml(QStringLiteral("<img src='https://example.com/remote.png'>"));
+    QApplication::clipboard()->setMimeData(text);
+    window.paste();
+    require(!window.loading() && window.contentCheckpoint() == unchanged,
+            "text, HTML and remote image links do not become editor images");
+    window.shutdown();
+}
+
+void clipboardFilesAndShortcutScope(const QString& first, const QString& second,
+                                    const QString& broken) {
+    ImageEditingWindowCoordinator coordinator({});
+    coordinator.presentFiles({});
+    auto* window = coordinator.windows().first().data();
+    auto* mime = new QMimeData;
+    mime->setUrls({QUrl::fromLocalFile(first), QUrl::fromLocalFile(second),
+                   QUrl(QStringLiteral("https://example.com/remote.png"))});
+    QApplication::clipboard()->setMimeData(mime);
+    window->paste();
+    awaitCondition([&] { return coordinator.windows().size() == 2; },
+                   "pasted image files open separate editor windows");
+    loaded(*window);
+    loaded(*coordinator.windows()[1]);
+    require(window->document()->snapshot().originalFileName == QStringLiteral("first.png") &&
+                coordinator.windows()[1]->document()->snapshot().originalFileName ==
+                    QStringLiteral("second.PNG"),
+            "pasted files retain order and export filenames");
+
+    QLineEdit input(surface(*window));
+    input.show();
+    QApplication::clipboard()->setText(QStringLiteral("text paste"));
+    keyPaste(&input);
+    require(input.text() == QStringLiteral("text paste") && !window->loading(),
+            "editable controls keep ordinary text Paste");
+    const auto image = clipboardImage();
+    QApplication::clipboard()->setImage(image);
+    keyPaste(&input);
+    require(!window->loading(), "image Paste does not intercept an editable field");
+    keyPaste(window->canvas(), true);
+    require(!window->loading(), "automatic key repeats do not paste images");
+    QWidget unrelated;
+    unrelated.setFocusPolicy(Qt::StrongFocus);
+    unrelated.show();
+    keyPaste(&unrelated);
+    require(!window->loading() && !coordinator.windows()[1]->loading(),
+            "Paste in unrelated windows does not import into an editor");
+
+    keyPaste(window->canvas());
+    require(window->loading() && !coordinator.windows()[1]->loading(),
+            "Paste targets only the receiving editor");
+    loaded(*window);
+    requireImage(*window, image);
+    const auto replacement = clipboardImage(QSize(65, 45));
+    QApplication::clipboard()->setImage(replacement);
+    auto* crop = window->palette()->findChild<AdButton*>(QStringLiteral("imageEditingCropRows"));
+    require(crop && crop->isVisible() && crop->isEnabled(),
+            "floating toolbar exposes a focusable drawing control");
+    keyPaste(crop, false, false);
+    require(window->loading(), "Paste delivered through the floating toolbar targets its editor");
+    loaded(*window);
+    requireImage(*window, replacement);
+    const auto checkpoint = window->contentCheckpoint();
+    mime = new QMimeData;
+    mime->setUrls({QUrl::fromLocalFile(broken), QUrl::fromLocalFile(second)});
+    QApplication::clipboard()->setMimeData(mime);
+    window->paste();
+    awaitCondition([&] { return coordinator.windows().size() == 3 && !window->loading(); },
+                   "a corrupt first file does not prevent other pasted files from opening");
+    loaded(*coordinator.windows()[2]);
+    require(window->contentCheckpoint() == checkpoint && status(*window),
+            "a corrupt pasted file preserves the receiving editor");
+    coordinator.shutdown();
+}
+
+void clipboardBusyAndShutdown() {
+    std::function<void(QStringList)> choose;
+    std::function<void(bool)> pin;
+    ImageEditingServices services;
+    services.chooseFiles = [&](QWidget*, auto done) { choose = std::move(done); };
+    services.pin = [&](QImage, auto done) {
+        pin = std::move(done);
+        return true;
+    };
+    ImageEditingWindow window(services);
+    window.presentEmpty();
+    QApplication::clipboard()->setImage(clipboardImage());
+    surface(window)->findChild<AdButton*>(QStringLiteral("imageEditingAddImages"))->click();
+    require(bool(choose), "image chooser remains pending");
+    window.paste();
+    require(!window.loading() && window.document()->image().isNull(),
+            "file selection blocks image Paste");
+    choose({});
+    window.paste();
+    loaded(window);
+    const auto checkpoint = window.contentCheckpoint();
+    window.palette()->pinRequested();
+    awaitCondition([&] { return bool(pin); }, "image export remains pending");
+    window.paste();
+    require(!window.loading(), "active export blocks image Paste");
+    pin(false);
+    QApplication::clipboard()->setImage(clipboardImage(QSize(80, 70)));
+    window.paste();
+    require(window.loading(), "Paste is restored after export cancellation");
+    window.shutdown();
+    window.paste();
+    QApplication::processEvents();
+    require(window.contentCheckpoint() == checkpoint && !window.modal()->isOpen(),
+            "shutdown ignores Paste and late clipboard completion");
+}
 } // namespace
 
 void runImageEditingImportTests() {
@@ -424,5 +637,9 @@ void runImageEditingImportTests() {
     failedSelectionsAndClose(first);
     importedWindowsParticipateInUpdateHandoff(first, second);
     supersededFilesAndChooserLifetime(first, second);
+    clipboardPixelsAndReplacement();
+    clipboardFilesAndShortcutScope(first, second, broken);
+    clipboardBusyAndShutdown();
+    QApplication::clipboard()->clear();
     QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }

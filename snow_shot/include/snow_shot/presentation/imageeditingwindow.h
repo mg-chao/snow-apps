@@ -29,6 +29,7 @@ class ImageEditingWindow final : public QObject {
     void presentEmpty();
     void presentFile(QString path);
     void openFiles(const QStringList& paths);
+    void paste();
     void present(ImageEditingSource source);
     void presentSource(ScreenshotExportSource source, QString originalFileName = {});
     void presentHistory(storage::CaptureHistoryRecord record);
