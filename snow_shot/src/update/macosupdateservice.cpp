@@ -456,6 +456,7 @@ UpdateCapabilities UpdateService::capabilities() const {
     return {true, false, false};
 }
 void UpdateService::setHandoffApproval(QObject*, std::function<bool()>) {}
+void UpdateService::setHandoffValidation(QObject*, std::function<bool()>) {}
 bool UpdateService::managedByStore() const {
     return false;
 }
@@ -513,7 +514,12 @@ void UpdateService::beginApply() {
 void UpdateService::applyAtStartup() {
     emit operationFinished(QStringLiteral("apply"), QStringLiteral("unsupported"));
 }
-void UpdateService::setRelaunchArguments(const QStringList&) {}
+bool UpdateService::setRelaunchArguments(const QStringList&) {
+    return true;
+}
+bool UpdateService::acceptsRelaunchArguments(const QStringList&) const {
+    return true;
+}
 void UpdateService::clearRelaunchArguments() {}
 bool UpdateService::handoffPending() const {
     return false;

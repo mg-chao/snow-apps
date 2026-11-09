@@ -431,7 +431,11 @@ int main(int argc, char* argv[]) {
         adqt::widgets::initializePlatformCompatibility(probe);
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
         return snow_shot::app::runIsolatedUpdateProbe(
-            {[&](const QString& root) { return storage.initialize({root, root, 8000}).success; },
+            {[&](const QString& root) {
+                 snow_shot::storage::StorageInitializationOptions options{root, root, 8000};
+                 options.isolateAuxiliaryStorage = true;
+                 return storage.initialize(options).success;
+             },
              [&] {
                  snow_shot::presentation::LanguageManager::instance().initialize();
                  snow_shot::presentation::styles::ThemeManager::instance().initialize(probe);
@@ -686,6 +690,19 @@ int main(int argc, char* argv[]) {
             return snow_shot::update::startupUpdateRelaunchArguments(foregroundRequested,
                                                                      pendingImagePaths);
         };
+        singleInstance.setLaunchRequestAdmission([&](const QStringList& arguments) {
+            if (!startupUpdate.handoffPending())
+                return true;
+            const auto request = snow_shot::app::parseShellImageLaunchRequest(arguments);
+            const bool foreground =
+                foregroundRequested || arguments.contains(QStringLiteral("--show-main-window")) ||
+                (!request.requested && !arguments.contains(QStringLiteral("--autostart")));
+            auto paths = pendingImagePaths;
+            if (request.valid)
+                paths.append(request.paths);
+            return startupUpdate.acceptsRelaunchArguments(
+                snow_shot::update::startupUpdateRelaunchArguments(foreground, paths));
+        });
         const auto forwardedLaunch = QObject::connect(
             &singleInstance, &snow_shot::app::SingleInstanceCoordinator::launchRequestReceived,
             &app, [&](const QStringList& arguments) {
@@ -702,6 +719,7 @@ int main(int argc, char* argv[]) {
             startupUpdate, [&applicationStorage] { return applicationStorage.flushNow().success; },
             [&] { return foregroundRequested; }, std::chrono::seconds(210), relaunchArguments);
         QObject::disconnect(forwardedLaunch);
+        singleInstance.setLaunchRequestAdmission({});
         if (startupUpdateResult == snow_shot::update::StartupUpdateResult::ExitForUpdate) {
             singleInstance.stopAcceptingLaunchRequests();
             return 0;
@@ -713,6 +731,9 @@ int main(int argc, char* argv[]) {
     adqt::widgets::AdTooltip::installApplicationTooltips();
 
     snow_shot::app::ApplicationController applicationController(app);
+    singleInstance.setLaunchRequestAdmission([&](const QStringList& arguments) {
+        return applicationController.acceptsLaunchRequest(arguments);
+    });
     applicationController.start(launchArguments, [&] {
         const auto startupSettings = snow_shot::storage::SystemSettings();
 #ifdef Q_OS_WIN

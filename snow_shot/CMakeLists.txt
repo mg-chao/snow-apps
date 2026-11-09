@@ -1729,13 +1729,14 @@ if(SNOW_APPS_BUILD_BENCHMARKS)
 endif()
 
 set(PROJECT_HEADERS
+    include/snow_shot/app/mcp/mcpstartuperror.h
     include/snow_shot/app/mcp/screenshotmcpsession.h
     include/snow_shot/app/mcp/screenshotmcpserver.h
     include/snow_shot/app/mcp/mcpapplicationservice.h
     include/snow_shot/app/mcp/mcpdocumentservice.h
     include/snow_shot/app/mcp/mcpjobregistry.h
     include/snow_shot/app/mcp/mcpmediaservice.h
-    include/snow_shot/app/featureavailability.h
+    include/snow_shot/app/applicationactiongate.h
     include/snow_shot/app/applicationinputguard.h
     include/snow_shot/presentation/screenshotencodingsettings.h
     include/snow_shot/presentation/directcapturecontroller.h
@@ -1967,7 +1968,6 @@ set(PROJECT_CXX_SOURCES
     src/app/mcp/mcpmediaservice.cpp
     src/app/mcp/mcppinnedstate.cpp
     src/app/applicationrestart.cpp
-    src/app/featureavailability.cpp
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
@@ -2565,6 +2565,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-isolated-storage-initialization-tests
+        COMMAND snow-shot-application-storage-tests --isolated-initialization-only)
+    set_tests_properties(snow-shot-isolated-storage-initialization-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-portable-system-integration-tests
         COMMAND snow-shot-application-storage-tests --portable-system-integration-only)
     set_tests_properties(snow-shot-portable-system-integration-tests PROPERTIES LABELS "unit"
@@ -3250,6 +3255,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-main-window-font-tests)
     add_test(NAME snow-shot-main-window-font-tests COMMAND snow-shot-main-window-font-tests)
+    add_test(NAME snow-shot-translation-navigation-tests
+        COMMAND snow-shot-main-window-font-tests --translation-navigation-only)
+    set_tests_properties(snow-shot-translation-navigation-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-collage-pinned-navigation-tests
         COMMAND snow-shot-main-window-font-tests --pinned-collage-only)
     set_tests_properties(snow-shot-collage-pinned-navigation-tests PROPERTIES
@@ -3700,7 +3709,6 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-permission-guide-tests)
 
     add_executable(snow-shot-app-permissions-tests tests/app_permissions_tests.cpp
-        src/app/featureavailability.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
     target_link_libraries(snow-shot-app-permissions-tests PRIVATE snow_shot_settings)
     add_test(NAME snow-shot-app-permissions-tests COMMAND snow-shot-app-permissions-tests)
@@ -11774,12 +11782,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-pinned-placement-tests PRIVATE include src)
     target_link_libraries(snow-shot-pinned-placement-tests PRIVATE Qt6::Gui)
     add_test(NAME snow-shot-pinned-placement-tests COMMAND snow-shot-pinned-placement-tests)
-    add_executable(snow-shot-feature-action-router-tests tests/feature_action_router_tests.cpp
-        src/app/featureavailability.cpp)
-    target_include_directories(snow-shot-feature-action-router-tests PRIVATE include)
-    target_link_libraries(snow-shot-feature-action-router-tests PRIVATE Qt6::Gui)
-    add_test(NAME snow-shot-feature-action-router-tests COMMAND snow-shot-feature-action-router-tests)
-    set_tests_properties(snow-shot-feature-action-router-tests PROPERTIES
+    add_executable(snow-shot-application-action-gate-tests tests/application_action_gate_tests.cpp)
+    target_include_directories(snow-shot-application-action-gate-tests PRIVATE include)
+    target_link_libraries(snow-shot-application-action-gate-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-application-action-gate-tests COMMAND snow-shot-application-action-gate-tests)
+    set_tests_properties(snow-shot-application-action-gate-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE)
     add_executable(snow-shot-application-coordination-tests tests/application_coordination_tests.cpp)
     target_include_directories(snow-shot-application-coordination-tests PRIVATE include)
@@ -11855,8 +11862,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         LABELS "unit;macos" TIMEOUT 30)
     add_executable(snow-shot-macos-shell-policy-tests
         tests/macos_shell_policy_tests.cpp
-        include/snow_shot/app/featureavailability.h
-        src/app/featureavailability.cpp)
+        include/snow_shot/app/applicationactiongate.h)
     target_include_directories(snow-shot-macos-shell-policy-tests PRIVATE include)
     target_link_libraries(snow-shot-macos-shell-policy-tests PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME snow-shot-macos-shell-policy-tests

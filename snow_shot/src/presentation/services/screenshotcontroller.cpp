@@ -288,7 +288,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] ScreenshotSelectionRestoreTarget selectionRestoreTarget() const;
     [[nodiscard]] bool selectPreviousSelection(bool previous = true);
     void handleAutomaticTextRecognitionAction(bool available);
-    [[nodiscard]] bool canBeginCapture() const;
+    [[nodiscard]] bool canBeginCapture(bool includeCaptureSuspension = true) const;
     [[nodiscard]] ScreenshotOverlayWindow* overlayUnderCursor() const;
     [[nodiscard]] ScreenshotOverlayWindow* overlayForWidget(QWidget* widget) const;
     [[nodiscard]] ScreenshotOverlayWindow* keyboardOwnerOverlay() const;
@@ -6197,8 +6197,8 @@ void ScreenshotController::Impl::resetPendingCaptureRequest() {
     m_ocrTranslateAfterRecognition = false;
 }
 
-bool ScreenshotController::Impl::canBeginCapture() const {
-    if ((m_captureWorkflow && m_captureWorkflow->captureSuspended()) ||
+bool ScreenshotController::Impl::canBeginCapture(bool includeCaptureSuspension) const {
+    if ((includeCaptureSuspension && m_captureWorkflow && m_captureWorkflow->captureSuspended()) ||
         m_captureState.captureInProgress || !m_interaction.inactive() ||
         (m_captureState.sessionState != ScreenshotSessionState::IdleCold &&
          m_captureState.sessionState != ScreenshotSessionState::IdlePrepared)) {
@@ -6615,8 +6615,8 @@ void ScreenshotController::setCaptureSuspended(bool suspended) {
     emit captureAvailabilityChanged(captureAvailable());
 }
 
-bool ScreenshotController::blocksApplicationUpdate() const {
-    return !m_impl->canBeginCapture() || m_impl->m_filePinQueue.active() ||
+bool ScreenshotController::blocksApplicationUpdate(bool includeCaptureSuspension) const {
+    return !m_impl->canBeginCapture(includeCaptureSuspension) || m_impl->m_filePinQueue.active() ||
            m_impl->m_historyPinQueue.active() || !m_impl->m_activeImageExports.isEmpty() ||
            static_cast<bool>(m_impl->m_cancelSaveDialog) ||
            ScreenshotExportCoordinator::shared().pendingJobCount() > 0 ||

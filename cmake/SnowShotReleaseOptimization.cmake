@@ -44,7 +44,6 @@ set(SNOW_SHOT_RELEASE_SIZE_SETTINGS_SOURCES
 set(SNOW_SHOT_RELEASE_SIZE_SHELL_SOURCES
     src/app/updateconfirmationdialog.cpp
     src/app/applicationrestart.cpp
-    src/app/featureavailability.cpp
     src/presentation/components/contentcardwidget.cpp
     src/presentation/components/maincontentheaderwidget.cpp
     src/presentation/components/screenshottranslationsettingsdialog.cpp

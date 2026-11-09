@@ -20,6 +20,7 @@ class ApplicationController final : public QObject {
     // Explicit file launches present before background startup and maintenance.
     void start(const QStringList& initialArguments = {}, std::function<void()> maintenance = {});
     void showMainWindow();
+    [[nodiscard]] bool acceptsLaunchRequest(const QStringList& arguments) const;
     void handleLaunchRequest(const QStringList& arguments,
                              std::function<void()> firstFileFinished = {});
     void restorePinnedWindows();

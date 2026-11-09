@@ -3618,6 +3618,58 @@ void pendingClosedPinsReceiveBackgroundRetentionCleanup() {
     reopened.shutdown();
 }
 
+void isolatedInitializationPreservesApplicationAuxiliaryStorage() {
+    auto& app = storage::ApplicationStorage::instance();
+    app.shutdown();
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    require(cacheEnvironment.isValid(), "isolated initialization uses disposable external caches");
+    QTemporaryDir fixture;
+    const QString thumbnail =
+        QDir(cacheEnvironment.directory()).filePath(QStringLiteral("old.png"));
+    const QString recordingDirectory =
+        storage::StorageUsageTracker::defaultRecordingTempDirectory();
+    const QString recording = QDir(recordingDirectory).filePath(QStringLiteral("old.pcm"));
+    const QString diagnostic = fixture.filePath(QStringLiteral("external-logs/sentinel.log"));
+    writeBytes(thumbnail, QByteArrayLiteral("thumbnail"));
+    writeBytes(recording, QByteArrayLiteral("recording"));
+    setLastModified(recording, QDateTime::currentDateTime().addDays(-1));
+    writeBytes(diagnostic, QByteArrayLiteral("diagnostic"));
+    auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
+    snow_shot::diagnostics::DiagnosticsOptions logOptions;
+    logOptions.directories = {QFileInfo(diagnostic).absolutePath()};
+    logOptions.installMessageHandler = false;
+    logOptions.enableCrashCapture = false;
+    require(diagnostics.initialize(logOptions), "initialize disposable diagnostic root");
+    const auto cleanup = qScopeGuard([&] {
+        app.shutdown();
+        diagnostics.shutdown();
+        QFile::remove(recording);
+        QDir().rmdir(recordingDirectory);
+    });
+
+    storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")),
+                                                  fixture.filePath(QStringLiteral("probe")), 60000};
+    options.isolateAuxiliaryStorage = true;
+    require(app.initialize(options).success && app.flushNow().success,
+            "isolated storage initializes without legacy cache cleanup");
+    require(!app.status().cacheClearing && readBytes(thumbnail) == "thumbnail",
+            "isolated startup never admits application thumbnail deletion");
+    app.requestStorageUsageRefresh();
+    require(app.flushNow().success, "isolated usage refresh drains");
+    const auto usage = app.status().appUsage;
+    require(usage.thumbnailCacheBytes == 0 && usage.recordingTempBytes == 0 &&
+                usage.diagnosticsBytes == 0,
+            "isolated usage snapshot excludes application-global roots");
+    require(app.requestThumbnailCacheClearAsync().get().success,
+            "isolated thumbnail cleanup remains confined to the isolated scope");
+    waitUntil([&] { return !app.status().cacheClearing; }, "isolated cleanup remained busy");
+    require(app.requestRecordingTempClearAsync().get().success,
+            "isolated recording cleanup remains confined to the isolated scope");
+    require(app.flushNow().success && readBytes(thumbnail) == "thumbnail" &&
+                readBytes(recording) == "recording" && readBytes(diagnostic) == "diagnostic",
+            "isolated maintenance preserves every external sentinel");
+}
+
 void startupRemovesLegacyThumbnails() {
     storage::ApplicationStorage::instance().shutdown();
     thumbnail_tests::CacheEnvironment cacheEnvironment;
@@ -4342,6 +4394,10 @@ int main(int argc, char** argv) {
     }
 #endif
     LifetimeObservedApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--isolated-initialization-only"))) {
+        isolatedInitializationPreservesApplicationAuxiliaryStorage();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--save-formats-only"))) {
         saveFormatSchemaSupportsTiff();
         return 0;
@@ -4541,6 +4597,7 @@ int main(int argc, char** argv) {
     asynchronousMutationResultsAreObservable();
     pendingClosedPinsReceiveBackgroundRetentionCleanup();
     startupRemovesLegacyThumbnails();
+    isolatedInitializationPreservesApplicationAuxiliaryStorage();
     appUsageScanAndCacheCleanup();
     applicationQuitPreservesStorageForConsumerDestruction(application);
     storage::ApplicationStorage::instance().shutdown();

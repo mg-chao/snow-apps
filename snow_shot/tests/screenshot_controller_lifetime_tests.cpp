@@ -60,6 +60,11 @@ int runScreenshotControllerLifetimeTests(int argc, char** argv) {
 
     directCaptureDestructionKeepsControllerAvailableToActivityObservers();
     auto controller = std::make_unique<ScreenshotController>();
+    require(!controller->blocksApplicationUpdate(), "idle capture initially permits handoff");
+    controller->setCaptureSuspended(true);
+    require(controller->blocksApplicationUpdate() && !controller->blocksApplicationUpdate(false),
+            "own admission closure stays distinct from actual capture work in final validation");
+    controller->setCaptureSuspended(false);
     QObject observer;
     int inactiveNotifications = 0;
     auto* retiring = controller.get();

@@ -340,6 +340,10 @@
             <translation>發布必須包含全部五個 Windows 軟體套件</translation>
         </message>
         <message>
+            <source>The selected files exceed the update restart limit</source>
+            <translation>所選檔案超過更新重新啟動的傳遞上限</translation>
+        </message>
+        <message>
             <source>The server changed an already published release</source>
             <translation>伺服器修改了已發布的版本</translation>
         </message>

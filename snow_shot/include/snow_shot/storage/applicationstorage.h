@@ -32,6 +32,9 @@ struct StorageInitializationOptions {
     QString appDataDirectory;
     int debounceMilliseconds = 1000;
     std::shared_ptr<const StorageDirectorySelection> resolvedDirectory{};
+    // Health probes use only their temporary repository root. Do not scan or clean
+    // application-global thumbnail, recording-temp, or diagnostics directories.
+    bool isolateAuxiliaryStorage = false;
 };
 
 enum class StorageMode {
@@ -156,6 +159,8 @@ class ApplicationStorage final : public QObject {
     // Synchronous GUI-thread checkpoint before repositories are drained. Worker flushes
     // consume already captured metadata and never call window-system APIs.
     void checkpointRequested();
+    // Latest UI snapshot; intermediate progress may be coalesced while the owner is busy.
+    // The last pending snapshot is delivered before directoryChangeFinished, never after it.
     void directoryChangeProgress(const snow_shot::storage::StorageDirectoryProgress& progress);
     void directoryChangeFinished(const snow_shot::storage::StorageDirectoryChangeResult& result);
     void captureHistoryChanged();
@@ -186,6 +191,7 @@ class ApplicationStorage final : public QObject {
     quint64 m_usageGeneration = 0;
     QString m_bootstrapDirectory;
     QString m_executableDirectory;
+    bool m_isolateAuxiliaryStorage = false;
     std::function<StorageResult()> m_suspendForDirectoryChange;
     std::function<void()> m_drainForDirectoryChange;
     std::function<void(const QString&)> m_resumeAfterDirectoryChange;

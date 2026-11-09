@@ -1,4 +1,5 @@
 #include "snow_shot/app/distribution.h"
+#include "snow_shot/app/mcp/mcpstartuperror.h"
 #include "snow_shot/presentation/components/clouduploadsettingswidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/presentation/components/formfields.h"
@@ -1522,6 +1523,8 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
     }
     void refresh() {
         const bool running = qApp->property("snowShotMcpRunning").toBool();
+        const QString error = snow_shot::app::mcp::mcpStartupErrorText(
+            qApp->property("snowShotMcpStartError").value<snow_shot::app::mcp::McpStartupError>());
         const int count = qApp->property("snowShotMcpConnections").toInt();
         m_status->setText(
             running ? QCoreApplication::translate("ScreenshotMcpSettings", "Running")
@@ -1531,8 +1534,9 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
         m_clients->setText(
             running ? QCoreApplication::translate("ScreenshotMcpSettings", "Connected clients: %1")
                           .arg(count)
-                    : QCoreApplication::translate("ScreenshotMcpSettings",
-                                                  "MCP is disabled or unavailable"));
+            : !error.isEmpty() ? error
+                               : QCoreApplication::translate("ScreenshotMcpSettings",
+                                                             "MCP is disabled or unavailable"));
     }
     adqt::widgets::AdTag* m_status = nullptr;
     QLabel* m_clients = nullptr;

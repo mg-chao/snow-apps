@@ -3,20 +3,22 @@
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/app/mcp/mcpdocumentservice.h"
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/update/updateservice.h"
 #include "widgets/platform_compatibility.h"
 #ifdef Q_OS_WIN
 #include "snow_shot/app/shellimagelaunch.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
-#include "snow_shot/storage/pinnedwindowrepository.h"
-#include <QImage>
 #endif
 
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QLockFile>
+#include <QImage>
 #include <QPointer>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -91,9 +93,60 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
                  {QStringLiteral("screenshot/copy_after_pinning_to_screen"), false}}),
             "enable MCP without a tray");
     presentation::LanguageManager::instance().initialize();
+    require(presentation::LanguageManager::instance().setLanguage(QStringLiteral("en_US")),
+            "start the isolated failure fixture in English");
     presentation::styles::ThemeManager::instance().initialize(application);
     {
+        QLockFile endpointLock(temporary.filePath(QStringLiteral("endpoint.lock")));
+        require(endpointLock.tryLock(0), "fixture reserves only its isolated MCP endpoint");
         app::ApplicationController controller(application);
+        auto* initiallyUnavailable = controller.findChild<ScreenshotMcpServer*>();
+        require(initiallyUnavailable && !initiallyUnavailable->isRunning() &&
+                    !controller.findChild<ScreenshotMcpSession*>() &&
+                    !controller.findChild<McpDocumentService*>() &&
+                    initiallyUnavailable->startupError() == McpStartupError::EndpointOwned &&
+                    application.property("snowShotMcpStartError").value<McpStartupError>() ==
+                        McpStartupError::EndpointOwned &&
+                    configuration.value(QStringLiteral("mcp/enabled")).toBool(),
+                "endpoint failure preserves desired enable but retires the partial service graph");
+        int failedRuntimeStarts = 0;
+        const auto failureConnection = QObject::connect(
+            initiallyUnavailable, &ScreenshotMcpServer::runningChanged, &controller,
+            [&](bool running) { failedRuntimeStarts += running ? 1 : 0; });
+        for (const auto& locale :
+             {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+            require(presentation::LanguageManager::instance().setLanguage(locale),
+                    "change language while the failed runtime stays enabled");
+            QCoreApplication::sendPostedEvents(&controller, QEvent::MetaCall);
+            const auto error =
+                application.property("snowShotMcpStartError").value<McpStartupError>();
+            const QString message = mcpStartupErrorText(error);
+            const QString expected =
+                locale == u"zh_CN" ? QStringLiteral("另一个 Snow Shot 实例正在使用 MCP 端点")
+                : locale == u"zh_TW"
+                    ? QStringLiteral("另一個 Snow Shot 執行個體正在使用 MCP 端點")
+                    : QStringLiteral("Another Snow Shot instance owns the MCP endpoint");
+            require(error == McpStartupError::EndpointOwned && message == expected &&
+                        !initiallyUnavailable->isRunning() && failedRuntimeStarts == 0,
+                    "real catalogs retranslate retained startup failures without restarting MCP");
+        }
+        QObject::disconnect(failureConnection);
+        endpointLock.unlock();
+        require(configuration.setValue(QStringLiteral("mcp/enabled"), false),
+                "disable the failed runtime before explicit retry");
+        QCoreApplication::sendPostedEvents(&controller, QEvent::MetaCall);
+        require(application.property("snowShotMcpStartError").value<McpStartupError>() ==
+                    McpStartupError::None,
+                "disable clears the previous startup failure");
+        require(configuration.setValue(QStringLiteral("mcp/enabled"), true),
+                "retry through the existing enable setting after endpoint recovery");
+        await([&] { return initiallyUnavailable->isRunning(); });
+        require(controller.findChild<ScreenshotMcpSession*>() &&
+                    controller.findChild<McpDocumentService*>() &&
+                    initiallyUnavailable->startupError() == McpStartupError::None &&
+                    application.property("snowShotMcpStartError").value<McpStartupError>() ==
+                        McpStartupError::None,
+                "retry constructs a fresh graph and publishes actual availability");
         const int quitObservers = application.quitObserverCount();
         for (int iteration = 0; iteration < 3; ++iteration) {
             require(application.quitObserverCount() == quitObservers,
@@ -237,6 +290,57 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
         QObject::disconnect(runningConnection);
 #endif
 
+        controller.showMainWindow();
+        MainWindow* mainWindow = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets())
+            if (auto* window = qobject_cast<MainWindow*>(widget))
+                mainWindow = window;
+        require(mainWindow, "isolated main window exposes the real ingress signal bindings");
+        storage::PinnedWindowRecord protectedPin;
+        protectedPin.id = QStringLiteral("22222222-2222-4222-8222-222222222222");
+        protectedPin.image = QImage(8, 8, QImage::Format_RGBA8888);
+        protectedPin.image.fill(Qt::blue);
+        protectedPin.nativeGeometry = QRect(0, 0, 8, 8);
+        protectedPin.canvasSourceRect = QRectF(0, 0, 8, 8);
+        protectedPin.contentCanvasRect = protectedPin.canvasSourceRect;
+        protectedPin.surfaceCanvasRect = protectedPin.canvasSourceRect;
+        protectedPin.initialWindowSize = protectedPin.image.size();
+        require(storage.pinnedWindows().upsert(protectedPin).success &&
+                    storage.pinnedWindows().flush().success,
+                "persist an isolated pin for suspended show/delete requests");
+        const auto compositionOwnerCount = [&] {
+            int count = 0;
+            for (auto* object : controller.findChildren<QObject*>()) {
+                const QByteArray name = object->metaObject()->className();
+                if (name.endsWith("ImageEditingWindowCoordinator") ||
+                    name.endsWith("ImageStitchingWindowCoordinator") ||
+                    name.endsWith("ImageSplitWindowCoordinator"))
+                    ++count;
+            }
+            return count;
+        };
+        const int initialCompositionOwners = compositionOwnerCount();
+        const auto pausedIngress = [&] {
+            storage::CaptureHistoryRecord record;
+            record.id = QStringLiteral("paused-history");
+            record.contentKind = storage::CaptureHistoryContentKind::Image;
+            mainWindow->screenshotHistoryImageEditingRequested(record);
+            mainWindow->screenshotHistoryStitchImagesRequested({record});
+            mainWindow->screenshotHistorySplitRequested(record);
+            mainWindow->pinnedWindowImageEditingRequested(protectedPin.id);
+            mainWindow->pinnedWindowStitchImagesRequested({protectedPin.id});
+            mainWindow->pinnedWindowSplitRequested(protectedPin.id);
+            storage.pinnedWindowShowRequested(protectedPin.id);
+            storage.pinnedWindowsShowRequested({protectedPin.id});
+            storage.pinnedWindowDeleteRequested({protectedPin.id});
+            require(compositionOwnerCount() == initialCompositionOwners &&
+                        storage.pinnedWindows().summary(protectedPin.id).has_value(),
+                    "paused real bindings refuse document creation and destructive pin ingress");
+#ifdef Q_OS_WIN
+            require(visiblePins().isEmpty(), "paused show signals cannot create a live pin");
+#endif
+        };
+
         // Drive the controller's committed transition without launching a native updater.
         // The helper protocol/authority is covered separately by the adapter fixtures.
         auto* updates =
@@ -258,6 +362,7 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
         QTimer::singleShot(0, &application, [&] {
             updates->handoffPendingChanged(true);
             suspendedWithoutListener = !server->isRunning();
+            pausedIngress();
             updates->handoffCommitted();
         });
         const int quitResult = application.exec();

@@ -107,7 +107,7 @@ mod windows_coordination {
     const PARENT_EXIT_TIMEOUT: Duration = Duration::from_secs(45);
     const PRE_HANDOFF_TIMEOUT: Duration = Duration::from_secs(180);
     const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(15 * 60);
-    const MAX_CONTROL_LINE: usize = 4096;
+    const MAX_CONTROL_LINE: usize = crate::protocol::MAX_FRAME_BYTES;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const PROGRESS_CONTEXT: &str = "progress.json";
@@ -768,11 +768,10 @@ mod windows_coordination {
 
     fn relaunch(root: &Path, arguments: Option<&[String]>) -> Result<()> {
         let default_arguments = ["--show-main-window".to_owned()];
-        spawn_detached(
-            &root.join(crate::edition::APP_PATH),
-            arguments.unwrap_or(&default_arguments),
-            Some(root),
-        )
+        let arguments = arguments.unwrap_or(&default_arguments);
+        let executable = root.join(crate::edition::APP_PATH);
+        crate::protocol::validate_relaunch_commandline(arguments, &executable.to_string_lossy())?;
+        spawn_detached(&executable, arguments, Some(root))
     }
 
     fn prune_coordinators() {
@@ -886,6 +885,7 @@ mod windows_coordination {
 
     pub struct ServiceHandoff {
         connection: NamedPipeServer,
+        executable: PathBuf,
     }
 
     impl ServiceHandoff {
@@ -894,6 +894,12 @@ mod windows_coordination {
             proceed: bool,
             arguments: Option<Vec<String>>,
         ) -> Result<()> {
+            if let Some(arguments) = &arguments {
+                crate::protocol::validate_relaunch_commandline(
+                    arguments,
+                    &self.executable.to_string_lossy(),
+                )?;
+            }
             write_line(&mut self.connection, &decision_line(proceed, arguments)?).await?;
             if !proceed {
                 return Ok(());
@@ -910,6 +916,10 @@ mod windows_coordination {
         }
 
         pub async fn set_relaunch_arguments(&mut self, arguments: Vec<String>) -> Result<()> {
+            crate::protocol::validate_relaunch_commandline(
+                &arguments,
+                &self.executable.to_string_lossy(),
+            )?;
             let decision = decision_line(true, Some(arguments))?;
             require(
                 exchange_line(&mut self.connection, &decision, ACK_TIMEOUT).await? == "accepted",
@@ -941,6 +951,7 @@ mod windows_coordination {
         texts: ProgressTexts,
         appearance: ProgressAppearance,
     ) -> Result<ServiceHandoff> {
+        let executable = path_option(&args, "--target")?.join(crate::edition::APP_PATH);
         let pipe = format!("snow-shot-service-{}", Uuid::new_v4().simple());
         let mut server = secure_server(&pipe_path(&pipe))?;
         append_option(&mut args, "--pipe", pipe);
@@ -972,7 +983,10 @@ mod windows_coordination {
             "coordinator_ack_failed",
             "The update handoff was not acknowledged",
         )?;
-        Ok(ServiceHandoff { connection: server })
+        Ok(ServiceHandoff {
+            connection: server,
+            executable,
+        })
     }
 
     pub async fn broker(args: &[String]) -> Result<i32> {
@@ -1455,10 +1469,18 @@ mod windows_coordination {
             let (sender, receiver) = tokio::sync::watch::channel(original);
             let (mut application, broker) = tokio::io::duplex(4096);
             let relay = tokio::spawn(receive_relaunch_arguments(broker, sender));
+            let directory = tempfile::tempdir().unwrap();
             let foreground = vec![
                 "--show-main-window".to_owned(),
                 "--skip-startup-update".to_owned(),
+                "--edit-with-snow-shot".to_owned(),
+                directory
+                    .path()
+                    .join(format!("{} 雪.png", "x".repeat(6000)))
+                    .display()
+                    .to_string(),
             ];
+            assert!(decision_line(true, Some(foreground.clone())).unwrap().len() > 4096);
             write_line(
                 &mut application,
                 &decision_line(true, Some(foreground.clone())).unwrap(),
@@ -1652,5 +1674,22 @@ mod tests {
         assert!(
             parse_decision(r#"go:{"relaunchArguments":[],"target":"elsewhere"}"#, true).is_err()
         );
+    }
+
+    #[test]
+    fn relaunch_intent_larger_than_the_old_control_line_survives_the_relay() {
+        let directory = tempfile::tempdir().unwrap();
+        let arguments = vec![
+            "--skip-startup-update".to_owned(),
+            "--edit-with-snow-shot".to_owned(),
+            directory
+                .path()
+                .join(format!("{} 雪.png", "x".repeat(6000)))
+                .display()
+                .to_string(),
+        ];
+        let line = decision_line(true, Some(arguments.clone())).unwrap();
+        assert!(line.len() > 4096 && line.len() < crate::protocol::MAX_FRAME_BYTES);
+        assert_eq!(parse_decision(&line, true).unwrap(), Some(arguments));
     }
 }
