@@ -279,6 +279,8 @@ class ScreenshotSettings final {
     bool setMiddleMouseButtonAction(const QString& action) const;
     [[nodiscard]] bool quickSelectionModification() const;
     bool setQuickSelectionModification(bool enabled) const;
+    [[nodiscard]] QString hiDpiImageScaling() const;
+    bool setHiDpiImageScaling(const QString& mode) const;
     [[nodiscard]] QString selectionResizeMode() const;
     bool setSelectionResizeMode(const QString& mode) const;
     [[nodiscard]] QStringList autoSaveAfterExecutionActions() const;

@@ -115,6 +115,7 @@ enum class SettingsSelectBinding {
     TranslationSecondaryTargetLanguage,
     TranslationService,
     ScreenshotSelectionResizeMode,
+    ScreenshotHiDpiImageScaling,
     SkinDisplayMode,
     SkinPosition,
     ToolbarSkinPosition,

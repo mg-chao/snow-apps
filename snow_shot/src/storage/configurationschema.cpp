@@ -787,6 +787,12 @@ constexpr SchemaAllowedValues kSchemaAllowed56 = {kSchemaStrings125, std::size(k
 constexpr SchemaString kSchemaStrings126[] = {u"copy", u"save",     u"quick_save", u"pin",
                                               u"ocr",  u"ocr_copy", u"cancel",     u"none"};
 constexpr SchemaAllowedValues kSchemaAllowed57 = {kSchemaStrings126, std::size(kSchemaStrings126)};
+constexpr SchemaString kHiDpiImageScalingValues[] = {u"disabled", u"auto", u"125", u"150",
+                                                     u"175",      u"200",  u"225", u"250",
+                                                     u"275",      u"300",  u"325", u"350"};
+constexpr SchemaAllowedValues kHiDpiImageScalingAllowed = {kHiDpiImageScalingValues,
+                                                           std::size(kHiDpiImageScalingValues)};
+
 constexpr SchemaString kSchemaStrings127[] = {u"follow_mouse_movement", u"follow_mouse_position"};
 constexpr SchemaAllowedValues kSchemaAllowed58 = {kSchemaStrings127, std::size(kSchemaStrings127)};
 constexpr SchemaString kSchemaStrings128[] = {
@@ -1634,6 +1640,8 @@ constexpr SchemaEntryDescriptor kEntryDescriptors[] = {
      ConfigurationValueKind::String, nullptr, &kSchemaAllowed57},
     {u"screenshot/quick_selection_modification", booleanDefault(true),
      ConfigurationValueKind::Boolean},
+    {u"screenshot/hidpi_image_scaling", stringDefault(u"disabled"), ConfigurationValueKind::String,
+     nullptr, &kHiDpiImageScalingAllowed},
     {u"screenshot/selection_resize_mode", stringDefault(u"follow_mouse_movement"),
      ConfigurationValueKind::String, nullptr, &kSchemaAllowed58},
     {u"screenshot/auto_save_after_execution_actions", emptyArrayDefault(),

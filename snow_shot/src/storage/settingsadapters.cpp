@@ -1123,6 +1123,14 @@ bool ScreenshotSettings::setQuickSelectionModification(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/quick_selection_modification"), enabled);
 }
 
+QString ScreenshotSettings::hiDpiImageScaling() const {
+    return cache().value(QStringLiteral("screenshot/hidpi_image_scaling")).toString();
+}
+
+bool ScreenshotSettings::setHiDpiImageScaling(const QString& mode) const {
+    return cache().setValue(QStringLiteral("screenshot/hidpi_image_scaling"), mode);
+}
+
 QString ScreenshotSettings::selectionResizeMode() const {
     return cache().value(QStringLiteral("screenshot/selection_resize_mode")).toString();
 }

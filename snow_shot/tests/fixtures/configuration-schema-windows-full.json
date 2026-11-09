@@ -2114,6 +2114,26 @@
       "defaultStringIsNull": false,
       "defaultValue": false,
       "integerRange": null,
+      "key": "drawing/sync_tool_colors",
+      "maximumListItems": -1,
+      "valueKind": "Boolean"
+    },
+    {
+      "allowedStringValues": [],
+      "defaultJsonType": 3,
+      "defaultStringIsNull": false,
+      "defaultValue": "",
+      "integerRange": null,
+      "key": "drawing/shared_tool_color",
+      "maximumListItems": -1,
+      "valueKind": "String"
+    },
+    {
+      "allowedStringValues": [],
+      "defaultJsonType": 1,
+      "defaultStringIsNull": false,
+      "defaultValue": false,
+      "integerRange": null,
       "key": "drawing/always_show_first_toolbar_group_button",
       "maximumListItems": -1,
       "valueKind": "Boolean"
@@ -5079,6 +5099,29 @@
       "key": "screenshot/quick_selection_modification",
       "maximumListItems": -1,
       "valueKind": "Boolean"
+    },
+    {
+      "allowedStringValues": [
+        "disabled",
+        "auto",
+        "125",
+        "150",
+        "175",
+        "200",
+        "225",
+        "250",
+        "275",
+        "300",
+        "325",
+        "350"
+      ],
+      "defaultJsonType": 3,
+      "defaultStringIsNull": false,
+      "defaultValue": "disabled",
+      "integerRange": null,
+      "key": "screenshot/hidpi_image_scaling",
+      "maximumListItems": -1,
+      "valueKind": "String"
     },
     {
       "allowedStringValues": [

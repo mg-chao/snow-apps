@@ -1717,6 +1717,42 @@ SettingsItemDefinition quickSelectionModificationItem() {
         SettingsSwitchBinding::ScreenshotQuickSelectionModification);
 }
 
+SettingsItemDefinition hiDpiImageScalingItem() {
+    return fixedSelectItem(
+        QStringLiteral("screenshot.hidpi-image-scaling"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "HiDPI image scaling"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Downscale copied and saved screenshots. Auto preserves selections "
+                          "spanning displays with different scaling factors"),
+        QStringLiteral("screenshot/hidpi_image_scaling"),
+        SettingsSelectBinding::ScreenshotHiDpiImageScaling,
+        {
+            {QStringLiteral("disabled"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disabled"))},
+            {QStringLiteral("auto"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Auto"))},
+            {QStringLiteral("125"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 80% (125%)"))},
+            {QStringLiteral("150"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 66.7% (150%)"))},
+            {QStringLiteral("175"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 57.1% (175%)"))},
+            {QStringLiteral("200"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 50% (200%)"))},
+            {QStringLiteral("225"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 44.4% (225%)"))},
+            {QStringLiteral("250"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 40% (250%)"))},
+            {QStringLiteral("275"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 36.4% (275%)"))},
+            {QStringLiteral("300"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 33.3% (300%)"))},
+            {QStringLiteral("325"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 30.8% (325%)"))},
+            {QStringLiteral("350"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scale down to 28.6% (350%)"))},
+        });
+}
+
 SettingsItemDefinition selectionResizeModeItem() {
     return fixedSelectItem(
         QStringLiteral("screenshot.selection-resize-mode"),
@@ -4188,6 +4224,7 @@ constexpr CatalogItemFactory catalogPageScreenshotsSectionScreenshotSettingsItem
     {screenshotDoubleClickActionItem},
     {screenshotMiddleClickActionItem},
     {quickSelectionModificationItem},
+    {hiDpiImageScalingItem},
     {nullptr, &catalogItemScreenshotCopyAfterPinningToScreen},
     {nullptr, &catalogItemScreenshotKeepAnnotationsEditableAfterPinningToScreen},
     {screenshotShutterSoundNotificationItem},
@@ -6270,6 +6307,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::TranslationService:
                         expectedKey = QStringLiteral("screenshot_translation/model");
                         expectedSource = SettingsSelectSource::TranslationServices;
+                        break;
+                    case SettingsSelectBinding::ScreenshotHiDpiImageScaling:
+                        expectedKey = QStringLiteral("screenshot/hidpi_image_scaling");
                         break;
                     case SettingsSelectBinding::ScreenshotSelectionResizeMode:
                         expectedKey = QStringLiteral("screenshot/selection_resize_mode");

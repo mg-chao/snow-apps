@@ -3,6 +3,7 @@
 #include <snow/memory/pixel_array.h>
 
 #include "alpha_analysis.h"
+#include "srgb_quantization.h"
 
 #include "snow/image/codec.h"
 
@@ -278,16 +279,13 @@ void write_pixel(std::byte* destination, Pixel pixel, const PixelFormat& format,
 }
 
 void write_rgba8_pixel(std::byte* destination, Pixel pixel, bool bgra, bool linear_rgb) {
-    if (linear_rgb) {
-        pixel.red = linear_to_srgb(pixel.red);
-        pixel.green = linear_to_srgb(pixel.green);
-        pixel.blue = linear_to_srgb(pixel.blue);
-    }
-    destination[bgra ? 2U : 0U] =
-        static_cast<std::byte>(std::lround(clamp_unit(pixel.red) * 255.0F));
-    destination[1] = static_cast<std::byte>(std::lround(clamp_unit(pixel.green) * 255.0F));
-    destination[bgra ? 0U : 2U] =
-        static_cast<std::byte>(std::lround(clamp_unit(pixel.blue) * 255.0F));
+    const auto encode = [linear_rgb](float value) {
+        return linear_rgb ? static_cast<std::byte>(detail::linear_to_srgb8(value))
+                          : static_cast<std::byte>(std::lround(clamp_unit(value) * 255.0F));
+    };
+    destination[bgra ? 2U : 0U] = encode(pixel.red);
+    destination[1] = encode(pixel.green);
+    destination[bgra ? 0U : 2U] = encode(pixel.blue);
     destination[3] = static_cast<std::byte>(std::lround(clamp_unit(pixel.alpha) * 255.0F));
 }
 

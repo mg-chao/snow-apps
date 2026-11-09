@@ -81,6 +81,22 @@ void publicMetadataMatchesOriginal(const QJsonArray& actual) {
                 (snow_shot::app::edition::isMini ? QStringLiteral("mini") : QStringLiteral("full")),
             "the reference must match the linked storage edition");
     const auto expected = fixture.value(QStringLiteral("entries")).toArray();
+    if (actual.size() != expected.size()) {
+        std::cerr << "schema entries: actual=" << actual.size() << " expected=" << expected.size()
+                  << '\n';
+        const auto keys = [](const QJsonArray& entries) {
+            QSet<QString> result;
+            for (const auto& entry : entries)
+                result.insert(entry.toObject().value(QStringLiteral("key")).toString());
+            return result;
+        };
+        const auto actualKeys = keys(actual);
+        const auto expectedKeys = keys(expected);
+        for (const auto& key : actualKeys - expectedKeys)
+            std::cerr << "missing fixture key: " << key.toStdString() << '\n';
+        for (const auto& key : expectedKeys - actualKeys)
+            std::cerr << "unexpected fixture key: " << key.toStdString() << '\n';
+    }
     require(actual.size() == expected.size(), "schema entry counts must match the original");
     for (qsizetype i = 0; i < expected.size(); ++i) {
         if (actual.at(i) != expected.at(i)) {

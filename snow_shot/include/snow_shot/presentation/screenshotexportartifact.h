@@ -21,6 +21,7 @@
 #include <variant>
 
 class ScreenshotScrollingSnapshot;
+class ScreenshotExportArtifact;
 struct ScreenshotRecognitionImageSnapshot;
 
 struct ScreenshotPinnedViewportExportSource final {
@@ -108,6 +109,10 @@ class ScreenshotExportSource final {
     [[nodiscard]] static ScreenshotExportSource
     fromImage(QImage image, std::optional<ScreenshotClipboardPlacement> placement = {},
               std::optional<ScreenshotClipboardAppearance> appearance = {});
+    // Derive an independent output from shared prepared rows, retaining the original artifact.
+    // Cancelling the derived output does not cancel the original pin or its history subscribers.
+    [[nodiscard]] static ScreenshotExportSource
+    fromArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact);
     [[nodiscard]] static ScreenshotExportSource
     fromRecognitionImage(ScreenshotRecognitionImageSnapshot snapshot);
     [[nodiscard]] static ScreenshotExportSource
@@ -134,6 +139,16 @@ class ScreenshotExportSource final {
         m_encodingCacheKey = std::move(key);
     }
 
+    // Freeze on the source before constructing an artifact. Capture pixels stay unchanged.
+    void setOutputScale(qreal scale) {
+        m_outputScale = scale;
+    }
+
+    [[nodiscard]] ScreenshotExportSource withOutputScale(qreal scale) && {
+        setOutputScale(scale);
+        return std::move(*this);
+    }
+
     [[nodiscard]] bool isValid() const;
 
   private:
@@ -142,10 +157,15 @@ class ScreenshotExportSource final {
     ImagePreparation m_loadedImagePreparation;
     std::function<qint64(QSize)> m_loadedImageWorkingBytes;
     RowSourceFactory m_rowSourceFactory;
+    std::function<bool(QObject*, std::function<void(ScreenshotImageRowSource, QString)>)>
+        m_rowSourceLoader;
     std::optional<ScreenshotClipboardPlacement> m_clipboardPlacement;
     std::optional<ScreenshotClipboardAppearance> m_clipboardAppearance;
     qint64 m_renderingBytes = 0;
     QByteArray m_encodingCacheKey;
+    qreal m_outputScale = 1.0;
+
+    void prepareOutputScale();
 
     friend class ScreenshotExportArtifact;
 };
@@ -270,6 +290,7 @@ class ScreenshotExportArtifact final : public QObject {
     void prepareLoadedImage(QImage image);
     void completeImage(ScreenshotExportImageResult result);
     void startRowSource();
+    void prepareScaledRowSource(ScreenshotImageRowSource source);
     void startRowSourceFromImage(QImage image);
     void completeRowSource(ScreenshotImageRowSource source, QString error);
     void startPng(int compressionLevel);

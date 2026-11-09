@@ -667,6 +667,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().middleMouseButtonAction();
     case SettingsSelectBinding::ScreenshotSelectionResizeMode:
         return storage::ScreenshotSettings().selectionResizeMode();
+    case SettingsSelectBinding::ScreenshotHiDpiImageScaling:
+        return storage::ScreenshotSettings().hiDpiImageScaling();
     case SettingsSelectBinding::PinDoubleClickAction:
         return storage::PinToScreenSettings().doubleClickAction();
     case SettingsSelectBinding::PinMiddleClickAction:
@@ -916,6 +918,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setMiddleMouseButtonAction(value.toString());
     case SettingsSelectBinding::ScreenshotSelectionResizeMode:
         return storage::ScreenshotSettings().setSelectionResizeMode(value.toString());
+    case SettingsSelectBinding::ScreenshotHiDpiImageScaling:
+        return storage::ScreenshotSettings().setHiDpiImageScaling(value.toString());
     case SettingsSelectBinding::PinDoubleClickAction:
         return storage::PinToScreenSettings().setDoubleClickAction(value.toString());
     case SettingsSelectBinding::PinMiddleClickAction:
@@ -2916,6 +2920,9 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                    {QStringLiteral("screenshot/quick_selection_modification"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/quick_selection_modification"))},
+                   {QStringLiteral("screenshot/hidpi_image_scaling"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/hidpi_image_scaling"))},
                    {QStringLiteral("screenshot/selection_resize_mode"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/selection_resize_mode"))},

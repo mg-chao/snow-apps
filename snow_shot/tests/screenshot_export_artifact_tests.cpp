@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshothidpiimagescaling.h"
 #include "snow_shot/presentation/screenshotexportcache.h"
 #include "../src/presentation/services/screenshotexportfiletransfer_p.h"
 #include <QUuid>
@@ -123,6 +124,378 @@ ScreenshotImageRowSource rowSourceFor(const QImage& source, std::function<bool()
         return true;
     };
     return rows;
+}
+
+void scaledImageReleasesOriginalStorage() {
+    auto bytes = std::make_shared<QByteArray>(37 * 19 * 4, char(127));
+    const std::weak_ptr<QByteArray> originalStorage = bytes;
+    QImage image(
+        reinterpret_cast<uchar*>(bytes->data()), 37, 19, 37 * 4, QImage::Format_RGBA8888,
+        [](void* owner) { delete static_cast<std::shared_ptr<QByteArray>*>(owner); },
+        new std::shared_ptr<QByteArray>(bytes));
+    bytes.reset();
+    ScreenshotExportArtifact artifact(
+        ScreenshotExportSource::fromImage(std::move(image)).withOutputScale(0.5));
+    QObject receiver;
+    QImage scaled;
+    require(artifact.requestImage(&receiver, [&](auto result) { scaled = result.image; }),
+            "scaled image must schedule");
+    processUntil([&] { return !scaled.isNull() && originalStorage.expired(); });
+    require(scaled.size() == QSize(19, 10) && artifact.isValid(),
+            "scaled artifact remains valid after releasing original pixels");
+    bool copied = false;
+    require(artifact.requestImage(&receiver,
+                                  [&](auto result) {
+                                      require(hasSamePixels(result.image, scaled),
+                                              "subsequent requests use cached pixels");
+                                      copied = true;
+                                  }),
+            "cached scaled image must schedule");
+    processUntil([&] { return copied; });
+}
+
+void scaledRowsReusePixelsAndFallBackWhenCacheAdmissionFails() {
+    QImage original(QSize(257, 513), QImage::Format_RGBA8888);
+    original.fill(QColor(12, 45, 78, 123));
+    const QSize output = screenshotHiDpiImageSize(original.size(), 0.5);
+    for (const bool rejectCache : {false, true}) {
+        std::atomic_int reads = 0;
+        std::atomic_int materializations = 0;
+        std::atomic<qint64> retained = 0;
+        std::atomic<qint64> scratch = 0;
+        {
+            auto source = ScreenshotExportSource::fromProducer(
+                [&](const ScreenshotExportCancellation&) {
+                    ++materializations;
+                    return original;
+                },
+                [&](auto cancelled) {
+                    auto rows = rowSourceFor(original, std::move(cancelled));
+                    auto read = rows.readRows;
+                    rows.readRows = [&, read](int first, int count, qsizetype stride, uchar* pixels,
+                                              qsizetype capacity) {
+                        if (!rejectCache)
+                            require(ScreenshotExportCoordinator::shared().activeWorkingBytes() >=
+                                        qint64(output.width()) * output.height() * 4,
+                                    "scaled pixel preparation must be admitted by the coordinator");
+                        ++reads;
+                        return read(first, count, stride, pixels, capacity);
+                    };
+                    rows.reserveResources = [&](qint64 persistent, qint64 temporary,
+                                                QString*) -> std::shared_ptr<void> {
+                        if (rejectCache && temporary == 0 &&
+                            persistent == qint64(output.width()) * output.height() * 4)
+                            return {};
+                        retained += persistent;
+                        scratch += temporary;
+                        return std::shared_ptr<void>(new int{},
+                                                     [&, persistent, temporary](void* p) {
+                                                         delete static_cast<int*>(p);
+                                                         retained -= persistent;
+                                                         scratch -= temporary;
+                                                     });
+                    };
+                    return rows;
+                });
+            source.setOutputScale(0.5);
+            ScreenshotExportArtifact artifact(std::move(source));
+            QObject receiver;
+            ScreenshotImageRowSource rows;
+            require(artifact.requestRowSource(
+                        &receiver,
+                        [&](auto result, const QString& error) {
+                            require(error.isEmpty(), "scaled rows must prepare without an error");
+                            rows = std::move(result);
+                        }),
+                    "scaled row cache must schedule");
+            processUntil([&] { return rows.isValid(); });
+            require(rows.backingImage.isNull() == rejectCache,
+                    "scaled rows cache admitted output and stream after cache denial");
+            if (!rejectCache)
+                require(scratch == 0 && retained == qint64(output.width()) * output.height() * 4,
+                        "only output pixel admission survives cache preparation");
+            const int readsAfterPreparation = reads;
+            QImage raster;
+            require(artifact.requestImage(&receiver, [&](auto result) { raster = result.image; }),
+                    "row-backed raster request must schedule");
+            processUntil([&] { return !raster.isNull(); });
+            require(raster.size() == output && materializations == 0,
+                    "raster consumers use scaled rows without materializing the native source");
+            for (auto compression :
+                 {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::High}) {
+                bool encoded = false;
+                require(artifact.requestPng(
+                            &receiver, compression,
+                            [&](auto result) {
+                                require(result.succeeded() && result.image.pixelSize() == output,
+                                        "each PNG encoding must use the scaled pixels");
+                                encoded = true;
+                            }),
+                        "different PNG encodings must schedule");
+                processUntil([&] { return encoded; });
+            }
+            require(rejectCache || reads == readsAfterPreparation,
+                    "different encoders and raster consumers must reuse cached scaled pixels");
+        }
+        processUntil([&] { return retained == 0 && scratch == 0; });
+    }
+    std::atomic_int reads = 0;
+    auto source = ScreenshotExportSource::fromProducer({}, [&](auto cancelled) {
+        ScreenshotImageRowSource rows;
+        rows.size = QSize(20000, 10000);
+        rows.cancellationRequested = std::move(cancelled);
+        rows.readRows = [&](int, int, qsizetype, uchar*, qsizetype) {
+            ++reads;
+            return false;
+        };
+        return rows;
+    });
+    source.setOutputScale(0.5);
+    ScreenshotExportArtifact artifact(std::move(source));
+    QObject receiver;
+    bool ready = false;
+    require(artifact.requestRowSource(
+                &receiver,
+                [&](auto rows, const QString& error) {
+                    require(
+                        rows.isValid() && rows.size == QSize(10000, 5000) && error.isEmpty() &&
+                            rows.backingImage.isNull() && reads == 0,
+                        "large scaled outputs must remain lazy without allocating a full raster");
+                    ready = true;
+                }),
+            "large scaled row source must schedule");
+    processUntil([&] { return ready; });
+}
+
+void derivedArtifactsShareNativeRowsAndCancelIndependently() {
+    QObject receiver;
+    const QImage original = testImage();
+    for (const bool rowOnly : {false, true}) {
+        int loads = 0;
+        int materializations = 0;
+        std::function<void(QImage)> deliver;
+        ScreenshotClipboardAppearance appearance;
+        appearance.rasterSize = original.size();
+        appearance.checkerboardEnabled = true;
+        auto source = rowOnly ? ScreenshotExportSource::fromProducer(
+                                    [&](const ScreenshotExportCancellation&) {
+                                        ++materializations;
+                                        return original;
+                                    },
+                                    [&](auto cancelled) {
+                                        ++loads;
+                                        return rowSourceFor(original, std::move(cancelled));
+                                    },
+                                    {}, appearance)
+                              : ScreenshotExportSource::fromImageLoader(
+                                    [&](QObject*, auto complete) {
+                                        ++loads;
+                                        deliver = std::move(complete);
+                                        return true;
+                                    },
+                                    {}, appearance);
+        auto native = std::make_shared<ScreenshotExportArtifact>(std::move(source));
+        const std::weak_ptr<ScreenshotExportArtifact> retainedNative = native;
+        ScreenshotExportArtifact scaled(
+            ScreenshotExportSource::fromArtifact(native).withOutputScale(0.5));
+        ScreenshotExportArtifact cancelled(
+            ScreenshotExportSource::fromArtifact(native).withOutputScale(0.5));
+        int cancelledCallbacks = 0;
+        QImage nativeImage;
+        QImage scaledImage;
+        require(
+            cancelled.requestImage(&receiver, [&](auto) { ++cancelledCallbacks; }) &&
+                scaled.requestImage(&receiver, [&](auto result) { scaledImage = result.image; }),
+            "derived outputs subscribe to the shared native acquisition");
+        cancelled.cancel();
+        require(!native->isCancelled(), "cancelling an output does not cancel native consumers");
+        if (!rowOnly) {
+            require(loads == 1 && deliver, "derived outputs acquire an async image only once");
+            deliver(original);
+        }
+        processUntil([&] { return !scaledImage.isNull(); });
+        require(scaledImage.size() == QSize(19, 10) && loads == 1 && materializations == 0 &&
+                    cancelledCallbacks == 0,
+                "scaled outputs share rows without native materialization or cancelled delivery");
+        const auto metadata = scaled.clipboardAppearance();
+        require(metadata && metadata->rasterSize == scaledImage.size() &&
+                    metadata->checkerboardEnabled,
+                "derived outputs preserve clipboard appearance with scaled dimensions");
+        bool encoded = false;
+        require(scaled.requestCanonicalPng(&receiver,
+                                           [&](auto result) {
+                                               require(result.succeeded() &&
+                                                           result.image.pixelSize() ==
+                                                               scaledImage.size(),
+                                                       "derived encoding uses the prepared scale");
+                                               encoded = true;
+                                           }),
+                "derived PNG encoding schedules");
+        processUntil([&] { return encoded; });
+        require(native->requestImage(&receiver, [&](auto result) { nativeImage = result.image; }),
+                "native pin and history remain available after a derived export");
+        processUntil([&] { return !nativeImage.isNull(); });
+        require(hasSamePixels(nativeImage, original) && loads == 1,
+                "derived output does not alter native pixels or repeat row acquisition");
+        ScreenshotExportArtifact unscaled(ScreenshotExportSource::fromArtifact(native));
+        ScreenshotImageRowSource rows;
+        require(unscaled.requestRowSource(&receiver,
+                                          [&](auto value, QString error) {
+                                              require(error.isEmpty(),
+                                                      "unscaled derived rows succeed");
+                                              rows = std::move(value);
+                                          }),
+                "unscaled outputs may share native rows");
+        processUntil([&] { return rows.isValid(); });
+        unscaled.cancel();
+        require(rows.cancellationRequested && rows.cancellationRequested() &&
+                    !native->isCancelled(),
+                "borrowed row cancellation belongs to the derived output");
+        native.reset();
+        require(!retainedNative.expired(), "derived output retains its native row owner");
+    }
+    ScreenshotExportArtifact invalid(ScreenshotExportSource::fromArtifact({}));
+    require(!invalid.isValid(), "missing native artifacts cannot become export sources");
+    auto failed = std::make_shared<ScreenshotExportArtifact>(
+        ScreenshotExportSource::fromImageLoader([](QObject*, auto) { return false; }));
+    ScreenshotExportArtifact derived(
+        ScreenshotExportSource::fromArtifact(failed).withOutputScale(0.5));
+    bool failedDelivered = false;
+    require(derived.requestImage(
+                &receiver,
+                [&](auto result) {
+                    require(!result.succeeded() && !result.error.isEmpty(),
+                            "native acquisition errors reach derived output consumers");
+                    failedDelivered = true;
+                }),
+            "failed derived output request is accepted");
+    processUntil([&] { return failedDelivered; });
+}
+
+void hiDpiOutputScalingIsSharedByEveryConsumer() {
+    derivedArtifactsShareNativeRowsAndCancelIndependently();
+    scaledImageReleasesOriginalStorage();
+    scaledRowsReusePixelsAndFallBackWhenCacheAdmissionFails();
+    QImage original = testImage();
+    original.setPixelColor(0, 0, QColor(50, 100, 150, 20));
+    const auto originalCopy = original.copy();
+    for (const int kind : {0, 1, 2}) {
+        QObject receiver;
+        QTemporaryDir directory;
+        int loads = 0;
+        std::function<void(QImage)> deliver;
+        ScreenshotClipboardAppearance appearance;
+        appearance.rasterSize = original.size();
+        appearance.checkerboardEnabled = true;
+        ScreenshotExportSource source;
+        if (kind == 0)
+            source = ScreenshotExportSource::fromImage(original, {}, appearance);
+        else if (kind == 1)
+            source = ScreenshotExportSource::fromImageLoader(
+                [&](QObject*, auto done) {
+                    ++loads;
+                    deliver = std::move(done);
+                    return true;
+                },
+                {}, appearance);
+        else
+            source = ScreenshotExportSource::fromProducer(
+                [&](const ScreenshotExportCancellation&) {
+                    ++loads;
+                    return original;
+                },
+                [original](auto cancelled) { return rowSourceFor(original, std::move(cancelled)); },
+                {}, appearance);
+        source.setOutputScale(100.0 / 150.0);
+        ScreenshotExportArtifact artifact(std::move(source));
+        QImage raster;
+        ScreenshotImageRowSource rows;
+        QByteArray png;
+        ScreenshotClipboardPayload clipboard;
+        int completed = 0;
+        // Rows go first so row-backed sources cannot accidentally depend on materialization.
+        require(artifact.requestRowSource(&receiver,
+                                          [&](auto result, const QString& error) {
+                                              require(result.isValid() && error.isEmpty(),
+                                                      "scaled rows must be available");
+                                              rows = std::move(result);
+                                              ++completed;
+                                          }),
+                "scaled row request must schedule");
+        require(artifact.requestCanonicalPng(
+                    &receiver,
+                    [&](auto result) {
+                        require(result.succeeded(), "scaled canonical PNG must encode");
+                        png = result.image.bytes();
+                        require(result.image.pixelSize() == QSize(25, 13),
+                                "scaled PNG must expose the final raster dimensions");
+                        ++completed;
+                    }),
+                "scaled PNG request must schedule");
+        if (kind == 1) {
+            require(loads == 1 && deliver, "async scaling must acquire its source once");
+            deliver(original);
+        }
+        processUntil([&] { return completed == 2; });
+        require(kind != 2 || loads == 0,
+                "row-based PNG export must not materialize a complete scrolling source");
+        require(rows.size == QSize(25, 13), "scaled rows must share the PNG dimensions");
+        require(artifact.requestImage(&receiver,
+                                      [&](auto result) {
+                                          require(result.succeeded(), "scaled raster must render");
+                                          raster = result.image;
+                                          ++completed;
+                                      }),
+                "scaled raster request must schedule");
+        require(artifact.requestClipboard(&receiver,
+                                          [&](auto result) {
+                                              require(result.succeeded(),
+                                                      "scaled clipboard must prepare");
+                                              clipboard = std::move(result.payload);
+                                              ++completed;
+                                          }),
+                "scaled clipboard request must schedule");
+        require(artifact.requestSaveToPath(&receiver,
+                                           directory.filePath(QStringLiteral("scaled.png")),
+                                           ScreenshotImageFileFormat::Png, {},
+                                           [&](auto result) {
+                                               require(result.succeeded(), "scaled file must save");
+                                               ++completed;
+                                           }),
+                "scaled file request must schedule");
+        processUntil([&] { return completed == 5; });
+        require(kind != 2 || loads == 0,
+                "scaled raster and encoding consumers must share the prepared row pixels");
+        const auto decoded =
+            snow_shot::image_codec::decode(png, snow::image::Format::png, "scaled.png");
+        require(
+            raster.size() == QSize(25, 13) && hasSamePixels(raster, decoded) &&
+                hasSamePixels(QImage(directory.filePath(QStringLiteral("scaled.png"))), raster) &&
+                hasSamePixels(QImage::fromData(clipboard.pngBytes(), "PNG"), raster),
+            "raster, rows, clipboard and file consumers must apply the scale exactly once");
+        const auto metadata = decodeScreenshotClipboardAppearance(clipboard.appearanceBytes());
+        require(metadata && metadata->rasterSize == raster.size() && metadata->checkerboardEnabled,
+                "clipboard metadata must describe the scaled raster");
+        require(raster.colorSpace() == QColorSpace(QColorSpace::SRgb) &&
+                    raster.pixelColor(0, 0).alpha() < 255 && original == originalCopy,
+                "scaling must preserve sRGB, transparency and the original capture");
+        require(kind != 1 || loads == 1, "all async consumers must reuse the captured source");
+    }
+    QObject receiver;
+    std::function<void(QImage)> deliver;
+    auto source = ScreenshotExportSource::fromImageLoader([&](QObject*, auto callback) {
+        deliver = std::move(callback);
+        return true;
+    });
+    source.setOutputScale(0.5);
+    ScreenshotExportArtifact cancelled(std::move(source));
+    int callbacks = 0;
+    require(cancelled.requestImage(&receiver, [&](auto) { ++callbacks; }),
+            "cancellable scaled image must schedule");
+    cancelled.cancel();
+    deliver(original);
+    QCoreApplication::processEvents();
+    require(callbacks == 0, "cancelled scaled exports must not publish results");
 }
 
 void clipboardUsesConfiguredCompression() {
@@ -4008,6 +4381,16 @@ int main(int argc, char** argv) {
             return runTextAnnotationPerformanceBenchmark(argc, argv);
 #endif
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--hidpi-scaling-only"))) {
+        try {
+            hiDpiOutputScalingIsSharedByEveryConsumer();
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
     if (application.arguments().contains(QStringLiteral("--text-annotations-only"))) {
         try {
             pinnedTextAnnotationsExportBelowOrdinaryDrawingAndInsideCrop();

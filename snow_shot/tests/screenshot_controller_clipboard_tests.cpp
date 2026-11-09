@@ -21,11 +21,15 @@
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "widgets/modal.h"
+#include "snow_shot/presentation/screenshotsavepreviewcanvas.h"
+#include "snow_shot/presentation/screenshotscrollingsnapshot.h"
+#include "snow_stitch_images.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "../src/presentation/pinned/screenshotclipboardplacementgeometry.h"
+#include "snowimageqtcodec.h"
 
 #include "widgets/platform_compatibility.h"
 
@@ -646,16 +650,17 @@ QImage editablePinImage(ScreenshotPinnedWindow& pin) {
     return image;
 }
 
+bool samePixels(const QImage& a, const QImage& b) {
+    return a.convertToFormat(QImage::Format_ARGB32_Premultiplied) ==
+           b.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+}
+
 void capturePinKeepsEditableAnnotations() {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     const snow_shot::storage::ScreenshotSettings settings;
     require(!settings.keepAnnotationsEditableAfterPinningToScreen(), "editable pins default off");
     require(snow_shot::storage::PinToScreenSettings().setExitAnnotationModeBeforeClosing(false),
             "close annotation fixtures directly");
-    const auto samePixels = [](const QImage& a, const QImage& b) {
-        return a.convertToFormat(QImage::Format_ARGB32_Premultiplied) ==
-               b.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    };
     // One controller exercises fresh and reused pin shells across both setting values.
     ScreenshotController controller;
     for (int scenario = 0; scenario < 4; ++scenario) {
@@ -1189,6 +1194,321 @@ void capturePinCopiesOnlyWhenEnabled() {
                 settings.setAutoSaveAfterExecutionActions({}),
             "restore screenshot copy settings");
 }
+
+ScreenshotScrollingSnapshot scrollingSnapshot(QImage image) {
+    SnowStitchConfig config{};
+    require(snow_stitch_config_default(&config) != 0, "initialize scrolling fixture config");
+    auto* session = snow_stitch_session_create(&config);
+    require(session != nullptr, "create scrolling fixture session");
+    auto* owner = new QImage(std::move(image));
+    const QSize size = owner->size();
+    SnowStitchFrameOutcome outcome{};
+    require(snow_stitch_session_push_external_rgba(
+                session, uint32_t(size.width()), uint32_t(size.height()), owner->constBits(),
+                size_t(owner->sizeInBytes()),
+                [](void* context) { delete static_cast<QImage*>(context); }, owner, &outcome) != 0,
+            "seed scrolling fixture pixels");
+    auto* snapshot = snow_stitch_session_snapshot(session, 0, uint32_t(size.height()));
+    snow_stitch_session_destroy(session);
+    require(snapshot != nullptr, "create immutable scrolling fixture snapshot");
+    return ScreenshotScrollingSnapshot::adoptNative(snapshot, size);
+}
+
+void scrollingCopyUsesHiDpiScalingWithEveryFileOption() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    QTemporaryDir output;
+    require(output.isValid() && settings.setImageSaveDirectory(output.path()) &&
+                settings.setImageFormat(QStringLiteral("png")) && settings.setShowSaveResult(false),
+            "configure scrolling copy outputs");
+    for (const int flags : {0, 1, 2, 3}) {
+        require(settings.setHiDpiImageScaling(flags == 3 ? QStringLiteral("auto")
+                                                         : QStringLiteral("200")) &&
+                    settings.setAutoSaveFilenameFormat(QStringLiteral("scrolling_%1").arg(flags)) &&
+                    settings.setCopyImageFileToClipboard((flags & 2) != 0) &&
+                    settings.setAutoSaveAfterExecutionActions(
+                        (flags & 1) ? QStringList{QStringLiteral("copy_scrolling_screenshot")}
+                                    : QStringList{}),
+                "configure scrolling copy scenario");
+        ScreenshotController controller;
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 12, 80, 50);
+        ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+        ScreenshotControllerTestAccess::setDisplayScale(controller, 2.0);
+        const auto snapshot = scrollingSnapshot(fixture());
+        ScreenshotControllerTestAccess::prepareScrollingSnapshot(controller, snapshot);
+        ScreenshotControllerTestAccess::commands(controller).copySelectionToClipboard();
+        require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                "queued scrolling export must retain its accepted scale");
+        waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(controller); },
+                  "scaled scrolling copy completes");
+        const auto [copied, path] = captureClipboardOutput();
+        require(copied.size() == QSize(60, 40) && snapshot.rowSource().size == QSize(120, 80),
+                "plain and file scrolling copies scale once without changing the source");
+        if (flags & 2)
+            require(!path.isEmpty() && QImage(path).size() == QSize(60, 40),
+                    "scrolling clipboard file uses the same scale");
+        if (flags & 1) {
+            const QString savedPath =
+                QDir(output.path()).filePath(QStringLiteral("scrolling_%1.png").arg(flags));
+            waitUntil([&] { return QImage(savedPath).size() == QSize(60, 40); },
+                      "scrolling auto-save uses the same scale");
+        }
+    }
+    require(settings.setCopyImageFileToClipboard(false) &&
+                settings.setAutoSaveAfterExecutionActions({}),
+            "reset scrolling copy settings");
+}
+
+void hiDpiScalingAffectsOnlyCopiedAndSavedOutputs() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    QTemporaryDir output;
+    require(output.isValid() && settings.setImageSaveDirectory(output.path()) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("hidpi_{HH-mm-ss-zzz}")) &&
+                settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setCopyAfterPinningToScreen(false) && settings.setShowSaveResult(false),
+            "configure deterministic HiDPI output settings");
+    const QImage image = fixture();
+    for (const int scenario : {0, 1, 2, 3, 4}) {
+        const QString mode = scenario == 0   ? QStringLiteral("disabled")
+                             : scenario == 1 ? QStringLiteral("150")
+                             : scenario == 2 ? QStringLiteral("225")
+                             : scenario == 3 ? QStringLiteral("auto")
+                                             : QStringLiteral("350");
+        require(
+            settings.setHiDpiImageScaling(mode) &&
+                settings.setCopyImageFileToClipboard(scenario == 2) &&
+                settings.setAutoSaveAfterExecutionActions(
+                    scenario == 2 ? QStringList{QStringLiteral("copy_screenshot")} : QStringList{}),
+            "configure HiDPI copy/save scenario");
+        ScreenshotController controller;
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 12, 81, 51);
+        ScreenshotControllerTestAccess::prepareSelection(controller, image, selection);
+        ScreenshotControllerTestAccess::setDisplayScale(controller, 1.5);
+        auto& commands = ScreenshotControllerTestAccess::commands(controller);
+        const QSize expected = scenario == 0   ? QSize(81, 51)
+                               : scenario == 1 ? QSize(54, 34)
+                               : scenario == 2 ? QSize(36, 23)
+                               : scenario == 3 ? QSize(54, 34)
+                                               : QSize(23, 15);
+        auto& history = snow_shot::storage::ApplicationStorage::instance().captureHistory();
+        const qsizetype before = history.records().size();
+        if (scenario == 4) {
+            const auto explicitArtifact = controller.mcpExportArtifact(1.0);
+            QImage explicitImage;
+            require(explicitArtifact &&
+                        explicitArtifact->requestImage(
+                            &controller, [&](auto result) { explicitImage = result.image; }),
+                    "explicit MCP output must prepare");
+            waitUntil([&] { return !explicitImage.isNull(); }, "explicit MCP output completes");
+            require(explicitImage.size() == selection.selection.size(),
+                    "explicit MCP scale must remain independent of the setting");
+        }
+        if (scenario >= 3) {
+            commands.quickSaveSelection();
+        } else {
+            commands.copySelectionToClipboard();
+            // Changing the setting after acceptance must not change this export.
+            require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                    "mutate settings while output is queued");
+        }
+        waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(controller); },
+                  "HiDPI output completes");
+        if (scenario < 3) {
+            const auto [copied, path] = captureClipboardOutput();
+            require(copied.size() == expected, "clipboard dimensions must use the captured ratio");
+            if (scenario == 2)
+                require(!path.isEmpty() && QImage(path).size() == expected,
+                        "clipboard files and auto-save must use the same scaled image");
+        }
+        waitUntil([&] { return history.records().size() == before + 1; },
+                  "HiDPI output commits one history result");
+        const auto record = history.records().first();
+        const auto result = history.loadResultImage(record);
+        require(result && result->size() == expected && !record.displays.isEmpty() &&
+                    record.displays.first().imageSize == image.size(),
+                "history output must match export dimensions while source displays stay full size");
+        if (scenario >= 2) {
+            waitUntil(
+                [&] {
+                    for (const auto& name :
+                         QDir(output.path()).entryList({QStringLiteral("*.png")}, QDir::Files)) {
+                        if (QImage(QDir(output.path()).filePath(name)).size() == expected)
+                            return true;
+                    }
+                    return false;
+                },
+                "automatic and quick saves must write the scaled dimensions");
+        }
+    }
+    {
+        require(settings.setHiDpiImageScaling(QStringLiteral("200")) &&
+                    settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
+                "configure scaled save-dialog dimensions");
+        ScreenshotController dialogController;
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 12, 80, 50);
+        ScreenshotControllerTestAccess::prepareSelection(dialogController, image, selection);
+        ScreenshotControllerTestAccess::presentSelection(dialogController);
+        ScreenshotControllerTestAccess::commands(dialogController).saveSelectionToFile();
+        require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                "change the setting after the save dialog snapshots its output");
+        QPointer<adqt::widgets::AdModal> modal;
+        waitUntil(
+            [&] {
+                modal = dialogController.findChild<adqt::widgets::AdModal*>(
+                    QStringLiteral("screenshotSaveAsFileModal"));
+                const auto* preview =
+                    modal && modal->contentWidget()
+                        ? modal->contentWidget()->findChild<ScreenshotSavePreviewCanvas*>()
+                        : nullptr;
+                return preview && preview->outputImage().size() == QSize(40, 25);
+            },
+            "save dialog starts from the scaled screenshot dimensions");
+        modal->reject();
+        waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(dialogController); },
+                  "cancelling the scaled dialog retires its output job");
+    }
+    require(settings.setHiDpiImageScaling(QStringLiteral("200")) &&
+                settings.setCopyImageFileToClipboard(false) &&
+                settings.setAutoSaveAfterExecutionActions({}),
+            "configure an unscaled pin");
+    ScreenshotController controller;
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(10, 12, 80, 50);
+    ScreenshotControllerTestAccess::prepareSelection(controller, image, selection);
+    controller.mcpPinSelectionToScreen();
+    waitUntil(
+        [&] {
+            return visiblePins().size() == 1 &&
+                   !ScreenshotControllerTestAccess::exportActive(controller);
+        },
+        "full-resolution pin completes with HiDPI scaling enabled");
+    require(visiblePins().first()->persistenceSnapshot().image.size() == QSize(80, 50),
+            "pinning must preserve the full-resolution selection");
+    closePins();
+    require(settings.setHiDpiImageScaling(QStringLiteral("disabled")), "reset HiDPI test setting");
+}
+
+void pinOutputsUseHiDpiScaling() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    auto& history = snow_shot::storage::ApplicationStorage::instance().captureHistory();
+    for (int sourceKind = 0; sourceKind < 3; ++sourceKind) {
+        const bool editable = sourceKind == 1;
+        const bool scrolling = sourceKind == 2;
+        for (int outputKind = 0; outputKind < 5; ++outputKind) {
+            const bool copy = outputKind < 3;
+            const bool copyFile = outputKind == 1 || outputKind == 2;
+            const bool save = outputKind == 2 || outputKind == 3;
+            QTemporaryDir directory;
+            QStringList actions;
+            if (save)
+                actions.append(QStringLiteral("pin_to_screen"));
+            if (outputKind >= 2)
+                actions.append(scrolling ? QStringLiteral("copy_scrolling_screenshot")
+                                         : QStringLiteral("copy_screenshot"));
+            require(directory.isValid() &&
+                        settings.setHiDpiImageScaling(outputKind == 2 ? QStringLiteral("auto")
+                                                                      : QStringLiteral("200")) &&
+                        settings.setKeepAnnotationsEditableAfterPinningToScreen(editable) &&
+                        settings.setCopyAfterPinningToScreen(copy) &&
+                        settings.setCopyImageFileToClipboard(copyFile) &&
+                        settings.setAutoSaveAfterExecutionActions(actions) &&
+                        settings.setImageSaveDirectory(directory.path()) &&
+                        settings.setAutoSaveFilenameFormat(QStringLiteral("scaled-pin")) &&
+                        settings.setImageFormat(QStringLiteral("png")) &&
+                        settings.setShowSaveResult(false),
+                    "configure scaled pin outputs");
+            QApplication::clipboard()->setText(QStringLiteral("scaled pin clipboard sentinel"));
+            const qsizetype before = history.records().size();
+            ScreenshotController controller;
+            ScreenshotSelectionParams selection;
+            selection.selection = QRect(10, 12, 80, 50);
+            selection.radius = 6;
+            selection.shadowWidth = 4;
+            ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+            ScreenshotControllerTestAccess::setDisplayScale(controller, 2.0);
+            if (scrolling) {
+                ScreenshotControllerTestAccess::prepareScrollingSnapshot(
+                    controller, scrollingSnapshot(fixture()));
+            } else {
+                auto& runtime = ScreenshotControllerTestAccess::runtime(controller);
+                require(
+                    runtime.clearDocumentPreservingViewports() &&
+                        !runtime.applyAnnotationTransaction(editablePinRectangle(20, 22, Qt::red))
+                             .isEmpty(),
+                    "pin output includes the captured annotations");
+            }
+            controller.mcpPinSelectionToScreen();
+            require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                    "pin outputs retain the scale accepted before the first frame");
+            waitUntil(
+                [&] {
+                    return visiblePins().size() == 1 &&
+                           !ScreenshotControllerTestAccess::exportActive(controller) &&
+                           !controller.blocksApplicationUpdate() &&
+                           history.records().size() == before + 1;
+                },
+                "pin, optional outputs and native history finish");
+            auto* pin = visiblePins().first();
+            const QImage native = editablePinImage(*pin);
+            const QSize nativeSize =
+                scrolling ? fixture().size()
+                          : ScreenshotResultCompositor::layoutForContent(selection.selection.size(),
+                                                                         selection.resultStyle())
+                                .outputRect.size();
+            require(native.size() == nativeSize &&
+                        pin->persistenceSnapshot().image.size() == nativeSize,
+                    "scaled exports preserve native pin pixels");
+            const auto record = history.records().first();
+            const auto historyImage = history.loadResultImage(record);
+            require(record.source == snow_shot::storage::CaptureHistorySource::PinnedToScreen &&
+                        historyImage && samePixels(*historyImage, native),
+                    "optional scaled outputs preserve one native pin history result");
+            const QSize scaledSize(qRound(nativeSize.width() * 0.5),
+                                   qRound(nativeSize.height() * 0.5));
+            QImage expected(scaledSize, QImage::Format_RGBA8888);
+            expected.setColorSpace(QColorSpace::SRgb);
+            // Use the native export rows retained in history as the resampling reference.
+            require(snow_shot::image_codec::resizeToRgba8(
+                        snow_shot::image_codec::srgbRowSource(*historyImage), scaledSize,
+                        expected.bits(), expected.bytesPerLine(), expected.sizeInBytes()),
+                    "prepare the expected downscaled composite");
+            if (copy) {
+                const auto [copied, path] = captureClipboardOutput();
+                if (!samePixels(copied, expected) || !path.isEmpty() != copyFile)
+                    std::cerr << "pin output mismatch: source=" << sourceKind
+                              << " output=" << outputKind << " copied=" << copied.width() << 'x'
+                              << copied.height() << " expected=" << expected.width() << 'x'
+                              << expected.height() << " file=" << !path.isEmpty() << '\n';
+                require(samePixels(copied, expected) && !path.isEmpty() == copyFile,
+                        "copy after pin scales the composite once and honors file copying");
+                if (copyFile)
+                    require(samePixels(QImage(path), expected),
+                            "clipboard files share the downscaled pixels");
+            } else {
+                require(QApplication::clipboard()->text() ==
+                            QStringLiteral("scaled pin clipboard sentinel"),
+                        "pin auto-save without copying leaves the clipboard untouched");
+            }
+            const auto files = QDir(directory.path()).entryList(QDir::Files);
+            require(files.size() == (save ? 1 : 0),
+                    "overlapping pin and copy actions produce at most one automatic save");
+            if (save)
+                require(
+                    samePixels(QImage(QDir(directory.path()).filePath(files.first())), expected),
+                    "pin auto-save shares the downscaled pixels even without copying");
+            closePins();
+        }
+    }
+    require(settings.setHiDpiImageScaling(QStringLiteral("disabled")) &&
+                settings.setKeepAnnotationsEditableAfterPinningToScreen(false) &&
+                settings.setCopyAfterPinningToScreen(false) &&
+                settings.setCopyImageFileToClipboard(false) &&
+                settings.setAutoSaveAfterExecutionActions({}),
+            "restore pin output settings");
+}
+
 } // namespace
 
 #ifdef Q_OS_MACOS
@@ -1336,6 +1656,15 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
         return EXIT_SUCCESS;
     }
 #endif
+    if (application.arguments().contains(QStringLiteral("--hidpi-scaling-tests"))) {
+        scrollingCopyUsesHiDpiScalingWithEveryFileOption();
+        hiDpiScalingAffectsOnlyCopiedAndSavedOutputs();
+        pinOutputsUseHiDpiScaling();
+        QApplication::clipboard()->clear();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        storage.shutdown();
+        return EXIT_SUCCESS;
+    }
     if (application.arguments().contains(QStringLiteral("--controller-reselection-tests"))) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
         captureActionsChooseToolBeforeFirstPresentation(directory.path());
