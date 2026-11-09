@@ -1739,8 +1739,10 @@ set(PROJECT_HEADERS
     include/snow_shot/app/mcp/mcpdocumentservice.h
     include/snow_shot/app/mcp/mcpjobregistry.h
     include/snow_shot/app/mcp/mcpmediaservice.h
+    include/snow_shot/app/mcp/mcpruntimegraph.h
     include/snow_shot/app/applicationactiongate.h
     include/snow_shot/app/applicationinputguard.h
+    include/snow_shot/app/deferredstartup.h
     include/snow_shot/presentation/screenshotencodingsettings.h
     include/snow_shot/presentation/directcapturecontroller.h
     include/snow_shot/presentation/directcaptureworkflow.h
@@ -1969,6 +1971,7 @@ set(PROJECT_CXX_SOURCES
     src/app/mcp/mcpsourceresolver.cpp
     src/app/mcp/mcpjobregistry.cpp
     src/app/mcp/mcpmediaservice.cpp
+    src/app/mcp/mcpruntimegraph.cpp
     src/app/mcp/mcppinnedstate.cpp
     src/app/applicationrestart.cpp
     src/app/main.cpp
@@ -2568,6 +2571,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-storage-checkpoint-tests
+        COMMAND snow-shot-application-storage-tests --checkpoint-only)
+    set_tests_properties(snow-shot-storage-checkpoint-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-isolated-storage-initialization-tests
         COMMAND snow-shot-application-storage-tests --isolated-initialization-only)
     set_tests_properties(snow-shot-isolated-storage-initialization-tests PROPERTIES
@@ -11827,6 +11835,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-application-action-gate-tests COMMAND snow-shot-application-action-gate-tests)
     set_tests_properties(snow-shot-application-action-gate-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE)
+    add_executable(snow-shot-deferred-startup-tests tests/deferred_startup_tests.cpp)
+    target_include_directories(snow-shot-deferred-startup-tests PRIVATE include)
+    target_link_libraries(snow-shot-deferred-startup-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-deferred-startup-tests COMMAND snow-shot-deferred-startup-tests)
+    set_tests_properties(snow-shot-deferred-startup-tests PROPERTIES LABELS "unit" TIMEOUT 10
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(snow-shot-application-coordination-tests tests/application_coordination_tests.cpp)
     target_include_directories(snow-shot-application-coordination-tests PRIVATE include)
     target_link_libraries(snow-shot-application-coordination-tests PRIVATE Qt6::Core)
