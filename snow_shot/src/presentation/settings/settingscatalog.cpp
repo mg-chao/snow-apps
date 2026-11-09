@@ -640,6 +640,19 @@ SettingsItemDefinition fillColorPresetsItem() {
                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Fill color preset %1"))}};
 }
 
+SettingsItemDefinition highlightColorPresetsItem() {
+    return {
+        QStringLiteral("drawing.highlight-color-presets"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Highlight color presets")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Customize the quick-set buttons for annotation highlight colors")),
+        {},
+        QStringLiteral("screenshot/highlight_color_presets"),
+        SettingsColorPaletteDefinition{
+            SettingsColorPaletteBinding::HighlightColors, 5,
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Highlight color preset %1"))}};
+}
+
 SettingsItemDefinition shortcutHintOpacityItem() {
     return {QStringLiteral("interface.screenshot.shortcut-hint-opacity"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Shortcut hint opacity")),
@@ -4202,6 +4215,7 @@ constexpr CatalogItemFactory catalogPageScreenshotsSectionDrawingSettingsItems[]
     {drawingAlwaysShowFirstToolbarGroupButtonItem},
     {strokeColorPresetsItem},
     {fillColorPresetsItem},
+    {highlightColorPresetsItem},
 };
 
 constexpr CatalogItemFactory catalogPageScreenshotsSectionDrawingItems[] = {
@@ -6784,10 +6798,18 @@ QStringList SettingsCatalog::validationErrors() const {
                 }
                 if (const auto* palette =
                         std::get_if<SettingsColorPaletteDefinition>(&itemDefinition.payload)) {
-                    const QString expectedKey =
-                        palette->binding == SettingsColorPaletteBinding::StrokeColors
-                            ? QStringLiteral("screenshot/stroke_color_presets")
-                            : QStringLiteral("screenshot/fill_color_presets");
+                    QString expectedKey;
+                    switch (palette->binding) {
+                    case SettingsColorPaletteBinding::StrokeColors:
+                        expectedKey = QStringLiteral("screenshot/stroke_color_presets");
+                        break;
+                    case SettingsColorPaletteBinding::FillColors:
+                        expectedKey = QStringLiteral("screenshot/fill_color_presets");
+                        break;
+                    case SettingsColorPaletteBinding::HighlightColors:
+                        expectedKey = QStringLiteral("screenshot/highlight_color_presets");
+                        break;
+                    }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
                         schemaEntry->valueKind != storage::ConfigurationValueKind::StringList ||
                         palette->colorCount <= 0 || !palette->buttonLabel.isValid() ||

@@ -95,6 +95,8 @@ class ScreenshotColorPresetSettings final {
     bool setStrokeColors(const QVector<QColor>& colors) const;
     [[nodiscard]] QVector<QColor> fillColors() const;
     bool setFillColors(const QVector<QColor>& colors) const;
+    [[nodiscard]] QVector<QColor> highlightColors() const;
+    bool setHighlightColors(const QVector<QColor>& colors) const;
 };
 
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION

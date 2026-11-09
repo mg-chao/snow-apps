@@ -2,6 +2,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
@@ -492,6 +493,116 @@ void selectionControlsVisibilityAndEdits() {
             "new toolbar instances restore per-tool alpha colors, patterns and hand-drawn styles");
 }
 
+void highlightDefaultsRespectSavedPreferences() {
+    auto& config = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const QString key = QStringLiteral("pin_to_screen/quick_text_annotation_styles");
+    const auto previous = config.value(key);
+    QWidget owner;
+    const auto requireDefault = [&](const QJsonObject& preferences, const QColor& expected) {
+        require(config.setValue(key, preferences), "configure text annotation default fixture");
+        Toolbar toolbar(&owner);
+        require(toolbar.styleForTool(Tool::Highlight).color == expected,
+                "text highlight defaults use light red and preserve saved colors");
+        for (Tool tool : {Tool::WavyUnderline, Tool::Underline, Tool::Strikethrough})
+            require(toolbar.styleForTool(tool) == Style{},
+                    "line annotation tools retain their existing default styles");
+    };
+    const QColor highlight(QStringLiteral("#ff7875"));
+    requireDefault({}, highlight);
+    requireDefault(QJsonObject{{QStringLiteral("highlight"),
+                                QJsonObject{{QStringLiteral("color"), QStringLiteral("invalid")}}}},
+                   highlight);
+    requireDefault(
+        QJsonObject{{QStringLiteral("highlight"),
+                     QJsonObject{{QStringLiteral("color"), QStringLiteral("#fff5222d")}}}},
+        QColor(QStringLiteral("#f5222d")));
+    require(config.setValue(key, previous), "restore text annotation preferences");
+}
+
+void highlightPresetsRefreshIndependentlyAndCommitOnce() {
+    const snow_shot::storage::ScreenshotColorPresetSettings settings;
+    const auto originalHighlight = settings.highlightColors();
+    const auto originalStroke = settings.strokeColors();
+    auto highlight = originalHighlight;
+    highlight[1] = QColor(12, 34, 56, 78);
+    require(settings.setHighlightColors(highlight), "configure highlights before editor creation");
+    QWidget owner;
+    owner.setGeometry(150, 250, 700, 400);
+    owner.show();
+    Toolbar toolbar(&owner);
+    Toolbar::States states;
+    const auto originalStyle = toolbar.styleForTool(Tool::Highlight);
+    states[static_cast<size_t>(Tool::Highlight)] = {true, originalStyle, false};
+    const QRect selection(owner.mapToGlobal(QPoint(80, 160)), QSize(120, 30));
+    toolbar.updateSelection(selection, states, 1);
+    processPopupEvents();
+    auto* editor = popover(toolbar, "quickTextAnnotationStyleToolbar");
+    require(editor && editor->isVisible(), "text highlighting materializes its color editor");
+    const auto visibleSwatches = [&] {
+        QVector<ColorSwatchButton*> buttons;
+        for (auto* button : editor->contentWidget()->findChildren<AdButton*>()) {
+            if (auto* swatch = dynamic_cast<ColorSwatchButton*>(button);
+                swatch && swatch->isVisibleTo(editor->contentWidget()) &&
+                swatch->toolTip().startsWith(QStringLiteral("Stroke color ")))
+                buttons.push_back(swatch);
+        }
+        return buttons;
+    };
+    const auto requireColors = [](const QVector<ColorSwatchButton*>& buttons,
+                                  const QVector<QColor>& colors) {
+        require(buttons.size() == colors.size(), "quick text editor exposes five preset swatches");
+        for (int index = 0; index < colors.size(); ++index)
+            require(buttons.at(index)->swatchColor() == colors.at(index),
+                    "quick text editor displays its tool's configured preset palette");
+    };
+    auto buttons = visibleSwatches();
+    requireColors(buttons, highlight);
+    int edits = 0;
+    Tool editedTool = Tool::Underline;
+    Style editedStyle;
+    quint32 editedProperties = 0;
+    QObject::connect(&toolbar, &Toolbar::styleEdited, &owner,
+                     [&](Tool tool, const Style& style, quint32 properties) {
+                         ++edits;
+                         editedTool = tool;
+                         editedStyle = style;
+                         editedProperties = properties;
+                     });
+    auto stroke = originalStroke;
+    stroke[1] = QColor(98, 76, 54, 32);
+    require(settings.setStrokeColors(stroke), "change stroke presets with text highlights open");
+    requireColors(buttons, highlight);
+    highlight[1] = QColor(23, 45, 67, 89);
+    require(settings.setHighlightColors(highlight), "change text highlight presets live");
+    requireColors(buttons, highlight);
+    require(edits == 0 && toolbar.styleForTool(Tool::Highlight) == originalStyle,
+            "preset changes must preserve selected text and remembered highlight styles");
+    buttons.at(1)->click();
+    require(edits == 1 && editedTool == Tool::Highlight && editedStyle.color == highlight.at(1) &&
+                editedProperties == ScreenshotTextAnnotationStylePropertyColor &&
+                toolbar.styleForTool(Tool::Highlight).color == highlight.at(1),
+            "text highlight presets apply their refreshed RGBA color exactly once");
+    states = {};
+    states[static_cast<size_t>(Tool::Underline)] = {true, toolbar.styleForTool(Tool::Underline),
+                                                    false};
+    toolbar.updateSelection(selection, states, 2);
+    requireColors(visibleSwatches(), stroke);
+    states = {};
+    states[static_cast<size_t>(Tool::Highlight)] = {true, toolbar.styleForTool(Tool::Highlight),
+                                                    false};
+    toolbar.updateSelection(selection, states, 3);
+    buttons = visibleSwatches();
+    requireColors(buttons, highlight);
+    const auto remembered = toolbar.styleForTool(Tool::Highlight);
+    require(settings.setHighlightColors(originalHighlight), "reset text highlight presets");
+    requireColors(buttons, originalHighlight);
+    require(edits == 1 && toolbar.styleForTool(Tool::Highlight) == remembered &&
+                settings.strokeColors() == stroke,
+            "reset refreshes reused text highlight controls without changing annotations");
+    require(settings.setStrokeColors(originalStroke), "restore text stroke presets");
+    toolbar.clearSelection();
+}
+
 void copyActionPrecedesAnnotationTools() {
     QWidget owner;
     owner.setGeometry(150, 250, 700, 400);
@@ -585,6 +696,8 @@ void runScreenshotQuickTextAnnotationToolbarTests() {
     layoutSettlesAndColorEditsKeepAllPopupsStill();
     mainPopoverStaysAboveSelectionAndCenteredWhenEditorOpens();
     selectionControlsVisibilityAndEdits();
+    highlightDefaultsRespectSavedPreferences();
+    highlightPresetsRefreshIndependentlyAndCommitOnce();
     copyActionPrecedesAnnotationTools();
     oneGlobalToolbarAndPreferenceValidation();
     toolbarPairClampsAtScreenEdges();

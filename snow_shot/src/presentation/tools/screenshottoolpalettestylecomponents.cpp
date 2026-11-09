@@ -33,6 +33,36 @@
 #include <iterator>
 
 namespace snow_shot::presentation {
+namespace {
+QVector<QColor> colorPresetsForSource(ScreenshotToolPaletteColorPresetSource source,
+                                      const QVector<QColor>& fixedColors = {}) {
+    switch (source) {
+    case ScreenshotToolPaletteColorPresetSource::Fixed:
+        return fixedColors;
+    case ScreenshotToolPaletteColorPresetSource::Stroke:
+        return style_presets::strokeColors();
+    case ScreenshotToolPaletteColorPresetSource::Fill:
+        return style_presets::shapeFillColors();
+    case ScreenshotToolPaletteColorPresetSource::Highlight:
+        return style_presets::highlightColors();
+    }
+    return {};
+}
+
+QString colorPresetSettingsKey(ScreenshotToolPaletteColorPresetSource source) {
+    switch (source) {
+    case ScreenshotToolPaletteColorPresetSource::Fixed:
+        return {};
+    case ScreenshotToolPaletteColorPresetSource::Stroke:
+        return QStringLiteral("screenshot/stroke_color_presets");
+    case ScreenshotToolPaletteColorPresetSource::Fill:
+        return QStringLiteral("screenshot/fill_color_presets");
+    case ScreenshotToolPaletteColorPresetSource::Highlight:
+        return QStringLiteral("screenshot/highlight_color_presets");
+    }
+    return {};
+}
+} // namespace
 
 void ScreenshotToolPaletteTextEmphasisEditor::build(
     QBoxLayout* layout, QWidget* parent, QObject* receiver, const Commit& commit,
@@ -449,10 +479,7 @@ void ScreenshotToolPaletteColorPresets::build(QBoxLayout* layout, QWidget* paren
                                               const ScreenshotToolPaletteButtonMetrics& metrics,
                                               ScreenshotToolPaletteColorPresetSource source) {
     m_receiver = receiver;
-    m_colors =
-        source == ScreenshotToolPaletteColorPresetSource::Stroke ? style_presets::strokeColors()
-        : source == ScreenshotToolPaletteColorPresetSource::Fill ? style_presets::shapeFillColors()
-                                                                 : colors;
+    m_colors = colorPresetsForSource(source, colors);
     for (const QColor& color : m_colors) {
         auto* button =
             createScreenshotToolPaletteColorButton(parent, nullptr, color, false, true, metrics);
@@ -479,20 +506,17 @@ void ScreenshotToolPaletteColorPresets::rebind(const QVector<QColor>& colors,
         replaceColors(colors);
         return;
     }
-    const bool stroke = source == ScreenshotToolPaletteColorPresetSource::Stroke;
-    replaceColors(stroke ? style_presets::strokeColors() : style_presets::shapeFillColors());
+    replaceColors(colorPresetsForSource(source));
     if (m_receiver == nullptr) {
         return;
     }
-    const QString settingsKey = stroke ? QStringLiteral("screenshot/stroke_color_presets")
-                                       : QStringLiteral("screenshot/fill_color_presets");
+    const QString settingsKey = colorPresetSettingsKey(source);
     auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
     m_settingsConnection = QObject::connect(
         &configuration, &snow_shot::storage::ConfigurationStore::valueChanged, m_receiver,
-        [this, settingsKey, stroke](const QString& key, const QJsonValue&) {
+        [this, settingsKey, source](const QString& key, const QJsonValue&) {
             if (key == settingsKey) {
-                replaceColors(stroke ? style_presets::strokeColors()
-                                     : style_presets::shapeFillColors());
+                replaceColors(colorPresetsForSource(source));
             }
         });
 }

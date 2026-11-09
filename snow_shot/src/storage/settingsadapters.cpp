@@ -358,6 +358,14 @@ bool ScreenshotColorPresetSettings::setFillColors(const QVector<QColor>& colors)
     return setColorPresetValues(QStringLiteral("screenshot/fill_color_presets"), colors);
 }
 
+QVector<QColor> ScreenshotColorPresetSettings::highlightColors() const {
+    return colorPresetValues(QStringLiteral("screenshot/highlight_color_presets"));
+}
+
+bool ScreenshotColorPresetSettings::setHighlightColors(const QVector<QColor>& colors) const {
+    return setColorPresetValues(QStringLiteral("screenshot/highlight_color_presets"), colors);
+}
+
 CloudUploadSettings CloudUploadConfigurationSettings::settings() const {
     return cloudUploadSettingsFromJson(cache().value(QStringLiteral("cloud_upload/configuration")));
 }
