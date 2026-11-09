@@ -755,7 +755,7 @@ struct SnowCanvasRuntimeConfig {
     QSet<SnowCanvasTool> automaticSelectionExcludedTools{
         SnowCanvasTool::FreeDraw, SnowCanvasTool::PenFilter, SnowCanvasTool::Text,
         SnowCanvasTool::SpeechBubble};
-    std::optional<QColor> sharedCreationColor;
+    std::optional<QColor> sharedCreationColor{};
 };
 
 struct SnowCanvasStyleToolbarState {
