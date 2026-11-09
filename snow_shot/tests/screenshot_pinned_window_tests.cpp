@@ -811,7 +811,19 @@ class ScreenshotPinnedWindowTestAccess {
         window.requestContentReplacement(paths);
     }
     static bool replacementPending(const ScreenshotPinnedWindow& window) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        if (window.m_clipboardFormulaRenderer.active())
+            return true;
+#endif
         return window.m_contentReplacementJob.isValid();
+    }
+    static bool formulaPending(const ScreenshotPinnedWindow& window) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        return window.m_clipboardFormulaRenderer.active();
+#else
+        Q_UNUSED(window);
+        return false;
+#endif
     }
     static bool fileDragActive(const ScreenshotPinnedWindow& window) {
         return window.m_fileDragActive;

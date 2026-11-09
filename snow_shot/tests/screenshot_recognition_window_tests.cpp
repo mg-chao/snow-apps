@@ -80,6 +80,16 @@
 #include <qt_windows.h>
 #endif
 
+class ScreenshotOriginalImagePreviewWindowTestAccess final {
+  public:
+    static const QImage& source(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_sourceImage;
+    }
+    static bool dimmed(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_dimmed;
+    }
+};
+
 namespace {
 class LatexPreviewTranslator final : public QTranslator {
   public:
@@ -3969,6 +3979,10 @@ void originalImagePreviewPreservesSelectionAndOwnerLifecycle() {
 }
 
 void latexPreviewStreamsWithoutWaitingForPause() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.theme();
+    const auto restoreTheme = qScopeGuard([&] { themes.setTheme(originalTheme); });
+    themes.setPreset(adqt::theme::ThemeScheme::Light, adqt::theme::ThemeDensity::Compact);
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "streaming preview fixture has a screen");
     auto document = std::make_shared<QTextDocument>();
@@ -4018,11 +4032,13 @@ void latexPreviewStreamsWithoutWaitingForPause() {
     require(preview && preview->isVisible() && editor && editor->isReadOnly() && spin &&
                 spin->spinning(),
             "source and passive preview are visible while formula conversion remains busy");
-    const QImage initial = preview->grab().toImage();
+    const QImage initial = ScreenshotOriginalImagePreviewWindowTestAccess::source(*preview);
     document->setPlainText(QStringLiteral("x+\\frac{x}"));
     waitFor([&] { return invalidRenders > 0; },
             "an incomplete formula reaches the preview renderer");
-    require(preview->accessibleDescription().isEmpty() && preview->grab().toImage() == initial,
+    require(preview->accessibleDescription().isEmpty() &&
+                !ScreenshotOriginalImagePreviewWindowTestAccess::dimmed(*preview) &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::source(*preview) == initial,
             "an incomplete streamed formula retains the undimmed valid image without an error");
     require(window.updateSelectionGeometry(QRect(geometry.topLeft(), QSize(280, 160)),
                                            QRectF(0, 0, 280, 160)),
@@ -4301,7 +4317,7 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
                                QStringLiteral("Translated LaTeX formula preview") &&
                            preview()->accessibleDescription() ==
                                QStringLiteral("Translated Unable to preview this formula. Check "
-                                              "the LaTeX source.");
+                                              "the LaTeX source");
                 }),
                 "live language changes retranslate formula source, preview name and cached error");
         window.showTextEditor(&document);

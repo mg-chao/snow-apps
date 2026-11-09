@@ -22,6 +22,8 @@ class ScreenshotControllerTestAccess {
     static void confirmCaptureSelection(ScreenshotController& controller,
                                         ScreenshotController::CaptureAction action);
     [[nodiscard]] static bool exportActive(const ScreenshotController& controller);
+    [[nodiscard]] static bool clipboardFormulaPending(const ScreenshotController& controller);
+    [[nodiscard]] static quint64 clipboardPinGeneration(const ScreenshotController& controller);
 #ifdef Q_OS_MACOS
     static void
     installSessionFocus(ScreenshotController& controller,

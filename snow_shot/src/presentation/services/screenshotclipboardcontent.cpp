@@ -1317,7 +1317,8 @@ ScreenshotClipboardContentReader::snapshotMimeData(const QMimeData* mimeData,
 
 std::optional<ScreenshotClipboardContent>
 ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snapshot,
-                                         CancellationCheck cancelled, AllocationCheck allocate) {
+                                         CancellationCheck cancelled, AllocationCheck allocate,
+                                         TextDeferral deferText) {
     if (!snow_shot::storage::isValidPinnedTextFormat(snapshot.textFormat) ||
         (snapshot.textStyle && !snapshot.textStyle->isValid()) || !snapshot.isValid() ||
         !std::isfinite(snapshot.devicePixelRatio) || snapshot.devicePixelRatio <= 0.0 ||
@@ -1417,6 +1418,12 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
                                          swatchAllocate, snapshot.colorSwatchStyle);
         return cancellationRequested(cancelled) ? std::nullopt : std::move(result);
     }
+    if (cancellationRequested(cancelled))
+        return std::nullopt;
+    // Formula pinning can consume the original plain text without constructing a
+    // document. Keep the complete text snapshot available for a lazy HTML/text fallback.
+    if (deferText && !snapshot.text.isEmpty() && deferText(snapshot, snapshot.text))
+        return std::nullopt;
     if (!snapshot.html.isEmpty()) {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_html_document");
         QString plainText;
@@ -1427,6 +1434,9 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
                                     snapshot.textStyle);
         }
         if (document != nullptr) {
+            if (deferText && snapshot.text.isEmpty() && !cancellationRequested(cancelled) &&
+                deferText(snapshot, plainText))
+                return std::nullopt;
             std::optional<ScreenshotClipboardContent> result;
             {
                 SNOW_SHOT_PIN_PERF_SCOPE("clipboard.html_document_render");

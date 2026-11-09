@@ -60,6 +60,7 @@
 #endif
 
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 
 namespace {
@@ -85,7 +86,9 @@ QList<ScreenshotPinnedWindow*> visiblePins() {
     QList<ScreenshotPinnedWindow*> result;
     for (auto* widget : QApplication::topLevelWidgets()) {
         auto* pin = qobject_cast<ScreenshotPinnedWindow*>(widget);
-        if (pin && pin->isVisible() && !pin->persistenceSnapshot().image.isNull())
+        if (pin && pin->isVisible() &&
+            pin->automationState().value(QStringLiteral("ready")).toBool() &&
+            !pin->persistenceSnapshot().image.isNull())
             result.append(pin);
     }
     return result;
@@ -379,7 +382,12 @@ void combinedCopiesPreserveImagePlacementAndAppearance(ScreenshotController& con
             mime->setUrls({QUrl::fromLocalFile(path)});
             QApplication::clipboard()->setMimeData(mime);
             controller.pinClipboardContentToScreen();
-            waitUntil([] { return visiblePins().size() == 1; }, "combined copy must create a pin");
+            const auto scenario = QStringLiteral("combined copy must create a pin (format=%1, "
+                                                 "removed=%2)")
+                                      .arg(static_cast<int>(format))
+                                      .arg(removeFile)
+                                      .toUtf8();
+            waitUntil([] { return visiblePins().size() == 1; }, scenario.constData());
             const auto record = visiblePins().constFirst()->persistenceSnapshot();
             require(record.nativeGeometry == geometry && record.initialWindowSize == image.size(),
                     "combined clipboard pin must restore its image placement");
@@ -420,6 +428,148 @@ void fileOnlyClipboardStillPinsEveryFile(ScreenshotController& controller) {
             "batch import must preserve both paths");
     closePins();
 }
+
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+void clipboardFormulasPinAsImages(ScreenshotController& controller) {
+    const auto samePixels = [](const QImage& first, const QImage& second) {
+        if (first.isNull() || second.isNull() || first.size() != second.size())
+            return false;
+        // PNG decoding adds an explicit sRGB tag. Assert the pixel contents independently
+        // of color metadata, as in the pinned-window repository's round-trip fixtures.
+        const auto firstArgb = first.convertToFormat(QImage::Format_ARGB32);
+        const auto secondArgb = second.convertToFormat(QImage::Format_ARGB32);
+        const auto rowBytes = static_cast<std::size_t>(first.width()) * sizeof(QRgb);
+        for (int row = 0; row < first.height(); ++row) {
+            if (std::memcmp(firstArgb.constScanLine(row), secondArgb.constScanLine(row),
+                            rowBytes) != 0)
+                return false;
+        }
+        return true;
+    };
+    const snow_shot::storage::PinToScreenSettings settings;
+    const auto previousAction = settings.duplicateContentAction();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(settings.setDuplicateContentAction(previousAction)); });
+    require(settings.setDuplicateContentAction(QStringLiteral("none")),
+            "formula pin duplicate policy must be deterministic");
+    auto* clipboard = QApplication::clipboard();
+    struct BeforeFormulaCompletion final : QObject {
+        ScreenshotController& controller;
+        std::function<void()> action;
+        bool fired = false;
+        explicit BeforeFormulaCompletion(ScreenshotController& owner) : controller(owner) {}
+        bool eventFilter(QObject* watched, QEvent* event) override {
+            if (watched == qApp && event->type() == QEvent::MetaCall && !fired &&
+                ScreenshotControllerTestAccess::clipboardFormulaPending(controller)) {
+                fired = true;
+                action();
+            }
+            return false;
+        }
+    } observer(controller);
+    observer.action = [&] {
+        require(controller.blocksApplicationUpdate() && controller.blocksMemoryTrimming(),
+                "pending formula rendering participates in application busy state");
+        const auto generation = ScreenshotControllerTestAccess::clipboardPinGeneration(controller);
+        controller.pinClipboardContentToScreen();
+        require(ScreenshotControllerTestAccess::clipboardPinGeneration(controller) == generation,
+                "a duplicate action must not cancel or replace the in-flight formula request");
+    };
+    qApp->installEventFilter(&observer);
+    clipboard->setText(QStringLiteral("\\[\\frac{x^2}{\\sqrt{y}}\\]"));
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "clipboard formula must create an image pin");
+    qApp->removeEventFilter(&observer);
+    require(observer.fired, "duplicate pin action must be exercised during formula rendering");
+    const auto record = visiblePins().first()->persistenceSnapshot();
+    require(record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ImageData &&
+                record.originalText.isEmpty() && record.originalHtml.isEmpty() &&
+                record.image.pixelColor(0, 0) == QColor(Qt::white),
+            "formula pins must persist as opaque images without a text source");
+    QTemporaryDir directory;
+    require(directory.isValid(), "formula image persistence needs isolated storage");
+    {
+        snow_shot::storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "formula image must save through the normal image repository");
+    }
+    {
+        snow_shot::storage::PinnedWindowRepository repository(directory.path());
+        const auto restored = repository.loadRecord(record.id);
+        require(restored && restored->sourceKind == record.sourceKind &&
+                    samePixels(restored->image, record.image),
+                "formula image pixels must survive repository restart");
+    }
+    const auto exported = directory.filePath(QStringLiteral("formula.png"));
+    require(record.image.save(exported, "PNG") && samePixels(QImage(exported), record.image),
+            "formula images must export without losing their rendered pixels");
+    closePins();
+
+    clipboard->setText(QStringLiteral("$x") + QString(32000, QLatin1Char('\n')) +
+                       QStringLiteral("$"));
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "formula pins must not depend on rendering an oversized text fallback");
+    require(visiblePins().first()->persistenceSnapshot().sourceKind ==
+                    snow_shot::storage::PinnedWindowSourceKind::ImageData &&
+                visiblePins().first()->persistenceSnapshot().originalText.isEmpty(),
+            "the controller must attempt a compact formula before laying out its source text");
+    closePins();
+
+    // Replace the clipboard while the old formula result is waiting on the GUI queue.
+    observer.fired = false;
+    observer.action = [&] {
+        clipboard->setImage(fixture());
+        controller.pinClipboardContentToScreen();
+    };
+    qApp->installEventFilter(&observer);
+    clipboard->setText(QStringLiteral("$\\alpha+\\beta$"));
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "superseding clipboard image must be pinned");
+    qApp->removeEventFilter(&observer);
+    require(observer.fired && visiblePins().first()->persistenceSnapshot().image.convertToFormat(
+                                  QImage::Format_RGBA8888) == fixture(),
+            "a superseded formula must never publish over a newer clipboard request");
+    closePins();
+
+    auto* mime = new QMimeData;
+    mime->setImageData(fixture());
+    mime->setText(QStringLiteral("$x^2$"));
+    clipboard->setMimeData(mime);
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "clipboard image must outrank formula text");
+    require(visiblePins().first()->persistenceSnapshot().image.convertToFormat(
+                QImage::Format_RGBA8888) == fixture(),
+            "formula recognition must preserve inline image precedence");
+    closePins();
+
+    clipboard->setText(QStringLiteral("$\\snowUndefined$"));
+    controller.pinClipboardContentToScreen();
+    QPointer<ScreenshotPinnedWindow> fallback;
+    waitUntil(
+        [&] {
+            for (auto* widget : QApplication::topLevelWidgets()) {
+                if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                    pin && pin->isVisible()) {
+                    if (pin->persistenceSnapshot().originalText ==
+                        QStringLiteral("$\\snowUndefined$")) {
+                        fallback = pin;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        },
+        "unsupported LaTeX must fall back to the original text pin");
+    require(fallback->persistenceSnapshot().sourceKind ==
+                snow_shot::storage::PinnedWindowSourceKind::ClipboardText,
+            "invalid formula source must preserve ordinary text persistence");
+    fallback->close();
+}
+#endif
 
 void imageToolsPreferInlineClipboardPixels() {
     const QImage image = fixture();
@@ -1174,6 +1324,18 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
                 settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
             "clipboard controller settings must be isolated and deterministic");
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (application.arguments().contains(QStringLiteral("--formula-only"))) {
+        {
+            ScreenshotController controller;
+            clipboardFormulasPinAsImages(controller);
+        }
+        QApplication::clipboard()->clear();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        storage.shutdown();
+        return EXIT_SUCCESS;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--controller-reselection-tests"))) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
         captureActionsChooseToolBeforeFirstPresentation(directory.path());
