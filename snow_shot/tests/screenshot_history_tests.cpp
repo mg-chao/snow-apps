@@ -613,6 +613,15 @@ void directImagesPersistWithoutTouchingTheEditor(
         auto repository = storage::makeCaptureHistoryRepository(root);
         auto draft = directCaptureHistoryDraft(
             request, frame, storage::PreparedPngImage::fromBytes(image.size(), png));
+        const QImage scaled = solidImage(QSize(20, 10), qRgb(24, 50, 70));
+        const auto scaledDraft = directCaptureHistoryDraft(
+            request, frame,
+            storage::PreparedPngImage::fromBytes(scaled.size(),
+                                                 snow_shot::image_codec::encodePng(scaled, 9)));
+        require(!scaledDraft.resultImage && scaledDraft.preparedResultImage &&
+                    scaledDraft.preparedResultImage->pixelSize() == scaled.size() &&
+                    scaledDraft.displays.front().image == image && frame.isValid(),
+                "downscaled direct output must retain native capture geometry and source pixels");
         require(draft.desktopGeometry &&
                     draft.desktopGeometry->canvasOrigin == physicalBounds.topLeft() &&
                     !draft.desktopGeometry->canvasUsesPoints,

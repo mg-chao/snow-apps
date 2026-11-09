@@ -2332,6 +2332,10 @@
             <translation>自动下载</translation>
         </message>
         <message>
+            <source>Downscale copied and saved screenshots. Auto preserves selections spanning displays with different scaling factors</source>
+            <translation>缩小复制和保存的截图。自动模式保留跨越不同缩放比例显示器的选区</translation>
+        </message>
+        <message>
             <source>Drag annotation tools to reorder them or stack them in the same toolbar position</source>
             <translation>拖动标注工具可重新排序，或将它们堆叠到同一工具栏位置</translation>
         </message>
@@ -2670,6 +2674,10 @@
         <message>
             <source>Hardware acceleration</source>
             <translation>硬件加速</translation>
+        </message>
+        <message>
+            <source>HiDPI image scaling</source>
+            <translation>HiDPI 图像缩放</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -3790,6 +3798,46 @@
         <message>
             <source>Saved screenshots</source>
             <translation>已保存截图</translation>
+        </message>
+        <message>
+            <source>Scale down to 28.6% (350%)</source>
+            <translation>缩小至 28.6% (350%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 30.8% (325%)</source>
+            <translation>缩小至 30.8% (325%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 33.3% (300%)</source>
+            <translation>缩小至 33.3% (300%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 36.4% (275%)</source>
+            <translation>缩小至 36.4% (275%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 40% (250%)</source>
+            <translation>缩小至 40% (250%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 44.4% (225%)</source>
+            <translation>缩小至 44.4% (225%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 50% (200%)</source>
+            <translation>缩小至 50% (200%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 57.1% (175%)</source>
+            <translation>缩小至 57.1% (175%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 66.7% (150%)</source>
+            <translation>缩小至 66.7% (150%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 80% (125%)</source>
+            <translation>缩小至 80% (125%)</translation>
         </message>
         <message>
             <source>Scale recordings that exceed the selected maximum resolution</source>

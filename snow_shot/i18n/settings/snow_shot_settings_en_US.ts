@@ -2332,6 +2332,10 @@
             <translation>Download automatically</translation>
         </message>
         <message>
+            <source>Downscale copied and saved screenshots. Auto preserves selections spanning displays with different scaling factors</source>
+            <translation>Downscale copied and saved screenshots. Auto preserves selections spanning displays with different scaling factors</translation>
+        </message>
+        <message>
             <source>Drag annotation tools to reorder them or stack them in the same toolbar position</source>
             <translation>Drag annotation tools to reorder them or stack them in the same toolbar position</translation>
         </message>
@@ -2670,6 +2674,10 @@
         <message>
             <source>Hardware acceleration</source>
             <translation>Hardware acceleration</translation>
+        </message>
+        <message>
+            <source>HiDPI image scaling</source>
+            <translation>HiDPI image scaling</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -3790,6 +3798,46 @@
         <message>
             <source>Saved screenshots</source>
             <translation>Saved screenshots</translation>
+        </message>
+        <message>
+            <source>Scale down to 28.6% (350%)</source>
+            <translation>Scale down to 28.6% (350%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 30.8% (325%)</source>
+            <translation>Scale down to 30.8% (325%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 33.3% (300%)</source>
+            <translation>Scale down to 33.3% (300%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 36.4% (275%)</source>
+            <translation>Scale down to 36.4% (275%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 40% (250%)</source>
+            <translation>Scale down to 40% (250%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 44.4% (225%)</source>
+            <translation>Scale down to 44.4% (225%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 50% (200%)</source>
+            <translation>Scale down to 50% (200%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 57.1% (175%)</source>
+            <translation>Scale down to 57.1% (175%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 66.7% (150%)</source>
+            <translation>Scale down to 66.7% (150%)</translation>
+        </message>
+        <message>
+            <source>Scale down to 80% (125%)</source>
+            <translation>Scale down to 80% (125%)</translation>
         </message>
         <message>
             <source>Scale recordings that exceed the selected maximum resolution</source>

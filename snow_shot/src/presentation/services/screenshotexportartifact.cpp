@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
+#include "snow_shot/presentation/screenshothidpiimagescaling.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 
 #include "snowimageqtcodec.h"
 #include "screenshotexportmemory_p.h"
@@ -11,6 +13,7 @@
 
 #include <QBuffer>
 #include <QCoreApplication>
+#include <QColorSpace>
 #include <QDir>
 #include <QMetaObject>
 #include <QMutex>
@@ -39,6 +42,8 @@
 namespace {
 enum class RequestPhase { Empty, Pending, Ready, Failed };
 using DeliveryCancellation = std::shared_ptr<std::atomic_bool>;
+constexpr qint64 kOutputReaderCacheBytes = 2 * 1024 * 1024;
+constexpr qint64 kMaximumScaledOutputCacheBytes = 64 * 1024 * 1024;
 
 // Queued deliveries must outlive the artifact without borrowing its QObject or Impl.
 // Cancellation retires callbacks that have not started; an executing callback may finish.
@@ -105,7 +110,148 @@ ScreenshotImageRowSource withCancellation(const ScreenshotImageRowSource& source
     };
     return result;
 }
+
+// An admitted, moderate-sized output is shared by every encoding and raster consumer. A failed
+// cache allocation/admission is optional; large outputs keep the bounded streaming path.
+std::optional<ScreenshotImageRowSource> cachedScaledOutputRows(const ScreenshotImageRowSource& rows,
+                                                               QSize size) {
+    const auto bytes = screenshot_pinned_render::rasterBytes(size);
+    const auto working = snow_shot::image_codec::resizeWorkingBytes(rows.size, size);
+    if (!bytes || !working || *bytes > kMaximumScaledOutputCacheBytes)
+        return std::nullopt;
+    struct Storage {
+        std::shared_ptr<void> reservation;
+        QImage image;
+    };
+    auto storage = std::make_unique<Storage>();
+    std::shared_ptr<void> scratch;
+    if (rows.reserveResources) {
+        QString error;
+        storage->reservation = rows.reserveResources(*bytes, 0, &error);
+        if (!storage->reservation)
+            return std::nullopt;
+        qint64 scratchBytes = *working;
+        if (!screenshot_pinned_render::addBytes(scratchBytes, kOutputReaderCacheBytes))
+            return std::nullopt;
+        scratch = rows.reserveResources(0, scratchBytes, &error);
+        if (!scratch)
+            return std::nullopt;
+    }
+    storage->image = snowCanvasAllocateImage(size, QImage::Format_RGBA8888);
+    if (storage->image.isNull())
+        return std::nullopt;
+    if (!snow_shot::image_codec::resizeToRgba8(rows, size, storage->image.bits(),
+                                               storage->image.bytesPerLine(),
+                                               storage->image.sizeInBytes()) ||
+        (rows.cancellationRequested && rows.cancellationRequested()))
+        return ScreenshotImageRowSource{};
+    const auto& pixels = storage->image;
+    QImage image(
+        pixels.constBits(), pixels.width(), pixels.height(), pixels.bytesPerLine(), pixels.format(),
+        [](void* context) { delete static_cast<Storage*>(context); }, storage.get());
+    if (image.isNull())
+        return std::nullopt;
+    storage.release();
+    image.setColorSpace(QColorSpace::SRgb);
+    auto result = snow_shot::image_codec::srgbRowSource(image);
+    result.cancellationRequested = rows.cancellationRequested;
+    result.reserveResources = rows.reserveResources;
+    result.isKnownOpaque = rows.isKnownOpaque;
+    return result;
+}
+
+ScreenshotImageRowSource scaledOutputRows(ScreenshotImageRowSource rows, qreal scale) {
+    const QSize size = screenshotHiDpiImageSize(rows.size, scale);
+    if (!rows.isValid() || size.isEmpty())
+        return {};
+    if (size == rows.size)
+        return rows;
+    if (rows.cancellationRequested && rows.cancellationRequested())
+        return {};
+    if (auto cached = cachedScaledOutputRows(rows, size))
+        return std::move(*cached);
+    const auto resources = snow_shot::image_codec::resizeResources(rows.size, size);
+    if (!resources || (rows.cancellationRequested && rows.cancellationRequested()))
+        return {};
+    std::shared_ptr<void> owner;
+    if (rows.reserveResources) {
+        QString error;
+        qint64 retained = resources->retainedBytes;
+        if (!screenshot_pinned_render::addBytes(retained, kOutputReaderCacheBytes))
+            return {};
+        owner = rows.reserveResources(retained, resources->scratchBytes, &error);
+        if (!owner)
+            return {};
+    }
+    auto scaled = snow_shot::image_codec::resizedRowSource(std::move(rows), size);
+    if (owner && scaled.isValid()) {
+        const auto readRows = std::move(scaled.readRows);
+        scaled.readRows = [readRows, owner](int first, int count, qsizetype stride, uchar* output,
+                                            qsizetype capacity) {
+            return readRows(first, count, stride, output, capacity);
+        };
+        const auto readRegion = std::move(scaled.readRegion);
+        scaled.readRegion = [readRegion, owner](QRect region, qsizetype stride, uchar* output,
+                                                qsizetype capacity) {
+            return readRegion(region, stride, output, capacity);
+        };
+    }
+    return scaled;
+}
+
+QImage scaledOutputImage(QImage image, qreal scale,
+                         const ScreenshotExportCancellation& cancellation) {
+    const QSize size = screenshotHiDpiImageSize(image.size(), scale);
+    if (image.isNull() || size.isEmpty() || cancellation.isCancellationRequested())
+        return {};
+    if (size == image.size())
+        return image;
+    auto rows = withCancellation(snow_shot::image_codec::srgbRowSource(image),
+                                 [cancellation] { return cancellation.isCancellationRequested(); });
+    QImage result = snowCanvasAllocateImage(size, QImage::Format_RGBA8888);
+    if (result.isNull() ||
+        !snow_shot::image_codec::resizeToRgba8(rows, size, result.bits(), result.bytesPerLine(),
+                                               result.sizeInBytes()) ||
+        cancellation.isCancellationRequested())
+        return {};
+    result.setColorSpace(QColorSpace::SRgb);
+    return result;
+}
 } // namespace
+
+void ScreenshotExportSource::prepareOutputScale() {
+    if (m_outputScale == 1.0)
+        return;
+    if (!std::isfinite(m_outputScale) || m_outputScale <= 0.0 || m_outputScale > 1.0) {
+        m_imageLoader = {};
+        m_imageProducer = {};
+        m_rowSourceFactory = {};
+        m_rowSourceLoader = {};
+        return;
+    }
+    const qreal scale = m_outputScale;
+    if (!m_encodingCacheKey.isEmpty())
+        m_encodingCacheKey += QByteArrayLiteral("/scale/") + QByteArray::number(scale, 'g', 17);
+    auto prepare = std::move(m_loadedImagePreparation);
+    m_loadedImagePreparation = [prepare, scale](QImage image,
+                                                const ScreenshotExportCancellation& cancellation) {
+        if (prepare)
+            image = prepare(std::move(image), cancellation);
+        return scaledOutputImage(std::move(image), scale, cancellation);
+    };
+    auto working = std::move(m_loadedImageWorkingBytes);
+    m_loadedImageWorkingBytes = [working, scale](QSize size) {
+        qint64 bytes = working ? working(size) : 0;
+        const QSize output = screenshotHiDpiImageSize(size, scale);
+        const auto resize = snow_shot::image_codec::resizeWorkingBytes(size, output);
+        const auto raster = screenshot_pinned_render::rasterBytes(output);
+        if (!resize || !raster || !screenshot_pinned_render::addBytes(bytes, *resize) ||
+            !screenshot_pinned_render::addBytes(bytes, *raster) ||
+            !screenshot_pinned_render::addBytes(bytes, kOutputReaderCacheBytes))
+            return std::numeric_limits<qint64>::max();
+        return bytes;
+    };
+}
 
 ScreenshotExportSource
 ScreenshotExportSource::fromImage(QImage image,
@@ -113,12 +259,28 @@ ScreenshotExportSource::fromImage(QImage image,
                                   std::optional<ScreenshotClipboardAppearance> appearance) {
     if (placement)
         placement->rasterSize = image.size();
-    auto source =
-        fromProducer([image = std::move(image)](const ScreenshotExportCancellation& cancellation) {
-            return cancellation.isCancellationRequested() ? QImage{} : image;
+    // The artifact acquires its image once and caches the prepared output. Move the input out
+    // so a scaled export does not retain the original raster for the artifact's lifetime.
+    auto source = fromImageLoader(
+        [image = std::move(image)](QObject*, std::function<void(QImage)> complete) mutable {
+            complete(std::exchange(image, {}));
+            return true;
         });
     source.m_clipboardPlacement = std::move(placement);
     source.m_clipboardAppearance = std::move(appearance);
+    return source;
+}
+
+ScreenshotExportSource
+ScreenshotExportSource::fromArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact) {
+    if (!artifact || !artifact->isValid() || artifact->isCancelled())
+        return {};
+    ScreenshotExportSource source;
+    source.m_clipboardPlacement = artifact->clipboardPlacement();
+    source.m_clipboardAppearance = artifact->clipboardAppearance();
+    source.m_rowSourceLoader = [artifact = std::move(artifact)](QObject* receiver, auto complete) {
+        return artifact->requestRowSource(receiver, std::move(complete));
+    };
     return source;
 }
 
@@ -158,7 +320,7 @@ ScreenshotExportSource::fromProducer(ImageProducer producer, RowSourceFactory ro
 
 bool ScreenshotExportSource::isValid() const {
     return static_cast<bool>(m_imageLoader) || static_cast<bool>(m_imageProducer) ||
-           static_cast<bool>(m_rowSourceFactory);
+           static_cast<bool>(m_rowSourceFactory) || static_cast<bool>(m_rowSourceLoader);
 }
 
 struct ScreenshotExportArtifact::FileSource final {
@@ -462,7 +624,9 @@ ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source
                                                    ScreenshotCompressionLevel compressionLevel,
                                                    PngCachePolicy cachePolicy, QObject* parent)
     : QObject(parent),
-      m_impl(std::make_unique<Impl>(std::move(source), compressionLevel, cachePolicy)) {}
+      m_impl(std::make_unique<Impl>(std::move(source), compressionLevel, cachePolicy)) {
+    m_impl->source.prepareOutputScale();
+}
 
 void ScreenshotExportArtifact::setWindowNames(snow_shot::storage::ScreenshotWindowNames names) {
     QMutexLocker lock(&m_impl->mutex);
@@ -554,6 +718,24 @@ bool ScreenshotExportArtifact::requestRowSource(QObject* receiver, RowSourceCall
 
 void ScreenshotExportArtifact::startRowSource() {
     const QPointer<ScreenshotExportArtifact> guarded(this);
+    if (m_impl->source.m_rowSourceLoader) {
+        if (!m_impl->source.m_rowSourceLoader(
+                this, [guarded](ScreenshotImageRowSource rows, QString error) {
+                    if (!guarded || guarded->isCancelled())
+                        return;
+                    rows = withCancellation(rows, [cancelled = guarded->m_impl->cancelled] {
+                        return cancelled->load();
+                    });
+                    if (rows.isValid() && error.isEmpty() &&
+                        guarded->m_impl->source.m_outputScale != 1.0)
+                        guarded->prepareScaledRowSource(std::move(rows));
+                    else
+                        guarded->completeRowSource(std::move(rows), std::move(error));
+                }))
+            completeRowSource({}, QCoreApplication::translate("ScreenshotExportArtifact",
+                                                              "Image source unavailable"));
+        return;
+    }
     if (!m_impl->source.m_rowSourceFactory) {
         if (!requestImage(this, [guarded](ScreenshotExportImageResult result) mutable {
                 if (guarded.isNull())
@@ -587,9 +769,12 @@ void ScreenshotExportArtifact::startRowSource() {
         },
         [guarded, rows](ScreenshotExportTaskResult result) mutable {
             if (!guarded.isNull()) {
-                guarded->completeRowSource(result.succeeded() ? std::move(*rows)
-                                                              : ScreenshotImageRowSource{},
-                                           std::move(result.error));
+                if (result.succeeded() && guarded->m_impl->source.m_outputScale != 1.0)
+                    guarded->prepareScaledRowSource(std::move(*rows));
+                else
+                    guarded->completeRowSource(result.succeeded() ? std::move(*rows)
+                                                                  : ScreenshotImageRowSource{},
+                                               std::move(result.error));
             }
         });
     if (!job.isValid()) {
@@ -607,6 +792,61 @@ void ScreenshotExportArtifact::startRowSource() {
     }
     if (!retained)
         job.cancel();
+}
+
+void ScreenshotExportArtifact::prepareScaledRowSource(ScreenshotImageRowSource source) {
+    const qreal scale = m_impl->source.m_outputScale;
+    const QSize size = screenshotHiDpiImageSize(source.size, scale);
+    if (source.size == size) {
+        completeRowSource(std::move(source), {});
+        return;
+    }
+    const auto resize = snow_shot::image_codec::resizeResources(source.size, size);
+    const auto raster = screenshot_pinned_render::rasterBytes(size);
+    qint64 workingBytes = kOutputReaderCacheBytes;
+    if (!resize || !raster ||
+        !screenshot_pinned_render::addBytes(workingBytes, resize->retainedBytes) ||
+        !screenshot_pinned_render::addBytes(workingBytes, resize->scratchBytes) ||
+        (*raster <= kMaximumScaledOutputCacheBytes &&
+         !screenshot_pinned_render::addBytes(workingBytes, *raster)))
+        workingBytes = std::numeric_limits<qint64>::max();
+    // Factory dimensions are only known after acquisition. Admit the complete bounded resize
+    // working set before allocating pixels, including sources without a private reservation hook.
+    auto rows = std::make_shared<ScreenshotImageRowSource>();
+    const QPointer<ScreenshotExportArtifact> guarded(this);
+    auto job = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [source = std::move(source), rows,
+         scale](const ScreenshotExportCancellation& cancellation) {
+            *rows = scaledOutputRows(
+                withCancellation(source,
+                                 [cancellation] { return cancellation.isCancellationRequested(); }),
+                scale);
+            return rows->isValid() ? ScreenshotExportTaskResult{}
+                                   : ScreenshotExportTaskResult::failure(
+                                         cancellation.isCancellationRequested()
+                                             ? ScreenshotExportFailureStage::Cancelled
+                                             : ScreenshotExportFailureStage::Source,
+                                         QCoreApplication::translate("ScreenshotExportArtifact",
+                                                                     "Image source unavailable"));
+        },
+        [guarded, rows](ScreenshotExportTaskResult result) {
+            if (guarded && !guarded->isCancelled())
+                guarded->completeRowSource(result.succeeded() ? std::move(*rows)
+                                                              : ScreenshotImageRowSource{},
+                                           std::move(result.error));
+        },
+        workingBytes);
+    if (!job.isValid()) {
+        completeRowSource({}, QCoreApplication::translate("ScreenshotExportArtifact",
+                                                          "The screenshot export queue is full"));
+        return;
+    }
+    QMutexLocker lock(&m_impl->mutex);
+    if (m_impl->cancelled->load() || m_impl->rowSourcePhase != RequestPhase::Pending)
+        job.cancel();
+    else
+        m_impl->rowSourceJob = job;
 }
 
 void ScreenshotExportArtifact::startRowSourceFromImage(QImage image) {
@@ -680,6 +920,72 @@ void ScreenshotExportArtifact::completeRowSource(ScreenshotImageRowSource source
 
 void ScreenshotExportArtifact::startImage() {
     const QPointer<ScreenshotExportArtifact> guarded(this);
+    if (m_impl->source.m_rowSourceLoader ||
+        (m_impl->source.m_outputScale != 1.0 && m_impl->source.m_rowSourceFactory)) {
+        if (!requestRowSource(this, [guarded](ScreenshotImageRowSource rows, QString error) {
+                if (!guarded || guarded->isCancelled())
+                    return;
+                if (!rows.isValid()) {
+                    guarded->completeImage({{}, std::move(error)});
+                    return;
+                }
+                if (!rows.backingImage.isNull()) {
+                    guarded->completeImage({std::move(rows.backingImage), {}});
+                    return;
+                }
+                // Materialize the scaled rows only. The native scrolling canvas may be much
+                // larger, and rebuilding it would repeat the resize already used by encoders.
+                const auto bytes = screenshot_pinned_render::rasterBytes(rows.size);
+                auto job = ScreenshotExportCoordinator::shared().submit(
+                    guarded, ScreenshotExportCoordinator::Priority::Foreground,
+                    [rows](const ScreenshotExportCancellation& cancellation) {
+                        ScreenshotExportTaskResult result;
+                        auto input = withCancellation(rows, [cancellation] {
+                            return cancellation.isCancellationRequested();
+                        });
+                        if (!input.cancellationRequested()) {
+                            result.image =
+                                snowCanvasAllocateImage(input.size, QImage::Format_RGBA8888);
+                            for (int first = 0;
+                                 !result.image.isNull() && first < input.size.height();
+                                 first += 64) {
+                                const int count = std::min(64, input.size.height() - first);
+                                const auto stride = result.image.bytesPerLine();
+                                if (input.cancellationRequested() ||
+                                    !input.readRows(first, count, stride,
+                                                    result.image.scanLine(first),
+                                                    result.image.sizeInBytes() - first * stride))
+                                    result.image = {};
+                            }
+                            if (!result.image.isNull() && !input.cancellationRequested())
+                                result.image.setColorSpace(QColorSpace::SRgb);
+                            else
+                                result.image = {};
+                        }
+                        return result;
+                    },
+                    [guarded](ScreenshotExportTaskResult result) {
+                        if (guarded && !guarded->isCancelled())
+                            guarded->completeImage(
+                                {std::move(result.image), std::move(result.error)});
+                    },
+                    bytes.value_or(std::numeric_limits<qint64>::max()));
+                if (!job.isValid())
+                    guarded->completeImage(
+                        {{},
+                         QCoreApplication::translate("ScreenshotExportArtifact",
+                                                     "The screenshot export queue is full")});
+                else {
+                    QMutexLocker lock(&guarded->m_impl->mutex);
+                    if (guarded->m_impl->cancelled->load())
+                        job.cancel();
+                    else
+                        guarded->m_impl->imageJob = job;
+                }
+            }))
+            completeImage({{}, QStringLiteral("The screenshot row source is unavailable")});
+        return;
+    }
     if (m_impl->source.m_imageLoader) {
         const bool scheduled = m_impl->source.m_imageLoader(this, [guarded](QImage image) mutable {
             if (guarded && !guarded->isCancelled()) {
@@ -717,8 +1023,12 @@ void ScreenshotExportArtifact::startImage() {
         },
         [guarded](ScreenshotExportTaskResult result) mutable {
             if (!guarded.isNull()) {
-                guarded->completeImage(
-                    {result.succeeded() ? std::move(result.image) : QImage{}, result.error});
+                if (result.succeeded() && !result.image.isNull() &&
+                    guarded->m_impl->source.m_loadedImagePreparation)
+                    guarded->prepareLoadedImage(std::move(result.image));
+                else
+                    guarded->completeImage(
+                        {result.succeeded() ? std::move(result.image) : QImage{}, result.error});
             }
         },
         m_impl->source.m_renderingBytes);

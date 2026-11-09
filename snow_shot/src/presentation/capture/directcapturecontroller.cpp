@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/directcapturebudget.h"
 #include "snow_shot/presentation/capture/screenshotcapturepolicy.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
 
 #include "directcapturenative.h"
 #include "snow_shot/platform/screenshotnative.h"
@@ -22,6 +23,7 @@
 #include <QDebug>
 #include <QMimeData>
 #include <QThread>
+#include <QScreen>
 
 #include <atomic>
 #include <exception>
@@ -52,9 +54,10 @@ class DirectCaptureController::Impl {
                       [this, request, done = std::move(done)](DirectCaptureFrame frame) mutable {
                           emit owner.captureActivityChanged(QStringLiteral("direct"), false);
                           if (frame.isValid()) {
+                              auto source = ScreenshotExportSource::fromImage(frame.image);
+                              source.setOutputScale(directCaptureImageScale(request, frame));
                               artifact = std::make_unique<ScreenshotExportArtifact>(
-                                  ScreenshotExportSource::fromImage(frame.image),
-                                  request.encoding.compressionLevel);
+                                  std::move(source), request.encoding.compressionLevel);
                           }
                           done(std::move(frame));
                       });
@@ -229,6 +232,14 @@ class DirectCaptureController::Impl {
                 .toString());
         result.pdf.pageSize = screenshot_pdf::pageSizeForKey(settings.pdfPageSize());
         result.filenameFormat = settings.autoSaveFilenameFormat();
+        result.hiDpiImageScaling = settings.hiDpiImageScaling();
+        if (result.hiDpiImageScaling == QStringLiteral("auto")) {
+            for (QScreen* screen : QGuiApplication::screens()) {
+                const auto display = ScreenshotGeometryMapper::preCaptureDisplayModel(*screen);
+                result.scalingDisplays.append(
+                    {QRectF(display.canvasRect), screen->devicePixelRatio()});
+            }
+        }
         return result;
     }
 

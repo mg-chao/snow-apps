@@ -1,4 +1,7 @@
 #include "snow_shot/presentation/screenshotscrollingcapturecontroller.h"
+#ifdef SNOW_SHOT_CONTROLLER_LIFETIME_TESTS
+#include "../../../tests/screenshot_controller_test_access.h"
+#endif
 #include "snow_shot/diagnostics/diagnostics.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -765,6 +768,24 @@ ScreenshotScrollingCaptureController::~ScreenshotScrollingCaptureController() {
     // stop() publishes stateChanged; observers can query this controller while it retires.
     m_impl->stop(false);
 }
+
+#ifdef SNOW_SHOT_CONTROLLER_LIFETIME_TESTS
+void ScreenshotControllerTestAccess::prepareScrollingSnapshot(
+    ScreenshotScrollingCaptureController& controller, ScreenshotScrollingSnapshot snapshot,
+    QRect selection, ScreenshotOverlayWindow* overlay) {
+    auto& state = *controller.m_impl;
+    state.ensureWorker();
+    state.active = true;
+    state.canvasSelection = selection;
+    state.thumbnailHost = overlay;
+    state.latestOutputSize = snapshot.rowSource().size;
+    *state.trimRange = {0, state.latestOutputSize.height()};
+    state.cachedSnapshot = std::move(snapshot);
+    state.cachedSnapshotTop = state.trimRange->top;
+    state.cachedSnapshotBottom = state.trimRange->bottom;
+    state.cachedSnapshotGeneration = state.generation;
+}
+#endif
 
 bool ScreenshotScrollingCaptureController::start(const QRect& canvasSelection,
                                                  ScreenshotScrollingRecognitionMode mode) {

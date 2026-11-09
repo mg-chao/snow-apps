@@ -73,6 +73,7 @@ class ScreenshotScrollingCaptureController final : public QObject {
     void stateChanged();
 
   private:
+    friend class ScreenshotControllerTestAccess;
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

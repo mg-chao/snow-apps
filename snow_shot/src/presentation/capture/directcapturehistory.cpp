@@ -44,7 +44,9 @@ directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptu
         if (display.sourceCanvasRect)
             display.sourceCanvasRect->translate(canvasOffset);
     }
-    draft.resultImage = frame.image;
+    // A prepared export may be downscaled while the source capture remains native-sized.
+    if (!png || !png->isValid() || png->pixelSize() == frame.image.size())
+        draft.resultImage = frame.image;
     draft.preparedResultImage = std::move(png);
     draft.pngCompressionLevel =
         ScreenshotImageFileService::encodeOptions(
