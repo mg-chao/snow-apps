@@ -190,7 +190,7 @@ struct UpdateService::Impl {
         const QString tag = QStringLiteral("v%1_snow-shot").arg(text);
         const QString root =
             source == Source::GitHub
-                ? QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/")
+                ? QStringLiteral("https://github.com/mg-chao/snow-shot/releases/tag/")
                 : QStringLiteral("https://gitee.com/mg-chao/snow-apps/releases/tag/");
         resetAll();
         status = {available ? UpdateState::Available : UpdateState::Idle,
@@ -228,7 +228,7 @@ struct UpdateService::Impl {
                 if (source == Source::GitHub) {
                     const QUrl expected(
                         QStringLiteral(
-                            "https://github.com/mg-chao/snow-apps/releases/download/%1/%2")
+                            "https://github.com/mg-chao/snow-shot/releases/download/%1/%2")
                             .arg(tag, assetName));
                     if (url != expected)
                         return false;

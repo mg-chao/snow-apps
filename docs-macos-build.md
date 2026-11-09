@@ -218,7 +218,7 @@ asset as your normal desktop user:
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output install-snow-shot-macos.sh \
-  "https://github.com/mg-chao/snow-apps/releases/download/v<version>_snow-shot/install-snow-shot-macos.sh"
+  "https://github.com/mg-chao/snow-shot/releases/download/v<version>_snow-shot/install-snow-shot-macos.sh"
 bash install-snow-shot-macos.sh --lang en
 ```
 

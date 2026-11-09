@@ -26,24 +26,24 @@ param([Parameter(ValueFromRemainingArguments)][string[]]$GhArguments)
 $GhArguments = @($GhArguments)
 Add-Content -LiteralPath $env:SNOW_TEST_GH_LOG -Value (ConvertTo-Json -InputObject @{ arguments = $GhArguments } -Compress)
 $call = $GhArguments -join ' '
-if ($call -like 'api --paginate repos/mg-chao/snow-apps/issues?state=open&per_page=100*') {
+if ($call -like 'api --paginate repos/mg-chao/snow-shot/issues?state=open&per_page=100*') {
     '1022', '1021', '62', '61'
     exit 0
 }
-if ($call -like 'api repos/mg-chao/snow-apps/issues/61 *' -or
-    $call -like 'api repos/mg-chao/snow-apps/issues/1021 *') {
+if ($call -like 'api repos/mg-chao/snow-shot/issues/61 *' -or
+    $call -like 'api repos/mg-chao/snow-shot/issues/1021 *') {
     'open'
     exit 0
 }
-if ($call -like 'api repos/mg-chao/snow-apps/issues/62 *') {
+if ($call -like 'api repos/mg-chao/snow-shot/issues/62 *') {
     'closed'
     exit 0
 }
-if ($call -like 'api --paginate --slurp repos/mg-chao/snow-apps/issues/61/comments*') {
+if ($call -like 'api --paginate --slurp repos/mg-chao/snow-shot/issues/61/comments*') {
     '[[]]'
     exit 0
 }
-if ($call -like 'api --paginate --slurp repos/mg-chao/snow-apps/issues/1021/comments*') {
+if ($call -like 'api --paginate --slurp repos/mg-chao/snow-shot/issues/1021/comments*') {
     $body = Get-Content -LiteralPath $env:SNOW_TEST_EXPECTED_REPLY -Raw -Encoding utf8
     '[[' + (ConvertTo-Json -InputObject @{ body = $body } -Compress) + ']]'
     exit 0

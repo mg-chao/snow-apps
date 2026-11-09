@@ -129,7 +129,7 @@ jobs:
           RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           . ./scripts/snow-shot-winget.ps1
-          $release = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:RELEASE_TAG"
+          $release = Invoke-SnowShotWingetApi "repos/mg-chao/snow-shot/releases/tags/$env:RELEASE_TAG"
           $architectures = @(Get-SnowShotWingetArchitectures $release '${{ needs.resolve.outputs.version }}')
           "available=$('${{ matrix.architecture }}' -in $architectures)" >> $env:GITHUB_OUTPUT
       - name: Provision native WinGet
@@ -147,7 +147,7 @@ jobs:
         run: |
           . ./scripts/snow-shot-winget.ps1
           $previous = $null
-          foreach ($candidate in @(Invoke-SnowShotWingetApi 'repos/mg-chao/snow-apps/releases?per_page=100')) {
+          foreach ($candidate in @(Invoke-SnowShotWingetApi 'repos/mg-chao/snow-shot/releases?per_page=100')) {
             if ($candidate.draft -or $candidate.tag_name -ceq $env:RELEASE_TAG) { continue }
             try {
               $version = Get-SnowShotWingetVersion $candidate.tag_name

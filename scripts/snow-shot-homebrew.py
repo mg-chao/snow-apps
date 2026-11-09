@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 
-REPOSITORY = 'mg-chao/snow-apps'
+REPOSITORY = 'mg-chao/snow-shot'
 STABLE = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
 VERSION = STABLE + r'(?:-beta(?:\.(?:0|[1-9][0-9]*))?)?'
 

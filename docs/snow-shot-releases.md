@@ -767,7 +767,7 @@ One-time setup:
 1. Create the public `mg-chao/homebrew-tap` repository with an initial `main`
    commit. Copy `homebrew/README.md` as its README. The workflow generates the
    first `Casks/snow-shot.rb`; do not publish a placeholder checksum or cask.
-2. Configure `HOMEBREW_TAP_TOKEN` as a secret in `mg-chao/snow-apps`. Use a
+2. Configure `HOMEBREW_TAP_TOKEN` as a secret in `mg-chao/snow-shot`. Use a
    fine-grained token restricted to the tap repository with Contents read/write.
    Its branch policy must allow the automation to push to `main`.
 3. Include each supported architecture's matching DMG and `.dmg.sha256`
@@ -816,13 +816,13 @@ pair, retry with Actions → Publish Snow Shot Homebrew cask → Run workflow, s
 the stable tag. With GitHub CLI:
 
 ```sh
-gh workflow run snow-shot-homebrew.yml --repo mg-chao/snow-apps \
+gh workflow run snow-shot-homebrew.yml --repo mg-chao/snow-shot \
   -f tag=v1.2.3_snow-shot
 ```
 
 If another workflow publishes a release using `GITHUB_TOKEN`, GitHub may suppress
 the release-triggered workflow; explicitly dispatch this workflow in that case.
-The release token uploads assets only in `snow-apps`; the separate tap token is
+The release token uploads assets only in `snow-shot`; the separate tap token is
 used only for checking out and pushing the tap.
 
 For an offline review or initial tap scaffold, save GitHub's release JSON, download

@@ -130,7 +130,7 @@ QJsonObject githubRelease(const QString& version, bool draft = false) {
         assets.append(QJsonObject{
             {QStringLiteral("name"), asset},
             {QStringLiteral("browser_download_url"),
-             QStringLiteral("https://github.com/mg-chao/snow-apps/releases/download/%1/%2")
+             QStringLiteral("https://github.com/mg-chao/snow-shot/releases/download/%1/%2")
                  .arg(tag, asset)}});
     return {{QStringLiteral("tag_name"), tag},
             {QStringLiteral("draft"), draft},

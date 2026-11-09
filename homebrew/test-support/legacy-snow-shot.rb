@@ -5,7 +5,7 @@ cask "snow-shot" do
   sha256 arm:   "0000000000000000000000000000000000000000000000000000000000000000",
          intel: "1111111111111111111111111111111111111111111111111111111111111111"
 
-  url "https://github.com/mg-chao/snow-apps/releases/download/v#{version}_snow-shot/snow-shot-#{version}-macos-#{arch}-homebrew.tar.gz"
+  url "https://github.com/mg-chao/snow-shot/releases/download/v#{version}_snow-shot/snow-shot-#{version}-macos-#{arch}-homebrew.tar.gz"
   name "Snow Shot"
   desc "Screenshot and screen recording application"
   homepage "https://snowshot.top/"

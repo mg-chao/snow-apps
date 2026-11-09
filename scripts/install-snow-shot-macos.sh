@@ -215,8 +215,9 @@ function run(argv) {
         const image = assets.filter(a => a.name === name);
         const sum = assets.filter(a => a.name === name + '.sha256');
         if (image.length !== 1 || sum.length !== 1) continue;
-        const origin = argv[2] === 'github' ? 'https://github.com' : 'https://gitee.com';
-        const prefix = origin + '/mg-chao/snow-apps/releases/download/' + release.tag_name + '/';
+        const repository = argv[2] === 'github' ? 'https://github.com/mg-chao/snow-shot' :
+            'https://gitee.com/mg-chao/snow-apps';
+        const prefix = repository + '/releases/download/' + release.tag_name + '/';
         if (image[0].browser_download_url !== prefix + name || sum[0].browser_download_url !== prefix + name + '.sha256') continue;
         if (!best || compare(tag, best.tag) > 0) best = {tag: tag, version: version, image: image[0], sum: sum[0], releaseTag: release.tag_name};
     }
@@ -303,7 +304,7 @@ discover_channel() {
 
 discover_release() {
     local channel
-    discover_channel github 'https://api.github.com/repos/mg-chao/snow-apps/releases' &
+    discover_channel github 'https://api.github.com/repos/mg-chao/snow-shot/releases' &
     github_pid=$!
     discover_channel gitee 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases' &
     gitee_pid=$!

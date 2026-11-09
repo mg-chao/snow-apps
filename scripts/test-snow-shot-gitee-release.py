@@ -95,7 +95,7 @@ class PublisherTests(unittest.TestCase):
         record = json.loads(publisher.run('git', '-C', str(remote), 'show', f'{TAG}:release.json'))
         self.assertEqual(record['sourceCommit'], 'a' * 40)
         self.assertEqual(record['tag'], TAG)
-        self.assertEqual(record['sourceRepository'], 'https://github.com/mg-chao/snow-apps')
+        self.assertEqual(record['sourceRepository'], 'https://github.com/mg-chao/snow-shot')
 
     def test_legacy_source_tags_are_preserved_without_another_push(self):
         with patch.object(publisher, 'git_with_gitee_auth', return_value=f"{'a' * 40}\trefs/tags/{TAG}") as git, \

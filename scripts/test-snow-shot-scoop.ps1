@@ -35,7 +35,7 @@ function Set-FixtureRelease([string]$Tag = 'v1.1.8') {
         tag_name = $Tag; draft = $false; prerelease = $false
         assets = @([pscustomobject]@{ name = $script:name; size = (Get-Item $script:zipPath).Length
             digest = "sha256:$script:hash"
-            browser_download_url = "https://github.com/mg-chao/snow-apps/releases/download/$Tag/$script:name" })
+            browser_download_url = "https://github.com/mg-chao/snow-shot/releases/download/$Tag/$script:name" })
     }
     $script:sidecarText = "$script:hash  $script:name`n"
 }
@@ -54,7 +54,7 @@ function New-CheckverRelease([string]$Tag, [bool]$Prerelease = $false, [bool]$Dr
     return [pscustomobject]@{
         tag_name = $Tag; draft = $Draft; prerelease = $Prerelease
         assets = @([pscustomobject]@{ name = $name
-            browser_download_url = "https://github.com/mg-chao/snow-apps/releases/download/$Tag/$name" })
+            browser_download_url = "https://github.com/mg-chao/snow-shot/releases/download/$Tag/$name" })
     }
 }
 function Get-FixtureCheckverMatch($Manifest, $Releases) {
@@ -99,7 +99,7 @@ try {
             $manifest.shortcuts[0][1] -ceq 'Snow Shot') 'Wrong shortcut'
         Require ($manifest.persist -ceq 'bin\portable') 'Wrong persistence'
         Require ($manifest.license -ceq 'GPL-3.0-or-later') 'Wrong license'
-        Require ($manifest.checkver.url -ceq 'https://api.github.com/repos/mg-chao/snow-apps/releases?per_page=100') 'Wrong checkver endpoint'
+        Require ($manifest.checkver.url -ceq 'https://api.github.com/repos/mg-chao/snow-shot/releases?per_page=100') 'Wrong checkver endpoint'
         $match = Get-FixtureCheckverMatch $manifest @($script:release)
         Require ($match.Success -and $match.Groups['version'].Value -ceq $manifest.version -and
             $match.Groups['tag'].Value -ceq $tag) 'checkver lost version or release tag'

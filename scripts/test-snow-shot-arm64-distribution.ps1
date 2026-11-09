@@ -41,7 +41,7 @@ try {
             foreach ($name in $names) {
                 $bytes = if ($name.EndsWith('.zip')) { [IO.File]::ReadAllBytes($zipPath) } else { [byte[]](1, 2, 3, 4) }
                 $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
-                $url = "https://github.com/mg-chao/snow-apps/releases/download/$tag/$name"
+                $url = "https://github.com/mg-chao/snow-shot/releases/download/$tag/$name"
                 $script:downloads[$url] = $bytes
                 $script:release.assets += [pscustomobject]@{ name = $name; size = $bytes.Length; digest = "sha256:$hash"; browser_download_url = $url }
             }
