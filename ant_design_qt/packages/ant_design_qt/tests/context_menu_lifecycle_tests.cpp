@@ -17,6 +17,21 @@
 namespace {
 using adqt::widgets::AdContextMenu;
 
+QtMessageHandler previousMessageHandler = nullptr;
+bool invalidMenuTeardownWarning = false;
+
+void captureMenuTeardownWarnings(QtMsgType type, const QMessageLogContext& context,
+                                 const QString& message) {
+  if (type == QtWarningMsg && message.contains(QStringLiteral("_q_overrideMenuActionDestroyed"))) {
+    invalidMenuTeardownWarning = true;
+  }
+  if (previousMessageHandler) {
+    previousMessageHandler(type, context, message);
+  } else {
+    std::cerr << qFormatLogMessage(type, context, message).toStdString() << '\n';
+  }
+}
+
 void require(bool condition, const char* message) {
   if (!condition) {
     throw std::runtime_error(message);
@@ -296,6 +311,34 @@ void persistentParentsRestoreLazySubmenus(bool drainBeforeReopening) {
   drainRetiredPopups();
 }
 
+void exitActionSurvivesRetiringSubmenus() {
+  QPointer<AdContextMenu> menu = new AdContextMenu;
+  menu->setNativeMenuEnabled(false);
+  menu->setDeleteOnHide();
+  auto* entry = menu->addLazySubMenu(QStringLiteral("Child"), [](auto* child) {
+    child->addItem(QStringLiteral("Child command"));
+  });
+  QPointer<QAction> exit = menu->addItem(QStringLiteral("Exit"));
+  int exitRequests = 0;
+  QObject::connect(exit, &QAction::triggered, [&]() { ++exitRequests; });
+  menu->popupAt(QPoint(100, 100));
+  QPointer<AdContextMenu> child = qobject_cast<AdContextMenu*>(entry->menu());
+  child->popupAt(QPoint(200, 100));
+  child->dismissPopup();
+  drainRetiredPopups();
+  require(!child && menu && menu->isVisible() && entry->menu() && exitRequests == 0,
+          "retiring a submenu must preserve the root menu without triggering Exit");
+  QPointer<QMenu> replacement = entry->menu();
+  menu->setActiveAction(exit);
+  QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+  QApplication::sendEvent(menu, &enter);
+  require(exitRequests == 1 && !menu->isVisible(),
+          "selecting Exit must deliver exactly one request before retiring the root");
+  drainRetiredPopups();
+  require(!menu && !replacement && !exit && exitRequests == 1,
+          "closing the root after Exit must release every remaining menu and action");
+}
+
 void retirementWaitsForActionDeliveryAndCancelsPendingPopups() {
   QPointer<AdContextMenu> menu = new AdContextMenu;
   menu->setNativeMenuEnabled(false);
@@ -326,6 +369,7 @@ void retirementWaitsForActionDeliveryAndCancelsPendingPopups() {
 
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
+  previousMessageHandler = qInstallMessageHandler(captureMenuTeardownWarnings);
   try {
     destroyedMenuTreesReleaseIcons(true);
     destroyedMenuTreesReleaseIcons(false);
@@ -341,10 +385,15 @@ int main(int argc, char** argv) {
     lazySubmenusOpenThroughKeyboardNavigation();
     persistentParentsRestoreLazySubmenus(true);
     persistentParentsRestoreLazySubmenus(false);
+    exitActionSurvivesRetiringSubmenus();
     retirementWaitsForActionDeliveryAndCancelsPendingPopups();
+    qInstallMessageHandler(previousMessageHandler);
+    require(!invalidMenuTeardownWarning,
+            "retiring lazy submenus must not access QMenu slots after QMenu destruction");
     std::cout << "Context menu lifecycle tests passed\n";
     return 0;
   } catch (const std::exception& error) {
+    qInstallMessageHandler(previousMessageHandler);
     std::cerr << error.what() << '\n';
     return 1;
   }
