@@ -7,7 +7,6 @@
 namespace snow_shot::diagnostics {
 
 struct DiagnosticsPathOptions {
-    bool unifiedApplicationData = false;
     QString selectedDirectory;
     QString stableDirectory;
     QString temporaryDirectory;
@@ -19,15 +18,18 @@ struct DiagnosticsPathOptions {
 inline DiagnosticsOptions diagnosticsOptionsForPaths(const DiagnosticsPathOptions& paths) {
     DiagnosticsOptions options;
     const bool packaged = !paths.packageFamily.isEmpty();
-    if ((paths.unifiedApplicationData || packaged) && !QDir::isAbsolutePath(paths.stableDirectory))
+    if (packaged && !QDir::isAbsolutePath(paths.stableDirectory))
         return options;
-    const QString logs = QDir(paths.stableDirectory).filePath(QStringLiteral("logs"));
-    if (!paths.unifiedApplicationData && !paths.selectedDirectory.isEmpty())
+    if (QDir::isAbsolutePath(paths.selectedDirectory))
         options.directories.append(QDir(paths.selectedDirectory).filePath(QStringLiteral("logs")));
-    options.directories.append(logs);
-    options.crashCaptureDirectory = QDir(logs).filePath(QStringLiteral("crashes"));
-    if (!paths.unifiedApplicationData &&
-        (!packaged || QDir::isAbsolutePath(paths.temporaryDirectory))) {
+    if (QDir::isAbsolutePath(paths.stableDirectory))
+        options.directories.append(QDir(paths.stableDirectory).filePath(QStringLiteral("logs")));
+    // Standalone capture defaults to the log root that actually passes the writable probe,
+    // including portable/custom storage and fallback locations. Store capture stays package-owned.
+    if (packaged)
+        options.crashCaptureDirectory =
+            QDir(paths.stableDirectory).filePath(QStringLiteral("logs/crashes"));
+    if (QDir::isAbsolutePath(paths.temporaryDirectory)) {
         const QString relative =
             packaged ? QStringLiteral("SnowShot/%1/%2/logs")
                            .arg(paths.applicationName, paths.packageFamily)
