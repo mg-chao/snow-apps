@@ -424,10 +424,64 @@ void spatialExclusionIsOrderIndependent() {
                 "identical overlapping bounds must not break spatial-index partitioning");
     }
 }
+void eraseMarginsAreIndependentOfRecognitionAndCanvasScale() {
+    ScreenshotOcrPresentation presentation;
+    presentation.solidBackgroundFill = true;
+    presentation.lines = {box(30, 50, 800, 20)};
+    presentation.lines[0].backgroundFillColor = Qt::white;
+    const auto originalQuad = presentation.lines[0].quad;
+    QImage source(900, 140, QImage::Format_RGB32);
+    source.fill(Qt::white);
+    // The detector missed four rows of colored descenders and an antialiased fringe.
+    for (int y = 68; y <= 73; ++y)
+        for (int x = 32; x < 828; x += 17)
+            source.setPixelColor(x, y, y == 73 ? QColor(255, 190, 190) : QColor(Qt::red));
+    const auto region = screenshotOcrFilterRegion(presentation, source.rect(), source.size());
+    require(region.contains(QPoint(400, 46)) && region.contains(QPoint(400, 73)) &&
+                !region.contains(QPoint(400, 43)),
+            "long text must receive a bounded perpendicular erase margin on both sides");
+    QRect crop;
+    const auto filtered =
+        renderScreenshotOcrFilteredImage(source, source.rect(), presentation, Qt::white, 1, &crop);
+    for (int y = 68; y <= 73; ++y)
+        for (int x = 32; x < 828; x += 17)
+            require(filtered.pixelColor(QPoint(x, y) - crop.topLeft()) == QColor(Qt::white),
+                    "erase coverage must remove descenders and their colored antialiasing fringe");
+    require(presentation.lines[0].quad == originalQuad,
+            "erase margins must never modify recognition, selection or text-fit geometry");
+    const QRectF canvas(-100, 25, 450, 140 / 1.5);
+    for (auto& point : presentation.lines[0].quad)
+        point = QPointF(point.x() / 2 - 100, point.y() / 1.5 + 25);
+    require(screenshotOcrFilterRegion(presentation, canvas, source.size()) == region,
+            "source-pixel margins must be invariant under nonuniform fractional canvas scaling");
+    presentation.lines[0].quad = originalQuad;
+    QTransform rotation;
+    rotation.translate(100, 10).rotate(90);
+    presentation.lines[0].quad = rotation.map(box(20, 30, 800, 20).quad);
+    const auto vertical =
+        screenshotOcrFilterRegion(presentation, QRectF(0, 0, 140, 900), QSize(140, 900));
+    require(vertical.contains(QPoint(46, 400)) && vertical.contains(QPoint(73, 400)),
+            "vertical text must receive the same perpendicular coverage as horizontal text");
+    std::reverse(presentation.lines[0].quad.begin(), presentation.lines[0].quad.end());
+    require(screenshotOcrFilterRegion(presentation, QRectF(0, 0, 140, 900), QSize(140, 900)) ==
+                vertical,
+            "erase expansion must not depend on quad winding");
+    QTransform skew;
+    skew.translate(140, 80).rotate(27);
+    presentation.lines[0].quad = skew.map(box(-90, -10, 180, 20).quad);
+    const auto slanted =
+        screenshotOcrFilterRegion(presentation, QRectF(0, 0, 280, 160), QSize(280, 160));
+    require(slanted.contains(skew.map(QPointF(0, -13)).toPoint()) &&
+                slanted.contains(skew.map(QPointF(0, 13)).toPoint()) &&
+                !slanted.contains(skew.map(QPointF(0, 18)).toPoint()),
+            "slanted erase margins must follow edge normals without painting distant pixels");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    eraseMarginsAreIndependentOfRecognitionAndCanvasScale();
     isolatedContaminationCannotDetermineTheBackground();
     splitBackgroundChoosesDominantPaletteColor();
     backgroundFillNeverBlurs();

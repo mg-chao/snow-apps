@@ -229,7 +229,9 @@ std::shared_future<void> sessionCreateGate;
 std::atomic<bool> sessionCreateEntered = false;
 std::atomic<bool> observeFollowAreaVisibility = false;
 std::atomic<bool> observedFollowAreaVisible = false;
+std::atomic<bool> observedFollowAreaTransparent = false;
 std::atomic<int> followAreaVisibleAtNativeCreate = -1;
+std::atomic<bool> followAreaTransparentAtNativeCreate = false;
 bool recordingFileFixture = false;
 int windowNameLookups = 0;
 QPointF windowNameLookupPoint;
@@ -3531,8 +3533,10 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     // thread by controllerPreviewTransitions instead.
     require(audioMonitorsActive == 0,
             "recording native initialization follows audio preview retirement");
-    if (observeFollowAreaVisibility && config->follow_mouse != 0)
+    if (observeFollowAreaVisibility && config->follow_mouse != 0) {
         followAreaVisibleAtNativeCreate = static_cast<int>(observedFollowAreaVisible.load());
+        followAreaTransparentAtNativeCreate = observedFollowAreaTransparent.load();
+    }
     if (const auto gate = sessionCreateGate; gate.valid()) {
         sessionCreateEntered = true;
         gate.wait();
@@ -4788,20 +4792,23 @@ void recordingActionToolbarPreferenceUpdatesOpenWindow() {
     require(toolbarSettings.setLayout(kind, original), "restore the recording action preferences");
 }
 
-void recordingErrorDialogs() {
+void recordingErrorDialogs(bool followMouse) {
     using namespace adqt::widgets;
     const snow_shot::storage::RecordingSettings settings;
     const bool previousPostProcessing = settings.postProcessingEnabled();
     const int previousDelay = settings.startDelaySeconds();
+    const bool previousFollowMouse = settings.followMouse();
     const auto restore = qScopeGuard([&] {
         failStart = false;
         failStartOperation = false;
         failExport = false;
         require(settings.setPostProcessingEnabled(previousPostProcessing) &&
-                    settings.setStartDelaySeconds(previousDelay),
+                    settings.setStartDelaySeconds(previousDelay) &&
+                    settings.setFollowMouse(previousFollowMouse),
                 "restore recording error dialog preferences");
     });
     require(settings.setStartDelaySeconds(0), "disable the error dialog fixture countdown");
+    require(settings.setFollowMouse(followMouse), "select the error dialog follow mode");
     enum class Failure { Create, Start, Export, DetachedExport };
     for (bool deferred : {false, true}) {
         require(settings.setPostProcessingEnabled(deferred), "select the error dialog pipeline");
@@ -4897,8 +4904,14 @@ void recordingErrorDialogs() {
     }
 }
 
-void recordingModalStacking() {
+void recordingModalStacking(bool followMouse) {
     using namespace adqt::widgets;
+    const snow_shot::storage::RecordingSettings preferences;
+    const bool previousFollowMouse = preferences.followMouse();
+    const auto restore = qScopeGuard([&] { preferences.setFollowMouse(previousFollowMouse); });
+    require(preferences.setFollowMouse(followMouse), "select the modal stacking follow mode");
+    renderState = SNOW_RECORDING_RENDER_STATE_RUNNING;
+    renderPercent = 0;
     const auto wait = [](const std::function<bool()>& condition, const char* message) {
         QElapsedTimer timer;
         timer.start();
@@ -4953,6 +4966,10 @@ void recordingModalStacking() {
     controls->recordingPostProcessingEnabledChanged(true);
     controller.startRecording();
     waitForRecording(controller);
+    require(area->isVisible() && area->windowOpacity() == (followMouse ? 0.0 : 1.0) &&
+                toolbar->windowOpacity() == 1.0 &&
+                toolbar->windowHandle()->transientParent() == area->windowHandle(),
+            "following makes only the area transparent while retaining toolbar ownership");
     controls->recordingStopRequested();
     QPointer<AdModal> modal;
     wait(
@@ -4993,6 +5010,70 @@ void recordingModalStacking() {
     renderPercent = 100;
     waitForIdle(controller);
     require(!modal || !modal->isOpen(), "successful rendering must close the detached modal");
+}
+
+void recordingTemplateModalPlacement() {
+    using namespace adqt::widgets;
+    const snow_shot::storage::WatermarkTemplateSettings templates;
+    const auto previousTemplates = templates.templates();
+    const auto restore = qScopeGuard([&] { templates.setTemplates(previousTemplates); });
+    require(templates.setTemplates({{QStringLiteral("Recording"), QStringLiteral("{text}")}}),
+            "prepare a recording watermark template");
+    ScreenRecordingController controller(testEffectsSource);
+    controller.open(QRect(80, 80, 320, 240));
+    auto* area = recordingAreaWindow();
+    auto* controls = palette();
+    require(controls->activateDrawingShortcut(QStringLiteral("watermark")),
+            "open recording watermark controls");
+    auto* select =
+        controls->findChild<AdSelect*>(QStringLiteral("screenshotWatermarkTemplateSelect"));
+    require(select, "recording watermark controls expose their template library");
+    select->showPopup();
+    QCoreApplication::processEvents();
+    auto* add = select->view()->window()->findChild<AdButton*>(
+        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    require(add, "recording watermark templates expose an add action");
+    add->click();
+    QCoreApplication::processEvents();
+    auto* creation =
+        controls->findChild<AdModal*>(QStringLiteral("screenshotWatermarkTemplateCreateModal"));
+    require(creation && creation->isOpen() && creation->ownerWindow() == area,
+            "recording template modals must use the area as their owner");
+    requireModalCenteredOnArea(creation, area->frameGeometry(), area->screen());
+    creation->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    select->showPopup();
+    QCoreApplication::processEvents();
+    auto* view = select->view();
+    QModelIndex option;
+    for (int row = 0; row < view->model()->rowCount(); ++row) {
+        const auto candidate = view->model()->index(row, 0);
+        if (candidate.data(Qt::UserRole).toString() == QStringLiteral("watermark-template:0")) {
+            option = candidate;
+            break;
+        }
+    }
+    require(option.isValid(), "the recording template has a popup row");
+    const QRect row = view->visualRect(option);
+    const QPoint action(row.right() - 15, row.center().y());
+    for (const auto type :
+         {QEvent::MouseMove, QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, QPointF(action), QPointF(view->viewport()->mapToGlobal(action)),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(view->viewport(), &event);
+    }
+    QCoreApplication::processEvents();
+    auto* confirmation =
+        controls->findChild<AdModal*>(QStringLiteral("screenshotWatermarkTemplateDeleteModal"));
+    require(confirmation && confirmation->isOpen() && confirmation->ownerWindow() == area &&
+                confirmation->preset() == AdModal::Preset::Confirm,
+            "recording template confirmations must use the area as their owner");
+    requireModalCenteredOnArea(confirmation, area->frameGeometry(), area->screen());
+    confirmation->reject();
+    controls->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 void recordingRenderLayout() {
@@ -7967,6 +8048,10 @@ void recordingFollowMouseTests() {
       public:
         explicit FollowAreaVisibilityObserver(QWidget& area) {
             observedFollowAreaVisible = area.isVisible();
+            observedFollowAreaTransparent = qFuzzyIsNull(area.windowOpacity());
+            QObject::connect(
+                area.windowHandle(), &QWindow::opacityChanged, this,
+                [](qreal opacity) { observedFollowAreaTransparent = qFuzzyIsNull(opacity); });
             area.installEventFilter(this);
             observeFollowAreaVisibility = true;
         }
@@ -8105,6 +8190,7 @@ void recordingFollowMouseTests() {
         sessionCreateEntered = false;
         sessionCreateGate = releaseStart.get_future().share();
         followAreaVisibleAtNativeCreate = -1;
+        followAreaTransparentAtNativeCreate = false;
         PhysicalKeyEvent startPress(QEvent::KeyPress, Qt::Key_F8, Qt::NoModifier);
         QApplication::sendEvent(toolbar, &startPress);
         PhysicalKeyEvent startRelease(QEvent::KeyRelease, Qt::Key_F8, Qt::NoModifier);
@@ -8114,7 +8200,8 @@ void recordingFollowMouseTests() {
             if (widget->objectName() == QStringLiteral("screenRecordingFollowMouseCountdown"))
                 countdown = widget;
         }
-        require(countdown && countdown->isVisible() && area->isVisible() && !follow->isEnabled() &&
+        require(countdown && countdown->isVisible() && area->isVisible() &&
+                    area->windowOpacity() == 1.0 && !follow->isEnabled() &&
                     toolbar->windowHandle()->transientParent() == area->windowHandle() &&
                     !sessionCreateEntered && !preview->active &&
                     !previewTileVisible(*area, *preview),
@@ -8124,34 +8211,40 @@ void recordingFollowMouseTests() {
             [&] {
                 if (tools->recordingBusyOperation() ==
                     ScreenshotToolPalette::RecordingBusyOperation::CountingDown)
-                    require(area->isVisible() && countdown->isVisible() && !preview->active &&
+                    require(area->isVisible() && area->windowOpacity() == 1.0 &&
+                                countdown->isVisible() && !preview->active &&
                                 !previewTileVisible(*area, *preview),
                             "follow countdown remains visible with its effect preview retired");
                 return sessionCreateEntered.load();
             },
             "hold follow startup before native capture");
-        require(followAreaVisibleAtNativeCreate == 0 && !area->isVisible() &&
-                    !countdown->isVisible() && !toolbar->windowHandle()->transientParent() &&
+        require(followAreaVisibleAtNativeCreate == 1 && followAreaTransparentAtNativeCreate &&
+                    area->isVisible() && area->windowOpacity() == 0.0 &&
+                    area->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                    !area->activateInput() && !countdown->isVisible() &&
+                    toolbar->windowHandle()->transientParent() == area->windowHandle() &&
                     !preview->active && !previewTileVisible(*area, *preview) &&
                     tools->recordingBusyOperation() ==
                         ScreenshotToolPalette::RecordingBusyOperation::Starting,
-                "follow startup hides its area and detaches ownership before native creation");
+                "follow startup makes its area transparent and pass-through before native "
+                "creation while preserving toolbar ownership");
         releaseStart.set_value();
         sessionCreateGate = {};
         wait([&] { return controller.isRecording(); }, "follow countdown starts the recording");
-        require(!countdown->isVisible() && !area->isVisible() && !preview->active &&
-                    lastDirectConfig.follow_mouse == 1,
+        require(!countdown->isVisible() && area->isVisible() && area->windowOpacity() == 0.0 &&
+                    !preview->active && lastDirectConfig.follow_mouse == 1,
                 "recording snapshots follow mode and removes the countdown");
         tools->recordingPauseRequested();
-        require(!area->isVisible() && !preview->active &&
+        require(area->isVisible() && area->windowOpacity() == 0.0 && !preview->active &&
                     tools->recordingSession().state() ==
                         ScreenshotToolPalette::RecordingState::Paused,
-                "pausing keeps an active follow session's area hidden");
+                "pausing keeps an active follow session's area transparent");
         tools->recordingResumeRequested();
         tools->recordingStopRequested();
         wait([&] { return !controller.isRecording() && !tools->recordingBusy(); },
              "stop the follow session and complete finalization");
-        require(area->isVisible() && tools->recordingFollowMouseEnabled() &&
+        require(area->isVisible() && area->windowOpacity() == 1.0 &&
+                    tools->recordingFollowMouseEnabled() &&
                     toolbar->windowHandle()->transientParent() == area->windowHandle() &&
                     canvas->canvasHistoryState().canUndo,
                 "stopping restores the visible preparation area while retaining follow selection "
@@ -8170,14 +8263,14 @@ void recordingFollowMouseTests() {
         require(area->isVisible(), "a queued restart keeps the preparation area visible");
         waitForRecording(controller);
         require(settings.setFollowMouse(false), "save next recording preference while active");
-        require(tools->recordingFollowMouseEnabled() && !area->isVisible() &&
-                    lastDirectConfig.follow_mouse == 1,
+        require(tools->recordingFollowMouseEnabled() && area->isVisible() &&
+                    area->windowOpacity() == 0.0 && lastDirectConfig.follow_mouse == 1,
                 "active recording retains the accepted follow snapshot");
         PhysicalKeyEvent closePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
         QApplication::sendEvent(toolbar, &closePress);
         PhysicalKeyEvent closeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
         QApplication::sendEvent(toolbar, &closeRelease);
-        require(!controller.isOpen(), "Escape closes recording when the area is hidden");
+        require(!controller.isOpen(), "Escape closes recording when the area is transparent");
         waitForIdle(controller);
     }
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -8258,7 +8351,8 @@ void recordingFollowMouseTests() {
         bool visibleArea = false;
         for (auto* widget : QApplication::topLevelWidgets()) {
             if (auto* area = qobject_cast<ScreenRecordingAreaWindow*>(widget)) {
-                require(area->isVisible(), "failed follow startup restores the preparation area");
+                require(area->isVisible() && area->windowOpacity() == 1.0,
+                        "failed follow startup restores the preparation area");
                 visibleArea = true;
                 require(palette()->window()->windowHandle()->transientParent() ==
                             area->windowHandle(),
@@ -8581,11 +8675,14 @@ template <typename Application> int runRecordingControllerTests(Application& app
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--modal-stacking-only"))) {
-        recordingModalStacking();
+        recordingModalStacking(false);
+        recordingModalStacking(true);
+        recordingTemplateModalPlacement();
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--error-dialogs-only"))) {
-        recordingErrorDialogs();
+        recordingErrorDialogs(false);
+        recordingErrorDialogs(true);
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--error-recovery-only"))) {
