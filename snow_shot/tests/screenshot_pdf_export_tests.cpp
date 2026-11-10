@@ -408,6 +408,59 @@ void incrementalDocumentAndAdmission() {
                 !incomplete.contains("%%EOF"),
             "multi-page cancellation must stop before finalizing the page tree");
 }
+void composedLayersAndClipping() {
+    QString error;
+    const auto payload = screenshot_pdf::prepare(
+        snow_shot::image_codec::srgbRowSource(fixture({16, 10})), 100, &error);
+    require(bool(payload), "composed layer fixture must prepare");
+    const auto writeLayers = [&](const QList<screenshot_pdf::Layer>& layers, QByteArray* bytes,
+                                 QSizeF size = QSizeF(200, 300)) {
+        QBuffer output(bytes);
+        require(output.open(QIODevice::WriteOnly), "layer destination must open");
+        return screenshot_pdf::writeDocument(
+            1,
+            [&](qsizetype, screenshot_pdf::Page* page, QString*) {
+                page->geometry.pagePoints = size;
+                page->layers = layers;
+                return true;
+            },
+            &output, {}, &error);
+    };
+    QByteArray bytes;
+    require(writeLayers({{payload, QRectF(-20, 10, 160, 100), QRectF(10, 20, 60, 50)},
+                         {payload, QRectF(110, 130, 40, 25), QRectF(100, 100, 80, 100)}},
+                        &bytes),
+            "composed PDF must accept independent clipped layers, including page overflow");
+    validateStructure(bytes);
+    require(bytes.count(" re W n\n") == 2 &&
+                bytes.contains("10.00000000 230.00000000 60.00000000 50.00000000 re W n\n") &&
+                bytes.contains("100.00000000 100.00000000 80.00000000 100.00000000 re W n\n") &&
+                bytes.contains("160.00000000 0 0 100.00000000 -20.00000000 190.00000000 cm\n") &&
+                bytes.contains("40.00000000 0 0 25.00000000 110.00000000 145.00000000 cm\n"),
+            "each layer must preserve its exact placement and PDF-coordinate cell clip");
+    require(bytes.count("/Subtype /Image /ColorSpace /DeviceRGB") == 2,
+            "each source remains an independently embedded full-resolution image");
+    bytes.clear();
+    require(
+        writeLayers({{payload, QRectF(-1000, -1000, 16, 10), QRectF(10, 20, 60, 50)}}, &bytes) &&
+            bytes.endsWith("%%EOF\n") && !bytes.contains("/Subtype /Image"),
+        "fully clipped images must export a valid blank page without unused image objects");
+    for (const auto& layer :
+         {screenshot_pdf::Layer{payload, QRectF(-20, 10, 160, 100), std::nullopt},
+          screenshot_pdf::Layer{payload, QRectF(0, 0, 160, 100), QRectF(-1, 0, 20, 20)},
+          screenshot_pdf::Layer{payload, QRectF(0, 0, 160, 100), QRectF(0, 0, 201, 20)},
+          screenshot_pdf::Layer{payload, QRectF(0, 0, 0, 100), QRectF(0, 0, 20, 20)}}) {
+        bytes.clear();
+        require(!writeLayers({layer}, &bytes), "invalid layer and clip geometry must be rejected");
+    }
+    bytes.clear();
+    require(writeLayers({{payload, QRectF(0, 0, 20000, 12500), QRectF(300, 600, 3000, 6000)}},
+                        &bytes, QSizeF(20000, 30000)) &&
+                bytes.contains("/UserUnit 3.00000000") &&
+                bytes.contains("100.00000000 7800.00000000 1000.00000000 2000.00000000 re W n"),
+            "layer clips must use the same UserUnit as large paper and image transforms");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -425,6 +478,7 @@ int main(int argc, char** argv) {
         cancellationAndFailures(directory);
         tallPage(directory);
         incrementalDocumentAndAdmission();
+        composedLayersAndClipping();
         std::cout << "PDF export tests passed\n";
         return 0;
     } catch (const std::exception& error) {

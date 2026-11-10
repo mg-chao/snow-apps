@@ -1,6 +1,7 @@
 #include "snow/image/io.h"
 #include "snow/image/processing.h"
 #include "snow/image/service.h"
+#include "../src/srgb_quantization.h"
 
 #include <algorithm>
 #include <array>
@@ -231,6 +232,45 @@ void resizeParityAndValidation() {
     } invalid_source(std::move(invalid));
     require(!resize_raster_into(invalid_source, bounded, destination),
             "raster resize accepted multiple frames");
+}
+
+void srgbByteQuantizationMatchesScalar() {
+    const detail::Srgb8Quantization quantization;
+    const auto check = [&](float value) {
+        const float positive = std::max(value, 0.0F);
+        const float encoded = positive <= 0.0031308F
+                                  ? positive * 12.92F
+                                  : 1.055F * std::pow(positive, 1.0F / 2.4F) - 0.055F;
+        const auto reference =
+            static_cast<std::uint8_t>(std::lround(std::clamp(encoded, 0.0F, 1.0F) * 255.0F));
+        require(quantization.encode(value) == reference,
+                "lookup sRGB bytes must preserve scalar transfer-function rounding");
+    };
+    for (const float value : {-100.0F, -0.0F, 0.0F, 0.0031308F, 1.0F, 100.0F})
+        check(value);
+    // Check both sides of every byte transition and every lookup bucket edge.
+    for (const float threshold : quantization.thresholds) {
+        float below = threshold;
+        float above = threshold;
+        for (unsigned step = 0; step < 16; ++step) {
+            check(below);
+            check(above);
+            below = std::nextafter(below, 0.0F);
+            above = std::nextafter(above, 1.0F);
+        }
+    }
+    for (unsigned bucket = 0; bucket <= detail::Srgb8Quantization::bucket_count; ++bucket) {
+        const float value = static_cast<float>(bucket) / detail::Srgb8Quantization::bucket_count;
+        check(value);
+        check(std::nextafter(value, 0.0F));
+        check(std::nextafter(value, 1.0F));
+    }
+    std::uint32_t random = 0x12345678U;
+    for (unsigned sample = 0; sample < 250000; ++sample) {
+        random = random * 1664525U + 1013904223U;
+        check(std::bit_cast<float>(random % std::bit_cast<std::uint32_t>(1.0F)));
+        check(static_cast<float>(random & 0xffffffU) / 0xffffffU);
+    }
 }
 
 void resizePackedTransferParity() {
@@ -537,6 +577,7 @@ void mappedOnlyCodecParity() {
 
 int main(int argc, char* argv[]) {
     try {
+        srgbByteQuantizationMatchesScalar();
         resizeParityAndValidation();
         resizePackedTransferParity();
         preparedResizeRowsMatchFullOutput();

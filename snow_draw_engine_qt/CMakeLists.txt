@@ -549,6 +549,9 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     target_link_libraries(snow-canvas-arrow-text-tests PRIVATE snow_draw_engine_qt_canvas)
     qt_import_plugins(snow-canvas-arrow-text-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     add_test(NAME snow-canvas-arrow-text-tests COMMAND snow-canvas-arrow-text-tests)
+    add_test(NAME snow-canvas-arrow-control-hover-tests
+        COMMAND snow-canvas-arrow-text-tests --control-hover-only -platform offscreen)
+    set_tests_properties(snow-canvas-arrow-control-hover-tests PROPERTIES LABELS unit TIMEOUT 60)
     add_test(NAME snow-canvas-arrow-outline-rendering-tests COMMAND snow-canvas-stroke-rendering-tests --arrow-outline-only -platform offscreen)
     set_tests_properties(snow-canvas-arrow-outline-rendering-tests PROPERTIES LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE)
     add_test(NAME snow-canvas-arrow-outline-tests COMMAND snow-canvas-arrow-text-tests --arrow-outline-only -platform offscreen)
@@ -615,6 +618,16 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         LABELS "unit"
     )
+
+    add_executable(snow-canvas-serial-number-cursor-tests tests/snow_canvas_serial_number_cursor_tests.cpp)
+    target_include_directories(snow-canvas-serial-number-cursor-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include")
+    target_link_libraries(snow-canvas-serial-number-cursor-tests PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-serial-number-cursor-tests)
+    add_test(NAME snow-canvas-serial-number-cursor-tests
+        COMMAND snow-canvas-serial-number-cursor-tests -platform offscreen)
+    set_tests_properties(snow-canvas-serial-number-cursor-tests PROPERTIES LABELS "unit" TIMEOUT 60)
 
     add_executable(snow-canvas-serial-number-drag-tests tests/snow_canvas_serial_number_drag_tests.cpp)
     target_include_directories(snow-canvas-serial-number-drag-tests PRIVATE

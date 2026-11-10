@@ -1,5 +1,6 @@
 #include "snow_shot/app/mcp/mcpdocumentservice.h"
 #include "image_orientation_fixture.h"
+#include "legacy_thumbnail_test_support.h"
 #include "snow_shot/app/mcp/mcpjobregistry.h"
 #include "snow_shot/app/mcp/mcpapplicationservice.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -47,6 +48,7 @@
 
 using namespace snow_shot::app::mcp;
 void runMcpApplicationTests();
+void runMcpLoginItemImportTests();
 void runMcpApplicationReplayTests();
 void runMcpTranslationTests();
 namespace {
@@ -3087,7 +3089,7 @@ void documents(const QString& directory) {
     for (const auto& format :
          {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("webp"),
           QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("bmp"),
-          QStringLiteral("pdf")}) {
+          QStringLiteral("tiff"), QStringLiteral("pdf")}) {
         const auto path = QDir(directory).filePath(QStringLiteral("all-formats.") + format);
         const auto exported =
             call(QStringLiteral("snow_shot_document_save"),
@@ -3154,6 +3156,10 @@ void documents(const QString& directory) {
                         "AVIF signature");
             else if (format == QStringLiteral("bmp"))
                 require(bytes.startsWith("BM"), "BMP signature");
+            else if (format == QStringLiteral("tiff"))
+                require(bytes.startsWith(QByteArray::fromHex("49492a00")) ||
+                            bytes.startsWith(QByteArray::fromHex("4d4d002a")),
+                        "TIFF signature");
         }
     }
     for (const auto& page : {QStringLiteral("image_size"), QStringLiteral("a4_portrait")}) {
@@ -3310,6 +3316,8 @@ void documents(const QString& directory) {
 } // namespace
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    require(cacheEnvironment.isValid(), "MCP tests require isolated thumbnail caches");
     QTemporaryDir temporary;
     require(temporary.isValid(), "isolated document test directory");
     const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));
@@ -3319,6 +3327,11 @@ int main(int argc, char** argv) {
                 .success,
             "isolated application storage");
     const qsizetype serveIndex = application.arguments().indexOf(QStringLiteral("--serve"));
+    if (application.arguments().contains(QStringLiteral("--save-formats-only"))) {
+        documents(temporary.path());
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--selection-style-only"))) {
         documentSelectionStylesPreserveCanvasUnits();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -3384,6 +3397,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--translation-only"))) {
         runMcpTranslationTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--login-item-import-only"))) {
+        runMcpLoginItemImportTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

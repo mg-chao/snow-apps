@@ -44,8 +44,9 @@ struct CaptureLayer {
             return layer;
         if (family == CaptureFamily::DesktopToolbar)
             return std::min(layer, kCaptureBandSize - 1);
-        const int band = family == CaptureFamily::Pinned ? 2 : 1;
-        return std::min(layer, kCaptureBandSize - 1) - band * kCaptureBandSize;
+        if (family == CaptureFamily::Pinned)
+            return kCaptureBandSize + std::min(layer, kCaptureBandSize - 1);
+        return std::min(layer, kCaptureBandSize - 1) - kCaptureBandSize;
     }
 };
 
@@ -53,9 +54,9 @@ struct CaptureLayer {
 // Each band includes its tools, dialogs, and nested popups. Descendants must
 // inherit the same policy without crossing into another capture family's band.
 inline CGWindowLevel captureWindowLevel(CaptureLayer role) {
-    // AppKit does not deliver content drags above its dragging window. Desktop
-    // tools and their transient popups need a separate band below that level.
-    if (role.family == CaptureFamily::DesktopToolbar)
+    // AppKit does not deliver content drags above its dragging window. Pins and
+    // desktop tools need separate bands below it, including their transient popups.
+    if (role.family == CaptureFamily::DesktopToolbar || role.family == CaptureFamily::Pinned)
         return CGWindowLevelForKey(kCGStatusWindowLevelKey) + role.offset();
     return CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) + role.offset();
 }

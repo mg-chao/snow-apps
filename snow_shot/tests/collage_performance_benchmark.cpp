@@ -123,7 +123,7 @@ void wheel(QWidget* widget, QPointF point, int delta) {
 
 class ViewportSampler final {
   public:
-    explicit ViewportSampler(CollagePreviewCanvas* canvas) : m_canvas(canvas) {}
+    explicit ViewportSampler(ImageStitchingPreviewCanvas* canvas) : m_canvas(canvas) {}
 
     void render() {
         const qreal ratio = m_canvas->devicePixelRatioF();
@@ -162,7 +162,7 @@ class ViewportSampler final {
     }
 
   private:
-    CollagePreviewCanvas* m_canvas;
+    ImageStitchingPreviewCanvas* m_canvas;
     QImage m_frame;
     int m_sequence = 0;
 };
@@ -180,7 +180,7 @@ void drainPreviewWork() {
     QApplication::processEvents(QEventLoop::AllEvents);
 }
 
-double runPhase(CollageEditorWidget& editor, ViewportSampler& viewport,
+double runPhase(ImageStitchingEditorWidget& editor, ViewportSampler& viewport,
                 ScreenshotExportCoordinator::Work work, std::vector<double>& guiSamples,
                 QJsonObject* report = nullptr, const QString& prefix = {},
                 QString* failure = nullptr) {
@@ -241,14 +241,14 @@ QString writeFixture(const QString& directory) {
 }
 
 QJsonObject scenario(int count, const QString& input, const QString& directory, bool transformed,
-                     CollageDirection direction) {
+                     ImageStitchingDirection direction) {
     const auto baseline = snow::test_support::memorySnapshot();
     MemorySampler sampler;
     QJsonObject result;
     result.insert(QStringLiteral("images"), count);
     result.insert(QStringLiteral("image_width"), 3840);
     result.insert(QStringLiteral("image_height"), 2160);
-    result.insert(QStringLiteral("direction"), direction == CollageDirection::Vertical
+    result.insert(QStringLiteral("direction"), direction == ImageStitchingDirection::Vertical
                                                    ? QStringLiteral("vertical")
                                                    : QStringLiteral("horizontal"));
     result.insert(QStringLiteral("transformed"), transformed);
@@ -256,8 +256,8 @@ QJsonObject scenario(int count, const QString& input, const QString& directory, 
     {
         QElapsedTimer firstPreview;
         firstPreview.start();
-        CollageDocument document;
-        CollageEditorWidget editor(&document);
+        ImageStitchingDocument document;
+        ImageStitchingEditorWidget editor(&document);
         editor.resize(1200, 700);
         editor.show();
         QApplication::processEvents(QEventLoop::AllEvents);
@@ -279,14 +279,14 @@ QJsonObject scenario(int count, const QString& input, const QString& directory, 
             struct Import final {
                 QImage image;
                 QImage preview;
-                std::shared_ptr<CollageImportReservation> reservation;
+                std::shared_ptr<ImageStitchingImportReservation> reservation;
             };
             auto imported = std::make_shared<Import>();
             static_cast<void>(runPhase(
                 editor, viewport,
                 [imported, input](const ScreenshotExportCancellation& cancellation) {
                     QString error;
-                    imported->reservation = reserveCollageImport(96 * 1024 * 1024, &error);
+                    imported->reservation = reserveImageStitchingImport(96 * 1024 * 1024, &error);
                     if (!imported->reservation)
                         return ScreenshotExportTaskResult::failure(
                             ScreenshotExportFailureStage::Source, error);
@@ -406,7 +406,7 @@ QJsonObject scenario(int count, const QString& input, const QString& directory, 
             [snapshot = document.items(), settings,
              rows](const ScreenshotExportCancellation& cancellation) {
                 QString error;
-                *rows = prepareCollageRows(
+                *rows = prepareImageStitchingRows(
                     snapshot, settings,
                     [cancellation] { return cancellation.isCancellationRequested(); }, &error);
                 return rows->isValid() ? ScreenshotExportTaskResult{}
@@ -470,7 +470,7 @@ QJsonObject scenario(int count, const QString& input, const QString& directory, 
         require(QFile::remove(output), "benchmark output cleanup failed");
 
         const qint64 outputPixels = qint64(rows->size.width()) * rows->size.height();
-        const auto clipboardEstimate = estimateCollageClipboard(rows->size);
+        const auto clipboardEstimate = estimateImageStitchingClipboard(rows->size);
         result.insert(QStringLiteral("output_raw_rgba_bytes"), double(outputPixels * 4));
         result.insert(QStringLiteral("clipboard_capacity_reservation_bytes"),
                       double(clipboardEstimate.bytes));
@@ -508,7 +508,7 @@ QJsonObject scenario(int count, const QString& input, const QString& directory, 
                 editor, viewport,
                 [rows, prepared](const ScreenshotExportCancellation& cancellation) {
                     QString error;
-                    auto reservation = reserveCollageClipboard(rows->size, &error);
+                    auto reservation = reserveImageStitchingClipboard(rows->size, &error);
                     if (!reservation)
                         return ScreenshotExportTaskResult::failure(
                             ScreenshotExportFailureStage::Clipboard, error);
@@ -544,12 +544,12 @@ QJsonObject scenario(int count, const QString& input, const QString& directory, 
             latencyReport(result, QStringLiteral("gui_during_clipboard_prepare"), clipboardGui);
         }
         result.insert(QStringLiteral("reserved_bytes"),
-                      double(collageResourceUsage().reservedBytes));
+                      double(imageStitchingResourceUsage().reservedBytes));
     }
     drainPreviewWork();
     QElapsedTimer retirement;
     retirement.start();
-    while (collageResourceUsage().reservedBytes != 0 && retirement.elapsed() < 5000) {
+    while (imageStitchingResourceUsage().reservedBytes != 0 && retirement.elapsed() < 5000) {
         QApplication::processEvents(QEventLoop::AllEvents, 5);
         QThread::msleep(1);
     }
@@ -560,7 +560,8 @@ QJsonObject scenario(int count, const QString& input, const QString& directory, 
     result.insert(QStringLiteral("baseline_footprint_bytes"), double(baseline.footprintBytes));
     result.insert(QStringLiteral("after_close_resident_bytes"), double(after.residentBytes));
     result.insert(QStringLiteral("after_close_footprint_bytes"), double(after.footprintBytes));
-    require(collageResourceUsage().reservedBytes == 0, "benchmark leaked collage reservations");
+    require(imageStitchingResourceUsage().reservedBytes == 0,
+            "benchmark leaked collage reservations");
     return result;
 }
 } // namespace
@@ -583,7 +584,7 @@ int main(int argc, char** argv) {
         const QVector<int> counts = requested > 0 ? QVector<int>{requested} : QVector<int>{20, 100};
         for (int count : counts) {
             for (const auto direction :
-                 {CollageDirection::Vertical, CollageDirection::Horizontal}) {
+                 {ImageStitchingDirection::Vertical, ImageStitchingDirection::Horizontal}) {
                 for (bool transformed : {false, true}) {
                     auto result =
                         scenario(count, fixture, directory.path(), transformed, direction);

@@ -310,7 +310,7 @@ void RecordingTrimSession::exportClip(bool save) {
         const QString suffix = QFileInfo(m_outputPath).suffix();
         const QString filter = QStringLiteral("%1 (*.%2)").arg(suffix.toUpper(), suffix);
         QFileDialog dialog(m_area,
-                           trimText(QT_TRANSLATE_NOOP("RecordingTrimSession", "Save to File")),
+                           trimText(QT_TRANSLATE_NOOP("RecordingTrimSession", "Save to file")),
                            nextOutput(m_outputPath, m_windowNames), filter);
         dialog.setAcceptMode(QFileDialog::AcceptSave);
         dialog.setDefaultSuffix(suffix);
@@ -325,7 +325,7 @@ void RecordingTrimSession::exportClip(bool save) {
             if (reportError)
                 reportError(trimText(QT_TRANSLATE_NOOP(
                     "RecordingTrimSession",
-                    "Choose a different file to preserve the original recording.")));
+                    "Choose a different file to preserve the original recording")));
             return;
         }
     }

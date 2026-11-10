@@ -137,11 +137,29 @@ snow_shot_nsis_replace("@CPACK_NSIS_DELETE_FILES@" [=[
   !insertmacro SnowShotUninstallOwnedCleanup
 @CPACK_NSIS_DELETE_FILES@
 ]=])
+# Keep CPack's staged inventory for uninstall generation and installed-size
+# metadata. Only replace the transfer of those same files during installation.
+snow_shot_nsis_replace("@CPACK_NSIS_FULL_INSTALL@" [=[
+!ifdef SNOW_SHOT_PAYLOAD_ARCHIVE
+  !insertmacro SnowShotInstallPayload
+!else
+!ifdef SNOW_SHOT_REQUIRE_7Z_PAYLOAD
+  !error "Create the installer payload with scripts/package-snow-shot.ps1, or configure SNOW_SHOT_USE_7Z_PAYLOAD=OFF for stock NSIS packaging."
+!else
+@CPACK_NSIS_FULL_INSTALL@
+!endif
+!endif
+]=])
 if(NOT SNOW_SHOT_NSIS_DIRECTORY)
     set(SNOW_SHOT_NSIS_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")
 endif()
 file(MAKE_DIRECTORY "${SNOW_SHOT_NSIS_DIRECTORY}")
-file(WRITE "${SNOW_SHOT_NSIS_DIRECTORY}/NSIS.template.in" "${_snow_nsis_template}")
+# NSIS otherwise interprets CPack's UTF-8 filenames using the host ANSI code
+# page. Match the decoder's Unicode paths, including generated uninstall names.
+string(ASCII 239 187 191 _snow_nsis_utf8_bom)
+string(REGEX REPLACE "^(${_snow_nsis_utf8_bom})+" "" _snow_nsis_template "${_snow_nsis_template}")
+file(WRITE "${SNOW_SHOT_NSIS_DIRECTORY}/NSIS.template.in"
+    "${_snow_nsis_utf8_bom}${_snow_nsis_template}")
 list(PREPEND CMAKE_MODULE_PATH "${SNOW_SHOT_NSIS_DIRECTORY}")
 set(_snow_nsis_guard "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/RunningApplication.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_guard NORMALIZE _snow_nsis_guard_native)
@@ -157,6 +175,8 @@ set(_snow_nsis_directory "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/Insta
 cmake_path(NATIVE_PATH _snow_nsis_directory NORMALIZE _snow_nsis_directory_native)
 set(_snow_nsis_architecture "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallerArchitecture.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_architecture NORMALIZE _snow_nsis_architecture_native)
+set(_snow_nsis_payload "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallerPayload.nsh")
+cmake_path(NATIVE_PATH _snow_nsis_payload NORMALIZE _snow_nsis_payload_native)
 if(NOT SNOW_WINDOWS_ARCHITECTURE)
     set(SNOW_WINDOWS_ARCHITECTURE x64)
 endif()
@@ -166,6 +186,7 @@ string(APPEND CPACK_NSIS_DEFINES "\nVar SnowShotPreviousRoot\nUnicode true\n!inc
     "!include \"${_snow_nsis_upgrade_helper_native}\"\n"
     "!include \"${_snow_nsis_directory_native}\"\n"
     "!include \"${_snow_nsis_localization_native}\"\n"
+    "!include \"${_snow_nsis_payload_native}\"\n"
     "!define SNOW_SHOT_INSTALLER_ARCHITECTURE \"${SNOW_WINDOWS_ARCHITECTURE}\"\n"
     "!include \"${_snow_nsis_architecture_native}\"\n"
     "!define MUI_LANGDLL_REGISTRY_ROOT SHCTX\n"

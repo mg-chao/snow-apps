@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_APP_MCP_SCREENSHOTMCPSERVER_H
 #define SNOW_SHOT_APP_MCP_SCREENSHOTMCPSERVER_H
 
+#include "snow_shot/app/mcp/mcpstartuperror.h"
+
 #include <QByteArray>
 #include <QJsonObject>
 #include <QObject>
@@ -59,7 +61,11 @@ class ScreenshotMcpServer final : public QObject {
     ScreenshotMcpServer& operator=(const ScreenshotMcpServer&) = delete;
 
     [[nodiscard]] bool start(QString* error = nullptr);
+    // Remains available after failed-start cleanup; the next start resets it.
+    [[nodiscard]] McpStartupError startupError() const;
     void stop();
+    // Closes GUI dispatch admission synchronously, then lets already-dispatched work send
+    // its final responses before stopping the socket worker. A fresh start reopens admission.
     void drainAndStop(std::function<void()> afterDrain = {}, int timeoutMilliseconds = 2000);
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] QString descriptorPath() const;
@@ -81,7 +87,7 @@ class ScreenshotMcpServer final : public QObject {
                        const QByteArray& attachment);
     void handleClientDisconnected(quint64 connectionId);
     void sendResponse(quint64 connectionId, ScreenshotMcpResponse response);
-    [[nodiscard]] bool writeDescriptor(QString* error);
+    [[nodiscard]] bool writeDescriptor();
     void removeDescriptor();
 
     std::unique_ptr<QThread> m_thread;
@@ -96,7 +102,9 @@ class ScreenshotMcpServer final : public QObject {
     QString m_descriptorPath;
     QString m_socketName;
     QString m_token;
+    McpStartupError m_startupError = McpStartupError::None;
     bool m_running = false;
+    bool m_acceptingRequests = false;
     quint64 m_epoch = 0;
 };
 

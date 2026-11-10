@@ -23,15 +23,15 @@
     <context>
         <name>ScreenshotAutoFilterController</name>
         <message>
-            <source>Region identification failed. Try Auto Filter again.</source>
-            <translation>Region identification failed. Try Auto Filter again.</translation>
+            <source>Region identification failed. Try auto filter again</source>
+            <translation>Region identification failed. Try auto filter again</translation>
         </message>
     </context>
     <context>
         <name>ScreenshotController</name>
         <message>
-            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
-            <translation>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</translation>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</translation>
         </message>
         <message>
             <source>Automatic screenshot saving failed: %1</source>
@@ -50,8 +50,8 @@
             <translation>Could not open the selected file: %1</translation>
         </message>
         <message>
-            <source>Could not read the selected files from Finder. Please try again.</source>
-            <translation>Could not read the selected files from Finder. Please try again.</translation>
+            <source>Could not read the selected files from Finder. Please try again</source>
+            <translation>Could not read the selected files from Finder. Please try again</translation>
         </message>
         <message>
             <source>Could not recapture the screen</source>
@@ -66,24 +66,24 @@
             <translation>Exit screenshot?</translation>
         </message>
         <message>
-            <source>Finder is unavailable. Open Finder and try again.</source>
-            <translation>Finder is unavailable. Open Finder and try again.</translation>
+            <source>Finder is unavailable. Open Finder and try again</source>
+            <translation>Finder is unavailable. Open Finder and try again</translation>
         </message>
         <message>
-            <source>Finder took too long to return the selected files. Please try again.</source>
-            <translation>Finder took too long to return the selected files. Please try again.</translation>
+            <source>Finder took too long to return the selected files. Please try again</source>
+            <translation>Finder took too long to return the selected files. Please try again</translation>
         </message>
         <message>
-            <source>Live window display could not be initialized.</source>
-            <translation>Live window display could not be initialized.</translation>
+            <source>Live window display could not be initialized</source>
+            <translation>Live window display could not be initialized</translation>
         </message>
         <message>
-            <source>No capturable window was found in the selection.</source>
-            <translation>No capturable window was found in the selection.</translation>
+            <source>No capturable window was found in the selection</source>
+            <translation>No capturable window was found in the selection</translation>
         </message>
         <message>
-            <source>No recognized result is available to copy</source>
-            <translation>No recognized result is available to copy</translation>
+            <source>No recognition result is available to copy</source>
+            <translation>No recognition result is available to copy</translation>
         </message>
         <message>
             <source>Preparing cloud upload...</source>
@@ -98,16 +98,16 @@
             <translation>Save screenshot</translation>
         </message>
         <message>
-            <source>Scrolling capture stopped because the display configuration changed. Select the region again.</source>
-            <translation>Scrolling capture stopped because the display configuration changed. Select the region again.</translation>
+            <source>Scrolling capture stopped because the display configuration changed. Select the region again</source>
+            <translation>Scrolling capture stopped because the display configuration changed. Select the region again</translation>
         </message>
         <message>
-            <source>Scrolling capture stopped. Check screen permissions and display settings, then try again.</source>
-            <translation>Scrolling capture stopped. Check screen permissions and display settings, then try again.</translation>
+            <source>Scrolling capture stopped. Check screen permissions and display settings, then try again</source>
+            <translation>Scrolling capture stopped. Check screen permissions and display settings, then try again</translation>
         </message>
         <message>
-            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</source>
-            <translation>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</translation>
+            <source>Smart selection is using window mode. Enable Accessibility access in screenshot settings to select window elements</source>
+            <translation>Smart selection is using window mode. Enable Accessibility access in screenshot settings to select window elements</translation>
         </message>
         <message>
             <source>The clipboard content could not be pinned</source>
@@ -194,23 +194,23 @@
             <translation>This screenshot cannot be pinned</translation>
         </message>
         <message>
-            <source>Uploaded to cloud. Link copied to clipboard.</source>
-            <translation>Uploaded to cloud. Link copied to clipboard.</translation>
+            <source>Uploaded to cloud. Link copied to clipboard</source>
+            <translation>Uploaded to cloud. Link copied to clipboard</translation>
         </message>
         <message>
             <source>Uploading to cloud... %1%</source>
             <translation>Uploading to cloud... %1%</translation>
         </message>
         <message>
-            <source>Your current screenshot will be discarded.</source>
-            <translation>Your current screenshot will be discarded.</translation>
+            <source>Your current screenshot will be discarded</source>
+            <translation>Your current screenshot will be discarded</translation>
         </message>
     </context>
     <context>
         <name>ScreenshotMcpServer</name>
         <message>
-            <source>MCP request failed (%1).</source>
-            <translation>MCP request failed (%1).</translation>
+            <source>MCP request failed (%1)</source>
+            <translation>MCP request failed (%1)</translation>
         </message>
     </context>
     <context>
@@ -223,20 +223,20 @@
     <context>
         <name>ScreenshotQrController</name>
         <message>
-            <source>Copy Text</source>
-            <translation>Copy Text</translation>
+            <source>Copy text</source>
+            <translation>Copy text</translation>
         </message>
         <message>
-            <source>Open URL</source>
-            <translation>Open URL</translation>
+            <source>Open link</source>
+            <translation>Open link</translation>
         </message>
         <message>
-            <source>QR Code</source>
-            <translation>QR Code</translation>
+            <source>QR code</source>
+            <translation>QR code</translation>
         </message>
         <message>
-            <source>QR Code %1</source>
-            <translation>QR Code %1</translation>
+            <source>QR code %1</source>
+            <translation>QR code %1</translation>
         </message>
         <message>
             <source>QR code recognition failed</source>
@@ -345,14 +345,6 @@
             <translation>Please enter a preset name</translation>
         </message>
         <message>
-            <source>Position X</source>
-            <translation>Position X</translation>
-        </message>
-        <message>
-            <source>Position Y</source>
-            <translation>Position Y</translation>
-        </message>
-        <message>
             <source>Preset</source>
             <translation>Preset</translation>
         </message>
@@ -391,6 +383,14 @@
         <message>
             <source>Width (points)</source>
             <translation>Width (points)</translation>
+        </message>
+        <message>
+            <source>X coordinate</source>
+            <translation>X coordinate</translation>
+        </message>
+        <message>
+            <source>Y coordinate</source>
+            <translation>Y coordinate</translation>
         </message>
     </context>
     <context>
@@ -542,12 +542,16 @@
             <translation>Maintain aspect ratio</translation>
         </message>
         <message>
+            <source>Mouse wheel</source>
+            <translation>Mouse wheel</translation>
+        </message>
+        <message>
             <source>Scale from center</source>
             <translation>Scale from center</translation>
         </message>
         <message>
-            <source>Selection Aspect Ratio Snap</source>
-            <translation>Selection Aspect Ratio Snap</translation>
+            <source>Selection aspect ratio snap</source>
+            <translation>Selection aspect ratio snap</translation>
         </message>
         <message>
             <source>Switch color format</source>
@@ -565,42 +569,38 @@
             <source>Vertical scroll</source>
             <translation>Vertical scroll</translation>
         </message>
-        <message>
-            <source>mouse wheel</source>
-            <translation>mouse wheel</translation>
-        </message>
     </context>
     <context>
         <name>SnowImageQtCodec</name>
         <message>
-            <source>Could not decode animated image.</source>
-            <translation>Could not decode animated image.</translation>
+            <source>Could not decode animated image</source>
+            <translation>Could not decode animated image</translation>
         </message>
     </context>
     <context>
         <name>snow_shot::app::mcp::ScreenshotMcpServer</name>
         <message>
-            <source>Another Snow Shot instance owns the MCP endpoint.</source>
-            <translation>Another Snow Shot instance owns the MCP endpoint.</translation>
+            <source>Another Snow Shot instance owns the MCP endpoint</source>
+            <translation>Another Snow Shot instance owns the MCP endpoint</translation>
         </message>
         <message>
-            <source>Could not open the local MCP endpoint.</source>
-            <translation>Could not open the local MCP endpoint.</translation>
+            <source>Could not open the local MCP endpoint</source>
+            <translation>Could not open the local MCP endpoint</translation>
         </message>
         <message>
-            <source>Could not secure the MCP runtime directory.</source>
-            <translation>Could not secure the MCP runtime directory.</translation>
+            <source>Could not secure the MCP runtime directory</source>
+            <translation>Could not secure the MCP runtime directory</translation>
         </message>
         <message>
-            <source>Could not write the private MCP descriptor.</source>
-            <translation>Could not write the private MCP descriptor.</translation>
+            <source>Could not write the private MCP descriptor</source>
+            <translation>Could not write the private MCP descriptor</translation>
         </message>
     </context>
     <context>
         <name>snow_shot::app::mcp::ScreenshotMcpSession</name>
         <message>
-            <source>MCP request failed (%1).</source>
-            <translation>MCP request failed (%1).</translation>
+            <source>MCP request failed (%1)</source>
+            <translation>MCP request failed (%1)</translation>
         </message>
     </context>
     <context>
@@ -610,16 +610,16 @@
             <translation>Capture failed: %1</translation>
         </message>
         <message>
-            <source>History publication could not be queued</source>
-            <translation>History publication could not be queued</translation>
-        </message>
-        <message>
             <source>The capture operation failed</source>
             <translation>The capture operation failed</translation>
         </message>
         <message>
-            <source>The clipboard publication could not be queued</source>
-            <translation>The clipboard publication could not be queued</translation>
+            <source>The clipboard write operation could not be queued</source>
+            <translation>The clipboard write operation could not be queued</translation>
+        </message>
+        <message>
+            <source>The history write operation could not be queued</source>
+            <translation>The history write operation could not be queued</translation>
         </message>
     </context>
 </TS>

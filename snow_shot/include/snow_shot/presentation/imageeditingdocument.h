@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotpinnedtextpreparation.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include <QObject>
@@ -28,13 +29,18 @@ struct ImageEditingSource {
     bool flattened = false;
     // A pending pin appearance is composed before importing into a rectangular document.
     std::optional<ScreenshotResultStyle> resultStyle;
+    // Baked into the base raster before applying a pin appearance or publishing the document.
+    ScreenshotTextAnnotationRenderSnapshot textAnnotations;
 };
 
 ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& repository,
                                            const storage::CaptureHistoryRecord& record);
 ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
                                           const ScreenshotPinnedTextPreparation& preparation);
-// Restrict only the base raster; retain the annotation document and its canvas origin.
+ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
+                                          const ScreenshotPinnedRenderPreparation& preparation);
+// Restrict the base raster, baking pending text marks before a pin appearance.
+// Retain the drawing document and its canvas origin.
 void restrictImageEditingSource(ImageEditingSource& source, const QRectF& visible);
 
 [[nodiscard]] QImage renderImageEditingBaseImage(const ScreenshotImageSource& source,

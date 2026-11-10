@@ -8,6 +8,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/exportfilename.h"
 #include "screenshotsaveexportpipeline.h"
+#include "screenshotexportmemory_p.h"
 #include "screenshotsavefooter.h"
 #include "screenshotsaveresult.h"
 #include "widgets/button.h"
@@ -65,8 +66,9 @@ constexpr int kSaveFormContentWidth = 328;
 constexpr int kAspectRatioLockButtonSize = 32;
 constexpr int kMaximumDimension = 1000000;
 
-constexpr std::array<Format, 7> kFormats{
-    Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl, Format::Avif, Format::Pdf,
+constexpr std::array<Format, 8> kFormats{
+    Format::Png, Format::Jpeg, Format::Bmp,  Format::Webp,
+    Format::Jxl, Format::Avif, Format::Tiff, Format::Pdf,
 };
 
 bool formatSupportsLossless(Format format) {
@@ -75,7 +77,7 @@ bool formatSupportsLossless(Format format) {
 }
 
 bool samePreviewPixels(ScreenshotSaveExportOptions left, ScreenshotSaveExportOptions right) {
-    if (left.format == Format::Png && right.format == Format::Png)
+    if ((left.format == Format::Png || left.format == Format::Tiff) && left.format == right.format)
         left.compressionLevel = right.compressionLevel;
     if (left.format == Format::Pdf && right.format == Format::Pdf) {
         // The paper is drawn by the preview canvas; title and page layout never alter the tiles.
@@ -569,7 +571,7 @@ class SaveContent final : public QWidget {
         m_height->setToolTip(tr("Height"));
         m_sizeLabel->setText(tr("Size"));
         m_sizeUnit->setAccessibleName(tr("Size unit"));
-        m_sizeUnit->setOptionLabel(0, tr("pixel"));
+        m_sizeUnit->setOptionLabel(0, tr("Pixels"));
         m_sizeUnit->setOptionLabel(1, tr("Percentage"));
         updateSizeLabelTheme();
         updateOutputDescriptionTheme();
@@ -589,6 +591,7 @@ class SaveContent final : public QWidget {
                                   {"webp", "WebP"},
                                   {"jxl", "JPEG XL"},
                                   {"avif", "AVIF"},
+                                  {"tiff", "TIFF"},
                                   {"pdf", "PDF"}}) {
             AdSelect::Option option;
             option.value = QString::fromLatin1(entry.first);
@@ -730,7 +733,7 @@ class SaveContent final : public QWidget {
             if (snow_shot::storage::ScreenshotSettings().setSavePathShortcuts(shortcuts))
                 rebuildShortcuts();
             else
-                showError(tr("The save paths could not be stored"));
+                showError(tr("The save path settings could not be saved"));
         });
         return menu;
     }
@@ -796,7 +799,8 @@ class SaveContent final : public QWidget {
                     else
                         shortcuts[index] = shortcut;
                     if (!snow_shot::storage::ScreenshotSettings().setSavePathShortcuts(shortcuts)) {
-                        pathItem->setErrorMessages({tr("The save paths could not be stored")});
+                        pathItem->setErrorMessages(
+                            {tr("The save path settings could not be saved")});
                         return;
                     }
                     rebuildShortcuts();
@@ -1019,7 +1023,8 @@ class SaveContent final : public QWidget {
                             });
                         m_preview->setOutput(m_source.preview, m_state.sourceSize);
                         changed();
-                    });
+                    },
+                    screenshot_export_memory::previewWorkingBytes(rows.size));
                 if (!m_job.isValid())
                     sourceFailed(tr("The screenshot export queue is full"));
             });
@@ -1113,7 +1118,10 @@ class SaveContent final : public QWidget {
                 setProperty("encodedGeneration", QVariant::fromValue(generation));
                 if (generation == m_generation)
                     startRender();
-            });
+            },
+            screenshot_export_memory::resizedEncodingWorkingBytes(
+                m_source.rows.size, options.size, options.format,
+                {options.quality, options.compressionLevel}, bool(prepared)));
         if (!m_job.isValid()) {
             m_renderGeneration.reset();
             saveFailed(tr("The screenshot export queue is full"));
@@ -1189,7 +1197,8 @@ class SaveContent final : public QWidget {
                     return;
                 }
                 publishPreview(std::move(result.image), options);
-            });
+            },
+            screenshot_export_memory::previewWorkingBytes(options.size));
         if (!m_decodeJob.isValid()) {
             m_preview->setBusy(false);
             showError(tr("The screenshot export queue is full"));
@@ -1343,6 +1352,7 @@ class SaveContent final : public QWidget {
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "WebP"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "JPEG XL"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "AVIF"),
+    QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "TIFF"),
 };
 } // namespace
 

@@ -88,10 +88,10 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void()> textStylePopupInteractionBegan;
     std::function<void()> textStylePopupInteractionEnded;
     std::function<void(const SnowCanvasSerialNumberStyle& style, quint32 properties)>
-        serialNumberStyleChanged;
-    std::function<void()> serialNumberDecrementRequested;
-    std::function<void()> serialNumberIncrementRequested;
-    std::function<void()> serialNumberCreateTextRequested;
+        sequenceNumberStyleChanged;
+    std::function<void()> sequenceNumberDecrementRequested;
+    std::function<void()> sequenceNumberIncrementRequested;
+    std::function<void()> sequenceNumberCreateTextRequested;
     std::function<void(const SnowCanvasWatermarkConfig& config, quint32 properties)>
         watermarkConfigChanged;
     std::function<void(const SnowCanvasWatermarkConfig& config)> watermarkPreviewChanged;
@@ -245,8 +245,8 @@ class ScreenshotToolPaletteStyleControls final {
                                            const ScreenshotToolPaletteStyleFamilyHost& host,
                                            const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] QWidget*
-    buildSerialNumberFamily(QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
-                            const ScreenshotToolPaletteButtonMetrics& metrics);
+    buildSequenceNumberFamily(QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
+                              const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] QWidget* buildWatermarkFamily(QWidget* panel,
                                                 const ScreenshotToolPaletteStyleFamilyHost& host,
                                                 const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -269,9 +269,9 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] bool stepStrokeWidth(int direction);
     void setLineControlsActive(bool active);
     void setSpeechBubbleControlsActive(bool active);
-    void setFreeDrawControlsActive(bool active);
+    void setBrushControlsActive(bool active);
     void setHighlightControlsActive(bool active);
-    void setPenHighlightControlsActive(bool active);
+    void setBrushHighlightControlsActive(bool active);
     void setArrowControlsActive(bool active);
     void setDistanceControlsActive(bool active);
     void setAngleControlsActive(bool active);
@@ -287,13 +287,14 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] bool handleArrowOutlineWidthWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool handleTextStrokeWidthWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool handleTextCornerRadiusWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleSerialNumberWheel(const QPoint& globalPosition, int direction);
+    [[nodiscard]] bool handleSequenceNumberWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool handleWatermarkWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool stepWatermarkFontSize(int direction);
     [[nodiscard]] SnowCanvasShapeStyle rectangleStyle() const;
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     void rememberStyleEdit(const SnowCanvasStyleEdit& edit);
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
+    void setSharedCreationColor(const std::optional<QColor>& color);
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config, bool refreshEditors = false);
     [[nodiscard]] std::optional<SnowCanvasWatermarkTemplateApplicationTime>
@@ -303,7 +304,7 @@ class ScreenshotToolPaletteStyleControls final {
     void updateSpotlightColorControls(const QColor& color);
     [[nodiscard]] adqt::widgets::AdSlider* spotlightOpacitySlider() const;
     [[nodiscard]] QLabel* spotlightOpacityIcon() const;
-    void updatePenFilterStrokeWidthControls(double width, bool mixed);
+    void updateBrushFilterStrokeWidthControls(double width, bool mixed);
     void updateBrushEraserStrokeWidthControls(double width);
     [[nodiscard]] int spacerReferenceWidth(const QSpacerItem* spacer) const;
 
@@ -345,16 +346,16 @@ class ScreenshotToolPaletteStyleControls final {
         TextEmphasisRefresh = 1u << 7,
         AllTextRefreshes = (1u << 8) - 1,
     };
-    enum SerialNumberRefreshGroup : quint32 {
-        SerialNumberValueRefresh = 1u << 0,
-        SerialNumberColorRefresh = 1u << 1,
-        SerialNumberFillRefresh = 1u << 2,
-        SerialNumberFontSizeRefresh = 1u << 3,
-        SerialNumberFontFamilyRefresh = 1u << 4,
-        SerialNumberTypeRefresh = 1u << 5,
-        SerialNumberNumericTypeRefresh = 1u << 6,
-        SerialNumberStrokeRenderingRefresh = 1u << 7,
-        AllSerialNumberRefreshes = (1u << 8) - 1,
+    enum SequenceNumberRefreshGroup : quint32 {
+        SequenceNumberValueRefresh = 1u << 0,
+        SequenceNumberColorRefresh = 1u << 1,
+        SequenceNumberFillRefresh = 1u << 2,
+        SequenceNumberFontSizeRefresh = 1u << 3,
+        SequenceNumberFontFamilyRefresh = 1u << 4,
+        SequenceNumberTypeRefresh = 1u << 5,
+        SequenceNumberNumericTypeRefresh = 1u << 6,
+        SequenceNumberStrokeRenderingRefresh = 1u << 7,
+        AllSequenceNumberRefreshes = (1u << 8) - 1,
     };
     static constexpr quint32 kAllRefreshGroups = 0xffffffffu;
 
@@ -376,7 +377,7 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] ScreenshotToolPaletteEditorServices editorServices();
     void registerShapeEntries();
     void registerHighlightEntries();
-    void registerPenHighlightEntries();
+    void registerBrushHighlightEntries();
     void registerArrowEntries();
     void registerDistanceEntries();
     void updateDistanceStyleControls();
@@ -391,7 +392,7 @@ class ScreenshotToolPaletteStyleControls final {
     void updateAngleStyleControls(quint32 properties = 0xffffffffu);
     void updateBracketStyleControls(quint32 properties = 0xffffffffu);
     void registerTextEntries();
-    void registerSerialNumberEntries();
+    void registerSequenceNumberEntries();
     void registerWatermarkEntries();
 
     // Generic property commits: mutate the displayed model and publish the explicit
@@ -406,9 +407,9 @@ class ScreenshotToolPaletteStyleControls final {
     void setDistanceValue(double value);
     void setDistanceStrokeWidth(double width);
     void setDistanceEndpointScale(double scale);
-    template <typename Apply> void commitPenHighlightProperty(quint32 property, Apply apply);
+    template <typename Apply> void commitBrushHighlightProperty(quint32 property, Apply apply);
     template <typename Apply> void commitTextProperty(quint32 mixedFlag, Apply apply);
-    template <typename Apply> void commitSerialNumberProperty(quint32 mixedFlag, Apply apply);
+    template <typename Apply> void commitSequenceNumberProperty(quint32 mixedFlag, Apply apply);
     template <typename Apply> void commitWatermarkField(quint32 properties, Apply apply);
 
     void setStrokeWidth(double strokeWidth);
@@ -421,8 +422,8 @@ class ScreenshotToolPaletteStyleControls final {
     void setFillStyle(SnowCanvasFillStyle fillStyle);
     void setCornerRadius(int cornerRadius);
     void setShape(SnowCanvasRectangleShape shape);
-    void setPenHighlightColor(const QColor& color);
-    void setPenHighlightStrokeWidth(double strokeWidth);
+    void setBrushHighlightColor(const QColor& color);
+    void setBrushHighlightStrokeWidth(double strokeWidth);
     void setArrowStrokeWidth(double strokeWidth);
     void cycleArrowStrokeWidth();
     void setArrowStrokeColor(const QColor& color);
@@ -459,16 +460,16 @@ class ScreenshotToolPaletteStyleControls final {
     void setWatermarkAngle(double angle);
     void setWatermarkGap(double gap);
     void setWatermarkOpacity(double opacity);
-    void setSerialNumberColor(const QColor& color);
-    void setSerialNumberStrokeRenderingStyle(SnowCanvasStrokeRenderingStyle style);
-    void setSerialNumberType(SnowCanvasSerialNumberType type);
-    void setSerialNumberNumericType(SnowCanvasSerialNumberNumericType type);
-    void setSerialNumberFillColor(const QColor& color);
-    void setSerialNumberFillStyle(SnowCanvasFillStyle fillStyle);
-    void setSerialNumber(qint64 number);
-    void setSerialNumberFontSize(double fontSize);
-    void cycleSerialNumberFontSize();
-    void setSerialNumberFontFamily(const QString& fontFamily);
+    void setSequenceNumberColor(const QColor& color);
+    void setSequenceNumberStrokeRenderingStyle(SnowCanvasStrokeRenderingStyle style);
+    void setSequenceNumberType(SnowCanvasSerialNumberType type);
+    void setSequenceNumberNumericType(SnowCanvasSerialNumberNumericType type);
+    void setSequenceNumberFillColor(const QColor& color);
+    void setSequenceNumberFillStyle(SnowCanvasFillStyle fillStyle);
+    void setSequenceNumber(qint64 number);
+    void setSequenceNumberFontSize(double fontSize);
+    void cycleSequenceNumberFontSize();
+    void setSequenceNumberFontFamily(const QString& fontFamily);
 
     [[nodiscard]] bool hasMixedProperty(quint32 property) const;
     void clearMixedProperties(quint32 properties);
@@ -478,7 +479,7 @@ class ScreenshotToolPaletteStyleControls final {
     void updateRectangleStyleControls(quint32 groups = 0xffffffffu);
     void updateTextStyleControls(quint32 groups = 0xffffffffu);
     void updateHighlightStyleControls(quint32 groups = 0xffffffffu);
-    void updatePenHighlightStyleControls(quint32 groups = 0xffffffffu);
+    void updateBrushHighlightStyleControls(quint32 groups = 0xffffffffu);
     void updateRectangleOnlyControlsVisibility();
     [[nodiscard]] ScreenshotToolPaletteRectangleStyleModel& activeShapeStyle();
     [[nodiscard]] const ScreenshotToolPaletteRectangleStyleModel& activeShapeStyle() const;
@@ -499,8 +500,8 @@ class ScreenshotToolPaletteStyleControls final {
     void refreshSpotlightOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void notifyWatermarkConfigChanged(quint32 properties) const;
     void notifyWatermarkPreviewChanged() const;
-    void updateSerialNumberStyleControls(quint32 groups = 0xffffffffu);
-    void notifySerialNumberStyleChanged(quint32 properties) const;
+    void updateSequenceNumberStyleControls(quint32 groups = 0xffffffffu);
+    void notifySequenceNumberStyleChanged(quint32 properties) const;
     void beginTextStylePopupInteraction(QObject* popup);
     void endTextStylePopupInteraction(QObject* popup);
     void addToolbarSpacing(QBoxLayout* layout, int baseSpacing,
@@ -526,6 +527,8 @@ class ScreenshotToolPaletteStyleControls final {
     ScreenshotToolPaletteStyleState m_state;
     ScreenshotToolPaletteStyleControlCallbacks m_callbacks;
     const SnowCanvasStyleDefaults m_defaults;
+    std::optional<QColor> m_sharedCreationColor;
+    void rememberCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     std::function<QDateTime()> m_watermarkTemplateClock;
     QSet<QObject*> m_openTextStylePopups;
     QVector<QPointer<QObject>> m_controlCallbackContexts;
@@ -563,9 +566,9 @@ class ScreenshotToolPaletteStyleControls final {
     adqt::widgets::AdRadioButtonGroup* m_spotlightShapeButtonGroup = nullptr;
     adqt::widgets::AdRadioButtonGroup* m_lineTypeButtonGroup = nullptr;
     std::unique_ptr<ScreenshotToolPaletteWidthColorEditor> m_highlightStrokeEditor;
-    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_penHighlightColorEditor;
-    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penHighlightStrokeWidthEditor;
-    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penFilterStrokeWidthEditor;
+    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_brushHighlightColorEditor;
+    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_brushHighlightStrokeWidthEditor;
+    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_brushFilterStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_brushEraserStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_distanceColorEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_magnifierColorEditor;
@@ -606,14 +609,14 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteFillEditor> m_textFillEditor;
     CornerRadiusEditorButton* m_textCornerRadiusEditor = nullptr;
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_textAlignmentEditor;
-    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_serialNumberColorEditor;
-    QWidget* m_serialNumberTypeControlsContainer = nullptr;
-    adqt::widgets::AdRadioButtonGroup* m_serialNumberTypeButtonGroup = nullptr;
-    QWidget* m_serialNumberNumericTypeControlsContainer = nullptr;
-    adqt::widgets::AdRadioButtonGroup* m_serialNumberNumericTypeButtonGroup = nullptr;
-    std::unique_ptr<ScreenshotToolPaletteFillEditor> m_serialNumberFillEditor;
-    adqt::widgets::AdLineEdit* m_serialNumberEditor = nullptr;
-    std::unique_ptr<ScreenshotToolPaletteFontEditor> m_serialNumberFontEditor;
+    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_sequenceNumberColorEditor;
+    QWidget* m_sequenceNumberTypeControlsContainer = nullptr;
+    adqt::widgets::AdRadioButtonGroup* m_sequenceNumberTypeButtonGroup = nullptr;
+    QWidget* m_sequenceNumberNumericTypeControlsContainer = nullptr;
+    adqt::widgets::AdRadioButtonGroup* m_sequenceNumberNumericTypeButtonGroup = nullptr;
+    std::unique_ptr<ScreenshotToolPaletteFillEditor> m_sequenceNumberFillEditor;
+    adqt::widgets::AdLineEdit* m_sequenceNumberEditor = nullptr;
+    std::unique_ptr<ScreenshotToolPaletteFontEditor> m_sequenceNumberFontEditor;
     bool m_watermarkColorPreviewPending = false;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_watermarkColorEditor;
     adqt::widgets::AdLineEdit* m_watermarkTextEdit = nullptr;
@@ -638,13 +641,13 @@ class ScreenshotToolPaletteStyleControls final {
     QVector<ScreenshotToolPaletteStyleEditorComponent*> m_registeredComponents;
     QVector<StyleEditorEntry> m_shapeEntries;
     QVector<StyleEditorEntry> m_highlightEntries;
-    QVector<StyleEditorEntry> m_penHighlightEntries;
+    QVector<StyleEditorEntry> m_brushHighlightEntries;
     QVector<StyleEditorEntry> m_arrowEntries;
     QVector<StyleEditorEntry> m_distanceEntries;
     QVector<StyleEditorEntry> m_angleEntries;
     QVector<StyleEditorEntry> m_bracketEntries;
     QVector<StyleEditorEntry> m_textEntries;
-    QVector<StyleEditorEntry> m_serialNumberEntries;
+    QVector<StyleEditorEntry> m_sequenceNumberEntries;
     QVector<StyleEditorEntry> m_watermarkEntries;
 
     struct ToolbarSpacingItem {

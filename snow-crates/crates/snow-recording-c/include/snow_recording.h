@@ -156,7 +156,7 @@ typedef struct SnowCaptureExclusions {
 } SnowCaptureExclusions;
 #endif
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 16u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 17u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -242,6 +242,12 @@ typedef struct SnowCaptureDirectRecordingConfig {
     /* Version 16: clockwise quarter-turns in bits 0..1, horizontal reflection
        before rotation in bit 2 (0..7). Older configurations use identity. */
     uint32_t webcam_orientation;
+    /* Version 17: keystroke category filters. Each is 0 or 1; older callers enable all.
+       Shortcut preservation is effective only while record_control_keys is enabled. */
+    uint32_t record_number_keys;
+    uint32_t record_letters_and_symbols;
+    uint32_t record_control_keys;
+    uint32_t preserve_keyboard_shortcuts;
 } SnowCaptureDirectRecordingConfig;
 
 #define SNOW_RECORDING_DEFERRED_OPTIONS_VERSION 1u

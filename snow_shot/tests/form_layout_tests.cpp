@@ -197,8 +197,8 @@ void verticalLabelsUseAvailableColumnWidth() {
     AdForm form;
     form.setFormLayout(AdForm::FormLayout::Inline);
     int columnWidth = 240;
-    for (const QString& text : {QStringLiteral("Keyboard Background Color"),
-                                QStringLiteral("Keyboard Foreground Color")}) {
+    for (const QString& text : {QStringLiteral("Keyboard background color"),
+                                QStringLiteral("Keyboard foreground color")}) {
         auto* item = form.addField(text, fixedControl());
         item->setItemLayout(AdFormItem::ItemLayout::Vertical);
         auto* label = item->findChild<QLabel*>(QStringLiteral("ad-form-item-label"));

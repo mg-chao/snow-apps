@@ -293,6 +293,24 @@ class ImageTests final : public QObject {
     QCOMPARE(second->image().size(), source.size());
   }
 
+  void cancelledRequestCanBeReplacedImmediately() {
+    QImage source(2048, 1024, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::yellow);
+    const QUrl url = dataUrl(source);
+    QObject owner;
+    AdImageLoadOptions options;
+    options.targetPixelSize = QSize(64, 64);
+    auto* abandoned = defaultAdImageLoader()->load(url, options, &owner);
+    abandoned->abort();
+    QVERIFY(abandoned->isFinished() && !abandoned->isSuccessful());
+    auto* replacement = defaultAdImageLoader()->load(url, options, &owner);
+    QSignalSpy finished(replacement, &AdImageReply::finished);
+    QVERIFY(finished.wait());
+    QVERIFY(replacement->isSuccessful());
+    QCOMPARE(replacement->image().size(), QSize(64, 32));
+    QCOMPARE(replacement->image().pixelColor(0, 0), QColor(Qt::yellow));
+  }
+
   void localDecodesRequestedSizesAndReflectsModifiedFilesWithoutCache() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());

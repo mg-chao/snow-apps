@@ -23,15 +23,16 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 29;
+constexpr std::size_t ACTION_COUNT = 31;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
     GlobalShortcutAction::ScreenshotDelay,
-    GlobalShortcutAction::ScreenshotFixed,
+    GlobalShortcutAction::ScreenshotPinToScreen,
     GlobalShortcutAction::ScreenshotOcr,
     GlobalShortcutAction::ScreenshotOcrCopy,
     GlobalShortcutAction::ScreenshotTranslation,
+    GlobalShortcutAction::ScreenshotScrolling,
     GlobalShortcutAction::ScreenshotCopy,
     GlobalShortcutAction::ScreenshotSave,
     GlobalShortcutAction::ScreenshotQuickSave,
@@ -45,6 +46,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::GlobalCanvas,
     GlobalShortcutAction::StitchSelectedImages,
     GlobalShortcutAction::SplitSelectedImages,
+    GlobalShortcutAction::EditSelectedImages,
     GlobalShortcutAction::SwitchWindowGroup,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
@@ -53,7 +55,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::PinSelectedFiles,
     GlobalShortcutAction::RestoreLastClosedWindows,
     GlobalShortcutAction::HideShowAllWindows,
-    GlobalShortcutAction::ToggleGlobalHotkeys,
+    GlobalShortcutAction::ToggleGlobalShortcuts,
     GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
 };
 
@@ -138,8 +140,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.screenshot();
     case GlobalShortcutAction::ScreenshotDelay:
         return settings.screenshotDelay();
-    case GlobalShortcutAction::ScreenshotFixed:
-        return settings.screenshotFixed();
+    case GlobalShortcutAction::ScreenshotPinToScreen:
+        return settings.screenshotPinToScreen();
     case GlobalShortcutAction::ScreenshotOcr:
         return settings.screenshotOcr();
     case GlobalShortcutAction::ScreenshotOcrCopy:
@@ -150,6 +152,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
 #else
         return {};
 #endif
+    case GlobalShortcutAction::ScreenshotScrolling:
+        return settings.screenshotScrolling();
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.screenshotCopy();
     case GlobalShortcutAction::ScreenshotSave:
@@ -176,6 +180,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.stitchSelectedImages();
     case GlobalShortcutAction::SplitSelectedImages:
         return settings.splitSelectedImages();
+    case GlobalShortcutAction::EditSelectedImages:
+        return settings.editSelectedImages();
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.openPinToScreenManagement();
     case GlobalShortcutAction::OpenSettings:
@@ -196,8 +202,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
 #endif
     case GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop:
         return settings.toggleWindowUnderCursorAlwaysOnTop();
-    case GlobalShortcutAction::ToggleGlobalHotkeys:
-        return settings.toggleGlobalHotkeys();
+    case GlobalShortcutAction::ToggleGlobalShortcuts:
+        return settings.toggleGlobalShortcuts();
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
         return settings.toggleDisableOnFocusedFullscreenWindow();
     }
@@ -211,8 +217,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setScreenshot(bindings);
     case GlobalShortcutAction::ScreenshotDelay:
         return settings.setScreenshotDelay(bindings);
-    case GlobalShortcutAction::ScreenshotFixed:
-        return settings.setScreenshotFixed(bindings);
+    case GlobalShortcutAction::ScreenshotPinToScreen:
+        return settings.setScreenshotPinToScreen(bindings);
     case GlobalShortcutAction::ScreenshotOcr:
         return settings.setScreenshotOcr(bindings);
     case GlobalShortcutAction::ScreenshotOcrCopy:
@@ -223,6 +229,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
 #else
         return false;
 #endif
+    case GlobalShortcutAction::ScreenshotScrolling:
+        return settings.setScreenshotScrolling(bindings);
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.setScreenshotCopy(bindings);
     case GlobalShortcutAction::ScreenshotSave:
@@ -249,6 +257,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setStitchSelectedImages(bindings);
     case GlobalShortcutAction::SplitSelectedImages:
         return settings.setSplitSelectedImages(bindings);
+    case GlobalShortcutAction::EditSelectedImages:
+        return settings.setEditSelectedImages(bindings);
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.setOpenPinToScreenManagement(bindings);
     case GlobalShortcutAction::OpenSettings:
@@ -269,8 +279,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
 #endif
     case GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop:
         return settings.setToggleWindowUnderCursorAlwaysOnTop(bindings);
-    case GlobalShortcutAction::ToggleGlobalHotkeys:
-        return settings.setToggleGlobalHotkeys(bindings);
+    case GlobalShortcutAction::ToggleGlobalShortcuts:
+        return settings.setToggleGlobalShortcuts(bindings);
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
         return settings.setToggleDisableOnFocusedFullscreenWindow(bindings);
     }
@@ -298,13 +308,16 @@ class GlobalShortcutManager::Impl {
     };
 
     Impl(GlobalShortcutManager& owner, std::unique_ptr<GlobalShortcutBackend> backend,
-         std::function<bool()> fullscreenDetector)
+         std::function<bool()> fullscreenDetector, std::function<bool()> fullscreenGameDetector)
         : q(owner), m_backend(backend != nullptr ? std::move(backend)
                                                  : createPlatformGlobalShortcutBackend()),
           m_focusedFullscreenDetector(
-              fullscreenDetector
-                  ? std::move(fullscreenDetector)
-                  : std::function<bool()>(&platform::focusedFullscreenWindowExists)) {
+              fullscreenDetector ? std::move(fullscreenDetector)
+                                 : std::function<bool()>(&platform::focusedFullscreenWindowExists)),
+          m_focusedFullscreenGameDetector(
+              fullscreenGameDetector
+                  ? std::move(fullscreenGameDetector)
+                  : std::function<bool()>(&platform::focusedFullscreenGameWindowExists)) {
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             m_states[actionIndex(action)].action = action;
         }
@@ -362,7 +375,8 @@ class GlobalShortcutManager::Impl {
                 if (m_initialized &&
                     (key == QStringLiteral("extended_features/translation_page_enabled") ||
                      key ==
-                         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"))) {
+                         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window") ||
+                     key == QStringLiteral("global_shortcuts/fullscreen_window_filter"))) {
                     reconcile();
                 }
             });
@@ -468,10 +482,12 @@ class GlobalShortcutManager::Impl {
         if (!m_initialized) {
             return false;
         }
-        const bool suppressionEnabled =
-            storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
-        const bool fullscreen =
-            suppressionEnabled && m_focusedFullscreenDetector && m_focusedFullscreenDetector();
+        const storage::GlobalShortcutSettings settings;
+        const bool suppressionEnabled = settings.disableOnFocusedFullscreenWindow();
+        const auto& detector = settings.fullscreenWindowFilter() == QStringLiteral("all_windows")
+                                   ? m_focusedFullscreenDetector
+                                   : m_focusedFullscreenGameDetector;
+        const bool fullscreen = suppressionEnabled && detector && detector();
         const bool fullscreenChanged = fullscreen != m_focusedFullscreen;
         const bool changed =
             suppressionEnabled != m_fullscreenSuppressionEnabled || fullscreenChanged;
@@ -513,8 +529,8 @@ class GlobalShortcutManager::Impl {
         // Keep both gate controls usable so disablement can be undone from
         // the keyboard. An active canvas must also remain dismissible.
         return actionAvailable(action) &&
-               (controlsGlobalHotkeyGates(action) ||
-                (m_globalHotkeysEnabled &&
+               (controlsGlobalShortcutGates(action) ||
+                (m_globalShortcutsEnabled &&
                  (!m_focusedFullscreen ||
                   (action == GlobalShortcutAction::GlobalCanvas && m_globalCanvasActive))));
     }
@@ -627,6 +643,7 @@ class GlobalShortcutManager::Impl {
     GlobalShortcutManager& q;
     std::unique_ptr<GlobalShortcutBackend> m_backend;
     std::function<bool()> m_focusedFullscreenDetector;
+    std::function<bool()> m_focusedFullscreenGameDetector;
     QTimer m_fullscreenTimer;
     std::array<shortcuts::ShortcutBindingList, ACTION_COUNT> m_shortcuts;
     std::array<GlobalShortcutRegistrationState, ACTION_COUNT> m_states;
@@ -636,7 +653,7 @@ class GlobalShortcutManager::Impl {
     int m_nextRegistrationId = FIRST_REGISTRATION_ID;
     RegistrationSuspensionHandle m_nextSuspensionHandle = 1;
     bool m_initialized = false;
-    bool m_globalHotkeysEnabled = true;
+    bool m_globalShortcutsEnabled = true;
     bool m_globalCanvasActive = false;
     bool m_fullscreenSuppressionEnabled = false;
     bool m_focusedFullscreen = false;
@@ -647,9 +664,11 @@ GlobalShortcutManager::GlobalShortcutManager(QObject* parent)
 
 GlobalShortcutManager::GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend,
                                              QObject* parent,
-                                             std::function<bool()> fullscreenDetector)
+                                             std::function<bool()> fullscreenDetector,
+                                             std::function<bool()> fullscreenGameDetector)
     : QObject(parent),
-      m_impl(std::make_unique<Impl>(*this, std::move(backend), std::move(fullscreenDetector))) {}
+      m_impl(std::make_unique<Impl>(*this, std::move(backend), std::move(fullscreenDetector),
+                                    std::move(fullscreenGameDetector))) {}
 
 GlobalShortcutManager::~GlobalShortcutManager() = default;
 
@@ -693,13 +712,13 @@ void GlobalShortcutManager::setGlobalCanvasActive(bool active) {
     m_impl->reconcile();
 }
 
-void GlobalShortcutManager::setGlobalHotkeysEnabled(bool enabled) {
-    if (m_impl->m_globalHotkeysEnabled == enabled) {
+void GlobalShortcutManager::setGlobalShortcutsEnabled(bool enabled) {
+    if (m_impl->m_globalShortcutsEnabled == enabled) {
         return;
     }
-    m_impl->m_globalHotkeysEnabled = enabled;
+    m_impl->m_globalShortcutsEnabled = enabled;
     m_impl->reconcile();
-    emit globalHotkeysEnabledChanged(enabled);
+    emit globalShortcutsEnabledChanged(enabled);
 }
 
 void GlobalShortcutManager::refreshFocusedFullscreenState() {
@@ -708,15 +727,15 @@ void GlobalShortcutManager::refreshFocusedFullscreenState() {
 
 std::optional<GlobalShortcutInputState>
 GlobalShortcutManager::inputState(int registrationId) const {
-    if (registrationId != 0 && (!m_impl->m_globalHotkeysEnabled ||
+    if (registrationId != 0 && (!m_impl->m_globalShortcutsEnabled ||
                                 !m_impl->m_registrationKeysById.contains(registrationId))) {
         return std::nullopt;
     }
     return m_impl->m_backend->inputState(registrationId);
 }
 
-bool GlobalShortcutManager::globalHotkeysEnabled() const {
-    return m_impl->m_globalHotkeysEnabled;
+bool GlobalShortcutManager::globalShortcutsEnabled() const {
+    return m_impl->m_globalShortcutsEnabled;
 }
 
 bool GlobalShortcutManager::focusedFullscreenSuppressionActive() const {

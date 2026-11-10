@@ -746,6 +746,14 @@ fn desktop_backend_policy(preferred: CaptureBackendKind) -> Option<AutoBackendPo
     Some(policy)
 }
 
+fn screenshot_capture_system(preferred: CaptureBackendKind) -> Result<CaptureSystem, String> {
+    let mut builder = CaptureSystem::builder();
+    if let Some(policy) = desktop_backend_policy(preferred) {
+        builder = builder.with_auto_backend_policy(policy);
+    }
+    builder.build().map_err(|error| error.to_string())
+}
+
 #[allow(clippy::needless_update)] // needed when snow-capture enables its `stage-timing` feature
 fn snapshot_options(
     capture_retry_count: usize,
@@ -1400,14 +1408,12 @@ fn native_window_id(value: isize) -> Result<WindowId, String> {
 fn capture_window_snapshot(
     hwnd: isize,
     options: CaptureOptions,
+    preferred: CaptureBackendKind,
     include_cursor: bool,
     cancellation: CancellationToken,
     correction: Option<PendingScreenColorTransform>,
 ) -> Result<SnapshotWindowFrame, String> {
-    let system = CaptureSystem::builder()
-        .with_backend_kind(CaptureBackendKind::Auto)
-        .build()
-        .map_err(|error| error.to_string())?;
+    let system = screenshot_capture_system(preferred)?;
     let mut session = system
         .open_session(CaptureTarget::Window(native_window_id(hwnd)?), options)
         .map_err(|error| error.to_string())?;
@@ -1529,11 +1535,7 @@ pub extern "C" fn snow_capture_desktop_session_create(
         }
     };
     // Desktop screenshots treat the configured API as a preference, with per-target fallback.
-    let mut builder = CaptureSystem::builder();
-    if let Some(policy) = desktop_backend_policy(capture_backend) {
-        builder = builder.with_auto_backend_policy(policy);
-    }
-    match builder.build() {
+    match screenshot_capture_system(capture_backend) {
         Ok(system) => {
             let mut session = SnowCaptureDesktopSessionImpl {
                 system,
@@ -1812,6 +1814,7 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
                 let result = capture_window_snapshot(
                     hwnd,
                     options,
+                    CaptureBackendKind::Auto,
                     include_cursor,
                     canceled.clone().unwrap_or_default(),
                     correction,
@@ -3729,10 +3732,14 @@ mod tests {
                 WindowsGraphicsCapture,
                 [WindowsGraphicsCapture, DxgiDuplication, Gdi],
             ),
-            (Gdi, [Gdi, DxgiDuplication, WindowsGraphicsCapture]),
+            (Gdi, [Gdi, WindowsGraphicsCapture, DxgiDuplication]),
         ] {
             let policy = desktop_backend_policy(preferred).unwrap();
             assert_eq!(policy.normalized_priority(), expected);
+            assert_eq!(
+                screenshot_capture_system(preferred).unwrap().backend_kind(),
+                CaptureBackendKind::Auto
+            );
         }
     }
 

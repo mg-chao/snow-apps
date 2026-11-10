@@ -7,6 +7,7 @@
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QScopeGuard>
 #include <QTimer>
 
 namespace snow_shot::update {
@@ -56,7 +57,7 @@ StartupUpdateResult runStartupUpdate(UpdateService& service, const std::function
                                      const std::function<bool()>& foregroundRequested,
                                      std::chrono::milliseconds timeout,
                                      const std::function<QStringList()>& relaunchArguments) {
-    if (service.managedByStore())
+    if (!service.capabilities().install)
         return StartupUpdateResult::ContinueStartup;
     QEventLoop loop;
     QTimer deadline;
@@ -70,17 +71,27 @@ StartupUpdateResult runStartupUpdate(UpdateService& service, const std::function
     };
     QObject::connect(&service, &UpdateService::operationFinished, &loop,
                      [&](const QString&, const QString&) { finish(); });
-    QObject::connect(&service, &UpdateService::handoffReady, &loop, [&] {
+    service.setHandoffApproval(&loop, [&] {
         if (!flush || !flush()) {
             service.reportBlocked(QCoreApplication::translate(
                 "snow_shot::app::ApplicationController",
-                "Your settings could not be saved. Please retry before updating."));
-            return;
+                "Your settings could not be saved. Please retry before updating"));
+            return false;
         }
-        service.setRelaunchArguments(
-            relaunchArguments
-                ? relaunchArguments()
-                : startupUpdateRelaunchArguments(foregroundRequested && foregroundRequested()));
+        if (!service.setRelaunchArguments(
+                relaunchArguments ? relaunchArguments()
+                                  : startupUpdateRelaunchArguments(foregroundRequested &&
+                                                                   foregroundRequested()))) {
+            service.reportBlocked(QCoreApplication::translate(
+                "UpdateErrors", "The selected files exceed the update restart limit"));
+            return false;
+        }
+        return true;
+    });
+    service.setHandoffValidation(&loop, [&] { return !finished; });
+    const auto clearApproval = qScopeGuard([&] {
+        service.setHandoffApproval(nullptr, {});
+        service.setHandoffValidation(nullptr, {});
     });
     QObject::connect(&service, &UpdateService::handoffCommitted, &loop, [&] {
         result = StartupUpdateResult::ExitForUpdate;

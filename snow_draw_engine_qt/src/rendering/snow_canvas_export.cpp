@@ -16,6 +16,7 @@
 #include <QtMath>
 
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -266,10 +267,48 @@ QImage renderImageSourcesToImage(const QRectF& canvasRect, const QSize& outputSi
     return output;
 }
 
+QImage renderImageSourcesToImage(const QRectF& canvasRect, const QSize& outputSize,
+                                 const QList<CanvasExportSource>& sources,
+                                 const QRect& outputPixelRect) {
+    const ExportProjection projection{canvasRect, outputSize};
+    if (!projection.isValid() || outputPixelRect.isEmpty())
+        return {};
+    QImage output =
+        snowCanvasAllocateImage(outputPixelRect.size(), QImage::Format_ARGB32_Premultiplied);
+    if (output.isNull())
+        return {};
+    output.fill(Qt::transparent);
+    const QRect visible = outputPixelRect.intersected(QRect(QPoint{}, outputSize));
+    // Keep the original horizontal span origin: clipping it can alter Qt's fixed-point
+    // texture stepping. Integer vertical translation preserves the full-render sample phase.
+    const int bandHeight = static_cast<int>(
+        std::max(qint64(1), qint64(8) * 1024 * 1024 / (qint64(outputSize.width()) * 4)));
+    for (int top = visible.top(); top <= visible.bottom(); top += bandHeight) {
+        const int height = std::min(bandHeight, visible.bottom() - top + 1);
+        QImage band = snowCanvasAllocateImage(QSize(outputSize.width(), height),
+                                              QImage::Format_ARGB32_Premultiplied);
+        if (band.isNull())
+            return {};
+        band.fill(Qt::transparent);
+        QPainter painter(&band);
+        configureExportPainter(painter);
+        painter.translate(0, -top);
+        renderSources(painter, projection, sources);
+        painter.end();
+        for (int y = 0; y < height; ++y)
+            std::memcpy(output.scanLine(top + y - outputPixelRect.y()) +
+                            (visible.x() - outputPixelRect.x()) * 4,
+                        band.constScanLine(y) + visible.x() * 4,
+                        static_cast<std::size_t>(visible.width()) * 4);
+    }
+    return output;
+}
+
 QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
                      const QSize& outputSize, const QList<CanvasExportSource>& sources,
                      const SnowCanvasSmartEraseSnapshot& smartErase,
-                     const QImage& preparedBackground) {
+                     const QImage& preparedBackground,
+                     const SnowCanvasExportBackgroundOverlay& backgroundOverlay) {
     const ExportProjection projection{virtualSelectionRect, outputSize};
     if (outputSize.width() <= 0 || outputSize.height() <= 0 ||
         (!preparedBackground.isNull() && preparedBackground.size() != outputSize)) {
@@ -297,12 +336,28 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
         baseImageSources.append({source.image, source.canvasRect, source.coverage});
     const bool synchronized =
         synchronizeRuntimeScene(runtime, projection, viewport, displayCache, state);
+    const auto paintOverlay = [&](QPainter& target) {
+        if (!backgroundOverlay)
+            return true;
+        target.save();
+        target.setClipRect(QRect(QPoint(), outputSize), Qt::IntersectClip);
+        const QTransform canvasToPixels(projection.scaleX(), 0, 0, projection.scaleY(),
+                                        -virtualSelectionRect.x() * projection.scaleX(),
+                                        -virtualSelectionRect.y() * projection.scaleY());
+        const bool painted = backgroundOverlay(target, canvasToPixels);
+        target.restore();
+        return painted;
+    };
     if (!synchronized || (!requiresBackgroundRaster(displayCache) &&
                           !snow_canvas_smart_erase::hasItems(smartErase))) {
         if (preparedBackground.isNull())
             renderSources(painter, projection, sources);
         else
             painter.drawImage(QRect(QPoint(), outputSize), preparedBackground);
+        if (!paintOverlay(painter))
+            return {};
+        if (backgroundOverlay)
+            ++g_renderDiagnostics.directBackgroundOverlayCount;
         if (synchronized) {
             ++g_renderDiagnostics.directSourceFastPathCount;
             if (hasDocumentDrawing(displayCache))
@@ -320,6 +375,17 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
     QImage background = preparedBackground;
     if (background.isNull()) {
         background = renderImageSourcesToImage(virtualSelectionRect, sceneSize, sources);
+    }
+    if (backgroundOverlay) {
+        // Filters need a complete composed backdrop; ordinary drawing uses the output
+        // directly above. Sampling sources remain pristine in both paths.
+        background.setDevicePixelRatio(1.0);
+        QPainter backgroundPainter(&background);
+        if (!backgroundPainter.isActive() || !paintOverlay(backgroundPainter))
+            return {};
+        g_renderDiagnostics.backgroundOverlayScratchBytes =
+            std::max(g_renderDiagnostics.backgroundOverlayScratchBytes,
+                     static_cast<std::size_t>(background.sizeInBytes()));
     }
     if (synchronized) {
         ++g_renderDiagnostics.fullCompositorPathCount;

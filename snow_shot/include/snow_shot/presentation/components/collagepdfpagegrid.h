@@ -12,12 +12,12 @@ namespace snow_shot::presentation::components {
 
 // Shares the document's immutable sources and order with the static-image editor.
 // Page cards are materialized only around the visible rows.
-class CollagePdfPageGrid final : public QWidget {
+class ImageStitchingPdfPageGrid final : public QWidget {
     Q_OBJECT
 
   public:
-    explicit CollagePdfPageGrid(CollageDocument* document, QWidget* parent = nullptr);
-    ~CollagePdfPageGrid() override;
+    explicit ImageStitchingPdfPageGrid(ImageStitchingDocument* document, QWidget* parent = nullptr);
+    ~ImageStitchingPdfPageGrid() override;
     void setLoading(bool loading);
     void setExportBusy(bool busy);
     void retranslateUi();

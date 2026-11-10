@@ -1,3 +1,6 @@
+#include "recognition_attachment_test_access.h"
+#include "translation_test_support.h"
+#include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrtexttransform.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
@@ -8,6 +11,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/translation/translationlanguages.h"
 
 #include "widgets/modal.h"
 #include "widgets/popover.h"
@@ -34,10 +38,14 @@
 #include <QDir>
 #include <QScreen>
 #include <QScopeGuard>
+#include <QElapsedTimer>
 
 #include <iostream>
+#include <array>
+#include <algorithm>
 #include <memory>
 #include <utility>
+#include <thread>
 
 void runOriginalImageTranslationTests();
 void runImageConversionTests();
@@ -66,6 +74,308 @@ void processFor(int durationMs) {
     QEventLoop loop;
     QTimer::singleShot(durationMs, &loop, &QEventLoop::quit);
     loop.exec();
+}
+
+void sharedContentAttachmentLifecycle() {
+    using Session = ScreenshotRecognitionSessionController;
+    using Mode = Session::Mode;
+    auto window =
+        std::make_unique<ScreenshotRecognitionWindow>(ScreenshotRecognitionWindowActions{});
+    int acquisitions = 0;
+    int uiUpdates = 0;
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&] {
+        ++acquisitions;
+        return window.get();
+    };
+    actions.setBusyState = [&](bool, bool, bool) { ++uiUpdates; };
+    auto first = std::make_unique<Session>(nullptr, nullptr, nullptr, actions);
+    Session second(nullptr, nullptr, nullptr, actions);
+    const auto seed = [](Session& session, const QString& key, const QString& text) {
+        QImage image(80, 60, QImage::Format_ARGB32);
+        image.fill(Qt::white);
+        session.setTarget({key, image, QRectF(0, 0, 80, 60)});
+        auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+        presentation->selection = QRect(0, 0, 80, 60);
+        ScreenshotOcrLine line;
+        line.text = text;
+        line.quad = {QPointF(0, 0), QPointF(70, 0), QPointF(70, 20), QPointF(0, 20)};
+        presentation->lines.append(line);
+        presentation->prepareForRendering();
+        ScreenshotRecognitionResults result;
+        result.key = key;
+        result.text = ScreenshotOcrRecognitionResult{presentation};
+        result.translatedText = presentation;
+        session.setIndependentEditing(true);
+        session.seedRecognitionResults(std::move(result));
+    };
+    seed(*first, QStringLiteral("attachment-A"), QStringLiteral("First translation"));
+    seed(second, QStringLiteral("attachment-B"), QStringLiteral("Second translation"));
+    first->activate(Mode::Text);
+    first->beginTextTranslation();
+    require(first->ownsContentAttachment(), "first activation owns the shared view");
+    first->deactivate();
+    second.activate(Mode::Text);
+    second.beginTextTranslation();
+    require(second.ownsContentAttachment() && !first->ownsContentAttachment(),
+            "activation transfers shared view ownership");
+    const int beforeInactive = uiUpdates;
+    first->handleTableCommandState({});
+    first->cancelWorkflow();
+    first->deactivate();
+    require(second.ownsContentAttachment() && uiUpdates == beforeInactive,
+            "inactive cleanup cannot reset the incoming view or palette");
+    second.deactivate();
+    first->activate(Mode::Text);
+    first->beginTextTranslation();
+    require(first->ownsContentAttachment() && acquisitions == 2,
+            "cached controller activation rebinds without reacquiring the widget");
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const bool previousCopy = settings.copyTranslationResultsAsImage();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(settings.setCopyTranslationResultsAsImage(previousCopy)); });
+    require(settings.setCopyTranslationResultsAsImage(false),
+            "select text copy in attachment test");
+    require(window->copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == QStringLiteral("First translation"),
+            "rebound direct Copy uses the restored controller");
+    for (int i = 0; i < 3; ++i) {
+        first->activate(Mode::Text);
+        first->beginTextTranslation();
+        require(first->ownsContentAttachment() &&
+                    ScreenshotRecognitionWindowTestAccess::recognitionRetryReceivers(*window) == 1,
+                "repeated activation retains one attachment and one retry connection");
+    }
+    {
+        adqt::widgets::AdContextMenu previousActivationMenu(window.get());
+        ScreenshotRecognitionWindowTestAccess::populateTextMenu(*window, previousActivationMenu);
+        auto* previousMenuCopy = previousActivationMenu.findChild<QAction*>(
+            QStringLiteral("screenshotRecognitionCopyAction"));
+        require(previousMenuCopy && previousMenuCopy->isEnabled(),
+                "context Copy captures the current controller activation");
+        first->activate(Mode::Text);
+        first->beginTextTranslation();
+        QApplication::clipboard()->setText(QStringLiteral("same-controller sentinel"));
+        previousMenuCopy->trigger();
+        require(
+            QApplication::clipboard()->text() == QStringLiteral("same-controller sentinel"),
+            "same-controller reactivation retires context commands from the preceding activation");
+    }
+    {
+        adqt::widgets::AdContextMenu retiredMenu(window.get());
+        ScreenshotRecognitionWindowTestAccess::populateTextMenu(*window, retiredMenu);
+        auto* retiredCopy =
+            retiredMenu.findChild<QAction*>(QStringLiteral("screenshotRecognitionCopyAction"));
+        require(retiredCopy && retiredCopy->isEnabled(), "actual context Copy action is available");
+        second.activate(Mode::Text);
+        second.beginTextTranslation();
+        QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+        retiredCopy->trigger();
+        require(QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+                "an open menu cannot execute after its attachment is replaced");
+    }
+    first.reset();
+    require(second.ownsContentAttachment() && window->copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == QStringLiteral("Second translation"),
+            "destruction of the previous controller cannot clear the new attachment");
+    window.reset();
+    window = std::make_unique<ScreenshotRecognitionWindow>(ScreenshotRecognitionWindowActions{});
+    second.activate(Mode::Text);
+    second.beginTextTranslation();
+    require(second.ownsContentAttachment() && acquisitions == 3 &&
+                window->copyVisibleContentToClipboard(),
+            "view recreation acquires and binds a fresh attachment");
+
+    {
+        Session incoming(nullptr, nullptr, nullptr, actions);
+        seed(incoming, QStringLiteral("reentrant-transfer"),
+             QStringLiteral("Incoming translation"));
+        bool transferOnClear = true;
+        const auto transferConnection = QObject::connect(
+            window.get(), &ScreenshotRecognitionWindow::textSelectionChanged, &incoming, [&] {
+                if (!transferOnClear)
+                    return;
+                transferOnClear = false;
+                incoming.activate(Mode::Text);
+                incoming.beginTextTranslation();
+            });
+        second.deactivate();
+        QObject::disconnect(transferConnection);
+        require(!transferOnClear && incoming.ownsContentAttachment() &&
+                    !second.ownsContentAttachment() && window->copyVisibleContentToClipboard() &&
+                    QApplication::clipboard()->text() == QStringLiteral("Incoming translation"),
+                "reentrant owner transfer during outgoing view cleanup preserves incoming content");
+        incoming.deactivate();
+    }
+
+    {
+        Session localSession(nullptr, nullptr, nullptr, actions);
+        seed(localSession, QStringLiteral("local-selection"), QStringLiteral("Detached OCR"));
+        localSession.activate(Mode::Text);
+        require(localSession.ownsContentAttachment(), "local selection fixture first attaches");
+        localSession.deactivate();
+        auto selected = std::make_shared<ScreenshotOcrPresentation>();
+        selected->selection = QRect(0, 0, 80, 60);
+        ScreenshotOcrLine line;
+        line.text = QStringLiteral("Detached OCR");
+        line.quad = {QPointF(0, 0), QPointF(70, 0), QPointF(70, 20), QPointF(0, 20)};
+        selected->lines.append(line);
+        selected->prepareForRendering();
+        window->setOcrPresentation(selected);
+        selected->selectAll();
+        window->updateOcrSelection();
+        require(!localSession.active() && !localSession.ownsContentAttachment() &&
+                    window->copyVisibleContentToClipboard() &&
+                    QApplication::clipboard()->text() == QStringLiteral("Detached OCR"),
+                "detached recognition views preserve local OCR selection copying");
+        adqt::widgets::AdContextMenu localMenu(window.get());
+        ScreenshotRecognitionWindowTestAccess::populateOcrMenu(*window, localMenu);
+        auto* localCopy = localMenu.findChild<QAction*>(QStringLiteral("screenshotOcrCopyAction"));
+        require(localCopy && localCopy->isEnabled(), "detached OCR context Copy remains enabled");
+        QApplication::clipboard()->setText(QStringLiteral("local context sentinel"));
+        localCopy->trigger();
+        require(QApplication::clipboard()->text() == QStringLiteral("Detached OCR"),
+                "detached OCR context Copy uses the local view selection");
+
+        auto expiredOwner = std::make_unique<QObject>();
+        static_cast<void>(window->attachSession(expiredOwner.get(), {}));
+        expiredOwner.reset();
+        QApplication::clipboard()->setText(QStringLiteral("expired owner sentinel"));
+        require(!window->copyVisibleContentToClipboard() &&
+                    QApplication::clipboard()->text() == QStringLiteral("expired owner sentinel"),
+                "an expired bound owner cannot use detached local Copy fallback");
+        localCopy->trigger();
+        require(QApplication::clipboard()->text() == QStringLiteral("expired owner sentinel"),
+                "reattachment retires context commands from the detached local view");
+        adqt::widgets::AdContextMenu expiredMenu(window.get());
+        ScreenshotRecognitionWindowTestAccess::populateOcrMenu(*window, expiredMenu);
+        auto* expiredCopy =
+            expiredMenu.findChild<QAction*>(QStringLiteral("screenshotOcrCopyAction"));
+        require(expiredCopy && !expiredCopy->isEnabled(),
+                "an expired bound owner disables local context Copy");
+    }
+
+    QObject ownerA;
+    QObject ownerB;
+    bool transfer = false;
+    const auto tokenA = window->attachSession(
+        &ownerA, {[] { return true; },
+                  [&]() -> std::unique_ptr<QMimeData> {
+                      if (transfer)
+                          static_cast<void>(window->attachSession(&ownerB, {}));
+                      auto mime = std::make_unique<QMimeData>();
+                      mime->setText(QStringLiteral("retired result"));
+                      return mime;
+                  }});
+    transfer = true;
+    QApplication::clipboard()->setText(QStringLiteral("keep clipboard"));
+    require(!window->copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == QStringLiteral("keep clipboard"),
+            "ownership transfer during MIME generation aborts clipboard publication");
+    window->detachSession(&ownerA, tokenA);
+    require(!second.ownsContentAttachment(), "stale controller no longer owns the view");
+    second.retireContentAttachment();
+    const auto tokenB = window->attachSession(&ownerB, {});
+    window->detachSession(&ownerA, tokenA);
+    require(window->ownsAttachment(&ownerB, tokenB), "stale detach preserves replacement binding");
+
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    {
+        const snow_shot::storage::ScreenshotRecognitionModelSettings preferences;
+        const auto previousModel = preferences.latexModel();
+        const auto restoreModel =
+            qScopeGuard([&] { static_cast<void>(preferences.setLatexModel(previousModel)); });
+        require(preferences.setLatexModel(screenshotDedicatedRecognitionModelId()),
+                "select cached dedicated formula model for queued retry test");
+        ScreenshotRecognitionWindow queuedView({});
+        int publications = 0;
+        ScreenshotRecognitionSessionActions queuedActions;
+        queuedActions.ensureContent = [&] { return &queuedView; };
+        queuedActions.setRecognitionModelState = [&](int, const auto&) { ++publications; };
+        Session queuedSession(nullptr, nullptr, nullptr, queuedActions);
+        QImage image(80, 60, QImage::Format_ARGB32);
+        image.fill(Qt::white);
+        queuedSession.setTarget({QStringLiteral("queued-retry"), image, QRectF(0, 0, 80, 60)});
+        ScreenshotRecognitionResults result;
+        result.key = QStringLiteral("queued-retry");
+        result.latex = SnowShotLatexResult{QStringLiteral("x+y"), {}, {}, 200};
+        queuedSession.seedRecognitionResults(std::move(result));
+        queuedSession.activate(Mode::Latex);
+        require(!queuedSession.busy() && queuedSession.latexDraft() == QStringLiteral("x+y"),
+                "queued retry fixture restores a completed cached formula");
+        // Emit on a worker so AutoConnection queues the existing attachment lambda.
+        std::thread worker([&] { queuedView.recognitionRetryRequested(); });
+        worker.join();
+        queuedSession.deactivate();
+        queuedSession.activate(Mode::Latex);
+        const int beforeDelivery = publications;
+        QApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        require(publications == beforeDelivery && queuedSession.ownsContentAttachment(),
+                "queued retry from an old activation is rejected after reconnecting");
+        // A current retry really does publish model state, proving the assertion above
+        // observes useful work rather than relying on the inactive-workflow guard.
+        queuedView.recognitionRetryRequested();
+        require(publications > beforeDelivery, "the current attachment's retry remains connected");
+        queuedSession.deactivate();
+        require(ScreenshotRecognitionWindowTestAccess::recognitionRetryReceivers(queuedView) == 0,
+                "deactivation disconnects attachment-specific retry handlers");
+    }
+#endif
+
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    {
+        const snow_shot::storage::ScreenshotRecognitionModelSettings models;
+        const QString previousModel = models.latexModel();
+        const auto restoreModel = qScopeGuard([&] { models.setLatexModel(previousModel); });
+        require(models.setLatexModel(QStringLiteral("vision")),
+                "select a streaming model for busy view recreation");
+        translation_tests::Server server;
+        SnowShotApiClient api(server.url());
+        auto busyView =
+            std::make_unique<ScreenshotRecognitionWindow>(ScreenshotRecognitionWindowActions{});
+        int busyAcquisitions = 0;
+        ScreenshotRecognitionSessionActions busyActions;
+        busyActions.ensureContent = [&] {
+            ++busyAcquisitions;
+            return busyView.get();
+        };
+        Session busySession(nullptr, nullptr, &api, busyActions);
+        QImage image(80, 60, QImage::Format_ARGB32);
+        image.fill(Qt::white);
+        busySession.setTarget({QStringLiteral("busy-view"), image, QRectF(0, 0, 80, 60)});
+        busySession.activate(Mode::Latex);
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "busy attachment starts one streaming formula request");
+        server.delta(0, QStringLiteral("x+"));
+        const auto editor = [&] {
+            return busyView->findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+        };
+        translation_tests::waitUntil(
+            [&] { return editor() && editor()->toPlainText() == QStringLiteral("x+"); },
+            "streaming formula creates its provisional editor");
+        const QPointer<QTextDocument> draft = editor()->document();
+        busyView.reset();
+        busyView =
+            std::make_unique<ScreenshotRecognitionWindow>(ScreenshotRecognitionWindowActions{});
+        busySession.activate(Mode::Latex);
+        require(
+            busySession.ownsContentAttachment() && busySession.busy(Mode::Latex) &&
+                busyAcquisitions == 2 && server.streams.size() == 1 && editor() && draft &&
+                editor()->document() == draft && editor()->toPlainText() == QStringLiteral("x+"),
+            "busy reactivation restores the provisional document without restarting recognition");
+        server.delta(0, QStringLiteral("y"));
+        translation_tests::waitUntil(
+            [&] { return editor() && editor()->toPlainText() == QStringLiteral("x+y"); },
+            "recreated busy view continues receiving the existing stream");
+        server.finish(0);
+        translation_tests::waitUntil(
+            [&] { return !busySession.busy(Mode::Latex); },
+            "recreated busy view completes the original recognition request");
+        require(server.streams.size() == 1 && busySession.latexDraft() == QStringLiteral("x+y"),
+                "busy view recreation preserves the final result and request identity");
+        busySession.deactivate();
+    }
+#endif
 }
 
 void headlessWorkflowResultsAndEdits() {
@@ -136,6 +446,90 @@ void headlessWorkflowResultsAndEdits() {
     require(session.workflowResult().value(QStringLiteral("contents")).toArray() ==
                 QJsonArray{QStringLiteral("payload")},
             "headless QR result");
+}
+
+void cachedTextResultAccess(bool benchmark = false) {
+    QEventLoop tableReady;
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = []() -> ScreenshotRecognitionWindow* { return nullptr; };
+    actions.setBusyState = [&](bool, bool tableBusy, bool) {
+        if (!tableBusy)
+            tableReady.quit();
+    };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    require(!session.cachedTextRecognitionResult(), "no cached OCR without a current target");
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::white);
+    const ScreenshotRecognitionTarget target{QStringLiteral("cached-text"), image,
+                                             QRectF(0, 0, 80, 60)};
+    session.setTarget(target);
+    require(!session.cachedTextRecognitionResult(), "a new target has no OCR result");
+    ScreenshotRecognitionResults results;
+    results.key = target.key;
+    auto source = std::make_shared<ScreenshotOcrPresentation>();
+    source->selection = QRect(0, 0, 80, 60);
+    source->lines.append(
+        {QStringLiteral("Original text"), .95,
+         QPolygonF{QPointF(0, 0), QPointF(70, 0), QPointF(70, 20), QPointF(0, 20)}});
+    source->prepareForRendering();
+    results.text = ScreenshotOcrRecognitionResult{source};
+    results.text->filteredImage = image;
+    SnowShotTableResult table;
+    table.html = QStringLiteral("<table>") +
+                 QStringLiteral("<tr><td>One</td><td>Two</td><td>Three</td><td>Four</td></tr>")
+                     .repeated(benchmark ? 1000 : 3) +
+                 QStringLiteral("</table>");
+    results.table = table;
+    session.seedRecognitionResults(results);
+    const auto cached = session.cachedTextRecognitionResult();
+    require(cached && cached->presentation == source && cached->filteredImage.isNull() &&
+                session.cachedRecognitionResults().text->presentation == cached->presentation,
+            "the text-only accessor shares the original OCR and excludes filtered pixels");
+    session.activate(ScreenshotRecognitionSessionController::Mode::Table);
+    if (session.busy(ScreenshotRecognitionSessionController::Mode::Table)) {
+        QTimer::singleShot(5000, &tableReady, &QEventLoop::quit);
+        tableReady.exec();
+    }
+    require(!session.busy(ScreenshotRecognitionSessionController::Mode::Table),
+            "cached table parsing completes before editing or measuring cache reads");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("select_cells")},
+                                  {QStringLiteral("range"), QJsonArray{0, 0, 0, 1}}}) &&
+                session.editWorkflow({{QStringLiteral("action"), QStringLiteral("merge_cells")}}),
+            "prepare an unrelated table draft alongside cached OCR");
+    require(session.cachedTextRecognitionResult()->presentation == source,
+            "table editing does not change the cached OCR source");
+    if (benchmark) {
+        const auto median = [](auto work) {
+            std::array<double, 9> samples{};
+            for (auto& sample : samples) {
+                QElapsedTimer timer;
+                timer.start();
+                for (int i = 0; i < 10; ++i)
+                    work();
+                sample = static_cast<double>(timer.nsecsElapsed()) / 10000.0;
+            }
+            std::sort(samples.begin(), samples.end());
+            return samples[samples.size() / 2];
+        };
+        std::optional<ScreenshotOcrRecognitionResult> read;
+        const double full = median([&] { read = session.cachedRecognitionResults().text; });
+        const double text = median([&] { read = session.cachedTextRecognitionResult(); });
+        require(read && read->presentation == source, "benchmark reads the same cached OCR");
+        std::cout << "recognition_cache table_cells=4000 full_snapshot_us=" << full
+                  << " text_only_us=" << text << '\n';
+    }
+    session.deactivate();
+    session.setTarget({QStringLiteral("other-target"), image, QRectF(0, 0, 80, 60)});
+    require(!session.cachedTextRecognitionResult(), "OCR lookup follows the current target");
+    session.setTarget(target);
+    require(session.cachedTextRecognitionResult()->presentation == source,
+            "returning to a cached target restores its original OCR identity");
+    session.invalidate();
+    require(!session.cachedTextRecognitionResult(), "invalidation releases the narrow cache view");
+    session.setTarget(target);
+    results.text->error = QStringLiteral("test recognition failure");
+    session.seedRecognitionResults(results);
+    require(!session.cachedTextRecognitionResult(), "failed OCR is never returned as cached text");
 }
 void tablePreparationPreservesSessionAndSiblingPopovers() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
@@ -282,6 +676,13 @@ class ControllableOcrRecognition final : public ScreenshotOcrRecognitionPort {
         if (m_completion) {
             m_completion(std::move(result));
         }
+    }
+
+    void completeWithError(const QString& message) {
+        ScreenshotOcrRecognitionResult result;
+        result.error = message;
+        if (m_completion)
+            m_completion(std::move(result));
     }
 
     int requests = 0;
@@ -977,6 +1378,88 @@ void prefetchVerificationStaysSilentWhileDownloadsSurface() {
     recognition.completeWithEmptyPresentation();
 }
 
+void prefetchDownloadPromptsFollowCurrentHost() {
+    for (const bool fallback : {false, true}) {
+        for (const bool currentHost : {false, true}) {
+            ControllableOcrRecognition recognition;
+            PromptRecorder recorder;
+            auto actions = recorder.actions();
+            actions.isCurrentSession = [currentHost] { return currentHost; };
+            if (fallback) {
+                actions.showModelDownload = {};
+                actions.hideModelDownload = {};
+                actions.showStatus = [&](const QString& message, bool error) {
+                    require(!error, "asset download fallback remains an informational prompt");
+                    ++recorder.modelDownloadShows;
+                    recorder.modelDownloadMessages.append(message);
+                };
+                actions.hideLoading = [&] { ++recorder.modelDownloadHides; };
+            }
+            ScreenshotRecognitionSessionController controller(&recognition, nullptr, nullptr,
+                                                              std::move(actions));
+            QImage image(64, 64, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::white);
+            controller.setTarget({QStringLiteral("prefetch-host"), image, QRectF(0, 0, 64, 64)});
+            const int initialDownloadHides = recorder.modelDownloadHides;
+            controller.prefetchText();
+            require(!controller.active() && !controller.ownsContentAttachment() &&
+                        recorder.modelDownloadShows == 0,
+                    "prefetch asset verification does not require or acquire a view");
+            recognition.m_status = {ScreenshotOcrAssetPhase::Downloading, QStringLiteral("models"),
+                                    qint64(25), qint64(100)};
+            processFor(250);
+            require(currentHost ? recorder.modelDownloadShows > 0
+                                : recorder.modelDownloadShows == 0,
+                    "background asset prompts publish only for the host's current controller");
+            recognition.m_ready = true;
+            recognition.m_status = {ScreenshotOcrAssetPhase::ReadyCached, QStringLiteral("assets")};
+            processFor(250);
+            require(recorder.modelDownloadHides == initialDownloadHides + (currentHost ? 1 : 0) &&
+                        recorder.recognitionShows == 0,
+                    "asset prompt cleanup preserves inactive non-current host UI");
+            recognition.completeWithEmptyPresentation();
+        }
+    }
+}
+
+void prefetchDownloadFailuresFollowCurrentHost() {
+    for (const bool transferHost : {false, true}) {
+        ControllableOcrRecognition recognition;
+        PromptRecorder recorder;
+        bool currentHost = true;
+        int errors = 0;
+        QString lastError;
+        auto actions = recorder.actions();
+        actions.isCurrentSession = [&] { return currentHost; };
+        actions.showStatus = [&](const QString& message, bool error) {
+            if (error) {
+                ++errors;
+                lastError = message;
+            }
+        };
+        ScreenshotRecognitionSessionController controller(&recognition, nullptr, nullptr,
+                                                          std::move(actions));
+        QImage image(64, 64, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::white);
+        controller.setTarget({QStringLiteral("prefetch-failure"), image, QRectF(0, 0, 64, 64)});
+        controller.prefetchText();
+        recognition.m_status = {ScreenshotOcrAssetPhase::Downloading, QStringLiteral("models"),
+                                qint64(25), qint64(100)};
+        processFor(250);
+        require(recorder.modelDownloadShows > 0 && !controller.active() &&
+                    !controller.ownsContentAttachment(),
+                "failed-prefetch fixture visibly downloads before acquiring a view");
+        currentHost = !transferHost;
+        recognition.completeWithError(QStringLiteral("Test OCR asset download failed"));
+        processFor(150);
+        require(errors == (transferHost ? 0 : 1) &&
+                    (transferHost || lastError == QStringLiteral("Test OCR asset download failed")),
+                "visible background download failures notify only the controller's current host");
+        require(recorder.modelDownloadHides == (transferHost ? 0 : 1),
+                "retired background download cleanup cannot hide the incoming host's prompt");
+    }
+}
+
 void translationLanguageSelectsUseCodePrefixGroups() {
     const snow_shot::storage::ScreenshotTranslationSettings settings;
     const auto previousConfiguration = settings.configuration();
@@ -1036,18 +1519,26 @@ void translationLanguageSelectsUseCodePrefixGroups() {
 
     const auto sourceOptions = source->options();
     const auto targetOptions = target->options();
-    require(sourceOptions.size() == 14 && targetOptions.size() == 13,
-            "language selects should contain the expected source and target options");
+    const auto& languages = snow_shot::translation::translationLanguages();
+    require(sourceOptions.size() == languages.size() + 1 &&
+                targetOptions.size() == languages.size(),
+            "language selects should contain the canonical catalog plus source auto-detection");
     require(sourceOptions.constFirst().value == QStringLiteral("auto") &&
                 sourceOptions.constFirst().group.isEmpty(),
             "auto-detect should remain outside language groups");
-    require(sourceOptions.at(1).group == QStringLiteral("A") &&
-                sourceOptions.at(2).group == QStringLiteral("D") &&
-                sourceOptions.at(3).group == QStringLiteral("E") &&
-                sourceOptions.at(12).group == QStringLiteral("Z"),
+    const auto groupFor = [](const auto& options, const QString& code) {
+        const auto option = std::find_if(options.cbegin(), options.cend(),
+                                         [&](const auto& item) { return item.value == code; });
+        return option == options.cend() ? QString{} : option->group;
+    };
+    require(groupFor(sourceOptions, QStringLiteral("ar")) == QStringLiteral("A") &&
+                groupFor(sourceOptions, QStringLiteral("de")) == QStringLiteral("D") &&
+                groupFor(sourceOptions, QStringLiteral("en")) == QStringLiteral("E") &&
+                groupFor(sourceOptions, QStringLiteral("zh-Hans")) == QStringLiteral("Z"),
             "source language options should group by the first character of their code");
     require(targetOptions.constFirst().group == QStringLiteral("A") &&
-                targetOptions.constLast().group == QStringLiteral("Z"),
+                targetOptions.constLast().group == QStringLiteral("Z") &&
+                groupFor(targetOptions, QStringLiteral("zh-Hans")) == QStringLiteral("Z"),
             "target language options should group by the first character of their code");
 
     adqt::widgets::AdSelect* service = nullptr;
@@ -1101,8 +1592,29 @@ int main(int argc, char** argv) {
                 .initialize({executable, temporary.path(), 60000})
                 .success,
             "initialize recognition test storage");
+    if (application.arguments().contains(QStringLiteral("--content-attachment-only"))) {
+        sharedContentAttachmentLifecycle();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--asset-prompts-only"))) {
+        cachedVerificationStaysSilent();
+        liveDownloadsStillSurfaceThePrompt();
+        prefetchVerificationStaysSilentWhileDownloadsSurface();
+        prefetchDownloadPromptsFollowCurrentHost();
+        prefetchDownloadFailuresFollowCurrentHost();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--latex-only"))) {
         runLatexRecognitionTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--cached-text-only")) ||
+        application.arguments().contains(QStringLiteral("--cached-text-benchmark"))) {
+        cachedTextResultAccess(
+            application.arguments().contains(QStringLiteral("--cached-text-benchmark")));
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -1159,6 +1671,7 @@ int main(int argc, char** argv) {
     }
     smartTypesettingUsesRecognizedLayout();
     headlessWorkflowResultsAndEdits();
+    cachedTextResultAccess();
     originalImagePreviewFollowsTextSessionLifecycle();
     deactivationNotifiesOnlyOnStateTransition();
     tablePreparationPreservesSessionAndSiblingPopovers();
@@ -1168,6 +1681,8 @@ int main(int argc, char** argv) {
     cachedVerificationStaysSilent();
     liveDownloadsStillSurfaceThePrompt();
     prefetchVerificationStaysSilentWhileDownloadsSurface();
+    prefetchDownloadPromptsFollowCurrentHost();
+    prefetchDownloadFailuresFollowCurrentHost();
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

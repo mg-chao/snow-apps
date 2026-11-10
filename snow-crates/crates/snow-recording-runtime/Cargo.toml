@@ -17,7 +17,7 @@ snow-capture = { path = "../snow-capture" }
 snow-cursor = { path = "../snow-cursor" }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 snow-recording-model = { path = "../snow-recording-model" }
-snow-recording-export = { path = "../snow-recording-export" }
+snow-recording-export = { path = "../snow-recording-export", default-features = false }
 crossbeam-channel.workspace = true
 ffmpeg-next.workspace = true
 rayon.workspace = true
@@ -45,7 +45,7 @@ windows = { workspace = true, features = [
 
 [dev-dependencies]
 snow-recording-effects = { path = "../snow-recording-effects", features = ["bench-experiments"] }
-snow-recording-export = { path = "../snow-recording-export", features = ["bench-experiments"] }
+snow-recording-export = { path = "../snow-recording-export", default-features = false, features = ["bench-experiments"] }
 anyhow.workspace = true
 proptest = "1.11.0"
 
@@ -70,7 +70,8 @@ windows = { workspace = true, features = [
 ] }
 
 [features]
-default = ["legacy-capture"]
+default = ["legacy-capture", "hdr-encoding"]
+hdr-encoding = ["snow-recording-export/hdr-encoding"]
 # Compatibility capture APIs are excluded from the Snow Shot archive.
 legacy-capture = ["dep:snow-pipeline"]
 # Compile-time metric groups for the realtime recording benchmark. Each group

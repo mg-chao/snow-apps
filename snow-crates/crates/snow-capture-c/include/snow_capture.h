@@ -377,7 +377,10 @@ typedef struct SnowCaptureTargetScreenshotRequest {
     SnowCaptureScreenshotRequest screenshot;
     const char* monitor_utf8;
     uint8_t pixel_format;
-    uint8_t reserved[7];
+    /* Preferred backend, retaining automatic fallback. Zero keeps target Auto priority.
+       Consumes a reserved byte without changing the version or ABI layout. */
+    uint8_t capture_backend;
+    uint8_t reserved[6];
     /* Optional thread-safe callback before native/CPU raster preparation. Invoked
      * synchronously on capture/native workers, which are joined before return.
      * Rejection is sticky for this transaction, including backend fallback.

@@ -58,28 +58,28 @@
     <context>
         <name>ScreenshotCloudUploadJob</name>
         <message>
-            <source>Cloud upload failed (HTTP %1%2).</source>
-            <translation>雲端上傳失敗（HTTP %1%2）。</translation>
+            <source>Cloud upload failed (HTTP %1%2)</source>
+            <translation>雲端上傳失敗（HTTP %1%2）</translation>
         </message>
         <message>
-            <source>Cloud upload failed because of a network error or timeout.</source>
-            <translation>雲端上傳因網路錯誤或逾時而失敗。</translation>
+            <source>Cloud upload failed because of a network error or timeout</source>
+            <translation>雲端上傳因網路錯誤或逾時而失敗</translation>
         </message>
         <message>
-            <source>The cloud upload configuration or image is unavailable.</source>
-            <translation>雲端上傳設定或影像無法使用。</translation>
+            <source>The cloud upload configuration or image is unavailable</source>
+            <translation>雲端上傳設定或影像無法使用</translation>
         </message>
         <message>
-            <source>The image could not be opened for upload.</source>
-            <translation>無法開啟影像以進行上傳。</translation>
+            <source>The image could not be opened for upload</source>
+            <translation>無法開啟影像以進行上傳</translation>
         </message>
         <message>
-            <source>The image could not be prepared for upload.</source>
-            <translation>無法準備要上傳的影像。</translation>
+            <source>The image could not be prepared for upload</source>
+            <translation>無法準備要上傳的影像</translation>
         </message>
         <message>
-            <source>The screenshot export queue is full.</source>
-            <translation>螢幕擷取匯出佇列已滿。</translation>
+            <source>The screenshot export queue is full</source>
+            <translation>截圖匯出佇列已滿</translation>
         </message>
     </context>
     <context>
@@ -90,15 +90,15 @@
         </message>
         <message>
             <source>The image save directory is not configured</source>
-            <translation>尚未設定圖片儲存目錄</translation>
+            <translation>尚未設定影像儲存目錄</translation>
         </message>
         <message>
             <source>The screenshot clipboard payload is invalid</source>
-            <translation>螢幕擷取剪貼簿資料無效</translation>
+            <translation>截圖剪貼簿資料無效</translation>
         </message>
         <message>
             <source>The screenshot export queue is full</source>
-            <translation>擷取畫面匯出佇列已滿</translation>
+            <translation>截圖匯出佇列已滿</translation>
         </message>
     </context>
     <context>
@@ -132,6 +132,10 @@
             <translation>PNG 影像 (*.png)</translation>
         </message>
         <message>
+            <source>TIFF image (*.tif *.tiff)</source>
+            <translation>TIFF 圖像 (*.tif *.tiff)</translation>
+        </message>
+        <message>
             <source>The encoded image is empty</source>
             <translation>編碼後的影像為空</translation>
         </message>
@@ -142,6 +146,10 @@
         <message>
             <source>The save was cancelled</source>
             <translation>儲存已取消</translation>
+        </message>
+        <message>
+            <source>The screenshot filename format is invalid</source>
+            <translation>截圖檔名格式無效</translation>
         </message>
         <message>
             <source>WebP image (*.webp)</source>
@@ -264,7 +272,7 @@
         </message>
         <message>
             <source>The screenshot filename format is invalid</source>
-            <translation>螢幕截圖檔名格式無效</translation>
+            <translation>截圖檔名格式無效</translation>
         </message>
         <message>
             <source>The spreadsheet file could not be opened</source>
@@ -438,6 +446,10 @@
             <translation>百分比</translation>
         </message>
         <message>
+            <source>Pixels</source>
+            <translation>像素</translation>
+        </message>
+        <message>
             <source>Please enter a name</source>
             <translation>請輸入名稱</translation>
         </message>
@@ -494,6 +506,10 @@
             <translation>尺寸單位</translation>
         </message>
         <message>
+            <source>TIFF</source>
+            <translation>TIFF</translation>
+        </message>
+        <message>
             <source>The clipboard could not be updated: %1</source>
             <translation>無法更新剪貼簿：%1</translation>
         </message>
@@ -522,8 +538,8 @@
             <translation>影像尺寸超出匯出限制</translation>
         </message>
         <message>
-            <source>The save paths could not be stored</source>
-            <translation>無法儲存路徑設定</translation>
+            <source>The save path settings could not be saved</source>
+            <translation>無法儲存儲存路徑設定</translation>
         </message>
         <message>
             <source>The saved file no longer exists</source>
@@ -531,23 +547,23 @@
         </message>
         <message>
             <source>The screenshot could not be prepared</source>
-            <translation>無法準備擷取畫面</translation>
+            <translation>無法準備截圖</translation>
         </message>
         <message>
             <source>The screenshot could not be prepared: %1</source>
-            <translation>無法準備擷取畫面：%1</translation>
+            <translation>無法準備截圖：%1</translation>
         </message>
         <message>
             <source>The screenshot could not be saved: %1</source>
-            <translation>無法儲存擷取畫面：%1</translation>
+            <translation>無法儲存截圖：%1</translation>
         </message>
         <message>
             <source>The screenshot export queue is full</source>
-            <translation>擷取畫面匯出佇列已滿</translation>
+            <translation>截圖匯出佇列已滿</translation>
         </message>
         <message>
             <source>The screenshot pixels could not be read</source>
-            <translation>無法讀取擷取畫面像素</translation>
+            <translation>無法讀取截圖像素</translation>
         </message>
         <message>
             <source>There is not enough temporary disk space for this export</source>
@@ -560,10 +576,6 @@
         <message>
             <source>Width</source>
             <translation>寬度</translation>
-        </message>
-        <message>
-            <source>pixel</source>
-            <translation>像素</translation>
         </message>
     </context>
     <context>

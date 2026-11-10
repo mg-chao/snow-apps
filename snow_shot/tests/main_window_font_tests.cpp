@@ -1,4 +1,6 @@
 #include "window_close_shortcut_test_support.h"
+#include "translation_test_support.h"
+#include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/components/actionrow.h"
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
@@ -26,6 +28,7 @@
 #include "widgets/scroll_area.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
+#include "widgets/input_text_edit.h"
 #include "snowimageqtcodec.h"
 
 #include <QAbstractButton>
@@ -44,6 +47,7 @@
 #include <QPointer>
 #include <QPalette>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QWidget>
@@ -1070,7 +1074,7 @@ void triggerBatchAction(adqt::widgets::AdButton* trigger, int index) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
-void pinnedCollageRequestReachesMainWindow() {
+void pinnedImageStitchingRequestReachesMainWindow() {
     const auto& registry = settings::builtInSettingsRegistry();
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -1088,7 +1092,7 @@ void pinnedCollageRequestReachesMainWindow() {
     require(repository.upsert(record).success, "save the pinned navigation fixture");
     MainWindow window(registry, session);
     QStringList requested;
-    QObject::connect(&window, &MainWindow::pinnedWindowCollageRequested, &window,
+    QObject::connect(&window, &MainWindow::pinnedWindowStitchImagesRequested, &window,
                      [&](const QStringList& ids) { requested = ids; });
     window.showPinToScreenManagement();
     flushEvents();
@@ -1129,6 +1133,54 @@ void applicationTypographyCoversUnownedSurfaces() {
     require(trayMenu.font().hintingPreference() == QFont::PreferNoHinting,
             "native menus must render unhinted outlines");
 }
+
+void translationNavigationPreservesSelectionFeedback() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    const auto& registry = settings::builtInSettingsRegistry();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(registry, backend);
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    require(
+        configuration.setValue(QStringLiteral("extended_features/translation_page_enabled"), true),
+        "enable translation for isolated navigation fixture");
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    MainWindow window(registry, session, nullptr, &client);
+    auto* messages = adqt::widgets::AdMessageService::instance(&window);
+    int warnings = 0;
+    QObject::connect(messages, &adqt::widgets::AdMessage::messageOpened, &window,
+                     [&](adqt::widgets::AdMessageHandle* handle) {
+                         if (handle->key() == u"main-translation-empty-selection")
+                             ++warnings;
+                     });
+    window.openTranslationPage();
+    flushEvents();
+    auto* card = window.findChild<ContentCardWidget*>();
+    auto* source =
+        window.findChild<adqt::widgets::AdTextEdit*>(QStringLiteral("translationSourceText"));
+    require(window.isVisible() && card && card->currentLocation().pageId == u"translation" &&
+                source && warnings == 0,
+            "navigation opens translation without reporting a failed selection");
+    {
+        // This test exercises navigation, without scheduling a provider translation.
+        const QSignalBlocker block(source);
+        source->setPlainText(QStringLiteral("existing draft"));
+    }
+    window.openTranslationPage();
+    require(source->toPlainText() == u"existing draft" && warnings == 0,
+            "navigation preserves an existing translation draft");
+    window.showTranslation({});
+    flushEvents();
+    require(warnings == 1, "a failed selected-text request still reports its failure");
+    require(
+        configuration.setValue(QStringLiteral("extended_features/translation_page_enabled"), false),
+        "disable translation for navigation policy fixture");
+    window.openTranslationPage();
+    require(card->currentLocation().pageId == u"text-recognition-translation" && warnings == 1,
+            "disabled-page navigation keeps its settings destination without a false warning");
+#endif
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1146,8 +1198,13 @@ int main(int argc, char** argv) {
     require(storage.initialize({directory.path(), directory.path(), 8000}).success,
             "initialize isolated font test storage");
     styles::ThemeManager::instance().initialize(application);
+    if (QApplication::arguments().contains(QStringLiteral("--translation-navigation-only"))) {
+        translationNavigationPreservesSelectionFeedback();
+        storage.shutdown();
+        return 0;
+    }
     if (QApplication::arguments().contains(QStringLiteral("--pinned-collage-only"))) {
-        pinnedCollageRequestReachesMainWindow();
+        pinnedImageStitchingRequestReachesMainWindow();
         storage.shutdown();
         return 0;
     }
@@ -1160,7 +1217,7 @@ int main(int argc, char** argv) {
     }
 #endif
     applicationTypographyCoversUnownedSurfaces();
-    pinnedCollageRequestReachesMainWindow();
+    pinnedImageStitchingRequestReachesMainWindow();
     customTitleBarUsesPlatformWindowControls();
 #ifdef Q_OS_WIN
     modalWindowSizeIconsMatchMainTitleBar();

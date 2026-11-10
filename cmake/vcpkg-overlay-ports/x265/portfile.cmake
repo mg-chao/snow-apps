@@ -17,6 +17,7 @@ vcpkg_from_bitbucket(
         short-propagation-row.patch
         arm64-intrinsics-without-assembly.patch
         windows-arm64-gas-assembly.patch
+        optional-dynamic-depth-loading.patch
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS OPTIONS
@@ -64,6 +65,16 @@ elseif(VCPKG_TARGET_IS_WINDOWS)
 endif()
 
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" ENABLE_SHARED)
+
+if("main8" IN_LIST FEATURES)
+    # The Windows application records SDR and needs only the 8-bit encoder.
+    # main10 remains an independent opt-in for standalone compatibility users.
+    list(APPEND OPTIONS -DHIGH_BIT_DEPTH=OFF -DMAIN12=OFF -DEXPORT_C_API=ON)
+    if(NOT "main10" IN_LIST FEATURES)
+        list(APPEND OPTIONS -DLINKED_8BIT=OFF -DLINKED_10BIT=OFF -DLINKED_12BIT=OFF
+            -DEXTRA_LIB= -DENABLE_DYNAMIC_DEPTH=OFF)
+    endif()
+endif()
 
 if("main10" IN_LIST FEATURES)
     # Build the namespace-isolated Main10 implementation first. It has no
@@ -145,10 +156,32 @@ if("main10" IN_LIST FEATURES AND VCPKG_LIBRARY_LINKAGE STREQUAL "static")
         endif()
     endforeach()
 endif()
-if("main10" IN_LIST FEATURES)
-    file(INSTALL "${CURRENT_PORT_DIR}/snow-main10-capability.json"
-        DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}")
+# Derive the installed contract from configured binaries, including triplet
+# overrides. The historical hardcoded combined marker could misstate a build.
+include("${CURRENT_PORT_DIR}/capabilities.cmake")
+set(_snow_x265_caches)
+foreach(_snow_x265_config IN ITEMS release debug)
+    if(NOT VCPKG_BUILD_TYPE OR VCPKG_BUILD_TYPE STREQUAL _snow_x265_config)
+        if(_snow_x265_config STREQUAL "debug")
+            set(_snow_x265_suffix dbg)
+        else()
+            set(_snow_x265_suffix rel)
+        endif()
+        list(APPEND _snow_x265_caches
+            "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-${_snow_x265_suffix}/CMakeCache.txt")
+    endif()
+endforeach()
+set(_snow_x265_requirements)
+if("main8" IN_LIST FEATURES)
+    list(APPEND _snow_x265_requirements REQUIRE_MAIN8)
+    if(NOT "main10" IN_LIST FEATURES)
+        list(APPEND _snow_x265_requirements REQUIRE_8BIT_ONLY)
+    endif()
 endif()
+snow_x265_write_capabilities(
+    OUTPUT_FILE "${CURRENT_PACKAGES_DIR}/share/${PORT}/snow-encoder-capabilities.json"
+    CACHES ${_snow_x265_caches}
+    ${_snow_x265_requirements})
 vcpkg_fixup_pkgconfig()
 
 if("tool" IN_LIST FEATURES)

@@ -1004,6 +1004,7 @@ fn run_sample(
         options.duration_seconds
     };
     let config = DirectRecordingConfig {
+        keyboard_filter: Default::default(),
         webcam: options
             .webcam_size
             .map(|size| {

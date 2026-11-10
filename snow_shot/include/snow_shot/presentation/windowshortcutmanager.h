@@ -82,7 +82,8 @@ class WindowShortcutManager final : public QObject {
     // another accidentally.
     [[nodiscard]] InputSuspensionHandle suspendInput();
     void resumeInput(InputSuspensionHandle handle);
-    // Commands invoked without a key event must respect the same modal suspension.
+    // Also true while Qt modals block every visible registered scope. Commands invoked
+    // without a key event must respect the same modal suspension.
     [[nodiscard]] bool inputSuspended() const;
 
     [[nodiscard]] BindingHandle addBinding(QObject* owner, Binding binding);

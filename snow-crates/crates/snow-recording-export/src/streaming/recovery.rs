@@ -324,7 +324,13 @@ impl StreamingEncoder {
             self.encode_pending(duration)?;
             retry_send(
                 self,
-                |state| state.encoder.send_eof(),
+                |state| {
+                    state
+                        .encoder
+                        .ffmpeg_mut()
+                        .expect("MP4 recovery codec")
+                        .send_eof()
+                },
                 |state| state.drain_available_packets(),
             )?;
             self.drain_packets(true)?;
@@ -873,7 +879,10 @@ mod tests {
             );
             assert_eq!(state.recovered, recovered);
             // A source encoder must not accumulate reordered B-frames.
-            assert_eq!(unsafe { (*encoder.encoder.as_ptr()).max_b_frames }, 0);
+            assert_eq!(
+                unsafe { (*encoder.encoder.ffmpeg().unwrap().as_ptr()).max_b_frames },
+                0
+            );
             for pts in 0..8 {
                 encoder
                     .push_owned_rgba_frame_at_pts(

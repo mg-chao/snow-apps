@@ -15,6 +15,9 @@ struct ConfigurationArchiveReadResult {
     int schemaVersion = 0;
     QString error;
     QStringList redactedCredentialIds;
+    // Restores local save directories absent from the archive. Explicit values in
+    // older archives take precedence over the receiving configuration.
+    void preserveOmittedDirectories(const QMap<QString, QJsonValue>& current);
     void preserveOmittedCredentials(const QMap<QString, QJsonValue>& current);
 
     [[nodiscard]] bool isValid() const {
@@ -22,15 +25,16 @@ struct ConfigurationArchiveReadResult {
     }
 };
 
-// Creates and validates zip archives that carry a full configuration snapshot.
+// Creates and validates zip archives that carry a configuration snapshot without
+// local image/video save directories or manual-save directory history.
 // An archive holds a manifest describing the format plus a flat
 // "group/key" -> value document.  Applying imported values is left to
 // ConfigurationStore, so reading an archive never mutates live configuration.
 class ConfigurationArchive final {
   public:
-    // Writes `values` (excluding the store-managed schema version) together
-    // with a manifest stamped with `schemaVersion`.  Returns an empty string
-    // on success and a translated error otherwise.
+    // Writes `values` (excluding local save directories and the store-managed
+    // schema version) together with a manifest stamped with `schemaVersion`.
+    // Returns an empty string on success and a translated error otherwise.
     [[nodiscard]] static QString write(const QString& archivePath,
                                        const QMap<QString, QJsonValue>& values, int schemaVersion,
                                        bool redactCredentials = false);

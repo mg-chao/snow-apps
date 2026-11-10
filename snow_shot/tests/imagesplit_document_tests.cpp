@@ -60,8 +60,118 @@ void requireCoverage(const ImageSplitLayout& layout) {
             "out-of-range regions are empty");
 }
 
+void overlappingRegions() {
+    ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
+    settings.overlapWidth = 10;
+    auto layout = calculateImageSplitLayout({100, 80}, settings);
+    require(layout.isValid() && layout.outputCount() == 2 &&
+                layout.baseRegionAt(0) == QRect(0, 0, 50, 80) &&
+                layout.regionAt(0) == QRect(0, 0, 60, 80) &&
+                layout.regionAt(1) == QRect(40, 0, 60, 80) &&
+                layout.regionAt(0).intersected(layout.regionAt(1)).width() == 20,
+            "ten pixels extend both sides of a boundary without moving the base cells");
+    require(layout.regionAt(-1).isEmpty() && layout.regionAt(2).isEmpty() &&
+                layout.baseRegionAt(-1).isEmpty() && layout.baseRegionAt(2).isEmpty(),
+            "overlap must not make out-of-range indices produce crops");
+    settings.direction = ImageSplitDirection::Horizontal;
+    layout = calculateImageSplitLayout({100, 80}, settings);
+    require(layout.regionAt(0) == QRect(0, 0, 100, 50) &&
+                layout.regionAt(1) == QRect(0, 30, 100, 50),
+            "horizontal splits expand vertically");
+    settings.direction = ImageSplitDirection::Grid;
+    layout = calculateImageSplitLayout({100, 80}, settings);
+    require(layout.outputCount() == 4 && layout.regionAt(0) == QRect(0, 0, 60, 50) &&
+                layout.regionAt(1) == QRect(40, 0, 60, 50) &&
+                layout.regionAt(2) == QRect(0, 30, 60, 50) &&
+                layout.regionAt(3) == QRect(40, 30, 60, 50),
+            "grid crops expand on both axes and preserve row-major order");
+    settings.direction = ImageSplitDirection::Vertical;
+    settings.type = ImageSplitType::Precise;
+    settings.unit = ImageSplitUnit::Pixels;
+    settings.pixels = 30;
+    layout = calculateImageSplitLayout({100, 80}, settings);
+    require(layout.outputCount() == 4 && layout.regionAt(1) == QRect(20, 0, 50, 80) &&
+                layout.regionAt(3) == QRect(80, 0, 20, 80),
+            "precise crops retain overlap around the small final remainder");
+    settings.unit = ImageSplitUnit::Percentage;
+    settings.percentage = QStringLiteral("25");
+    layout = calculateImageSplitLayout({100, 80}, settings);
+    require(layout.regionAt(1) == QRect(15, 0, 45, 80),
+            "percentage boundaries gain the same pixel overlap");
+    settings.overlapWidth = 0;
+    layout = calculateImageSplitLayout({100, 80}, settings);
+    requireCoverage(layout);
+    require(layout.regionAt(1) == layout.baseRegionAt(1), "zero overlap preserves exact cells");
+    settings.overlapWidth = std::numeric_limits<int>::max();
+    layout = calculateImageSplitLayout({100, 80}, settings);
+    for (qint64 index = 0; index < layout.outputCount(); ++index)
+        require(layout.regionAt(index) == QRect(0, 0, 100, 80),
+                "oversized overlap clips to the source without rejecting narrow cells");
+    settings.type = ImageSplitType::Equal;
+    const int maximum = std::numeric_limits<int>::max();
+    layout = calculateImageSplitLayout({maximum, maximum}, settings);
+    require(layout.isValid() && layout.regionAt(1) == QRect(0, 0, maximum, maximum),
+            "overlap arithmetic cannot overflow at maximum image dimensions");
+    settings.count = 1;
+    layout = calculateImageSplitLayout({1, 1}, settings);
+    require(layout.outputCount() == 1 && layout.regionAt(0) == QRect(0, 0, 1, 1),
+            "a single output does not gain padding");
+    settings.overlapWidth = -1;
+    layout = calculateImageSplitLayout({100, 80}, settings);
+    require(!layout.isValid() && layout.outputCount() == 0 &&
+                layout.errors.contains(QStringLiteral("overlapWidth")),
+            "negative overlap is rejected by the model");
+    layout.errors.clear();
+    require(!layout.isValid() && layout.outputCount() == 0 && layout.regionAt(0).isEmpty(),
+            "manually assembled negative-overlap layouts cannot export");
+}
+
+void overlapHistoryPreservesManualGuides() {
+    ImageSplitDocument document;
+    auto source = fixture({100, 80});
+    source.setDevicePixelRatio(2);
+    document.setImage(source);
+    require(document.createLine(true, 2), "insert a guide near the source edge");
+    const auto manual = document.state();
+    auto settings = document.settings();
+    settings.overlapWidth = 10;
+    require(document.setSettings(settings) && document.state().manuallyEdited &&
+                document.state().verticalLines == manual.verticalLines &&
+                document.layout().regionAt(0) == QRect(0, 0, 12, 80) &&
+                document.layout().regionAt(1) == QRect(0, 0, 60, 80),
+            "overlap preserves manual lines and uses physical source pixels regardless of DPR");
+    const auto expanded = document.state();
+    ImageSplitSnapshot snapshot{source, document.layout(), QStringLiteral("overlap"), {}};
+    document.undo();
+    require(document.state() == manual && document.layout().overlapWidth == 0 &&
+                document.layout().regionAt(0) == QRect(0, 0, 2, 80),
+            "undo restores the overlap together with manual geometry");
+    document.redo();
+    require(document.state() == expanded && document.layout().overlapWidth == 10,
+            "redo restores expanded manual crops");
+    require(document.beginLineDrag(true, 0) && document.moveDraggedLine(20),
+            "overlapping guides remain draggable");
+    require(document.layout().regionAt(0) == QRect(0, 0, 30, 80),
+            "overlap follows the dragged boundary");
+    document.cancelLineDrag();
+    require(document.state() == expanded && document.layout().overlapWidth == 10,
+            "canceling a guide drag retains overlap");
+    settings.count = 4;
+    require(document.setSettings(settings) && !document.state().manuallyEdited &&
+                document.layout().overlapWidth == 10 &&
+                document.layout().verticalLines == QVector<int>({25, 50, 75}),
+            "split-generation changes still regenerate guides and retain overlap");
+    document.setImage(source);
+    require(document.settings().overlapWidth == 0 && document.layout().overlapWidth == 0 &&
+                !document.canUndo() && snapshot.layout.overlapWidth == 10 &&
+                snapshot.layout.regionAt(0) == QRect(0, 0, 12, 80),
+            "replacement resets overlap while existing immutable output snapshots retain it");
+}
+
 void equalAndGrid() {
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.count = 3;
     auto layout = calculateImageSplitLayout({1200, 900}, settings);
     require(layout.isValid() && layout.outputCount() == 3 &&
@@ -139,6 +249,7 @@ void compactAxes() {
     require(!segmented.appendArithmetic(std::numeric_limits<int>::max(), 1, 2),
             "overflowing arithmetic endpoints are rejected before mutation");
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.count = 64'000'000;
     const auto extreme = calculateImageSplitLayout({64'000'000, 1}, settings);
     require(extreme.isValid() && extreme.outputCount() == 64'000'000 &&
@@ -637,6 +748,8 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
         initialSettingsEstablishUndoBaseline();
+        overlappingRegions();
+        overlapHistoryPreservesManualGuides();
         equalAndGrid();
         compactAxes();
         persistentRunSequences();

@@ -19,7 +19,7 @@
 namespace snow_shot::presentation {
 
 enum class ImageSplitDirection { Vertical, Horizontal, Grid };
-enum class ImageSplitType { Equal, Precise };
+enum class ImageSplitType { Equal, Precise, Smart };
 enum class ImageSplitUnit { Pixels, Percentage };
 
 // Generated guides occupy arithmetic runs rather than one integer per pixel boundary. A persistent
@@ -136,13 +136,14 @@ class ImageSplitLines final {
 
 struct ImageSplitSettings final {
     ImageSplitDirection direction = ImageSplitDirection::Vertical;
-    ImageSplitType type = ImageSplitType::Equal;
+    ImageSplitType type = ImageSplitType::Smart;
     ImageSplitUnit unit = ImageSplitUnit::Percentage;
     int count = 2;
     int rows = 2;
     int columns = 2;
     int pixels = 16;
     QString percentage = QStringLiteral("50");
+    int overlapWidth = 0;
 
     friend bool operator==(const ImageSplitSettings&, const ImageSplitSettings&) = default;
 };
@@ -163,9 +164,12 @@ struct ImageSplitLayout final {
     ImageSplitLines verticalLines;
     ImageSplitLines horizontalLines;
     QMap<QString, QString> errors;
+    int overlapWidth = 0;
 
     [[nodiscard]] bool isValid() const;
     [[nodiscard]] qint64 outputCount() const;
+    // Unexpanded cells anchor guides and preview numbering; output crops include overlap.
+    [[nodiscard]] QRect baseRegionAt(qint64 index) const;
     [[nodiscard]] QRect regionAt(qint64 index) const;
 };
 
@@ -177,8 +181,22 @@ struct ImageSplitSnapshot final {
     std::shared_ptr<void> resourceOwner;
 };
 
+// Size-only validation and nominal geometry. Smart uses Equal's initial boundaries here;
+// use prepareImageSplitLayout when final content-aware boundaries are required.
 [[nodiscard]] ImageSplitLayout calculateImageSplitLayout(QSize size,
                                                          const ImageSplitSettings& settings);
+struct ImageSplitPreparedLayout final {
+    qint64 sourceKey = 0;
+    ImageSplitSettings settings;
+    ImageSplitLayout layout;
+};
+
+inline constexpr qint64 imageSplitAnalysisMaximumWorkingBytes = 8 * 1024 * 1024;
+// Source pixels remain immutable. nullopt means cancellation; validation/analysis errors are
+// carried by the layout. Safe to call on a worker with a retained, immutable source image.
+[[nodiscard]] std::optional<ImageSplitPreparedLayout>
+prepareImageSplitLayout(const QImage& image, const ImageSplitSettings& settings,
+                        std::function<bool()> cancelled = {});
 [[nodiscard]] std::optional<int> imageSplitPercentagePixels(int dimension,
                                                             const QString& percentage);
 
@@ -191,6 +209,7 @@ class ImageSplitDocument final : public QObject {
     [[nodiscard]] const QImage& image() const;
     [[nodiscard]] const QImage& preview() const;
     void setImage(QImage image, QImage preview = {}, ImageSplitSettings initialSettings = {});
+    bool setPreparedImage(QImage image, QImage preview, const ImageSplitPreparedLayout& prepared);
     [[nodiscard]] ImageSplitSettings settings() const;
     [[nodiscard]] ImageSplitState state() const;
     [[nodiscard]] ImageSplitLayout layout() const;
@@ -198,6 +217,10 @@ class ImageSplitDocument final : public QObject {
     // count once; image pixels, string allocations and shared_ptr control blocks are excluded.
     [[nodiscard]] qsizetype historyStorageBytes() const;
     bool setSettings(const ImageSplitSettings& settings);
+    [[nodiscard]] quint64 revision() const;
+    [[nodiscard]] std::optional<ImageSplitPreparedLayout>
+    cachedLayout(const ImageSplitSettings& settings) const;
+    bool setPreparedSettings(const ImageSplitPreparedLayout& prepared, quint64 expectedRevision);
     [[nodiscard]] bool canUndo() const;
     [[nodiscard]] bool canRedo() const;
     void undo();

@@ -42,6 +42,161 @@ fn set_numeric_type(
 }
 
 #[test]
+fn serial_number_cursor_preview_is_read_only_and_matches_creation() {
+    use snow_draw_engine_core::arrow::StrokeRenderingStyle;
+    use snow_draw_engine_interaction::Modifiers;
+    for zoom in [0.75, 2.0] {
+        for numeric_type in [
+            SerialNumberNumericType::Arabic,
+            SerialNumberNumericType::Roman,
+            SerialNumberNumericType::LowercaseLetters,
+            SerialNumberNumericType::UppercaseLetters,
+            SerialNumberNumericType::Chinese,
+        ] {
+            let (mut engine, viewport) = setup(zoom);
+            let mut style = engine.editor.serial_number_style(&engine.model);
+            style.number = 27;
+            style.numeric_type = numeric_type;
+            style.stroke_rendering_style = StrokeRenderingStyle::Artist;
+            engine
+                .set_viewport_serial_number_style(viewport, style)
+                .unwrap();
+            let snapshot = engine.editor.snapshot();
+            let session = engine.serialize_document_session().unwrap();
+            let history = engine.serialize_document_history().unwrap();
+            let revision = engine.document_revision();
+            let before = engine.acquire_patch(viewport, None).unwrap();
+            let preview = engine
+                .viewport_serial_number_cursor_preview(
+                    viewport,
+                    Point::new(150.0, 300.0),
+                    Modifiers::default(),
+                )
+                .unwrap();
+            assert_eq!(engine.editor.snapshot(), snapshot);
+            assert_eq!(engine.serialize_document_session().unwrap(), session);
+            assert_eq!(engine.serialize_document_history().unwrap(), history);
+            assert_eq!(engine.document_revision(), revision);
+            let after = engine.acquire_patch(viewport, None).unwrap();
+            assert_eq!(before.scene.revision, after.scene.revision);
+            assert_eq!(before.decoration.revision, after.decoration.revision);
+            assert_eq!(before.overlay.revision, after.overlay.revision);
+            let serial_id = click_serial_number(&mut engine, viewport, 150.0);
+            let patch = engine.acquire_patch(viewport, None).unwrap();
+            let mut actual = patch
+                .scene
+                .ops
+                .iter()
+                .flat_map(|op| &op.insert_items)
+                .find_map(|item| match item {
+                    SceneDisplayItem::SerialNumber(item) => Some(item.clone()),
+                    _ => None,
+                })
+                .unwrap();
+            let SceneDisplayItem::SerialNumber(preview) = preview else {
+                panic!("expected badge")
+            };
+            actual.id = preview.id;
+            assert_eq!(actual, preview);
+            engine
+                .select_element_with_viewport_changes(viewport, serial_id)
+                .unwrap();
+            let SceneDisplayItem::SerialNumber(next) = engine
+                .viewport_serial_number_cursor_preview(
+                    viewport,
+                    Point::new(600.0, 450.0),
+                    Modifiers::default(),
+                )
+                .unwrap()
+            else {
+                panic!("expected next badge")
+            };
+            assert_eq!(
+                next.number, 28,
+                "selected values cannot replace the next creation counter"
+            );
+            let snapshot = engine.editor.snapshot();
+            assert!(
+                engine
+                    .viewport_serial_number_cursor_preview(
+                        viewport,
+                        Point::new(f64::NAN, 0.0),
+                        Modifiers::default()
+                    )
+                    .is_err()
+            );
+            assert_eq!(
+                engine.editor.snapshot(),
+                snapshot,
+                "failed query restores viewport context"
+            );
+        }
+    }
+}
+
+#[test]
+fn serial_number_cursor_preview_uses_snapped_seed_without_changing_snapping() {
+    use snow_draw_engine_interaction::Modifiers;
+    let (mut engine, viewport) = setup(1.0);
+    engine
+        .set_viewport_active_tool(viewport, ActiveTool::Shape)
+        .unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        300.0,
+        200.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        500.0,
+        400.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        500.0,
+        400.0,
+        false,
+    );
+    engine
+        .set_viewport_snap_config(
+            viewport,
+            SnapConfig {
+                enabled: true,
+                distance: 10.0,
+                ..SnapConfig::default()
+            },
+        )
+        .unwrap();
+    engine
+        .set_viewport_active_tool(viewport, ActiveTool::SerialNumber)
+        .unwrap();
+    let SceneDisplayItem::SerialNumber(preview) = engine
+        .viewport_serial_number_cursor_preview(
+            viewport,
+            Point::new(503.0, 300.0),
+            Modifiers::default(),
+        )
+        .unwrap()
+    else {
+        panic!("expected badge")
+    };
+    assert_ne!(preview.center_x, 103.0, "test must exercise snapping");
+    let id = click_serial_number(&mut engine, viewport, 503.0);
+    let actual = engine.model.serial_number(id).unwrap();
+    assert_eq!(actual.center.x, preview.center_x);
+    assert_eq!(actual.center.y, preview.center_y);
+    assert_eq!(actual.stroke_rendering_seed, preview.stroke_rendering_seed);
+}
+
+#[test]
 fn serial_number_selected_appearance_edits_preserve_creation_sequence() {
     use snow_draw_engine_editor::{
         SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,
@@ -811,6 +966,122 @@ fn serial_number_document_clear_uses_configured_start_for_its_numeric_type() {
     assert_eq!(engine.editor.serial_number_style(&engine.model).number, 1);
     set_numeric_type(&mut engine, viewport, SerialNumberNumericType::Roman);
     assert_eq!(engine.editor.serial_number_style(&engine.model).number, 7);
+}
+
+#[test]
+fn serial_number_deletion_renumbers_atomically_and_preserves_creation_counter_policy() {
+    for explicit_next in [false, true] {
+        for erase in [false, true] {
+            let (mut engine, viewport) = setup(1.0);
+            let second_viewport = engine.create_viewport(Default::default()).unwrap();
+            let ids: Vec<_> = (0..5)
+                .map(|index| {
+                    click_serial_number(&mut engine, viewport, 100.0 + index as f64 * 120.0)
+                })
+                .collect();
+            let originals: Vec<_> = ids
+                .iter()
+                .map(|id| engine.model.serial_number(*id).unwrap().clone())
+                .collect();
+            if explicit_next {
+                let mut style = engine.editor.serial_number_style(&engine.model);
+                style.number = 10;
+                engine
+                    .set_viewport_serial_number_style_patch(
+                        viewport,
+                        style,
+                        snow_draw_engine_editor::SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+                    )
+                    .unwrap();
+            }
+            if erase {
+                engine
+                    .set_viewport_active_tool(viewport, ActiveTool::Eraser)
+                    .unwrap();
+                pointer(
+                    &mut engine,
+                    viewport,
+                    PointerEventType::Down,
+                    340.0,
+                    300.0,
+                    false,
+                );
+                pointer(
+                    &mut engine,
+                    viewport,
+                    PointerEventType::Up,
+                    340.0,
+                    300.0,
+                    false,
+                );
+            } else {
+                engine
+                    .select_element_with_viewport_changes(viewport, ids[2])
+                    .unwrap();
+                engine
+                    .delete_selected_with_viewport_changes(viewport)
+                    .unwrap();
+            }
+            let expected_next = if explicit_next { 10 } else { 5 };
+            let check_deleted = |engine: &mut Engine| {
+                assert!(engine.model.element(ids[2]).is_err());
+                for (index, (id, original)) in ids.iter().zip(&originals).enumerate() {
+                    if index == 2 {
+                        continue;
+                    }
+                    let mut expected = original.clone();
+                    expected.number -= i64::from(index > 2);
+                    assert_eq!(engine.model.serial_number(*id).unwrap(), &expected);
+                }
+                for view in [viewport, second_viewport] {
+                    assert_eq!(
+                        engine
+                            .viewport_style_toolbar_state(view)
+                            .unwrap()
+                            .serial_number_style
+                            .number,
+                        expected_next
+                    );
+                }
+            };
+            check_deleted(&mut engine);
+            assert!(engine.undo().unwrap());
+            for (id, original) in ids.iter().zip(&originals) {
+                assert_eq!(engine.model.serial_number(*id).unwrap(), original);
+            }
+            assert_eq!(
+                engine.editor.serial_number_style(&engine.model).number,
+                if explicit_next { 10 } else { 6 }
+            );
+            assert!(engine.redo().unwrap());
+            check_deleted(&mut engine);
+
+            let session = engine.serialize_document_session().unwrap();
+            let restored =
+                Engine::from_serialized_document_session_with_config(&session, Default::default())
+                    .unwrap();
+            assert_eq!(restored.model.paint_order(), engine.model.paint_order());
+            for id in engine.model.paint_order() {
+                assert_eq!(
+                    restored.model.serial_number(*id).unwrap(),
+                    engine.model.serial_number(*id).unwrap()
+                );
+            }
+            assert_eq!(
+                restored.editor.serial_number_style(&restored.model).number,
+                expected_next
+            );
+
+            engine
+                .set_viewport_active_tool(viewport, ActiveTool::SerialNumber)
+                .unwrap();
+            let next = click_serial_number(&mut engine, viewport, 700.0);
+            assert_eq!(
+                engine.model.serial_number(next).unwrap().number,
+                expected_next
+            );
+        }
+    }
 }
 
 #[test]
@@ -1718,8 +1989,6 @@ fn serial_number_existing_selection_drag_does_not_create_bound_text() {
         Point::new(50.0, 50.0)
     );
     assert_eq!(engine.take_text_edit_request(viewport).unwrap(), None);
-    // An empty-canvas press first spends itself on deselecting; only the next
-    // press starts a new badge.
     pointer(
         &mut engine,
         viewport,
@@ -1729,7 +1998,7 @@ fn serial_number_existing_selection_drag_does_not_create_bound_text() {
         false,
     );
     assert!(engine.selected_ids().is_empty());
-    assert_eq!(engine.model.paint_order().len(), 1);
+    assert_eq!(engine.model.paint_order().len(), 2);
     pointer(
         &mut engine,
         viewport,
@@ -1738,15 +2007,9 @@ fn serial_number_existing_selection_drag_does_not_create_bound_text() {
         150.0,
         false,
     );
-    pointer(
-        &mut engine,
-        viewport,
-        PointerEventType::Down,
-        200.0,
-        150.0,
-        false,
-    );
     assert_eq!(engine.model.paint_order().len(), 2);
+    assert!(engine.undo().unwrap());
+    assert_eq!(engine.model.paint_order(), &[serial_id]);
 }
 
 #[test]
@@ -1888,26 +2151,6 @@ fn drag_and_toolbar_bound_labels_share_styling_and_layout() {
         .text(toolbar_text_id.expect("toolbar path creates the label"))
         .unwrap()
         .clone();
-
-    // The toolbar path leaves the new label selected; a blank-canvas press
-    // deselects it before the drag path can create the next badge.
-    pointer(
-        &mut engine,
-        viewport,
-        PointerEventType::Down,
-        100.0,
-        100.0,
-        false,
-    );
-    pointer(
-        &mut engine,
-        viewport,
-        PointerEventType::Up,
-        100.0,
-        100.0,
-        false,
-    );
-    assert!(engine.selected_ids().is_empty());
 
     // Drag path: press, drag, host measurement lands, release.
     pointer(

@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
 #include "snow_shot/presentation/components/formfields.h"
+#include "snow_shot/presentation/components/translationserviceoptions.h"
 
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/translation/translationlanguages.h"
@@ -134,12 +135,12 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         retry->setText(text(QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Retry")));
         const char* labels[] = {
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Source language"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Primary Target Language"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Secondary Target Language"),
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Primary target language"),
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Secondary target language"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog",
-                              "Language Detection Confidence Threshold"),
+                              "Language detection confidence threshold"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Translation service"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Original Image Translation")};
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Original image translation")};
         fields::FormField* const fieldControllers[] = {
             sourceField.field,          targetField.field,
             secondaryTargetField.field, confidenceThresholdField.field,
@@ -194,10 +195,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     };
     const auto sync = [=, &service] {
         const QScopedValueRollback guard(draft->applying, true);
-        QVector<AdSelect::Option> options;
-        for (const auto& model : service.models())
-            options.append(
-                {model.id, model.name, false, translation::translationModelGroup(model)});
+        const auto options = translationServiceOptions(service.models());
         QString selected =
             draft->modelEdited ? models->currentValue().toString() : service.preferences().modelId;
         if (selected.isEmpty())
@@ -290,7 +288,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
             error->setText(
                 QCoreApplication::translate("snow_shot::translation::TranslationService",
                                             "Unable to save translation preferences. Your "
-                                            "previous selections were restored."));
+                                            "previous selections were restored"));
             error->show();
             return;
         }

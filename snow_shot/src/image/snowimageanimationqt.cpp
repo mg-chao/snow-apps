@@ -20,7 +20,7 @@ void reportError(QString* error, const char* detail) {
     if (!error)
         return;
     *error = detail && *detail ? QCoreApplication::translate("SnowImageQtCodec",
-                                                             "Could not decode animated image.")
+                                                             "Could not decode animated image")
                                : QString{};
 }
 

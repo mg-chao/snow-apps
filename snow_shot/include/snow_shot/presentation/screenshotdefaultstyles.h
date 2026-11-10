@@ -12,6 +12,7 @@ namespace snow_shot::presentation {
 inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     const QColor red(0xf5, 0x22, 0x2d, 255);
     const QColor redAccent(0xf4, 0x21, 0x2c, 255);
+    const QColor highlight(0xff, 0x78, 0x75, 255);
     const QColor fill(0xff, 0xcc, 0xc7, 255);
     const QColor transparent(0xff, 0xff, 0xff, 0);
 
@@ -52,7 +53,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.freeDraw.stroke = red;
     defaults.line.arrowType = SnowCanvasArrowType::Curve;
 
-    defaults.rectangleHighlight.fill = red;
+    defaults.rectangleHighlight.fill = highlight;
     defaults.rectangleHighlight.fillStyle = SnowCanvasFillStyle::Solid;
     defaults.rectangleHighlight.stroke = redAccent;
     defaults.rectangleHighlight.strokeWidth = 0.0;
@@ -62,7 +63,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
 
     defaults.penHighlight.fill = transparent;
     defaults.penHighlight.fillStyle = SnowCanvasFillStyle::Solid;
-    defaults.penHighlight.stroke = red;
+    defaults.penHighlight.stroke = highlight;
     defaults.penHighlight.strokeWidth = 30.0;
     defaults.penHighlight.strokeStyle = SnowCanvasStrokeStyle::Solid;
     defaults.penHighlight.opacity = 1.0;

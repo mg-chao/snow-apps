@@ -56,7 +56,7 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showDistanceTool = true;
     options.showAngleTool = true;
     options.showBracketTool = true;
-    options.showFreeDrawTool = true;
+    options.showBrushTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
     // Magnifiers sample captured images; this live annotation surface has none.
@@ -65,7 +65,7 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showFilterTool = true;
     options.showWatermarkTool = true;
     options.showTextTool = true;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showGlobalCanvasActions = true;
     options.separatorAfterSelect = true;
     options.toolbarLayout = storage::ScreenshotToolbarSettings().layout(
@@ -208,7 +208,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             owner.m_platform.setInputTransparent(this, transparent);
             palette->setGlobalCanvasClickThrough(transparent);
             emit owner.errorOccurred(
-                GlobalCanvasController::tr("Could not change canvas click-through."));
+                GlobalCanvasController::tr("Could not change canvas click-through"));
             return;
         }
         transparent = next;
@@ -379,7 +379,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         if (!laserSource)
             laserSource = owner.m_platform.createEffectsSource();
         if (!laserSource) {
-            laserFailed(GlobalCanvasController::tr("The laser pointer is unavailable."));
+            laserFailed(GlobalCanvasController::tr("The laser pointer is unavailable"));
             return;
         }
         ++laserGeneration;
@@ -402,6 +402,10 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         config.generation = laserGeneration;
         // The native API validates these dimensions even with their effects disabled.
         config.keyboard_size = 64;
+        config.record_number_keys = 1;
+        config.record_letters_and_symbols = 1;
+        config.record_control_keys = 1;
+        config.preserve_keyboard_shortcuts = 1;
         config.highlight_radius = 41;
         QString error;
         const bool success = laserRunning ? laserSource->configure(config, error)
@@ -463,7 +467,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             QTimer::singleShot(0, this, [this]() {
                 if (!owner.m_platform.setInputTransparent(this, transparent))
                     emit owner.errorOccurred(
-                        GlobalCanvasController::tr("Could not change canvas click-through."));
+                        GlobalCanvasController::tr("Could not change canvas click-through"));
             });
         }
         return result;
@@ -764,11 +768,11 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             [](SnowCanvasTool tool) {
                 return tool != SnowCanvasTool::AutoFilter && tool != SnowCanvasTool::Magnifier;
             });
-        connect(palette, &ScreenshotToolPalette::serialNumberDecrementRequested, this,
+        connect(palette, &ScreenshotToolPalette::sequenceNumberDecrementRequested, this,
                 [this]() { drawing->adjustSelectedSerialNumbers(-1); });
-        connect(palette, &ScreenshotToolPalette::serialNumberIncrementRequested, this,
+        connect(palette, &ScreenshotToolPalette::sequenceNumberIncrementRequested, this,
                 [this]() { drawing->adjustSelectedSerialNumbers(1); });
-        connect(palette, &ScreenshotToolPalette::serialNumberCreateTextRequested, this,
+        connect(palette, &ScreenshotToolPalette::sequenceNumberCreateTextRequested, this,
                 [this]() { drawing->createSerialNumberText(); });
         connect(palette, &ScreenshotToolPalette::sendSelectionToBackRequested, this,
                 [this]() { drawing->reorderSelected(SnowCanvasSelectionOrder::SendToBack); });

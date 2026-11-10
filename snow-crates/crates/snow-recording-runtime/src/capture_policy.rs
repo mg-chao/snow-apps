@@ -33,12 +33,12 @@ fn recording_backend_policy(
     path: RecordingCapturePath,
     preferred: CaptureBackendKind,
 ) -> AutoBackendPolicy {
-    // Keep the measured defaults of each pipeline. A user preference moves one
+    // Both pipelines prefer WGC. A user preference moves one
     // candidate to the front without removing initialization/acquisition fallback.
     let defaults = match path {
         RecordingCapturePath::Direct => [
-            CaptureBackendKind::DxgiDuplication,
             CaptureBackendKind::WindowsGraphicsCapture,
+            CaptureBackendKind::DxgiDuplication,
             CaptureBackendKind::Gdi,
         ],
         #[cfg(feature = "legacy-capture")]
@@ -101,7 +101,7 @@ mod tests {
             Auto, DxgiDuplication as Dxgi, Gdi, WindowsGraphicsCapture as Wgc,
         };
         for (path, defaults) in [
-            (RecordingCapturePath::Direct, [Dxgi, Wgc, Gdi]),
+            (RecordingCapturePath::Direct, [Wgc, Dxgi, Gdi]),
             #[cfg(feature = "legacy-capture")]
             (RecordingCapturePath::Buffered, [Wgc, Dxgi, Gdi]),
         ] {
@@ -128,7 +128,7 @@ mod tests {
         use CaptureBackendKind::{
             Auto, DxgiDuplication as Dxgi, Gdi, WindowsGraphicsCapture as Wgc,
         };
-        assert_eq!(recording_gpu_backends(Auto), vec![Dxgi, Wgc]);
+        assert_eq!(recording_gpu_backends(Auto), vec![Wgc, Dxgi]);
         assert_eq!(recording_gpu_backends(Dxgi), vec![Dxgi, Wgc]);
         assert_eq!(recording_gpu_backends(Wgc), vec![Wgc, Dxgi]);
         assert!(recording_gpu_backends(Gdi).is_empty());

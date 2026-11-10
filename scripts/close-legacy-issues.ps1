@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$repository = 'mg-chao/snow-apps'
+$repository = 'mg-chao/snow-shot'
 $lastIssue = 1021
 $reply = @(
     '**简体中文**',

@@ -36,12 +36,14 @@ std::optional<QPoint> cursorMovementDirection(const QString& id) {
 QString screenshotShortcutForGlobalAction(snow_shot::presentation::GlobalShortcutAction action) {
     using Action = snow_shot::presentation::GlobalShortcutAction;
     switch (action) {
-    case Action::ScreenshotFixed:
+    case Action::ScreenshotPinToScreen:
         return QStringLiteral("pin_to_screen");
     case Action::ScreenshotOcr:
         return QStringLiteral("text_recognition");
     case Action::ScreenshotTranslation:
         return QStringLiteral("text_translation");
+    case Action::ScreenshotScrolling:
+        return QStringLiteral("scrolling_screenshot");
     case Action::ScreenshotCopy:
         return QStringLiteral("copy_to_clipboard");
     case Action::ScreenshotSave:

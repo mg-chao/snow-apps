@@ -82,8 +82,9 @@ class ScreenshotOcrController final : public QObject {
     void setRecognitionModel(const QString& selection);
     void activateImageConversion(SnowShotImageConversionFormat format);
     void openImageConversionSettings();
-    // Leaves the visible recognition tool but deliberately keeps requests and cache entries alive.
+    // Retires the recognition input surface while retaining completed results in the cache.
     void deactivate();
+    // Keeps the window alive as the mouse event receiver until the resize gesture finishes.
     void deactivateForSelectionResize();
     // Invalidates the capture session and cancels all recognition work.
     void invalidateSession();
@@ -113,6 +114,8 @@ class ScreenshotOcrController final : public QObject {
     void applyTextFormatting(const QString& value);
     void applyTextPunctuation(const QString& value);
     void applyTextTargetLanguage(const QString& language);
+    void requestTextTranslationServices();
+    void applyTextTranslationService(const QString& service);
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool hasTextResult() const;

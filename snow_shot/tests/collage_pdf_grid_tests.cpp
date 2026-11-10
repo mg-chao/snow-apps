@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
+#include "snow_shot/presentation/components/overlaycontrolbutton.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
+#include "widgets/divider.h"
 #include "widgets/image.h"
 #include "widgets/scroll_area.h"
 
@@ -14,6 +17,7 @@
 #include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLayout>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
@@ -23,6 +27,7 @@
 #include <QTranslator>
 #include <QTimer>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -71,19 +76,19 @@ AdButton* button(QWidget* parent, const char* name) {
     return result;
 }
 
-QWidget* card(CollagePdfPageGrid& grid, quint64 id) {
+QWidget* card(ImageStitchingPdfPageGrid& grid, quint64 id) {
     auto* result = grid.findChild<QWidget*>(QStringLiteral("collagePdfPage_%1").arg(id));
     require(result != nullptr, "visible page card must exist");
     return result;
 }
 
-AdScrollArea* scroll(CollagePdfPageGrid& grid) {
+AdScrollArea* scroll(ImageStitchingPdfPageGrid& grid) {
     auto* result = grid.findChild<AdScrollArea*>(QStringLiteral("collagePdfPagesScroll"));
     require(result != nullptr, "PDF pages scroll area must exist");
     return result;
 }
 
-void show(CollagePdfPageGrid& grid, QSize size = {760, 640}) {
+void show(ImageStitchingPdfPageGrid& grid, QSize size = {760, 640}) {
     grid.resize(size);
     grid.show();
     grid.activateWindow();
@@ -96,7 +101,7 @@ void key(QWidget* target, int code) {
     pump();
 }
 
-void setDragMime(QMimeData& mime, const CollageDocument& document, quint64 id) {
+void setDragMime(QMimeData& mime, const ImageStitchingDocument& document, quint64 id) {
     mime.setData(QStringLiteral("application/x-snow-shot-collage-pdf-page"),
                  QByteArray::number(reinterpret_cast<quintptr>(&document)) + ':' +
                      QByteArray::number(id));
@@ -110,14 +115,14 @@ bool enter(QWidget* target, QMimeData* mime, QPoint position,
 }
 
 void pageLayoutAndResponsiveColumns() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     QImage source = image({80, 120}, QColor(0, 0, 0, 0));
     source.setPixelColor(30, 40, QColor(Qt::red));
     const auto first = document.append(
         source,
         QStringLiteral("A very long image name that exceeds the width of this page card.png"));
     document.append(image({100, 10000}), QStringLiteral("/tmp/Long image.png"));
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid);
     require(grid.property("columnCount").toInt() == 3, "wide grid must use three columns");
     auto* firstCard = card(grid, first);
@@ -176,7 +181,7 @@ void pageLayoutAndResponsiveColumns() {
     pump();
     require(grid.property("columnCount").toInt() == 1, "small viewport must retain one column");
     auto settings = document.pdfSettings();
-    settings.orientation = CollagePdfOrientation::Landscape;
+    settings.orientation = ImageStitchingPdfOrientation::Landscape;
     settings.marginLeftMm = 20;
     settings.marginRightMm = 30;
     document.setPdfSettings(settings);
@@ -187,8 +192,8 @@ void pageLayoutAndResponsiveColumns() {
             "orientation edits must immediately update paper proportions");
     settings.customWidthMm = 10;
     settings.customHeightMm = 400;
-    settings.paperSize = CollagePdfPaperSize::Custom;
-    settings.orientation = CollagePdfOrientation::Portrait;
+    settings.paperSize = ImageStitchingPdfPaperSize::Custom;
+    settings.orientation = ImageStitchingPdfOrientation::Portrait;
     settings.marginLeftMm = settings.marginRightMm = 0;
     settings.marginTopMm = settings.marginBottomMm = 0;
     document.setPdfSettings(settings);
@@ -204,15 +209,86 @@ void pageLayoutAndResponsiveColumns() {
             "invalid edits must explain and retain the last valid page preview");
 }
 
+void solidContentBordersAtEveryDpi() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = themes.config();
+    ImageStitchingDocument document;
+    const auto id = document.append(image({80, 120}), QStringLiteral("Border fixture"));
+    document.select(0);
+    ImageStitchingPdfPageGrid grid(&document);
+    show(grid);
+    for (const auto scheme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+        themes.setPreset(scheme);
+        for (const qreal margin : {0.0, 10.0}) {
+            auto settings = document.pdfSettings();
+            settings.marginLeftMm = settings.marginRightMm = margin;
+            settings.marginTopMm = settings.marginBottomMm = margin;
+            document.setPdfSettings(settings);
+            pump();
+            auto* page = card(grid, id);
+            auto palette = page->palette();
+            palette.setColor(QPalette::Window, QColor(32, 48, 64));
+            page->setPalette(palette);
+            page->setAutoFillBackground(true);
+            auto* preview = page->findChild<AdImage*>();
+            waitUntil([&] { return !preview->loading(); });
+            // The page-number badge intentionally sits above guides near the paper's top left.
+            page->findChild<QLabel*>(QStringLiteral("collagePdfPageNumber"))->hide();
+            const auto content = page->property("contentRect").toRectF();
+            for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+                const QPoint offset(3, 5);
+                QImage rendered(
+                    QSize(qCeil((page->width() + 6) * dpr), qCeil((page->height() + 10) * dpr)),
+                    QImage::Format_ARGB32_Premultiplied);
+                rendered.setDevicePixelRatio(dpr);
+                rendered.fill(Qt::transparent);
+                {
+                    QPainter painter(&rendered);
+                    page->render(&painter, offset);
+                }
+                const QRectF bounds((content.topLeft() + offset) * dpr, content.size() * dpr);
+                for (int edge = 0; edge < 4; ++edge) {
+                    const bool vertical = edge < 2;
+                    const int across =
+                        qRound(vertical ? (edge == 0 ? bounds.left() : bounds.right())
+                                        : (edge == 2 ? bounds.top() : bounds.bottom()));
+                    const int start = qCeil(vertical ? bounds.top() : bounds.left()) + 8;
+                    const int end = qFloor(vertical ? bounds.bottom() : bounds.right()) - 8;
+                    for (int along = start; along <= end; ++along) {
+                        int thickness = 0;
+                        for (int pixel = across - 4; pixel <= across + 4; ++pixel) {
+                            const QPoint sample =
+                                vertical ? QPoint(pixel, along) : QPoint(along, pixel);
+                            if (rendered.pixelColor(sample) == QColor(0xf0, 0xf0, 0xf0))
+                                ++thickness;
+                        }
+                        require(
+                            thickness == qRound(dpr),
+                            qPrintable(QStringLiteral("Page content edge %1 at DPR %2, margin %3, "
+                                                      "position %4 has thickness %5; expected %6")
+                                           .arg(edge)
+                                           .arg(dpr)
+                                           .arg(margin)
+                                           .arg(along)
+                                           .arg(thickness)
+                                           .arg(qRound(dpr))));
+                    }
+                }
+            }
+        }
+    }
+    themes.setConfig(originalConfig);
+}
+
 void imageSizedPagePreview() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({80, 40}), QStringLiteral("Wide"));
     const auto second = document.append(image({40, 120}), QStringLiteral("Tall"));
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid);
     auto settings = document.pdfSettings();
-    settings.paperSize = CollagePdfPaperSize::ImageSize;
-    settings.orientation = CollagePdfOrientation::Landscape;
+    settings.paperSize = ImageStitchingPdfPaperSize::ImageSize;
+    settings.orientation = ImageStitchingPdfOrientation::Landscape;
     document.setPdfSettings(settings);
     pump();
     const auto check = [&](quint64 id, qreal ratio) {
@@ -235,7 +311,7 @@ void imageSizedPagePreview() {
     pump();
     check(first, 0.5);
     check(second, 1.0 / 3.0);
-    settings.paperSize = CollagePdfPaperSize::A4;
+    settings.paperSize = ImageStitchingPdfPaperSize::A4;
     document.setPdfSettings(settings);
     pump();
     const auto paper = card(grid, first)->property("paperRect").toRectF();
@@ -244,18 +320,18 @@ void imageSizedPagePreview() {
 }
 
 void keyboardActionsAndBusyStates() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({80, 40}), QStringLiteral("First"));
     const auto second = document.append(image({40, 80}), QStringLiteral("Second"));
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid);
     quint64 replacement = 0;
     int clears = 0;
     int adds = 0;
-    QObject::connect(&grid, &CollagePdfPageGrid::replaceImageRequested, &grid,
+    QObject::connect(&grid, &ImageStitchingPdfPageGrid::replaceImageRequested, &grid,
                      [&](quint64 id) { replacement = id; });
-    QObject::connect(&grid, &CollagePdfPageGrid::clearRequested, &grid, [&] { ++clears; });
-    QObject::connect(&grid, &CollagePdfPageGrid::addImagesRequested, &grid, [&] { ++adds; });
+    QObject::connect(&grid, &ImageStitchingPdfPageGrid::clearRequested, &grid, [&] { ++clears; });
+    QObject::connect(&grid, &ImageStitchingPdfPageGrid::addImagesRequested, &grid, [&] { ++adds; });
     auto* firstCard = card(grid, first);
     firstCard->setFocus();
     pump();
@@ -266,8 +342,8 @@ void keyboardActionsAndBusyStates() {
     require(replace->isVisible() && remove->isVisible() && preview->isVisible(),
             "keyboard selection must expose every page action in the floating toolbar");
     for (auto* page : {firstCard, card(grid, second)})
-        require(page->findChildren<AdButton*>().isEmpty(),
-                "page thumbnails must leave corner actions in the selection toolbar");
+        require(page->findChildren<AdButton*>().size() == 2,
+                "page thumbnails expose replace and delete corner actions alongside the toolbar");
     require(!replace->geometry().intersects(remove->geometry()) &&
                 !remove->geometry().intersects(preview->geometry()) &&
                 !replace->accessibleName().isEmpty(),
@@ -282,8 +358,9 @@ void keyboardActionsAndBusyStates() {
     QEnterEvent hover(QPointF(20, 20), QPointF(20, 20), firstCard->mapToGlobal(QPoint(20, 20)));
     QApplication::sendEvent(firstCard, &hover);
     require(!toolbar->isVisible() && document.selectedId() == 0 &&
-                firstCard->findChildren<AdButton*>().isEmpty(),
-            "hovering an unselected page must keep its corners and selection toolbar clear");
+                button(firstCard, "collagePdfReplaceThumbnailImage")->isVisible() &&
+                button(firstCard, "collagePdfDeleteThumbnailImage")->isVisible(),
+            "hovering an unselected page reveals its corner actions without selecting the page");
     firstCard->setFocus();
     pump();
     replace->setFocus();
@@ -338,14 +415,123 @@ void keyboardActionsAndBusyStates() {
             "deleting a focused page must restore keyboard focus to the selected surviving page");
 }
 
+void bottomToolbarAndReversePageOrder() {
+    ImageStitchingDocument document;
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
+    ImageStitchingPdfPageGrid grid(&document);
+    show(grid);
+    auto* reverse = button(&grid, "collagePdfReversePageOrder");
+    auto* add = button(&grid, "collagePdfAddImages");
+    auto* clear = button(&grid, "collagePdfClear");
+    auto* toolbar = grid.findChild<QWidget*>(QStringLiteral("collagePdfCanvasToolbar"));
+    auto* layout = toolbar->layout();
+    require(layout->count() == 4 && layout->itemAt(0)->widget() == reverse &&
+                layout->itemAt(1)->widget() == add &&
+                qobject_cast<adqt::widgets::AdDivider*>(layout->itemAt(2)->widget()) &&
+                layout->itemAt(3)->widget() == clear,
+            "bottom toolbar order must be Reverse page order, Add images, separator, Clear");
+    require(reverse->toolTip() == QStringLiteral("Reverse page order") &&
+                reverse->accessibleName() == reverse->toolTip() && !reverse->isEnabled(),
+            "reverse action must have an accessible label and be disabled for an empty document");
+    document.append(image({20, 30}), QStringLiteral("First"));
+    pump();
+    require(!reverse->isEnabled(), "a single page cannot be reversed");
+    for (int index = 1; index < 21; ++index)
+        document.append(image({20, 30}), QString::number(index));
+    document.moveItem(document.items().front().id, 3);
+    pump();
+    require(reverse->isEnabled() && toolbar->isVisible() && reverse->x() < add->x() &&
+                add->x() < clear->x() &&
+                grid.property("materializedPageCount").toInt() < document.items().size(),
+            "ordered bottom actions must support a document with pages outside the viewport");
+    const auto original = document.items();
+    document.select(original.front().id);
+    reverse->click();
+    pump();
+    auto* viewer = grid.findChild<AdImageViewer*>(QStringLiteral("collagePdfOriginalViewer"));
+    for (int index = 0; index < original.size(); ++index) {
+        const auto expected = original[original.size() - index - 1].id;
+        require(document.items()[index].id == expected &&
+                    viewer->itemAt(index).source.path().toULongLong() == expected,
+                "reverse action must reverse every current page and original-preview entry");
+    }
+    require(card(grid, original.back().id)->property("pageNumber").toInt() == 1 &&
+                document.selectedId() == original.front().id,
+            "reversal updates visible page numbers and preserves the selected page");
+    const auto revision = document.contentRevision();
+    grid.setLoading(true);
+    reverse->click();
+    require(!reverse->isEnabled() && document.contentRevision() == revision,
+            "loading must disable reversal until every pending page has been imported");
+    grid.setLoading(false);
+    grid.setExportBusy(true);
+    reverse->click();
+    require(!reverse->isEnabled() && document.contentRevision() == revision,
+            "export must block page reversal");
+    grid.setExportBusy(false);
+    require(reverse->isEnabled(), "reverse action must recover after export");
+    reverse->click();
+    pump();
+    for (int index = 0; index < original.size(); ++index)
+        require(document.items()[index].id == original[index].id,
+                "a second click must restore the document's prior order");
+    document.clear();
+    pump();
+    require(!reverse->isEnabled(), "clearing all pages must disable reversal");
+}
+
+void thumbnailReplacementAndDeletion() {
+    ImageStitchingDocument document;
+    const auto first = document.append(image({80, 40}), QStringLiteral("first"));
+    const auto second = document.append(image({40, 80}, Qt::blue), QStringLiteral("second"));
+    ImageStitchingPdfPageGrid grid(&document);
+    show(grid);
+    auto* thumbnail = card(grid, second);
+    auto* replace = button(thumbnail, "collagePdfReplaceThumbnailImage");
+    auto* remove = button(thumbnail, "collagePdfDeleteThumbnailImage");
+    thumbnail->setFocus();
+    pump();
+    require(dynamic_cast<OverlayControlButton*>(replace) &&
+                dynamic_cast<OverlayControlButton*>(remove) && replace->isVisible() &&
+                remove->isVisible() && remove->size() == QSize(28, 28) &&
+                remove->pos() == QPoint(thumbnail->width() - 32, thumbnail->height() - 32) &&
+                replace->pos() == remove->pos() - QPoint(32, 0) &&
+                replace->accessibleName() == replace->toolTip(),
+            "PDF page thumbnails share static image corner controls and keyboard visibility");
+    quint64 replacement = 0;
+    QObject::connect(&grid, &ImageStitchingPdfPageGrid::replaceImageRequested, &grid,
+                     [&](quint64 id) { replacement = id; });
+    document.select(first);
+    replace->click();
+    require(replacement == second && document.items().size() == 2,
+            "page corner replacement targets its own image instead of the selected page");
+    grid.setLoading(true);
+    require(!replace->isEnabled() && remove->isEnabled(),
+            "loading blocks page replacement while retaining deletion");
+    grid.setLoading(false);
+    grid.setExportBusy(true);
+    remove->click();
+    require(!replace->isEnabled() && !remove->isEnabled() && document.items().size() == 2,
+            "export blocks both page corner edits");
+    grid.setExportBusy(false);
+    grid.resize(900, 700);
+    pump();
+    require(remove->pos() == QPoint(thumbnail->width() - 32, thumbnail->height() - 32),
+            "corner actions follow responsive page thumbnail geometry");
+    remove->click();
+    pump();
+    require(document.items().size() == 1 && document.items().front().id == first,
+            "page corner deletion removes only its own input");
+}
+
 void selectedPageFloatingToolbar() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     QVector<quint64> ids;
     for (int index = 0; index < 12; ++index)
         ids.append(document.append(image({80, 40}), QString::number(index)));
     const auto originalKey = document.items().front().image.cacheKey();
     const auto settings = document.pdfSettings();
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid);
     auto* toolbar = grid.findChild<QWidget*>(QStringLiteral("collagePdfImageToolbar"));
     require(toolbar && toolbar->isVisible() && grid.rect().contains(toolbar->geometry()),
@@ -439,12 +625,12 @@ void selectedPageFloatingToolbar() {
 }
 
 void insertionReorderAndAutoscroll() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     QVector<quint64> ids;
     for (int index = 0; index < 40; ++index)
         ids.push_back(document.append(image({5, 3}), QString::number(index)));
     document.select(ids.front());
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid, {760, 500});
     auto* viewport = scroll(grid)->viewport();
     QMimeData mime;
@@ -470,7 +656,7 @@ void insertionReorderAndAutoscroll() {
     pump();
     require(document.items().front().id == ids[0] && document.items()[1].id == ids[1],
             "backward insertion must restore original order without swapping");
-    CollageDocument foreign;
+    ImageStitchingDocument foreign;
     QMimeData foreignMime;
     setDragMime(foreignMime, foreign, ids.front());
     require(!enter(viewport, &foreignMime, beforeFirst),
@@ -498,13 +684,13 @@ void insertionReorderAndAutoscroll() {
 }
 
 void originalPreviewIsolationAndOrder() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({100, 40}), QStringLiteral("First"));
     const auto second = document.append(image({50, 120}, Qt::green), QStringLiteral("Second"));
     const auto third = document.append(image({200, 20}, Qt::blue), QStringLiteral("Third"));
     document.rotate(second, true);
     document.flip(second, true);
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid);
     auto* viewer = grid.findChild<AdImageViewer*>(QStringLiteral("collagePdfOriginalViewer"));
     require(viewer && viewer->rowCount() == 3,
@@ -518,7 +704,7 @@ void originalPreviewIsolationAndOrder() {
     const auto pixels = document.items()[1].image.constBits();
     const auto settings = document.pdfSettings();
     const auto layout =
-        calculateCollagePdfPageLayout(transformedSize(document.items()[1]), settings);
+        calculateImageStitchingPdfPageLayout(transformedSize(document.items()[1]), settings);
     auto* reply = viewer->imageLoader()->load(viewer->itemAt(1).source, {}, &grid);
     waitUntil([&] { return reply->isFinished(); });
     require(reply->isSuccessful() && reply->image().size() == QSize(50, 120) &&
@@ -531,8 +717,8 @@ void originalPreviewIsolationAndOrder() {
     viewer->flipY();
     viewer->zoomOut();
     pump();
-    const auto after =
-        calculateCollagePdfPageLayout(transformedSize(document.items()[1]), document.pdfSettings());
+    const auto after = calculateImageStitchingPdfPageLayout(transformedSize(document.items()[1]),
+                                                            document.pdfSettings());
     require(document.items()[1].transform == transform &&
                 document.items()[1].image.constBits() == pixels &&
                 document.pdfSettings() == settings &&
@@ -559,14 +745,14 @@ void originalPreviewIsolationAndOrder() {
 }
 
 void emptyImportAndVirtualization() {
-    CollageDocument document;
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingDocument document;
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid, {760, 500});
     require(grid.findChild<QWidget*>(QStringLiteral("collagePdfEmptyState"))->isVisible() &&
                 !button(&grid, "collagePdfClear")->isEnabled(),
             "empty grid must show an add/drop prompt and disable Clear");
     QStringList files;
-    QObject::connect(&grid, &CollagePdfPageGrid::imageFilesDropped, &grid,
+    QObject::connect(&grid, &ImageStitchingPdfPageGrid::imageFilesDropped, &grid,
                      [&](const QStringList& paths) { files = paths; });
     QMimeData mime;
     mime.setUrls({QUrl::fromLocalFile(QStringLiteral("/tmp/first.png")),
@@ -629,9 +815,11 @@ class GridTranslator final : public QTranslator {
   public:
     QString translate(const char* context, const char* sourceText, const char*,
                       int) const override {
-        if (QString::fromLatin1(context) == QStringLiteral("CollagePdfPageGrid")) {
+        if (QString::fromLatin1(context) == QStringLiteral("ImageStitchingPdfPageGrid")) {
             if (QString::fromUtf8(sourceText) == QStringLiteral("Clear"))
                 return QStringLiteral("Translated clear");
+            if (QString::fromUtf8(sourceText) == QStringLiteral("Reverse page order"))
+                return QStringLiteral("Translated reverse");
             if (QString::fromUtf8(sourceText) == QStringLiteral("Rotate clockwise by 90°"))
                 return QStringLiteral("Translated rotation");
             if (QString::fromUtf8(sourceText) == QStringLiteral("Replace image"))
@@ -644,9 +832,9 @@ class GridTranslator final : public QTranslator {
 };
 
 void languageChangeAndHiddenWork() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({20, 20}), QStringLiteral("Name"));
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid);
     GridTranslator translator;
     QCoreApplication::installTranslator(&translator);
@@ -656,6 +844,11 @@ void languageChangeAndHiddenWork() {
                 button(&grid, "collagePdfClear")->accessibleName() ==
                     QStringLiteral("Translated clear"),
             "language changes must update cached toolbar and accessibility copy");
+    require(button(&grid, "collagePdfReversePageOrder")->toolTip() ==
+                    QStringLiteral("Translated reverse") &&
+                button(&grid, "collagePdfReversePageOrder")->accessibleName() ==
+                    QStringLiteral("Translated reverse"),
+            "language changes update the reverse action tooltip and accessible label");
     require(button(&grid, "collagePdfRotateRight")->toolTip() ==
                     QStringLiteral("Translated rotation") &&
                 button(&grid, "collagePdfRotateRight")->accessibleName() ==
@@ -672,14 +865,14 @@ void languageChangeAndHiddenWork() {
     QCoreApplication::removeTranslator(&translator);
     pump();
     const auto thumbnailBytes = grid.property("pageThumbnailBytes").toLongLong();
-    const auto beforeHide = collageResourceUsage().reservedBytes;
+    const auto beforeHide = imageStitchingResourceUsage().reservedBytes;
     grid.hide();
     for (auto* pageImage : grid.findChildren<AdImage*>())
         require(
             pageImage->source().isEmpty(),
             "hiding must synchronously release displayed pixels before deferred widget deletion");
     require(grid.property("pageThumbnailBytes").toLongLong() == 0 &&
-                collageResourceUsage().reservedBytes == beforeHide - thumbnailBytes,
+                imageStitchingResourceUsage().reservedBytes == beforeHide - thumbnailBytes,
             "thumbnail reservations must retire only after displayed pixmaps release their pixels");
     pump();
     require(grid.findChildren<AdImage*>().isEmpty(),
@@ -697,10 +890,10 @@ void languageChangeAndHiddenWork() {
 }
 
 void hidingDuringNativeDragKeepsContent() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({20, 30}), QStringLiteral("First"));
     document.append(image({30, 20}), QStringLiteral("Second"));
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     show(grid);
     auto* source = card(grid, first);
     const QPointF pressed(12, 100);
@@ -739,9 +932,12 @@ int main(int argc, char** argv) {
                     storage.initialize({directory.path(), directory.path(), 60000}).success,
                 "grid tests must isolate application storage in a temporary directory");
         pageLayoutAndResponsiveColumns();
+        solidContentBordersAtEveryDpi();
         imageSizedPagePreview();
         keyboardActionsAndBusyStates();
+        bottomToolbarAndReversePageOrder();
         selectedPageFloatingToolbar();
+        thumbnailReplacementAndDeletion();
         insertionReorderAndAutoscroll();
         originalPreviewIsolationAndOrder();
         emptyImportAndVirtualization();

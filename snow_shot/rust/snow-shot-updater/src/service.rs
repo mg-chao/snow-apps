@@ -73,6 +73,7 @@ pub struct HttpRequest {
     pub url: Url,
     pub installed_version: String,
     pub system_proxy: bool,
+    pub http_proxy: Option<String>,
     pub timeout: Duration,
     pub range: Option<HttpRange>,
 }
@@ -105,7 +106,11 @@ impl Network for ReqwestNetwork {
         request: HttpRequest,
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse>> + Send>> {
         Box::pin(async move {
-            let client = client(&request.origin, request.system_proxy)?;
+            let client = client(
+                &request.origin,
+                request.system_proxy,
+                request.http_proxy.as_deref(),
+            )?;
             let mut builder = http_request(&client, request.url, &request.installed_version)
                 .timeout(request.timeout);
             if let Some(range) = &request.range {
@@ -335,6 +340,7 @@ struct Service {
     progress_texts: ProgressTexts,
     progress_appearance: ProgressAppearance,
     system_proxy: bool,
+    http_proxy: Option<String>,
     active: Option<ActiveOperation>,
     cancellation: Option<CancellationToken>,
     requested: Option<RequestedOperation>,
@@ -385,7 +391,7 @@ fn validate_api_url(text: &str, allow_local_http: bool) -> Result<Url> {
     Ok(url)
 }
 
-fn client(base_url: &Url, system_proxy: bool) -> Result<Client> {
+fn client(base_url: &Url, system_proxy: bool, http_proxy: Option<&str>) -> Result<Client> {
     let origin = base_url.clone();
     let policy = redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= 10 {
@@ -403,7 +409,16 @@ fn client(base_url: &Url, system_proxy: bool) -> Result<Client> {
         .redirect(policy)
         .connect_timeout(METADATA_TIMEOUT)
         .tcp_nodelay(true);
-    let builder = if system_proxy {
+    let builder = if let Some(address) = http_proxy {
+        let proxy = reqwest::Proxy::all(address).map_err(|error| {
+            UpdateError::new(
+                "protocol_message_invalid",
+                "Invalid updater command argument",
+            )
+            .detail(error)
+        })?;
+        builder.no_proxy().proxy(proxy)
+    } else if system_proxy {
         builder
     } else {
         builder.no_proxy()
@@ -457,19 +472,23 @@ fn cached_payload_is_ready(user_initiated: bool, failed_version: bool, valid: bo
     valid && release_retry_is_allowed(user_initiated, failed_version)
 }
 
-fn retain_release_payload(cache: &Path, accepted_hash: &str) {
+fn retain_release_payload(cache: &Path, accepted_hash: Option<&str>) {
     let Ok(entries) = std::fs::read_dir(cache) else {
         return;
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        let named_payload = name.len() == 68 + usize::from(name.ends_with(".part"))
-            && (name.ends_with(".zip") || name.ends_with(".part"))
-            && name[..64]
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
-        if named_payload
-            && !name.starts_with(accepted_hash)
+        let payload_hash = name
+            .strip_suffix(".zip")
+            .or_else(|| name.strip_suffix(".part"))
+            .filter(|hash| {
+                hash.len() == 64
+                    && hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            });
+        if payload_hash.is_some()
+            && payload_hash != accepted_hash
             && entry
                 .file_type()
                 .is_ok_and(|kind| kind.is_file() && !kind.is_symlink())
@@ -511,15 +530,29 @@ impl Service {
             progress_texts: ProgressTexts::default(),
             progress_appearance: ProgressAppearance::default(),
             system_proxy: false,
+            http_proxy: None,
             active: None,
             cancellation: None,
             requested: None,
             awaiting_handoff: false,
             handoff: None,
         };
+        service.prune_installed_payloads();
         service.restore_cached_release();
         service.consume_legacy_result();
         Ok(service)
+    }
+
+    fn prune_installed_payloads(&self) {
+        // The installation record can advance before the startup probe commits the update.
+        // Keep retry/recovery payloads until that transaction has finished. Retain state.json
+        // for replay protection and to retry best-effort cleanup on subsequent launches.
+        if !transaction::transaction_pending(&self.options.root)
+            && compare_versions(&self.persisted.observed_version, &self.installed_version)
+                .is_ok_and(|order| !order.is_gt())
+        {
+            retain_release_payload(&self.options.cache_directory, None);
+        }
     }
 
     fn restore_cached_release(&mut self) {
@@ -782,6 +815,7 @@ struct MetadataInputs {
     github_api_url: Url,
     gitee_api_url: Url,
     system_proxy: bool,
+    http_proxy: Option<String>,
     installed_version: String,
     manual: bool,
 }
@@ -797,7 +831,8 @@ async fn metadata_bytes(
         _ = cancellation.cancelled() => return Err(cancelled()),
         response = inputs.network.get(HttpRequest {
             origin: url.clone(), url, installed_version: inputs.installed_version.clone(),
-            system_proxy: inputs.system_proxy, timeout: METADATA_TIMEOUT, range: None,
+            system_proxy: inputs.system_proxy,
+            http_proxy: inputs.http_proxy.clone(), timeout: METADATA_TIMEOUT, range: None,
         }) => response.map_err(|error| transport_error("metadata_download_failed", "Could not download signed update metadata", error))?,
         _ = deadline.as_mut() => return Err(github::error()),
     };
@@ -1154,6 +1189,7 @@ async fn download_once(
             url: url.clone(),
             installed_version: inputs.installed_version.clone(),
             system_proxy: inputs.system_proxy,
+            http_proxy: inputs.http_proxy.clone(),
             timeout: PACKAGE_TIMEOUT,
             range: can_resume.then(|| HttpRange {
                 offset,
@@ -1316,6 +1352,7 @@ struct DownloadInputs {
     github_api_url: Url,
     gitee_api_url: Url,
     system_proxy: bool,
+    http_proxy: Option<String>,
     installed_version: String,
     package: AvailableUpdate,
     saved_hash: String,
@@ -1357,6 +1394,7 @@ async fn download_package(
                 github_api_url: inputs.github_api_url.clone(),
                 gitee_api_url: inputs.gitee_api_url.clone(),
                 system_proxy: inputs.system_proxy,
+                http_proxy: inputs.http_proxy.clone(),
                 installed_version: inputs.installed_version.clone(),
                 manual: false,
             };
@@ -1482,6 +1520,7 @@ fn start_check(
             github_api_url: service.github_api_url.clone(),
             gitee_api_url: service.gitee_api_url.clone(),
             system_proxy: service.system_proxy,
+            http_proxy: service.http_proxy.clone(),
             installed_version: service.installed_version.clone(),
             manual: user_initiated,
         },
@@ -1515,6 +1554,7 @@ fn start_download(
             github_api_url: service.github_api_url.clone(),
             gitee_api_url: service.gitee_api_url.clone(),
             system_proxy: service.system_proxy,
+            http_proxy: service.http_proxy.clone(),
             installed_version: service.installed_version.clone(),
             package,
             saved_hash: service.persisted.partial_hash.clone(),
@@ -1555,11 +1595,12 @@ async fn accept_metadata(
     if !compare_versions(&release.version, &service.installed_version)?.is_gt() {
         service.available = None;
         service.set_state("Idle", None);
+        service.prune_installed_payloads();
         write_status(writer, &service.status).await?;
         return Ok(());
     }
     fsutil::write_atomic(&cache_path(&service.options, "release.json"), &bytes)?;
-    retain_release_payload(&service.options.cache_directory, &available.sha256);
+    retain_release_payload(&service.options.cache_directory, Some(&available.sha256));
     let suppressed = is_failed_version(&service.options.root, &release.version);
     let complete = cache_path(&service.options, format!("{}.zip", available.sha256));
     let complete_valid = fsutil::verify_file(&complete, available.size, &available.sha256).is_ok();
@@ -1676,12 +1717,33 @@ async fn handle_command(
                         "Invalid updater command argument",
                     )
                 })?;
-                Ok((operation, trigger, mode, system_proxy))
+                let http_proxy = command.http_proxy.clone().filter(|value| !value.is_empty());
+                if let Some(address) = &http_proxy {
+                    let url = Url::parse(address).map_err(|_| {
+                        UpdateError::new(
+                            "protocol_message_invalid",
+                            "Invalid updater command argument",
+                        )
+                    })?;
+                    require(
+                        !system_proxy
+                            && url.scheme() == "http"
+                            && url.host_str().is_some()
+                            && url.port_or_known_default().is_some_and(|port| port > 0)
+                            && (url.path().is_empty() || url.path() == "/")
+                            && url.query().is_none()
+                            && url.fragment().is_none(),
+                        "protocol_message_invalid",
+                        "Invalid updater command argument",
+                    )?;
+                }
+                Ok((operation, trigger, mode, system_proxy, http_proxy))
             })();
             match parsed {
-                Ok((operation, trigger, mode, system_proxy)) => {
+                Ok((operation, trigger, mode, system_proxy, http_proxy)) => {
                     service.requested = Some(operation);
                     service.system_proxy = system_proxy;
+                    service.http_proxy = http_proxy;
                     if let Some(texts) = command.progress_texts {
                         service.progress_texts = texts;
                     }
@@ -2370,6 +2432,7 @@ mod tests {
             github_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
             gitee_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
             system_proxy: false,
+            http_proxy: None,
             installed_version: "1.0.0".to_owned(),
             package: AvailableUpdate {
                 version: "2.0.0".to_owned(),
@@ -2444,6 +2507,118 @@ mod tests {
         }
     }
 
+    #[test]
+    fn initialization_prunes_installed_downloads_and_preserves_newer_or_pending_payloads() {
+        for (installed_version, observed_version, pending, removed) in [
+            ("2.0.0", "2.0.0", false, true),
+            ("3.0.0", "2.0.0", false, true),
+            ("1.0.0", "2.0.0", false, false),
+            ("2.0.0", "2.0.0", true, false),
+            ("2.0.0", "", false, false),
+            ("2.0.0", "invalid", false, false),
+        ] {
+            let temporary = TempDir::new().unwrap();
+            let mut service = ready_service(&temporary, FakeNetwork::new([]));
+            service.persisted.observed_version = observed_version.to_owned();
+            write_persisted(&service.options, &service.persisted).unwrap();
+            let root = &service.options.root;
+            std::fs::create_dir_all(root.join("bin")).unwrap();
+            std::fs::write(
+                root.join(transaction::INSTALLATION_RECORD),
+                serde_json::to_vec(&json!({
+                    "schema": 1,
+                    "platform": crate::edition::PLATFORM,
+                    "product": crate::edition::PRODUCT,
+                    "variant": "portable",
+                    "version": installed_version,
+                    "files": [{"path": crate::edition::APP_PATH, "size": 0, "sha256": "0".repeat(64)}]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let work = root.join(transaction::UPDATE_WORK);
+            std::fs::create_dir_all(&work).unwrap();
+            std::fs::write(work.join("failed-version.txt"), b"2.0.0").unwrap();
+            if pending {
+                std::fs::write(work.join("journal.json"), b"pending recovery").unwrap();
+            }
+
+            let cache = &service.options.cache_directory;
+            let payloads = [
+                format!("{}.zip", service.persisted.observed_hash),
+                format!("{}.part", service.persisted.observed_hash),
+                format!("{}.zip", "a".repeat(64)),
+                format!("{}.part", "b".repeat(64)),
+            ];
+            for name in &payloads {
+                std::fs::write(cache.join(name), b"cached payload").unwrap();
+            }
+            let preserved = [
+                "state.json".to_owned(),
+                "release.json".to_owned(),
+                "user.zip".to_owned(),
+                format!("{}.part", "g".repeat(64)),
+                format!("{}\u{00e9}.zip", "a".repeat(62)),
+            ];
+            for name in &preserved[1..] {
+                std::fs::write(cache.join(name), b"unrelated data").unwrap();
+            }
+            let state_before = std::fs::read(cache.join("state.json")).unwrap();
+            let directory = cache.join(format!("{}.zip", "c".repeat(64)));
+            std::fs::create_dir(&directory).unwrap();
+            std::fs::write(directory.join("user.txt"), b"user data").unwrap();
+            let sibling = temporary.path().join(format!("{}.zip", "d".repeat(64)));
+            std::fs::write(&sibling, b"another cache").unwrap();
+
+            let initialized =
+                Service::initialize(service.options.clone(), service.dependencies.clone()).unwrap();
+            assert_eq!(initialized.status.state, "Idle");
+            for name in &payloads {
+                assert_eq!(
+                    cache.join(name).exists(),
+                    !removed,
+                    "installed={installed_version}, observed={observed_version}, pending={pending}: {name}"
+                );
+            }
+            for name in &preserved {
+                assert!(cache.join(name).exists(), "{name}");
+            }
+            assert_eq!(
+                std::fs::read(cache.join("state.json")).unwrap(),
+                state_before
+            );
+            assert!(directory.join("user.txt").exists());
+            assert!(sibling.exists());
+            assert!(work.join("failed-version.txt").exists());
+            assert_eq!(work.join("journal.json").exists(), pending);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installed_download_cleanup_retries_locked_files() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        service.installed_version = "2.0.0".to_owned();
+        let payload = cache_path(
+            &service.options,
+            format!("{}.zip", service.persisted.observed_hash),
+        );
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&payload)
+            .unwrap();
+
+        service.prune_installed_payloads();
+        assert!(payload.exists());
+        drop(locked);
+        service.prune_installed_payloads();
+        assert!(!payload.exists());
+    }
+
     fn ready_service(temporary: &TempDir, network: FakeNetwork) -> Service {
         let options = ServiceOptions {
             root: temporary.path().join("root"),
@@ -2485,12 +2660,81 @@ mod tests {
             progress_texts: ProgressTexts::default(),
             progress_appearance: ProgressAppearance::default(),
             system_proxy: false,
+            http_proxy: None,
             active: None,
             cancellation: None,
             requested: None,
             awaiting_handoff: false,
             handoff: None,
         }
+    }
+
+    #[tokio::test]
+    async fn manual_proxy_routes_http_requests() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0_u8; 1024];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert!(count > 0);
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|value| value == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            assert!(request.starts_with(b"GET http://proxy-target.invalid/releases HTTP/1.1"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .await
+                .unwrap();
+        });
+        let url = Url::parse("http://proxy-target.invalid/releases").unwrap();
+        let request = client(&url, false, Some(&proxy)).unwrap().get(url).send();
+        let response = tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.text().await.unwrap(), "ok");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn manual_proxy_command_is_validated_and_applied() {
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        let (sender, _receiver) = mpsc::channel(4);
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        for address in [
+            "https://localhost:7890",
+            "http://localhost/path",
+            "http://localhost?x",
+            "http://localhost:0",
+        ] {
+            let command = serde_json::from_value(json!({
+                "protocol": PROTOCOL_VERSION, "id": 1, "command": "execute",
+                "operation": "probe", "trigger": "user", "mode": "manual",
+                "systemProxy": false, "httpProxy": address
+            }))
+            .unwrap();
+            handle_command(&mut service, command, &mut writer, &sender)
+                .await
+                .unwrap();
+            assert!(service.http_proxy.is_none());
+        }
+        let command = serde_json::from_value(json!({
+            "protocol": PROTOCOL_VERSION, "id": 1, "command": "execute",
+            "operation": "probe", "trigger": "user", "mode": "manual",
+            "systemProxy": false, "httpProxy": "http://127.0.0.1:7890"
+        }))
+        .unwrap();
+        handle_command(&mut service, command, &mut writer, &sender)
+            .await
+            .unwrap();
+        assert_eq!(service.http_proxy.as_deref(), Some("http://127.0.0.1:7890"));
+        assert!(!service.system_proxy);
     }
 
     fn apply_command() -> Command {
@@ -2906,7 +3150,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn successful_check_reuses_only_the_current_cached_payload() {
+    async fn successful_check_reuses_or_prunes_the_current_cached_payload() {
         let temporary = TempDir::new().unwrap();
         let mut service = ready_service(&temporary, FakeNetwork::new([]));
         let package = service.available.take().unwrap();
@@ -2933,7 +3177,7 @@ mod tests {
         assert_eq!(service.status.state, "Idle");
         accept_metadata(
             &mut service,
-            release,
+            release.clone(),
             b"verified current release".to_vec(),
             false,
             &mut writer,
@@ -2943,6 +3187,22 @@ mod tests {
         assert_eq!(service.status.state, "Ready");
         assert_eq!(service.status.version, "2.0.0");
         assert_eq!(service.available.as_ref().unwrap().sha256, package.sha256);
+
+        service.installed_version.clone_from(&package.version);
+        accept_metadata(
+            &mut service,
+            release,
+            b"verified installed release".to_vec(),
+            false,
+            &mut writer,
+        )
+        .await
+        .unwrap();
+        assert_eq!(service.status.state, "Idle");
+        assert!(service.available.is_none());
+        assert!(!cache_path(&service.options, format!("{}.zip", package.sha256)).exists());
+        assert_eq!(service.persisted.observed_version, package.version);
+        assert_eq!(service.persisted.observed_hash, package.sha256);
     }
 
     #[test]
@@ -2994,6 +3254,7 @@ mod tests {
                 github_api_url: Url::parse("http://127.0.0.1:8080/releases/").unwrap(),
                 gitee_api_url: Url::parse("http://127.0.0.1:8080/releases/").unwrap(),
                 system_proxy: true,
+                http_proxy: None,
                 installed_version: "1.2.3".to_owned(),
                 manual: true,
             },
@@ -3017,6 +3278,7 @@ mod tests {
         );
         assert_eq!(requests[0].installed_version, "1.2.3");
         assert!(requests[0].system_proxy);
+        assert!(requests[0].http_proxy.is_none());
         assert_eq!(requests[0].timeout, METADATA_TIMEOUT);
         assert!(requests[0].range.is_none());
         assert_eq!(clock.sleeps(), vec![METADATA_TIMEOUT, METADATA_TIMEOUT]);
@@ -3034,6 +3296,7 @@ mod tests {
                 github_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
                 gitee_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
                 system_proxy: false,
+                http_proxy: None,
                 installed_version: "1.0.0".to_owned(),
                 manual: false,
             },
@@ -3249,6 +3512,7 @@ mod tests {
             gitee_api_url: Url::parse("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases")
                 .unwrap(),
             system_proxy: false,
+            http_proxy: None,
             installed_version: "1.0.0".to_owned(),
             manual: true,
         }
@@ -3423,7 +3687,7 @@ mod tests {
                     file["browser_download_url"]
                         .as_str()
                         .unwrap()
-                        .replace("github.com", "gitee.com")
+                        .replace(github::REPOSITORY, "https://gitee.com/mg-chao/snow-apps")
                 );
             }
             let rejected_signed = crate::contract::tests::sign_payload(&rejected, &private, 32);
@@ -3764,7 +4028,7 @@ mod tests {
             release.update_package("portable").unwrap().sha256.clone();
         service.persisted.source = Some(ReleaseSource::GitHub);
         service.persisted.partial_url =
-            "https://github.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/package.zip"
+            "https://github.com/mg-chao/snow-shot/releases/download/v2.0.0_snow-shot/package.zip"
                 .to_owned();
         write_persisted(&service.options, &service.persisted).unwrap();
         service.persisted = read_persisted(&cache_path(&service.options, "state.json"));

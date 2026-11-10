@@ -167,7 +167,7 @@ void ScreenshotImageConversionView::showContextMenu(const QPoint& globalPosition
     adqt::widgets::AdContextMenu menu(this);
     menu.setObjectName(QStringLiteral("screenshotImageConversionContextMenu"));
     QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
-    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    QAction* selectAll = menu.addItem(tr("Select all"), adqt::icons::antd::outlined::Select());
     copy->setEnabled(!m_source.isEmpty());
     selectAll->setEnabled(!m_browser->document()->isEmpty());
     connect(copy, &QAction::triggered, this, [this]() { static_cast<void>(copyToClipboard()); });

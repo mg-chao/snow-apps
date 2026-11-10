@@ -23,9 +23,11 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/update/startupupdate.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "snow_shot/diagnostics/diagnosticspaths.h"
 #include "snow_shot/diagnostics/ffmpegdiagnostics.h"
 #include "diagnosticsbridge.h"
 #include "startupregistrationreport.h"
+#include "updateprobe.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/capture/screenshotcapturepolicy.h"
 #include "../presentation/capture/screenshotcaptureperfinstrumentation.h"
@@ -49,6 +51,7 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QPointer>
 #include <QSysInfo>
 #include <optional>
 #include <utility>
@@ -59,6 +62,7 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 int runMcpApplicationLifecycleTests(int argc, char** argv);
+int runMcpSourceResolverTests(int argc, char** argv);
 #endif
 #ifdef Q_OS_MACOS
 #include "snow_recording_macos.h"
@@ -81,37 +85,21 @@ extern "C" void snow_diagnostics_install_panic_hook(void (*callback)(const unsig
 #ifdef SNOW_SHOT_CONTROLLER_LIFETIME_TESTS
 int runScreenshotControllerLifetimeTests(int argc, char** argv);
 int runScreenshotControllerClipboardTests(int argc, char** argv);
+int runOcrProxyStartupTests(int argc, char** argv);
 #endif
 
 namespace {
 snow_shot::diagnostics::DiagnosticsOptions
 startupDiagnosticsOptions(const QString& selectedDirectory, const QString& applicationName) {
-    snow_shot::diagnostics::DiagnosticsOptions options;
     const bool storeManaged = snow_shot::app::distribution::isStoreManaged();
     const QString stableRoot =
         storeManaged ? snow_shot::app::distribution::writableDataDirectory()
-                     : QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    // A missing package data root must never turn a relative path into a writable log
-    // directory in the current working directory or the standalone application's state.
-    if (storeManaged && !QDir::isAbsolutePath(stableRoot))
-        return options;
-    if (!selectedDirectory.isEmpty())
-        options.directories.append(QDir(selectedDirectory).filePath(QStringLiteral("logs")));
-    options.directories.append(QDir(stableRoot).filePath(QStringLiteral("logs")));
-    // Crashpad registers process-wide exception resources once. Its live database must
-    // stay at a stable path while the user-selected data/log directory is migrated.
-    options.crashCaptureDirectory = QDir(stableRoot).filePath(QStringLiteral("logs/crashes"));
+                     : QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     const QString temporaryRoot =
         QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).canonicalPath();
-    if (!storeManaged || QDir::isAbsolutePath(temporaryRoot)) {
-        const QString relative =
-            storeManaged
-                ? QStringLiteral("SnowShot/%1/%2/logs")
-                      .arg(applicationName, snow_shot::app::distribution::packageFamilyName())
-                : QStringLiteral("SnowShot/%1/logs").arg(applicationName);
-        options.directories.append(QDir(temporaryRoot).filePath(relative));
-    }
-    return options;
+    return snow_shot::diagnostics::diagnosticsOptionsForPaths(
+        {selectedDirectory, stableRoot, temporaryRoot, applicationName,
+         storeManaged ? snow_shot::app::distribution::packageFamilyName() : QString()});
 }
 
 #ifndef Q_OS_MACOS
@@ -188,10 +176,22 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setApplicationName(applicationName);
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_DIAGNOSTICS_VERSION));
 #ifdef SNOW_SHOT_CONTROLLER_LIFETIME_TESTS
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--ocr-proxy-startup-tests") {
+        return runOcrProxyStartupTests(argc, argv);
+    }
     if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--controller-lifetime-tests") {
         return runScreenshotControllerLifetimeTests(argc, argv);
     }
-    if (argc == 2 && (QString::fromLocal8Bit(argv[1]) == u"--clipboard-pin-tests" ||
+#ifdef Q_OS_MACOS
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--session-focus-tests") {
+        return runScreenshotControllerClipboardTests(argc, argv);
+    }
+#endif
+    if (argc >= 2 && QString::fromLocal8Bit(argv[1]) == u"--clipboard-pin-tests") {
+        return runScreenshotControllerClipboardTests(argc, argv);
+    }
+    if (argc == 2 && (QString::fromLocal8Bit(argv[1]) == u"--hidpi-scaling-tests" ||
+                      QString::fromLocal8Bit(argv[1]) == u"--controller-reselection-tests" ||
                       QString::fromLocal8Bit(argv[1]) == u"--automatic-selection-tests" ||
                       QString::fromLocal8Bit(argv[1]) == u"--shell-file-startup-tests" ||
                       QString::fromLocal8Bit(argv[1]) == u"--image-editor-pin-tests")) {
@@ -199,6 +199,8 @@ int main(int argc, char* argv[]) {
     }
 #endif
 #ifdef SNOW_SHOT_MCP_TEST_FIXTURE
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--mcp-source-resolver-tests")
+        return runMcpSourceResolverTests(argc, argv);
     if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--mcp-lifecycle-tests")
         return runMcpApplicationLifecycleTests(argc, argv);
     // Only test builds expose this isolated production-router fixture. It bypasses
@@ -316,6 +318,10 @@ int main(int argc, char* argv[]) {
             config.enable_microphone = static_cast<uint8_t>(arguments.contains(u"microphone"));
             config.show_cursor = 1;
             config.keyboard_size = 64;
+            config.record_number_keys = 1;
+            config.record_letters_and_symbols = 1;
+            config.record_control_keys = 1;
+            config.preserve_keyboard_shortcuts = 1;
             config.mouse_trail_duration_ms = 500;
             config.loop_animated_images = 1;
             if (arguments.contains(u"effects")) {
@@ -400,6 +406,10 @@ int main(int argc, char* argv[]) {
         config.show_cursor = 1;
         config.mouse_trail_duration_ms = 500;
         config.keyboard_size = 64;
+        config.record_number_keys = 1;
+        config.record_letters_and_symbols = 1;
+        config.record_control_keys = 1;
+        config.preserve_keyboard_shortcuts = 1;
         const auto result = snow_recording_gpu_probe(&config, recover ? 1 : 0);
         if (result != SNOW_RECORDING_RESULT_OK) {
             qWarning().noquote() << snow_recording_last_error_message();
@@ -407,32 +417,25 @@ int main(int argc, char* argv[]) {
         return result == SNOW_RECORDING_RESULT_OK ? 0 : 1;
     }
     // A probe runs before diagnostics, singleton acquisition, or any live user-state access.
-    if (argc == 3 && QString::fromLocal8Bit(argv[1]) == u"--update-probe") {
-        if (QString::fromLocal8Bit(argv[2]) != QCoreApplication::applicationVersion()) {
-            return 3;
-        }
+    if (const auto probeRequest = snow_shot::app::inspectUpdateProbeRequest(
+            argc, argv, QCoreApplication::applicationVersion())) {
+        if (*probeRequest != 0)
+            return *probeRequest;
         qputenv("QT_QPA_PLATFORM", "offscreen");
         QApplication probe(argc, argv);
         adqt::widgets::initializePlatformCompatibility(probe);
-        QTemporaryDir directory;
-        if (!directory.isValid()) {
-            return 4;
-        }
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
-        if (!storage.initialize({directory.path(), directory.path(), 8000}).success) {
-            return 5;
-        }
-        snow_shot::presentation::LanguageManager::instance().initialize();
-        const auto startupSettings = snow_shot::storage::SystemSettings();
-        const auto startupResult = snow_shot::platform::windows::reconcileStartupMode(
-            !startupSettings.autoStartAtBoot() ? snow_shot::platform::windows::StartupMode::Off
-            : startupSettings.launchAsAdministrator()
-                ? snow_shot::platform::windows::StartupMode::ElevatedTask
-                : snow_shot::platform::windows::StartupMode::Registry);
-
-        snow_shot::presentation::styles::ThemeManager::instance().initialize(probe);
-        storage.shutdown();
-        return 0;
+        return snow_shot::app::runIsolatedUpdateProbe(
+            {[&](const QString& root) {
+                 snow_shot::storage::StorageInitializationOptions options{root, root, 8000};
+                 options.isolateAuxiliaryStorage = true;
+                 return storage.initialize(options).success;
+             },
+             [&] {
+                 snow_shot::presentation::LanguageManager::instance().initialize();
+                 snow_shot::presentation::styles::ThemeManager::instance().initialize(probe);
+             },
+             [&] { storage.shutdown(); }});
     }
 #ifdef Q_OS_MACOS
     // Exercise normal pre-application startup without touching live user state.
@@ -667,9 +670,11 @@ int main(int argc, char* argv[]) {
                                  snow_shot::presentation::styles::ThemeManager::instance()
                                      .updateProgressAppearance());
                          });
-        startupUpdate.setSystemProxy(
-            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString() ==
-            u"system");
+        startupUpdate.setProxyConfiguration(
+            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString(),
+            applicationStorage.configuration()
+                .value(QStringLiteral("network/http_proxy"))
+                .toString());
         bool foregroundRequested =
             administratorRestart || launchArguments.contains(QStringLiteral("--show-main-window"));
         const auto initialImageRequest =
@@ -680,6 +685,19 @@ int main(int argc, char* argv[]) {
             return snow_shot::update::startupUpdateRelaunchArguments(foregroundRequested,
                                                                      pendingImagePaths);
         };
+        singleInstance.setLaunchRequestAdmission([&](const QStringList& arguments) {
+            if (!startupUpdate.handoffPending())
+                return true;
+            const auto request = snow_shot::app::parseShellImageLaunchRequest(arguments);
+            const bool foreground =
+                foregroundRequested || arguments.contains(QStringLiteral("--show-main-window")) ||
+                (!request.requested && !arguments.contains(QStringLiteral("--autostart")));
+            auto paths = pendingImagePaths;
+            if (request.valid)
+                paths.append(request.paths);
+            return startupUpdate.acceptsRelaunchArguments(
+                snow_shot::update::startupUpdateRelaunchArguments(foreground, paths));
+        });
         const auto forwardedLaunch = QObject::connect(
             &singleInstance, &snow_shot::app::SingleInstanceCoordinator::launchRequestReceived,
             &app, [&](const QStringList& arguments) {
@@ -696,6 +714,7 @@ int main(int argc, char* argv[]) {
             startupUpdate, [&applicationStorage] { return applicationStorage.flushNow().success; },
             [&] { return foregroundRequested; }, std::chrono::seconds(210), relaunchArguments);
         QObject::disconnect(forwardedLaunch);
+        singleInstance.setLaunchRequestAdmission({});
         if (startupUpdateResult == snow_shot::update::StartupUpdateResult::ExitForUpdate) {
             singleInstance.stopAcceptingLaunchRequests();
             return 0;
@@ -707,6 +726,9 @@ int main(int argc, char* argv[]) {
     adqt::widgets::AdTooltip::installApplicationTooltips();
 
     snow_shot::app::ApplicationController applicationController(app);
+    singleInstance.setLaunchRequestAdmission([&](const QStringList& arguments) {
+        return applicationController.acceptsLaunchRequest(arguments);
+    });
     applicationController.start(launchArguments, [&] {
         const auto startupSettings = snow_shot::storage::SystemSettings();
 #ifdef Q_OS_WIN
@@ -729,31 +751,33 @@ int main(int argc, char* argv[]) {
         }
 #endif
 #ifdef Q_OS_MACOS
-        const auto startupResult =
-            snow_shot::platform::macos::loginItemAutomaticRegistrationAllowed(launchArguments)
-                ? snow_shot::platform::macos::loginItemService().initialize(
-                      startupSettings.autoStartAtBoot())
-                : snow_shot::platform::macos::LoginItemResult{};
+        if (snow_shot::platform::macos::loginItemAutomaticRegistrationAllowed(launchArguments)) {
+            const auto completed = [controller = QPointer<snow_shot::app::ApplicationController>(
+                                        &applicationController)](
+                                       const snow_shot::platform::macos::LoginItemResult& result) {
+                if (result.success || !controller)
+                    return;
+                snow_shot::app::reportStartupRegistrationFailure(result.error);
+                // Startup can otherwise have only a tiny floating toolbar visible.
+                controller->showMainWindow();
+                adqt::widgets::AdMessage::Request request;
+                request.content = result.error;
+                adqt::widgets::AdMessageService::error(std::move(request));
+            };
+            const auto admitted = snow_shot::platform::macos::loginItemService().initialize(
+                startupSettings.autoStartAtBoot(), completed);
+            if (!admitted.success)
+                completed(admitted);
+        }
 #else
         const auto startupResult = snow_shot::platform::windows::reconcileStartupMode(
             !startupSettings.autoStartAtBoot() ? snow_shot::platform::windows::StartupMode::Off
             : startupSettings.launchAsAdministrator()
                 ? snow_shot::platform::windows::StartupMode::ElevatedTask
                 : snow_shot::platform::windows::StartupMode::Registry);
-#endif
-        if (!startupResult.success) {
+        if (!startupResult.success)
             snow_shot::app::reportStartupRegistrationFailure(startupResult.error);
-#ifdef Q_OS_MACOS
-            QTimer::singleShot(0, &app, [&applicationController, error = startupResult.error] {
-                // Startup can otherwise have only a tiny floating toolbar visible.
-                // Give the error a readable application surface before opening it.
-                applicationController.showMainWindow();
-                adqt::widgets::AdMessage::Request request;
-                request.content = error;
-                adqt::widgets::AdMessageService::error(std::move(request));
-            });
 #endif
-        }
     });
     QTimer::singleShot(0, &app, [&] {
         singleInstance.setLaunchRequestHandler(

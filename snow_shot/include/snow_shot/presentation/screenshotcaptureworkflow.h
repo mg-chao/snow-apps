@@ -18,10 +18,15 @@ class ScreenshotInteractionState;
 class ScreenshotIntelligentSelectionModel;
 class ScreenshotSelectionModel;
 
+enum class ScreenshotCaptureFocusDisposition { RestorePrevious, KeepCurrent };
+
 struct ScreenshotCapturePresentationCallbacks {
     std::function<void()> hideToolbar;
     std::function<void()> updateOverlayState;
     std::function<void()> updateColorPicker;
+    // Session readiness after captured pixels + initial selection join and visible reveal
+    // (or silent readiness). This is not a compositor/worker completion acknowledgement.
+    // Presentation callbacks are synchronous and may cancel or replace the session.
     std::function<void()> capturePresented;
     std::function<void()> beforeCapturePresented = []() {};
     std::function<void()> resetPresentation = []() {};
@@ -50,6 +55,11 @@ struct ScreenshotCaptureWorkflowContext {
     std::function<void()> releaseCaptureHistory = []() {};
     std::function<bool()> screenshotSoundNotification = []() { return false; };
     std::function<void()> playShutterSound = []() {};
+    std::function<void(bool)> captureStarting = [](bool) {};
+    std::function<void(ScreenshotCaptureFocusDisposition)> captureEnding =
+        [](ScreenshotCaptureFocusDisposition) {};
+    // Runs after presentation teardown, unlike captureTerminated's model cleanup hook.
+    std::function<void()> captureEnded = []() {};
 };
 
 class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink {
@@ -71,7 +81,11 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     [[nodiscard]] bool startRecapture(const QVector<std::uint32_t>& excludedWindowIds = {});
     [[nodiscard]] bool recaptureInProgress() const;
     [[nodiscard]] bool suppressCaptureToolbar() const;
-    void cancelCapture();
+    // Explicit editing commands may replace a quick action's hidden toolbar policy.
+    // Silent capture sessions retain their presentation policy.
+    void enableCaptureToolbar();
+    void cancelCapture(ScreenshotCaptureFocusDisposition focus =
+                           ScreenshotCaptureFocusDisposition::RestorePrevious);
     void cancelCaptureForExport();
     void completeDeferredExportCleanup();
     void handleInitialSmartSelectionResolved(quint64 sessionId);

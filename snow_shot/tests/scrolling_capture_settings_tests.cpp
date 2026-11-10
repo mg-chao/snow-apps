@@ -1,3 +1,4 @@
+#include "imagesplit_smart_reference.h"
 #include "presentation/capture/screenshotscrollingpipeline.h"
 #include "snow_shot/platform/screenshotnative.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -172,9 +173,9 @@ class ToolbarCommands final : public ScreenshotToolbarCommandSink,
     void setShapeTool() override {}
     void setArrowTool() override {}
     void setLineTool() override {}
-    void setFreeDrawTool() override {}
+    void setBrushTool() override {}
     void setHighlightTool() override {}
-    void setPenHighlightTool() override {}
+    void setBrushHighlightTool() override {}
     void setEraserTool() override {}
     void setFilterTool() override {}
     void setWatermarkTool() override {}
@@ -182,7 +183,7 @@ class ToolbarCommands final : public ScreenshotToolbarCommandSink,
     void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
     void setTextTool() override {}
-    void setSerialNumberTool() override {}
+    void setSequenceNumberTool() override {}
     void setOcrTool() override {}
     void startScrollingScreenshot() override {}
     void pinSelectionToScreen() override {}
@@ -192,10 +193,10 @@ class ToolbarCommands final : public ScreenshotToolbarCommandSink,
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
-    void decrementSelectedSerialNumbers() override {}
-    void incrementSelectedSerialNumbers() override {}
-    void createTextForSelectedSerialNumber() override {}
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSequenceNumbers() override {}
+    void incrementSelectedSequenceNumbers() override {}
+    void createTextForSelectedSequenceNumber() override {}
     void repositionToolbarForContentChange() override {}
     void hideColorPickersForScreenshotUi() override {}
     void toggleSelectionAspectRatioLockFromToolbar() override {}
@@ -465,13 +466,17 @@ void detachedScrollingResultLoadsIntoImageSplitter(ScreenshotScrollingRecognitio
     require(splitWindow.modal()->isOpen() && splitWindow.lastError().isEmpty() &&
                 splitWindow.document()->image() == expected,
             "the splitting window must import the current stitched pixels and trim range");
-    require(
-        splitWindow.document()->settings().direction ==
-                (horizontal ? ImageSplitDirection::Vertical : ImageSplitDirection::Horizontal) &&
-            splitWindow.document()->layout().regionAt(0).size() ==
-                (horizontal ? QSize(213, 400) : QSize(400, 213)) &&
-            !splitWindow.document()->canUndo(),
-        "scrolling results initialize perpendicular split guides without an undo entry");
+    ImageSplitSettings smartSettings;
+    smartSettings.direction =
+        horizontal ? ImageSplitDirection::Vertical : ImageSplitDirection::Horizontal;
+    const auto smartLayout = image_split_test::referenceSmart(expected, smartSettings);
+    require(splitWindow.document()->settings().direction == smartSettings.direction &&
+                splitWindow.document()->settings().type == ImageSplitType::Smart &&
+                splitWindow.document()->layout().verticalLines == smartLayout.verticalLines &&
+                splitWindow.document()->layout().horizontalLines == smartLayout.horizontalLines &&
+                splitWindow.document()->layout().outputCount() == 2 &&
+                !splitWindow.document()->canUndo(),
+            "scrolling results initialize perpendicular Smart guides without an undo entry");
     splitWindow.shutdown();
     until([] { return liveSources == 0 && excludedWindows.isEmpty(); },
           "image splitting must release capture sources and window exclusions");

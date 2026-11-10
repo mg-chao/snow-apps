@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "screenshotpinnedcropgeometry.h"
 #include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include "screenshotpinnednativegeometrycontroller.h"
@@ -47,21 +48,9 @@ QRectF ScreenshotPinnedWindow::exportVisibleCanvasRect() const {
 }
 
 QSizeF ScreenshotPinnedWindow::scaleReferenceSize() const {
-    QSizeF full = m_exactInitialWindowSize.isValid() && !m_exactInitialWindowSize.isEmpty()
-                      ? m_exactInitialWindowSize
-                      : QSizeF(m_initialWindowSize);
-    if (m_quarterTurns % 2)
-        full.transpose();
-    if (!m_cropRect || m_originalPixelSize.isEmpty())
-        return full;
-    const qreal effect = m_resultStyle.effectWidth();
-    QSizeF fraction(m_cropRect->width() / m_originalPixelSize.width() * m_canvasSourceRect.width() /
-                        (m_canvasSourceRect.width() + 2 * effect),
-                    m_cropRect->height() / m_originalPixelSize.height() *
-                        m_canvasSourceRect.height() / (m_canvasSourceRect.height() + 2 * effect));
-    if (m_quarterTurns % 2)
-        fraction.transpose();
-    return {full.width() * fraction.width(), full.height() * fraction.height()};
+    return screenshotPinnedScaleReferenceSize(m_initialWindowSize, m_exactInitialWindowSize,
+                                              m_quarterTurns, m_cropRect, m_originalPixelSize,
+                                              m_canvasSourceRect, m_resultStyle);
 }
 
 bool ScreenshotPinnedWindow::cropSelectionAllowed() const {
@@ -463,6 +452,7 @@ bool ScreenshotPinnedWindow::commitPreparedCrop(
         ++m_liveFrameGeneration;
     }
     m_cropRect.reset();
+    clearTextAnnotations();
     ++m_contentReplacementGeneration;
     if (m_replacementPersistenceWriter)
         m_persistenceWriter = m_replacementPersistenceWriter;

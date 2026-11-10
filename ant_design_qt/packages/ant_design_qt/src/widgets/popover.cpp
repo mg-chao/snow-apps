@@ -7,11 +7,13 @@
 #include "theme/theme.h"
 
 #include <QEvent>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QLayout>
 #include <QPalette>
 #include <QPixmap>
 #include <QScopeGuard>
+#include <QScreen>
 #include <QSet>
 #include <QVBoxLayout>
 
@@ -755,6 +757,14 @@ void AdPopover::setAnchorWidget(QWidget* widget) {
   if (!lifetime) {
     return;
   }
+  refreshVisiblePopup();
+}
+
+void AdPopover::setAnchorGlobalRect(const std::optional<QRect>& rect) {
+  if (anchorGlobalRect_ == rect) {
+    return;
+  }
+  anchorGlobalRect_ = rect;
   refreshVisiblePopup();
 }
 
@@ -1982,6 +1992,20 @@ QWidget* AdPopover::popupTriggerWidget() const {
 }
 
 QWidget* AdPopover::popupAnchorWidget() const { return effectiveAnchorWidget(); }
+
+std::optional<detail::PopupScreenRect> AdPopover::popupAnchorScreenSnapshot() const {
+  if (popupLayerMode_ != PopupLayerMode::QtTool || !anchorGlobalRect_ ||
+      !anchorGlobalRect_->isValid()) {
+    return std::nullopt;
+  }
+  QScreen* screen = QGuiApplication::screenAt(anchorGlobalRect_->center());
+  if (!screen) {
+    if (QWidget* anchor = effectiveAnchorWidget()) {
+      screen = anchor->screen();
+    }
+  }
+  return detail::PopupScreenRect{screen, *anchorGlobalRect_};
+}
 
 QWidget* AdPopover::popupScopeWindow() const {
   return detail::resolvePopupScopeWindow(effectiveScopeWidget());

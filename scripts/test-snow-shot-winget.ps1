@@ -28,7 +28,7 @@ function Expect-Failure([scriptblock]$Action, [string]$Pattern) {
 }
 function Invoke-SnowShotWingetApi([string]$Path) {
     $script:requests += $Path
-    if ($Path -like 'repos/mg-chao/snow-apps/releases/tags/*') { return $script:release }
+    if ($Path -like 'repos/mg-chao/snow-shot/releases/tags/*') { return $script:release }
     if ($Path -like '*/contents/*') {
         if ($script:mode -eq 'merged') { return @(@{ name = 'manifest.yaml' }) }
         $status = if ($script:mode -eq 'rate-limit') { 403 } else { 404 }
@@ -84,7 +84,7 @@ function Set-FixtureRelease([string]$Tag) {
         published_at = '2026-09-28T01:30:00+02:00'
         body = "## Changes`r`n`r`n- Fix: screenshot capture`r`n  Nested text`r`n---`r`n雪`r`n"
         assets = @(@{ name = $name; size = 4
-            browser_download_url = "https://github.com/mg-chao/snow-apps/releases/download/$Tag/$name" })
+            browser_download_url = "https://github.com/mg-chao/snow-shot/releases/download/$Tag/$name" })
     }
 }
 try {

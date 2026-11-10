@@ -25,6 +25,8 @@ mod automatic_selection_tests;
 #[cfg(test)]
 mod bracket_tests;
 #[cfg(test)]
+mod creation_color_tests;
+#[cfg(test)]
 mod distance_tests;
 mod document_commands;
 #[cfg(test)]
@@ -116,6 +118,7 @@ pub struct Engine {
     pub(crate) model: DocumentModel,
     pub(crate) history: HistoryStore,
     pub(crate) editor: EditorSession,
+    shared_creation_color: Option<snow_draw_engine_core::ColorRgba8>,
     pub(crate) session_config_seeded: bool,
     pub(crate) scene_cache: DocumentSceneCache,
     viewports: HashMap<ViewportId, ViewportSlot>,
@@ -164,6 +167,7 @@ impl Engine {
             config,
             model,
             history: HistoryStore::default(),
+            shared_creation_color: None,
             session_config_seeded: false,
             scene_cache: DocumentSceneCache::default(),
             viewports: HashMap::new(),
@@ -220,6 +224,7 @@ impl Engine {
             model: self.model.clone(),
             history: self.history.clone(),
             editor: self.editor.clone(),
+            shared_creation_color: self.shared_creation_color,
             session_config_seeded: self.session_config_seeded,
             scene_cache: DocumentSceneCache::default(),
             viewports: self
@@ -380,6 +385,22 @@ impl Engine {
         Ok(self
             .editor
             .serial_number_toolbar_state(&self.model, &slot.view))
+    }
+
+    pub fn viewport_serial_number_cursor_preview(
+        &self,
+        id: ViewportId,
+        position: Point<f64>,
+        modifiers: snow_draw_engine_interaction::Modifiers,
+    ) -> Result<snow_draw_engine_display::SceneDisplayItem, ErrorCode> {
+        let slot = self.viewport_slot(id)?;
+        let serial = self.editor.serial_number_cursor_preview(
+            &self.model,
+            &slot.view,
+            position,
+            modifiers,
+        )?;
+        Ok(snow_draw_engine_scene::serial_number_preview_item(serial))
     }
 
     pub fn viewport_rectangle_shape_style(
@@ -560,6 +581,19 @@ impl Engine {
         self.model.watermark_config()
     }
 
+    /// Applies a shared creation color without creating a document command or history entry.
+    pub fn set_creation_color(
+        &mut self,
+        color: Option<snow_draw_engine_core::ColorRgba8>,
+    ) -> Result<MutationResult, ErrorCode> {
+        let before = self.editor.snapshot();
+        self.shared_creation_color = color;
+        if let Some(color) = color {
+            self.editor.set_creation_color(color);
+        }
+        self.refresh_after_session_mutation(before)
+    }
+
     pub fn set_viewport_watermark_config(
         &mut self,
         id: ViewportId,
@@ -629,6 +663,100 @@ mod tests {
     use snow_draw_engine_core::{ColorRgba8, CornerRadii};
     use snow_draw_engine_document::{CanvasFilterType, FillStyle};
     use snow_draw_engine_editor::FILTER_STYLE_PROPERTY_ALL;
+
+    #[test]
+    fn shared_creation_color_reaches_views_without_document_or_history_changes() {
+        let mut engine = Engine::new(EngineConfig::default());
+        let first = engine.create_viewport(ViewportConfig::default()).unwrap();
+        let second = engine.create_viewport(ViewportConfig::default()).unwrap();
+        let history = engine.serialize_document_history().unwrap();
+        for alpha in [0, 117, 255] {
+            let color = ColorRgba8 {
+                r: 19,
+                g: 77,
+                b: 143,
+                a: alpha,
+            };
+            engine.set_creation_color(Some(color)).unwrap();
+            for tool in [
+                ActiveTool::Shape,
+                ActiveTool::SpeechBubble,
+                ActiveTool::Arrow,
+                ActiveTool::Line,
+                ActiveTool::FreeDraw,
+                ActiveTool::RectangleHighlight,
+                ActiveTool::PenHighlight,
+            ] {
+                engine.set_viewport_active_tool(first, tool).unwrap();
+                for viewport in [first, second] {
+                    assert_eq!(
+                        engine
+                            .viewport_style_toolbar_state(viewport)
+                            .unwrap()
+                            .shape_style
+                            .stroke,
+                        color
+                    );
+                }
+            }
+            engine
+                .set_viewport_active_tool(first, ActiveTool::Text)
+                .unwrap();
+            let text = engine
+                .viewport_style_toolbar_state(second)
+                .unwrap()
+                .text_style;
+            assert_eq!((text.color, text.stroke, text.fill), (color, color, color));
+            let mut stale = text;
+            stale.color = ColorRgba8::default();
+            stale.font_size = 41.0;
+            engine
+                .set_viewport_text_creation_style(
+                    first,
+                    stale,
+                    snow_draw_engine_editor::TEXT_STYLE_ALL_PROPERTIES,
+                )
+                .unwrap();
+            let current = engine
+                .viewport_style_toolbar_state(second)
+                .unwrap()
+                .text_style;
+            assert_eq!(
+                current.color, color,
+                "older draft styles cannot override the shared color"
+            );
+            assert_eq!(current.font_size, 41.0);
+            assert_eq!(engine.serialize_document_history().unwrap(), history);
+            assert!(
+                engine
+                    .set_creation_color(Some(color))
+                    .unwrap()
+                    .changed_viewports
+                    .is_empty()
+            );
+        }
+        engine.set_creation_color(None).unwrap();
+        let mut independent = engine
+            .viewport_style_toolbar_state(first)
+            .unwrap()
+            .text_style;
+        independent.color = ColorRgba8::default();
+        engine
+            .set_viewport_text_creation_style(
+                first,
+                independent,
+                snow_draw_engine_editor::TEXT_STYLE_MIXED_COLOR,
+            )
+            .unwrap();
+        assert_eq!(
+            engine
+                .viewport_style_toolbar_state(second)
+                .unwrap()
+                .text_style
+                .color,
+            ColorRgba8::default()
+        );
+    }
 
     #[test]
     fn filter_creation_style_synchronizes_views_without_tool_or_history_changes() {

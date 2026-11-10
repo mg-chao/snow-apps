@@ -148,7 +148,8 @@ void pathAndCommandLinePolicy() {
                 "every declared package extension is enabled by the Explorer command");
     for (const std::wstring path :
          {L"C:\\images\\图片 one.PNG", L"\\\\server\\share\\photo.JpEg",
-          L"C:/images/notes.Markdown", L"\\\\?\\C:\\long path\\image.avif"})
+          L"C:/images/notes.Markdown", L"\\\\?\\C:\\long path\\image.avif", L"C:\\images\\scan.TIF",
+          L"C:\\images\\scan.TiFf"})
         require(isSupportedPath(path), "Unicode, UNC, long and mixed-case supported paths work");
     for (const std::wstring path :
          {L"", L"relative.png", L"C:relative.png", L"/rooted.png", L"\\\\server\\photo.png",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/imagesplitwindow.h"
 #include "snow_shot/presentation/collagewindowcoordinator.h"
+#include "snow_shot/presentation/collagesettingsstore.h"
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "snow_shot/presentation/components/imagespliteditorwidget.h"
 #include "snow_shot/presentation/languagemanager.h"
@@ -66,7 +67,7 @@ void loaded(ImageSplitWindow& window) {
           "split source loads");
 }
 ImageSplitSnapshot snapshot(QImage pixels, ImageSplitSettings settings = {}) {
-    const auto layout = calculateImageSplitLayout(pixels.size(), settings);
+    const auto layout = prepareImageSplitLayout(pixels, settings)->layout;
     return {std::move(pixels), layout, QStringLiteral("pieces"), {}};
 }
 void typeCount(ImageSplitWindow& window, int key, const QString& text) {
@@ -122,6 +123,7 @@ void footerDraftsAndTranslations() {
     typeCount(window, Qt::Key_3, QStringLiteral("3"));
     require(window.document()->settings().count == 2, "visible count draft is uncommitted");
     button(window)->click();
+    until([&] { return requests.size() == 1; }, "Smart draft finishes before PDF handoff");
     require(requests.size() == 1 && requests.first().layout.outputCount() == 3 &&
                 window.document()->settings().count == 3 && window.modal()->isOpen() &&
                 !directoryChoice,
@@ -135,6 +137,7 @@ void footerDraftsAndTranslations() {
     typeCount(window, Qt::Key_3, QStringLiteral("3"));
     accepted = false;
     window.stitchToPdf();
+    until([&] { return requests.size() == 2; }, "Smart draft finishes before rejected PDF handoff");
     require(requests.size() == 2 && !window.lastError().isEmpty() && window.modal()->isOpen() &&
                 window.document()->settings().count == 3,
             "rejected handoff preserves edits and reports feedback");
@@ -150,7 +153,7 @@ void footerDraftsAndTranslations() {
                  translated != QStringLiteral("Stitch to PDF")) &&
                 window.lastError() ==
                     QCoreApplication::translate(
-                        "ImageSplitWindow", "Image Stitching is busy. Try again when it finishes."),
+                        "ImageSplitWindow", "Image stitching is busy. Try again when it finishes"),
             "button, accessibility and rejection feedback retranslate in an open window");
     }
     accepted = true;
@@ -161,6 +164,23 @@ void footerDraftsAndTranslations() {
     require(requests.size() == 2, "another operation cannot race a destination choice");
     directoryChoice({});
     require(button(window)->isEnabled(), "canceling destination choice restores handoff");
+    auto* overlap = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitOverlapWidth"));
+    auto* overlapInput = overlap ? overlap->findChild<QLineEdit*>() : nullptr;
+    require(overlapInput, "PDF handoff exposes the overlap draft editor");
+    overlapInput->setFocus();
+    overlapInput->selectAll();
+    QKeyEvent ten(QEvent::KeyPress, Qt::Key_1, Qt::NoModifier, QStringLiteral("10"));
+    QApplication::sendEvent(overlapInput, &ten);
+    require(window.document()->settings().overlapWidth == 0, "overlap draft remains uncommitted");
+    window.stitchToPdf();
+    require(requests.size() == 3 && requests.last().layout.overlapWidth == 10 &&
+                requests.last().layout.regionAt(0).intersects(requests.last().layout.regionAt(1)),
+            "PDF handoff commits pending overlap into the immutable crop snapshot");
+    overlap->clear();
+    window.stitchToPdf();
+    require(requests.size() == 3 && !button(window)->isEnabled() && !save->isEnabled(),
+            "invalid overlap disables both output actions and cannot hand off stale geometry");
     window.shutdown();
 }
 
@@ -168,14 +188,17 @@ void piecesAppendAsPdfAndOwnTheirSource() {
     const auto pixels = image();
     for (const auto direction : {ImageSplitDirection::Horizontal, ImageSplitDirection::Vertical,
                                  ImageSplitDirection::Grid}) {
-        CollageWindowCoordinator coordinator;
+        ImageStitchingWindowCoordinator coordinator;
         coordinator.present();
-        auto* collage = coordinator.window();
+        auto* imageStitching = coordinator.window();
         const quint64 existing =
-            collage->document()->append(image({3, 4}), QStringLiteral("existing"));
-        auto pdfSettings = collage->document()->pdfSettings();
-        pdfSettings.paperSize = CollagePdfPaperSize::Letter;
-        collage->document()->setPdfSettings(pdfSettings);
+            imageStitching->document()->append(image({3, 4}), QStringLiteral("existing"));
+        auto pdfSettings = imageStitching->document()->pdfSettings();
+        pdfSettings.paperSize = ImageStitchingPdfPaperSize::Letter;
+        pdfSettings.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+        pdfSettings.templateType = ImageStitchingPdfTemplateType::ThreeImages;
+        pdfSettings.imageSpacingMm = 6.25;
+        imageStitching->document()->setPdfSettings(pdfSettings);
         ImageSplitWindowServices services;
         services.stitchToPdf = [&](ImageSplitSnapshot value) {
             return coordinator.presentSplitImagesAsPdf(std::move(value));
@@ -188,6 +211,7 @@ void piecesAppendAsPdfAndOwnTheirSource() {
         settings.count = 3;
         settings.rows = 2;
         settings.columns = 3;
+        settings.overlapWidth = 3;
         require(splitter.document()->setSettings(settings), "apply split settings");
         require(splitter.document()->createLine(direction != ImageSplitDirection::Horizontal, 11),
                 "add a manual guide to the current layout");
@@ -196,20 +220,24 @@ void piecesAppendAsPdfAndOwnTheirSource() {
                     "add a manual horizontal grid guide");
         const auto expected = splitter.document()->layout();
         button(splitter)->click();
-        auto* outputType = collage->editor()->findChild<adqt::widgets::AdSegmented*>(
+        auto* outputType = imageStitching->editor()->findChild<adqt::widgets::AdSegmented*>(
             QStringLiteral("collageImageType"));
         require(
-            coordinator.window() == collage && splitter.modal()->isOpen() &&
-                collage->document()->outputType() == CollageOutputType::PdfDocument && outputType &&
-                outputType->currentValue() == QStringLiteral("pdf") &&
-                collage->document()->pdfSettings() == pdfSettings,
+            coordinator.window() == imageStitching && splitter.modal()->isOpen() &&
+                imageStitching->document()->outputType() == ImageStitchingOutputType::PdfDocument &&
+                outputType && outputType->currentValue() == QStringLiteral("pdf") &&
+                imageStitching->document()->pdfSettings() == pdfSettings,
             "handoff reuses stitching, selects PDF and preserves both windows and PDF settings");
         splitter.document()->setImage(image({6, 8}));
         splitter.shutdown();
-        until([&] { return !collage->loading(); }, "split pieces finish importing");
-        const auto& items = collage->document()->items();
+        until([&] { return !imageStitching->loading(); }, "split pieces finish importing");
+        const auto& items = imageStitching->document()->items();
         require(items.size() == expected.outputCount() + 1 && items.first().id == existing,
                 "split pieces append after existing content");
+        require(
+            imageStitchingPdfPageCount(items.size(), imageStitching->document()->pdfSettings()) ==
+                (items.size() + 2) / 3,
+            "split pieces paginate with the current template capacity and retained spacing");
         for (qint64 index = 0; index < expected.outputCount(); ++index) {
             const auto& actual = items.at(index + 1).image;
             require(actual == pixels.copy(expected.regionAt(index)) &&
@@ -223,10 +251,36 @@ void piecesAppendAsPdfAndOwnTheirSource() {
     }
 }
 
+void newHandoffRestoresRememberedTemplate() {
+    ImageStitchingSettingsStore store(
+        snow_shot::storage::ApplicationStorage::instance().configuration());
+    const auto previous = store.readPdf();
+    auto remembered = previous;
+    remembered.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+    remembered.templateType = ImageStitchingPdfTemplateType::IdCard;
+    remembered.imageSpacingMm = 8.125;
+    const QStringList fields{QStringLiteral("stitching_method"), QStringLiteral("template_type"),
+                             QStringLiteral("image_spacing_mm")};
+    require(store.writePdf(fields, remembered), "remember the last template stitching choices");
+    ImageStitchingWindowCoordinator coordinator;
+    require(coordinator.presentSplitImagesAsPdf(snapshot(image({20, 12}))),
+            "handoff creates a new stitching window");
+    auto* window = coordinator.window();
+    until([&] { return !window->loading(); }, "remembered template handoff imports");
+    require(window->document()->outputType() == ImageStitchingOutputType::PdfDocument &&
+                window->document()->pdfSettings() == remembered &&
+                imageStitchingPdfPageCount(window->document()->items().size(), remembered) == 1,
+            "a fresh Stitch to PDF window restores the remembered method, template and spacing");
+    coordinator.shutdown();
+    flush();
+    require(store.writePdf(fields, previous), "restore the isolated preferences for later cases");
+}
+
 void queuedBatchesKeepRequestOrder() {
-    CollageWindowCoordinator coordinator;
+    ImageStitchingWindowCoordinator coordinator;
     const auto first = snapshot(image({20, 12}));
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Horizontal;
     const auto second = snapshot(image({8, 18}), settings);
     require(coordinator.presentSplitImagesAsPdf(first) && coordinator.window()->loading() &&
@@ -246,10 +300,10 @@ void queuedBatchesKeepRequestOrder() {
 }
 
 void busyExportRejectsWithoutChangingStitching() {
-    CollageWindowServices services;
-    CollageWindowServices::Completion completion;
+    ImageStitchingWindowServices services;
+    ImageStitchingWindowServices::Completion completion;
     services.copy = [&](auto, QObject*, QWidget*, auto done) { completion = std::move(done); };
-    CollageWindowCoordinator coordinator(nullptr, services);
+    ImageStitchingWindowCoordinator coordinator(nullptr, services);
     coordinator.present();
     auto* window = coordinator.window();
     const quint64 existing =
@@ -257,7 +311,7 @@ void busyExportRejectsWithoutChangingStitching() {
     window->copy();
     require(window->busy(), "stitching export starts");
     require(!coordinator.presentSplitImagesAsPdf(snapshot(image())) &&
-                window->document()->outputType() == CollageOutputType::StaticImage &&
+                window->document()->outputType() == ImageStitchingOutputType::StaticImage &&
                 window->document()->items().size() == 1 &&
                 window->document()->items().first().id == existing,
             "busy handoff cannot change output type or existing images");
@@ -272,7 +326,7 @@ void busyExportRejectsWithoutChangingStitching() {
 }
 
 void invalidSourcesLimitsAndCancellation() {
-    CollageWindowCoordinator coordinator;
+    ImageStitchingWindowCoordinator coordinator;
     auto invalid = snapshot(image());
     invalid.layout.size = QSize(2, 2);
     require(!coordinator.presentSplitImagesAsPdf(std::move(invalid)),
@@ -283,7 +337,7 @@ void invalidSourcesLimitsAndCancellation() {
         oversized, {oversized.size(), {}, {1}, {}}, QStringLiteral("oversized"), {}};
     QStringList failures;
     auto* window = coordinator.window();
-    QObject::connect(window, &CollageWindow::importFinished, window,
+    QObject::connect(window, &ImageStitchingWindow::importFinished, window,
                      [&](const auto& errors) { failures = errors; });
     require(coordinator.presentSplitImagesAsPdf(std::move(limited)) &&
                 coordinator.presentSplitImagesAsPdf(snapshot(image({8, 6}))),
@@ -294,9 +348,9 @@ void invalidSourcesLimitsAndCancellation() {
     coordinator.shutdown();
     flush();
 
-    CollageWindow canceled;
+    ImageStitchingWindow canceled;
     int completions = 0;
-    QObject::connect(&canceled, &CollageWindow::importFinished, &canceled,
+    QObject::connect(&canceled, &ImageStitchingWindow::importFinished, &canceled,
                      [&](const auto&) { ++completions; });
     auto owner = std::make_shared<int>(1);
     const std::weak_ptr<int> lifetime = owner;
@@ -329,6 +383,7 @@ int main(int argc, char** argv) {
     require(LanguageManager::instance().setLanguage(QStringLiteral("en_US")), "initialize English");
     footerDraftsAndTranslations();
     piecesAppendAsPdfAndOwnTheirSource();
+    newHandoffRestoresRememberedTemplate();
     queuedBatchesKeepRequestOrder();
     busyExportRejectsWithoutChangingStitching();
     invalidSourcesLimitsAndCancellation();

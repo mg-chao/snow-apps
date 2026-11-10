@@ -45,6 +45,7 @@ use crate::mouse_hook::MouseHookObserver;
 #[cfg(feature = "bench-synthetic-input")]
 use crate::mouse_hook::ObservedMouseButton;
 use snow_recording_effects::InputEffectsState;
+use snow_recording_effects::keyboard_filter::{KeyboardFilter, KeyboardFilterConfig};
 
 use snow_recording_effects::mouse_effects::{
     CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks, scale_coordinate, scale_point,
@@ -157,6 +158,7 @@ pub struct DirectRecordingConfig {
     pub microphone_gain_db: i32,
     pub show_cursor: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
+    pub keyboard_filter: KeyboardFilterConfig,
     pub mouse_trail_rgba: [u8; 4],
     pub mouse_trail_duration_ms: u64,
     pub mouse_click_rgba: [u8; 4],
@@ -956,7 +958,9 @@ impl DirectRecordingSession {
                         || render.effects.record_mouse_scrolling)
                         .then(|| render.effects.keyboard.clone())
                         .flatten();
-                    compositor.include_mouse_modifiers = render.effects.show_keyboard;
+                    compositor.include_mouse_modifiers = config
+                        .keyboard_filter
+                        .include_mouse_modifiers(render.effects.show_keyboard);
                     compositor.resize_pool = resize_pool;
                     compositor.restoration_only = restoration_only;
                     #[cfg(feature = "bench-synthetic-input")]
@@ -1663,6 +1667,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         if let (Some(input), Some(style)) = (keyboard_input.as_ref(), config.keyboard.as_ref()) {
             let generation = input.generation.load(Ordering::Acquire);
             if keyboard_generation != generation {
+                compositor.keyboard_filter.reset();
                 compositor.input_effects.pending_keys.clear();
                 if let Some(keyboard) = compositor.input_effects.keyboard.as_mut() {
                     keyboard
@@ -1687,10 +1692,10 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     );
                     break;
                 }
-                compositor
-                    .input_effects
-                    .pending_keys
-                    .push_back(event.event(clock.active_elapsed_ms(event.at), style));
+                compositor.key_event(
+                    config.keyboard_filter,
+                    event.event(clock.active_elapsed_ms(event.at), style),
+                );
             }
         }
         if !stopping
@@ -2571,6 +2576,7 @@ fn reset_keyboard(input: Option<&KeyboardInput>, compositor: &mut VisualComposit
     if let Some(input) = input {
         input.reset();
     }
+    compositor.keyboard_filter.reset();
     compositor.input_effects.reset_keyboard(now);
 }
 
@@ -2605,6 +2611,11 @@ fn drain_click_observations(
                 style,
                 compositor.include_mouse_modifiers,
             );
+            if compositor.input_effects.pending_keys.len()
+                == snow_recording_effects::state::MAX_PENDING_KEYS
+            {
+                compositor.keyboard_filter.reset();
+            }
             compositor.input_effects.queue_key(event);
         }
         if !observation.down || !observation.button.has_ring() {
@@ -2672,6 +2683,7 @@ struct VisualCompositor {
     cursor_shape: Option<CursorShape>,
     mouse_input_style: Option<KeyboardOverlayConfig>,
     include_mouse_modifiers: bool,
+    keyboard_filter: KeyboardFilter,
     #[cfg(feature = "bench-compositor-timing")]
     timings: StageHistogram,
 }
@@ -2704,8 +2716,19 @@ impl VisualCompositor {
             cursor_shape: None,
             mouse_input_style: None,
             include_mouse_modifiers: false,
+            keyboard_filter: KeyboardFilter::default(),
             #[cfg(feature = "bench-compositor-timing")]
             timings: StageHistogram::default(),
+        }
+    }
+
+    fn key_event(
+        &mut self,
+        config: KeyboardFilterConfig,
+        event: snow_recording_effects::keyboard_overlay::KeyEvent,
+    ) {
+        if let Some(event) = self.keyboard_filter.event(config, event) {
+            self.input_effects.queue_key(event);
         }
     }
 
@@ -3546,6 +3569,7 @@ mod tests {
 
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
+            keyboard_filter: Default::default(),
             webcam: None,
             audio_mode: Default::default(),
             system_audio_gain_db: 0,

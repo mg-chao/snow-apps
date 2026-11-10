@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/imagesplitdocument.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snowimageqtcodec.h"
 #include "imagesplit_guarded_image.h"
 
@@ -79,6 +81,39 @@ void verifyOutputs(const QImage& image, const ImageSplitLayout& layout,
                 "reassembled regions preserve every straight-alpha pixel exactly");
 }
 
+void overlappingPixelsAreExported() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "create overlap export destination");
+    const auto source = fixture();
+    for (const auto direction : {ImageSplitDirection::Vertical, ImageSplitDirection::Horizontal,
+                                 ImageSplitDirection::Grid}) {
+        ImageSplitSettings settings;
+        settings.type = ImageSplitType::Equal;
+        settings.direction = direction;
+        settings.overlapWidth = 2;
+        const auto layout = calculateImageSplitLayout(source.size(), settings);
+        const auto result =
+            exportSplitImages(source, layout, temporary.path(), QStringLiteral("overlap"));
+        verifyOutputs(source, layout, result);
+        const auto first = snow_shot::image_codec::decodeFile(
+            QDir(result.directory).filePath(QStringLiteral("1.png")), snow::image::Format::png);
+        const auto second = snow_shot::image_codec::decodeFile(
+            QDir(result.directory).filePath(QStringLiteral("2.png")), snow::image::Format::png);
+        if (direction == ImageSplitDirection::Horizontal) {
+            require(first.size() == QSize(7, 5) && second.size() == QSize(7, 4),
+                    "horizontal output dimensions include clipped overlap");
+            require(first.copy(0, 1, 7, 4) == second,
+                    "horizontal outputs repeat exactly the shared source rows");
+        } else {
+            const int height = direction == ImageSplitDirection::Grid ? 5 : source.height();
+            require(first.size() == QSize(6, height) && second.size() == QSize(5, height),
+                    "vertical and grid output dimensions include overlap");
+            require(first.copy(2, 0, 4, height) == second.copy(0, 0, 4, height),
+                    "adjacent outputs repeat exactly the shared source columns");
+        }
+    }
+}
+
 void orderingAndUniqueDirectories() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "export temporary directory exists");
@@ -86,6 +121,7 @@ void orderingAndUniqueDirectories() {
     const QByteArray original(reinterpret_cast<const char*>(image.constBits()),
                               image.sizeInBytes());
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 2;
     settings.columns = 3;
@@ -129,6 +165,38 @@ void orderingAndUniqueDirectories() {
     verifyOutputs(
         image, horizontal,
         exportSplitImages(image, horizontal, temporary.path(), QStringLiteral("horizontal")));
+}
+
+void tiffImportsSplitWithoutLosingPixels() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "TIFF split import fixture directory exists");
+    QImage original = fixture();
+    original.setDevicePixelRatio(1);
+    ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
+    settings.direction = ImageSplitDirection::Grid;
+    settings.rows = 2;
+    settings.columns = 3;
+    for (const auto* suffix : {"tif", "tiff"}) {
+        const auto saved = ScreenshotImageFileService::write(
+            original, temporary.filePath(QStringLiteral("source.") + QLatin1String(suffix)),
+            ScreenshotImageFileFormat::Tiff);
+        require(saved.succeeded(), "TIFF split input is encoded");
+        const auto files = ScreenshotClipboardContentReader::snapshotLocalFiles({saved.path});
+        require(files.size() == 1, "both TIFF suffixes reach image splitting imports");
+        const QImage imported = ScreenshotClipboardContentReader::decodeImageFile(files.first());
+        require(imported == original,
+                "TIFF import preserves straight alpha, color, and dimensions");
+        for (const int overlap : {0, 2}) {
+            settings.overlapWidth = overlap;
+            const auto layout = calculateImageSplitLayout(original.size(), settings);
+            verifyOutputs(original, layout,
+                          exportSplitImages(imported, layout, temporary.path(),
+                                            QStringLiteral("tiff-import-%1-overlap-%2")
+                                                .arg(QLatin1String(suffix))
+                                                .arg(overlap)));
+        }
+    }
 }
 
 void exportNamesPreserveSplitPolicy() {
@@ -286,6 +354,7 @@ void boundedNativeFormatAndColorConversion() {
     const QImage reference =
         fixture().scaled(37, 41, Qt::IgnoreAspectRatio, Qt::FastTransformation);
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 3;
     settings.columns = 5;
@@ -348,6 +417,7 @@ void largeProfileConversionMatchesFullNormalization() {
         }
     }
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 2;
     settings.columns = 2;
@@ -392,6 +462,7 @@ void cancellationDuringEncodingRetainsCompletedPrefix() {
                         .convertToFormat(QImage::Format_ARGB32_Premultiplied);
     native.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Vertical;
     settings.count = 2;
     const auto layout = calculateImageSplitLayout(native.size(), settings);
@@ -402,7 +473,7 @@ void cancellationDuringEncodingRetainsCompletedPrefix() {
         [&] { return completed == 1 && ++secondOutputPolls >= 64; },
         [&](qint64 count, qint64) { completed = count; });
     require(!result.succeeded() && result.savedCount == 1 && secondOutputPolls >= 64 &&
-                result.errorSource == QStringLiteral("Export was canceled.") &&
+                result.errorSource == QStringLiteral("Export was canceled") &&
                 QDir(result.directory).entryList(QDir::Files | QDir::Hidden) ==
                     QStringList{QStringLiteral("1.png")},
             "cancellation inside the second encoder preserves only its completed prefix");
@@ -419,7 +490,7 @@ void failuresRetranslate() {
     const auto layout = calculateImageSplitLayout(image.size(), {});
     const auto canceled = exportSplitImages(image, layout, temporary.path(),
                                             QStringLiteral("language"), [] { return true; });
-    require(canceled.errorSource == QStringLiteral("Export was canceled.") &&
+    require(canceled.errorSource == QStringLiteral("Export was canceled") &&
                 canceled.errorArguments.isEmpty() && canceled.errorMessage() == canceled.error,
             "helper failures retain their original translation key and initial display message");
     ImageSplitExportResult indexed;
@@ -432,7 +503,7 @@ void failuresRetranslate() {
                 "export failures require complete Chinese translation catalogs");
         QCoreApplication::installTranslator(&translator);
         const QString expected =
-            QCoreApplication::translate("ImageSplitExport", "Export was canceled.");
+            QCoreApplication::translate("ImageSplitExport", "Export was canceled");
         require(canceled.errorMessage() == expected && canceled.errorMessage() != canceled.error,
                 "cached export failures retranslate when the runtime language changes");
         require(
@@ -448,12 +519,49 @@ void failuresRetranslate() {
     require(external.errorMessage() == external.error,
             "existing four-field aggregate service results retain their error text");
 }
+void smartBoundariesAreExported() {
+    QTemporaryDir temporary;
+    QImage source(120, 160, QImage::Format_RGBA8888);
+    source.fill(Qt::white);
+    for (int y = 0; y < source.height(); ++y)
+        for (int x = 0; x < source.width(); ++x)
+            if ((y < 91 || y > 96) && x % 12 < 3)
+                source.setPixelColor(x, y, QColor(20, 40, 60, 180));
+    ImageSplitSettings settings;
+    settings.direction = ImageSplitDirection::Horizontal;
+    ImageSplitDocument document;
+    document.setImage(source, {}, settings);
+    require(document.layout().horizontalLines.first() == 93,
+            "export fixture uses the adjusted Smart boundary");
+    const auto result =
+        exportSplitImages(source, document.layout(), temporary.path(), QStringLiteral("smart"));
+    verifyOutputs(source, document.layout(), result);
+    settings.overlapWidth = 3;
+    require(document.setSettings(settings), "Smart export overlap is configurable");
+    verifyOutputs(source, document.layout(),
+                  exportSplitImages(source, document.layout(), temporary.path(),
+                                    QStringLiteral("smart-overlap")));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--smart-only"))) {
+            smartBoundariesAreExported();
+            std::cout << "Smart split export tests passed\n";
+            return 0;
+        }
+        if (application.arguments().contains(QStringLiteral("--overlap-only"))) {
+            overlappingPixelsAreExported();
+            std::cout << "Image split overlap export tests passed\n";
+            return 0;
+        }
+        smartBoundariesAreExported();
         orderingAndUniqueDirectories();
+        overlappingPixelsAreExported();
+        tiffImportsSplitWithoutLosingPixels();
         exportNamesPreserveSplitPolicy();
         std::cout << "Image split filename policy tests passed\n";
         failureAndCancellation();

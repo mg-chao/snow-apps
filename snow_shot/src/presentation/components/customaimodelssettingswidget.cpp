@@ -224,7 +224,7 @@ bool CustomAiModelsSettingsWidget::save(const CustomAiModels& models) {
     m_error->setVisible(!success);
     if (!success) {
         m_error->setText(tr(
-            "Unable to save models. Check that configuration storage is writable and try again."));
+            "Unable to save models. Check that configuration storage is writable and try again"));
     }
     return success;
 }
@@ -548,25 +548,25 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
     auto models = m_session.customAiModels();
     std::array<QString, 4> errors;
     if (value.name.isEmpty()) {
-        errors[0] = tr("Enter a model name.");
+        errors[0] = tr("Enter a model name");
     } else if (std::any_of(models.cbegin(), models.cend(), [&value](const auto& model) {
                    return model.id != value.id &&
                           model.name.compare(value.name, Qt::CaseInsensitive) == 0;
                })) {
-        errors[0] = tr("A model with this name already exists.");
+        errors[0] = tr("A model with this name already exists");
     }
     const auto urlError = customAiModelUrlError(value.baseUrl);
     if (urlError == CustomAiModelUrlError::FullEndpoint) {
-        errors[1] = tr("Enter the base URL without /chat/completions.");
+        errors[1] = tr("Enter the base URL without /chat/completions");
     } else if (urlError != CustomAiModelUrlError::None) {
         errors[1] =
-            tr("Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.");
+            tr("Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment");
     }
     if (value.apiKey.contains(u'\r') || value.apiKey.contains(u'\n')) {
-        errors[2] = tr("The API key must not contain line breaks.");
+        errors[2] = tr("The API key must not contain line breaks");
     }
     if (value.model.isEmpty()) {
-        errors[3] = tr("Enter the API model ID.");
+        errors[3] = tr("Enter the API model ID");
     }
     QWidget* firstInvalid = nullptr;
     for (size_t i = 0; i < errors.size(); ++i) {
@@ -586,8 +586,7 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
                                  [&value](const auto& model) { return model.id == value.id; });
     if (m_editing && it == models.end()) {
         m_modalError->setProperty("deletedModel", true);
-        m_modalError->setText(
-            tr("This model was deleted. Close this form and create a new model."));
+        m_modalError->setText(tr("This model was deleted. Close this form and create a new model"));
         m_modalError->show();
         return;
     }
@@ -609,48 +608,48 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
 
 void CustomAiModelsSettingsWidget::translateModal() {
     if (m_modal != nullptr) {
-        m_modal->setWindowTitle(m_editing ? tr("Edit Model") : tr("Add Model"));
+        m_modal->setWindowTitle(m_editing ? tr("Edit model") : tr("Add model"));
         m_modal->setAcceptText(tr("Save"));
         m_modal->setRejectText(tr("Cancel"));
         if (m_modalError != nullptr && !m_modalError->isHidden()) {
             m_modalError->setText(
                 m_modalError->property("deletedModel").toBool()
-                    ? tr("This model was deleted. Close this form and create a new model.")
+                    ? tr("This model was deleted. Close this form and create a new model")
                     : tr("Unable to save models. Check that configuration storage is writable and "
-                         "try again."));
+                         "try again"));
         }
         const char* labels[] = {
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Model Name"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Model name"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API URL"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API Key"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API Model"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Vision Support"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Reasoning Support"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API key"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API model"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Vision support"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Reasoning support"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Concurrency"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Provider Type")};
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Provider type")};
         const char* descriptions[] = {
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
-                              "The model name displayed in Snow Shot."),
+                              "The model name displayed in Snow Shot"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
                               "OpenAI-compatible Chat Completions. /chat/completions is appended "
-                              "to this base URL."),
+                              "to this base URL"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
-                              "Optional for servers that do not require authentication."),
+                              "Optional for servers that do not require authentication"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
                               "Enter a custom model ID or open the list to fetch models from the "
-                              "API URL."),
+                              "API URL"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
-                              "Allow this model to convert images to Markdown and HTML."),
+                              "Allow this model to convert images to Markdown and HTML"),
             m_provider->currentValue() == QStringLiteral("openai")
                 ? QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
-                                    "Reasoning is controlled by the model for the OpenAI provider.")
+                                    "Reasoning is controlled by the model for the OpenAI provider")
                 : QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
-                                    "Explicitly enable or disable reasoning in model requests."),
+                                    "Explicitly enable or disable reasoning in model requests"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
                               "Maximum simultaneous translation and image conversion requests "
-                              "for this model (1-16)."),
+                              "for this model (1-16)"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
-                              "Select the provider whose reasoning controls this API uses.")};
+                              "Select the provider whose reasoning controls this API uses")};
         m_formFields[5]->setFieldEnabled(m_provider->currentValue() != QStringLiteral("openai"));
         const QSignalBlocker providerBlocker(m_provider);
         m_formFields[7]->setChoices({{QStringLiteral("openai"), {}, tr("OpenAI")},
@@ -670,20 +669,20 @@ void CustomAiModelsSettingsWidget::translateModal() {
         m_inputs[1]->setPlaceholderText(QStringLiteral("https://api.openai.com/v1"));
         m_modelFetchStatus->setText(
             m_modelFetchStatus->property("fetchFailed").toBool()
-                ? tr("Unable to fetch models. Enter a model ID or reopen the list to retry.")
+                ? tr("Unable to fetch models. Enter a model ID or reopen the list to retry")
                 : QString());
         // An attached footer contributes its size even when its label is empty.
         m_modelSelect->setPopupFooterWidget(
             m_modelFetchStatus->property("fetchFailed").toBool() ? m_modelFetchStatus : nullptr);
     }
     if (m_deleteModal != nullptr) {
-        m_deleteModal->setWindowTitle(tr("Delete Model"));
+        m_deleteModal->setWindowTitle(tr("Delete model"));
         m_deleteModal->setAcceptText(tr("Delete"));
         m_deleteModal->setRejectText(tr("Cancel"));
         for (const auto& model : m_session.customAiModels()) {
             if (model.id == m_deleteId) {
                 m_deleteModal->setText(
-                    tr("Delete model \"%1\"? If selected, another available model will be used.")
+                    tr("Delete model \"%1\"? If selected, another available model will be used")
                         .arg(model.name));
             }
         }
@@ -692,9 +691,9 @@ void CustomAiModelsSettingsWidget::translateModal() {
 
 void CustomAiModelsSettingsWidget::retranslateUi() {
     m_error->setText(
-        tr("Unable to save models. Check that configuration storage is writable and try again."));
-    m_add->setText(tr("Add Model"));
-    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Custom Models"));
+        tr("Unable to save models. Check that configuration storage is writable and try again"));
+    m_add->setText(tr("Add model"));
+    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Custom models"));
     rebuild(true);
     translateModal();
     if (m_modal != nullptr &&

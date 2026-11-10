@@ -23,6 +23,8 @@ vcpkg_from_github(
         0054-fix-shared-libwebp-animation-link.patch
         0055-release-amf-frames-on-abort.patch
         0056-release-gif-packet-on-abort.patch
+        0057-fix-videotoolbox-packet-timing.patch
+        0058-fix-videotoolbox-sparse-timing.patch
 )
 
 if(SOURCE_PATH MATCHES " ")
@@ -38,7 +40,8 @@ if (VCPKG_TARGET_ARCHITECTURE STREQUAL "x86" OR VCPKG_TARGET_ARCHITECTURE STREQU
 endif()
 
 set(OPTIONS "--enable-pic --disable-doc --enable-runtime-cpudetect --disable-autodetect")
-if("snow-shot-minimal" IN_LIST FEATURES OR "snow-macos-media" IN_LIST FEATURES)
+if("snow-shot-minimal" IN_LIST FEATURES OR "snow-macos-media" IN_LIST FEATURES OR
+   "snow-shot-macos-minimal" IN_LIST FEATURES)
     string(APPEND OPTIONS " --disable-everything")
 endif()
 
@@ -648,12 +651,12 @@ if("snow-shot-minimal" IN_LIST FEATURES)
     if(NOT VCPKG_TARGET_IS_WINDOWS OR VCPKG_TARGET_IS_UWP)
         message(FATAL_ERROR "ffmpeg[snow-shot-minimal] currently supports desktop Windows only")
     endif()
-    set(SNOW_SHOT_ENCODERS "libx264,libx265,h264_mf,hevc_mf,gif,apng,libwebp_anim,aac")
+    set(SNOW_SHOT_ENCODERS "libx264,libx265,h264_mf,hevc_mf,apng,libwebp_anim,aac")
     set(SNOW_SHOT_COMPAT_COMPONENTS)
     if("snow-recording-compat" IN_LIST FEATURES)
         # Standalone compatibility capture/export can write Matroska and AVI.
         # The application only reads old Matroska bundles and produces four formats.
-        string(APPEND SNOW_SHOT_ENCODERS ",mpeg4,mp3_mf")
+        string(APPEND SNOW_SHOT_ENCODERS ",mpeg4,mp3_mf,gif")
         string(APPEND SNOW_SHOT_COMPAT_COMPONENTS
             " --enable-muxer=matroska,avi"
             " --enable-decoder=mp3"
@@ -692,6 +695,28 @@ if("snow-macos-media" IN_LIST FEATURES)
         " --enable-decoder=h264,hevc,mpeg4,gif,png,apng,webp,webp_anim,aac,pcm_s16le,pcm_f32le"
         " --enable-encoder=libx264,libx265,h264_videotoolbox,hevc_videotoolbox,mpeg4,gif,apng,libwebp_anim,aac,pcm_s16le"
         " --enable-muxer=matroska,mp4,avi,gif,apng,webp,wav"
+        " --enable-demuxer=matroska,mov,avi,gif,apng,webp,webp_anim,wav"
+        " --enable-parser=h264,hevc,aac,mpegaudio,gif"
+        " --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc"
+        " --enable-protocol=file"
+        " --enable-filter=abuffer,abuffersink,atempo"
+        " --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox"
+    )
+endif()
+
+# Snow Shot's FFI bundle disables legacy capture and writes only MP4/GIF/APNG/WebP.
+# Keep the existing input closure: recovered and imported recordings may still
+# contain Matroska, AVI, WAV, MPEG-4 or PCM. Standalone tools retain the broader
+# snow-macos-media profile above, including FFmpeg's own GIF encoder.
+if("snow-shot-macos-minimal" IN_LIST FEATURES)
+    if(NOT VCPKG_TARGET_IS_OSX)
+        message(FATAL_ERROR "ffmpeg[snow-shot-macos-minimal] requires macOS")
+    endif()
+    string(APPEND OPTIONS
+        " --disable-network"
+        " --enable-decoder=h264,hevc,mpeg4,gif,png,apng,webp,webp_anim,aac,pcm_s16le,pcm_f32le"
+        " --enable-encoder=libx264,libx265,h264_videotoolbox,hevc_videotoolbox,apng,libwebp_anim,aac"
+        " --enable-muxer=mp4,gif,apng,webp"
         " --enable-demuxer=matroska,mov,avi,gif,apng,webp,webp_anim,wav"
         " --enable-parser=h264,hevc,aac,mpegaudio,gif"
         " --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc"

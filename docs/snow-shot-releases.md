@@ -186,13 +186,20 @@ fallback for dynamic lookups. Changes to sources, headers, manifests, or SVGs
 regenerate the subset without altering the checked-in library or public API.
 
 Cold configuration, settings forms, import/export, and shell code use `/O1 /Os`
-on MSVC or `-Os` on Clang. Capture, recording, drawing, image processing, history
-thumbnails, clipboard decoding, and shortcut dispatch retain their speed policy.
+on MSVC or `-Os` on Clang, including cloud-upload configuration and the compact
+recording and translation settings dialogs. Capture, recording, drawing, image
+processing, history thumbnails, clipboard decoding, and shortcut dispatch retain
+their speed policy.
 Optimized Release targets keep LTO; MSVC `/Gw` and `/Gy` allow `/OPT:REF` and
 `/OPT:ICF` to discard unused data/functions and fold identical code. macOS enables
 `-dead_strip` only for Release builds with the shipping size option enabled.
 The source and target policies are centralized in
 `cmake/SnowShotReleaseOptimization.cmake` for both editions.
+
+Application FFmpeg profiles retain legacy recording inputs while limiting outputs
+to MP4, GIF, APNG and WebP. GIF packets use the Rust encoder directly, without
+opening or bundling a second FFmpeg GIF encoder. The standalone compatibility
+profiles retain their additional encoders and Matroska, AVI and WAV outputs.
 
 ### Snow Shot Mini paired releases
 
@@ -760,7 +767,7 @@ One-time setup:
 1. Create the public `mg-chao/homebrew-tap` repository with an initial `main`
    commit. Copy `homebrew/README.md` as its README. The workflow generates the
    first `Casks/snow-shot.rb`; do not publish a placeholder checksum or cask.
-2. Configure `HOMEBREW_TAP_TOKEN` as a secret in `mg-chao/snow-apps`. Use a
+2. Configure `HOMEBREW_TAP_TOKEN` as a secret in `mg-chao/snow-shot`. Use a
    fine-grained token restricted to the tap repository with Contents read/write.
    Its branch policy must allow the automation to push to `main`.
 3. Include each supported architecture's matching DMG and `.dmg.sha256`
@@ -809,13 +816,13 @@ pair, retry with Actions → Publish Snow Shot Homebrew cask → Run workflow, s
 the stable tag. With GitHub CLI:
 
 ```sh
-gh workflow run snow-shot-homebrew.yml --repo mg-chao/snow-apps \
+gh workflow run snow-shot-homebrew.yml --repo mg-chao/snow-shot \
   -f tag=v1.2.3_snow-shot
 ```
 
 If another workflow publishes a release using `GITHUB_TOKEN`, GitHub may suppress
 the release-triggered workflow; explicitly dispatch this workflow in that case.
-The release token uploads assets only in `snow-apps`; the separate tap token is
+The release token uploads assets only in `snow-shot`; the separate tap token is
 used only for checking out and pushing the tap.
 
 For an offline review or initial tap scaffold, save GitHub's release JSON, download

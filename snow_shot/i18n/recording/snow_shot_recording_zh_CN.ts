@@ -8,8 +8,8 @@
             <translation>%1 dB</translation>
         </message>
         <message>
-            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</source>
-            <translation>将增益调节至 -24 到 +24 dB。滑轨显示处理后的音频电平。</translation>
+            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level</source>
+            <translation>将增益调节至 -24 到 +24 dB。滑轨显示处理后的音频电平</translation>
         </message>
         <message>
             <source>Microphone gain</source>
@@ -54,7 +54,7 @@
     <context>
         <name>RecordingRegionDragHandle</name>
         <message>
-            <source>Move recording area</source>
+            <source>Move screen recording area</source>
             <translation>移动屏幕录制区域</translation>
         </message>
     </context>
@@ -65,7 +65,7 @@
             <translation>取消</translation>
         </message>
         <message>
-            <source>Cancelling rendering...</source>
+            <source>Canceling rendering...</source>
             <translation>正在取消渲染...</translation>
         </message>
         <message>
@@ -77,12 +77,12 @@
             <translation>正在完成录制导出...</translation>
         </message>
         <message>
-            <source>Keep Source</source>
+            <source>Keep source files</source>
             <translation>保留源文件</translation>
         </message>
         <message>
-            <source>Preparing recording...</source>
-            <translation>正在准备录制...</translation>
+            <source>Preparing recording for export...</source>
+            <translation>正在准备录制导出...</translation>
         </message>
         <message>
             <source>Rendering canceled</source>
@@ -98,7 +98,7 @@
         </message>
         <message>
             <source>Rendering recording</source>
-            <translation>渲染录制</translation>
+            <translation>渲染录制内容</translation>
         </message>
         <message>
             <source>Rendering video...</source>
@@ -146,12 +146,12 @@
             <translation>麦克风已开启</translation>
         </message>
         <message>
-            <source>Speaker disabled</source>
-            <translation>扬声器已关闭</translation>
+            <source>System audio disabled</source>
+            <translation>系统音频已关闭</translation>
         </message>
         <message>
-            <source>Speaker enabled</source>
-            <translation>扬声器已开启</translation>
+            <source>System audio enabled</source>
+            <translation>系统音频已开启</translation>
         </message>
         <message>
             <source>WebP</source>
@@ -161,11 +161,11 @@
     <context>
         <name>RecordingTrimSession</name>
         <message>
-            <source>Choose a different file to preserve the original recording.</source>
-            <translation>请选择其他文件，以保留原始录制。</translation>
+            <source>Choose a different file to preserve the original recording</source>
+            <translation>请选择其他文件，以保留原始录制</translation>
         </message>
         <message>
-            <source>Save to File</source>
+            <source>Save to file</source>
             <translation>保存到文件</translation>
         </message>
         <message>
@@ -223,11 +223,11 @@
             <translation>垂直翻转</translation>
         </message>
         <message>
-            <source>Move webcam</source>
+            <source>Move webcam preview</source>
             <translation>移动摄像头画面</translation>
         </message>
         <message>
-            <source>Resize webcam</source>
+            <source>Resize webcam preview</source>
             <translation>调整摄像头画面大小</translation>
         </message>
         <message>
@@ -242,8 +242,8 @@
     <context>
         <name>ScreenRecordingController</name>
         <message>
-            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder.</source>
-            <translation>Windows 结束会话时中断了录屏。您可以恢复已保存的录屏或打开其文件夹。</translation>
+            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder</source>
+            <translation>Windows 结束会话时中断了屏幕录制。您可以恢复已保存的录制内容或打开其文件夹</translation>
         </message>
         <message>
             <source>Keyboard recording failed: %1</source>
@@ -258,10 +258,6 @@
             <translation>打开文件夹</translation>
         </message>
         <message>
-            <source>Recording recovery</source>
-            <translation>录屏恢复</translation>
-        </message>
-        <message>
             <source>Recover</source>
             <translation>恢复</translation>
         </message>
@@ -270,22 +266,26 @@
             <translation>屏幕录制</translation>
         </message>
         <message>
+            <source>Screen recording recovery</source>
+            <translation>屏幕录制恢复</translation>
+        </message>
+        <message>
             <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
 %1
 
-Keep this folder to recover the recording.</source>
+Keep this folder to recover the recording</source>
             <translation>无法完成录制文件。可恢复的媒体及其时间轴已保存在：
 %1
 
-请保留此文件夹，以便恢复录制内容。</translation>
+请保留此文件夹，以便恢复录制内容</translation>
         </message>
         <message>
             <source>The recording operation failed</source>
             <translation>录制操作失败</translation>
         </message>
         <message>
-            <source>The webcam could not be initialized.</source>
-            <translation>无法初始化摄像头。</translation>
+            <source>The webcam could not be initialized</source>
+            <translation>无法初始化摄像头</translation>
         </message>
         <message>
             <source>Unable to create the recording directory</source>
@@ -311,7 +311,7 @@ Keep this folder to recover the recording.</source>
             <translation>完成</translation>
         </message>
         <message>
-            <source>Recording settings</source>
+            <source>Screen recording settings</source>
             <translation>屏幕录制设置</translation>
         </message>
     </context>
@@ -319,7 +319,7 @@ Keep this folder to recover the recording.</source>
         <name>ScreenRecordingToolbarWindow</name>
         <message>
             <source>Show recording toolbar</source>
-            <translation>显示录屏工具栏</translation>
+            <translation>显示屏幕录制工具栏</translation>
         </message>
     </context>
 </TS>

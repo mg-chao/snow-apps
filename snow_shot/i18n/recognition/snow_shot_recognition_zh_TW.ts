@@ -24,7 +24,7 @@
             <translation>移除換行</translation>
         </message>
         <message>
-            <source>Smart Typesetting</source>
+            <source>Smart typesetting</source>
             <translation>智慧排版</translation>
         </message>
     </context>
@@ -43,8 +43,8 @@
             <translation>影像轉換設定</translation>
         </message>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>模型設定已變更。請重試以使用更新後的設定。</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>模型設定已變更。請重試以使用更新後的設定</translation>
         </message>
         <message>
             <source>No vision models are available</source>
@@ -75,7 +75,7 @@
             <translation>無法載入視覺模型</translation>
         </message>
         <message>
-            <source>Vision Model</source>
+            <source>Vision model</source>
             <translation>視覺模型</translation>
         </message>
     </context>
@@ -102,7 +102,7 @@
             <translation>重試</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全選</translation>
         </message>
     </context>
@@ -129,12 +129,12 @@
             <translation>文字辨識失敗</translation>
         </message>
         <message>
-            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac.</source>
-            <translation>內建文字辨識執行階段已損壞或不相容。請重新安裝適用於此 Mac 的 Snow Shot。</translation>
+            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac</source>
+            <translation>內建文字辨識執行階段已損壞或不相容。請重新安裝適用於此 Mac 的 Snow Shot</translation>
         </message>
         <message>
-            <source>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store.</source>
-            <translation>套件中的文字辨識執行階段遺失或已損壞。請透過 Microsoft Store 修復或重新安裝 Snow Shot。</translation>
+            <source>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store</source>
+            <translation>套件中的文字辨識執行階段遺失或已損壞。請透過 Microsoft Store 修復或重新安裝 Snow Shot</translation>
         </message>
         <message>
             <source>The text recognition component could not be started: %1</source>
@@ -156,12 +156,12 @@
             <translation>條碼辨識失敗</translation>
         </message>
         <message>
-            <source>Barcode recognition is unavailable</source>
-            <translation>條碼辨識無法使用</translation>
-        </message>
-        <message>
             <source>Barcode recognition request could not be prepared</source>
             <translation>無法準備條碼辨識請求</translation>
+        </message>
+        <message>
+            <source>Barcode recognition service is unavailable</source>
+            <translation>條碼辨識服務無法使用</translation>
         </message>
         <message>
             <source>Converting to HTML</source>
@@ -188,8 +188,8 @@
             <translation>LaTeX 辨識服務無法使用</translation>
         </message>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>模型設定已變更。請重試以使用更新後的設定。</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>模型設定已變更。請重試以使用更新後的設定</translation>
         </message>
         <message>
             <source>No barcode was recognized</source>
@@ -208,8 +208,8 @@
             <translation>正在準備文字辨識元件（%1%）</translation>
         </message>
         <message>
-            <source>Recognition service changed. Retry to use the updated settings.</source>
-            <translation>辨識服務已變更。請重試以使用更新後的設定。</translation>
+            <source>Recognition service changed. Retry to use the updated settings</source>
+            <translation>辨識服務已變更。請重試以使用更新後的設定</translation>
         </message>
         <message>
             <source>Recognizing LaTeX formula</source>
@@ -228,12 +228,12 @@
             <translation>正在辨識文字</translation>
         </message>
         <message>
-            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry.</source>
-            <translation>Snow Shot 的視覺理解模型無法使用。請選擇其他模型或重試。</translation>
+            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry</source>
+            <translation>Snow Shot 的視覺理解模型無法使用。請選擇其他模型或重試</translation>
         </message>
         <message>
             <source>Some text could not be translated</source>
-            <translation>部分文字無法翻譯</translation>
+            <translation>部分文字未能翻譯</translation>
         </message>
         <message>
             <source>Some text could not be translated: %1</source>
@@ -268,8 +268,8 @@
             <translation>無法準備文字辨識請求</translation>
         </message>
         <message>
-            <source>The selected recognition model is unavailable. Choose another model or retry.</source>
-            <translation>所選辨識模型無法使用。請選擇其他模型或重試。</translation>
+            <source>The selected recognition model is unavailable. Choose another model or retry</source>
+            <translation>所選辨識模型無法使用。請選擇其他模型或重試</translation>
         </message>
         <message>
             <source>Translation failed</source>
@@ -311,12 +311,12 @@
             <translation>刪除</translation>
         </message>
         <message>
-            <source>Formula preview limit exceeded.</source>
-            <translation>公式預覽超出限制。</translation>
+            <source>Formula preview limit exceeded</source>
+            <translation>公式預覽超出限制</translation>
         </message>
         <message>
-            <source>Formula renderer is unavailable.</source>
-            <translation>公式算繪器無法使用。</translation>
+            <source>Formula renderer is unavailable</source>
+            <translation>公式算繪器無法使用</translation>
         </message>
         <message>
             <source>LaTeX formula preview</source>
@@ -351,12 +351,35 @@
             <translation>重試辨識</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全選</translation>
         </message>
         <message>
-            <source>Unable to preview this formula. Check the LaTeX source.</source>
-            <translation>無法預覽此公式。請檢查 LaTeX 原始碼。</translation>
+            <source>Unable to preview this formula. Check the LaTeX source</source>
+            <translation>無法預覽此公式。請檢查 LaTeX 原始碼</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotTableConversionController</name>
+        <message>
+            <source>No table cells were recognized</source>
+            <translation>未辨識到表格儲存格</translation>
+        </message>
+        <message>
+            <source>Table recognition failed</source>
+            <translation>表格辨識失敗</translation>
+        </message>
+        <message>
+            <source>Table recognition request could not be prepared</source>
+            <translation>無法準備表格辨識請求</translation>
+        </message>
+        <message>
+            <source>Table recognition service is unavailable</source>
+            <translation>表格辨識服務無法使用</translation>
+        </message>
+        <message>
+            <source>The model returned no usable table after correction</source>
+            <translation>修正後模型仍未傳回可用的表格</translation>
         </message>
     </context>
     <context>
@@ -406,12 +429,12 @@
             <translation>重設表格</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全選</translation>
         </message>
         <message>
             <source>Select the complete merged cell before pasting into this area</source>
-            <translation>請先選取完整的合併儲存格，再貼到此區域</translation>
+            <translation>請先選取完整的合併儲存格，再貼上至此區域</translation>
         </message>
         <message>
             <source>Split cells</source>

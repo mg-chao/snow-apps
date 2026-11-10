@@ -92,7 +92,7 @@ void ScreenshotImageConversionController::setProvider(SnowShotApiClient* provide
         return;
     if (failedToRestore) {
         m_source.clear();
-        fail(tr("Model configuration changed. Retry to use the updated settings."));
+        fail(tr("Model configuration changed. Retry to use the updated settings"));
         if (!lifetime || providerGeneration != m_providerGeneration)
             return;
     }
@@ -121,7 +121,7 @@ void ScreenshotImageConversionController::bindProviderSignals() {
             if (m_active && !m_requestModel.startsWith(QStringLiteral("custom:"))) {
                 cancelRequests();
                 m_source.clear();
-                fail(tr("Model configuration changed. Retry to use the updated settings."));
+                fail(tr("Model configuration changed. Retry to use the updated settings"));
                 if (!lifetime || providerGeneration != m_providerGeneration)
                     return;
             }
@@ -151,7 +151,7 @@ void ScreenshotImageConversionController::bindProviderSignals() {
                             return;
                     }
                     if (m_active) {
-                        fail(tr("Model configuration changed. Retry to use the updated settings."));
+                        fail(tr("Model configuration changed. Retry to use the updated settings"));
                         if (!lifetime || providerGeneration != m_providerGeneration)
                             return;
                     }
@@ -444,7 +444,7 @@ void ScreenshotImageConversionController::startWithModels(
             }
             if (!entryMatchesProvider(entry)) {
                 m_source.clear();
-                fail(tr("Model configuration changed. Retry to use the updated settings."));
+                fail(tr("Model configuration changed. Retry to use the updated settings"));
                 return;
             }
             cacheResult(m_key, std::move(entry));
@@ -496,7 +496,7 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
     auto* select = new AdSelect(form);
     select->setObjectName(QStringLiteral("screenshotVisionModel"));
     select->setPopupLayerMode(AdSelect::PopupLayerMode::QtTool);
-    auto* field = form->addField(tr("Vision Model"), select, QStringLiteral("model"));
+    auto* field = form->addField(tr("Vision model"), select, QStringLiteral("model"));
     layout->addWidget(form);
     modal->setContentWidget(body);
     modal->setInitialFocusWidget(select);
@@ -504,8 +504,8 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
         modal->setWindowTitle(tr("Image conversion settings"));
         modal->setAcceptText(tr("OK"));
         modal->setRejectText(tr("Cancel"));
-        field->setLabel(tr("Vision Model"));
-        select->setAccessibleName(tr("Vision Model"));
+        field->setLabel(tr("Vision model"));
+        select->setAccessibleName(tr("Vision model"));
         retry->setText(tr("Retry"));
     };
     retranslate();

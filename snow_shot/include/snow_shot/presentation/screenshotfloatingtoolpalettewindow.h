@@ -70,7 +70,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);
     bool stepFilterIntensity(int direction);
-    bool stepPenFilterStrokeWidth(int direction);
+    bool stepBrushFilterStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
     void cancelDrag();
     bool physicalDragActive() const;
@@ -124,6 +124,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool updatePaletteDragAtPhysicalPosition(const QPoint& globalPosition,
                                              const QPointF& physicalPosition);
     void moveContentDuringDrag(const QPoint& position);
+    void applyContentGeometry(const QPoint& position, const QSize& windowSize);
     void finishPaletteDrag(bool emitFinished);
     bool handleToolbarWheel(QWheelEvent* event);
     void applyWindowAttributes();

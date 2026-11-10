@@ -7084,16 +7084,23 @@ mod tests {
         }
         muxer_names.sort_unstable();
         let mut expected_muxers = vec!["apng", "gif", "mov", "mp4", "webp"];
-        if cfg!(target_os = "macos") {
-            expected_muxers.extend(["avi", "matroska", "wav"]);
-        } else if crate::has_avi_compatibility() {
+        if crate::has_avi_compatibility() {
             expected_muxers.extend(["avi", "matroska"]);
+            if cfg!(target_os = "macos") {
+                expected_muxers.push("wav");
+            }
         }
         expected_muxers.sort_unstable();
         assert_eq!(
             muxer_names, expected_muxers,
             "FFmpeg muxer registry does not match the application or compatibility profile"
         );
+
+        // Application GIF packets come from the RGB-difference backend. Its
+        // native FFmpeg registry must no longer retain a second GIF encoder.
+        if !crate::has_avi_compatibility() {
+            assert!(ffmpeg::encoder::find(ffmpeg::codec::Id::GIF).is_none());
+        }
 
         let cases = [
             (ExportFormat::Mp4, VideoCodec::H264, "h264", "libx264"),

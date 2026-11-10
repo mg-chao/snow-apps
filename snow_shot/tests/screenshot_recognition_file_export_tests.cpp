@@ -113,6 +113,41 @@ void requireClassicZipWorkbook(const QString& path) {
             "all workbook ZIP entries must end at the central directory");
 }
 
+void cancellationLeavesExistingFilesAndCompanionsIntact() {
+    QTemporaryDir directory;
+    const auto primary = directory.filePath(QStringLiteral("result.md"));
+    const auto companion = directory.filePath(QStringLiteral("result.txt"));
+    const ScreenshotRecognitionFileSnapshot snapshot{ScreenshotRecognitionFileKind::Markdown,
+                                                     QStringLiteral("replacement")};
+    for (const int stopAt : {1, 2, 3, 4, 5}) {
+        write(primary, "original primary");
+        write(companion, "original companion");
+        int checkpoints = 0;
+        const auto result = ScreenshotRecognitionFileExport::saveToPath(
+            snapshot, primary, true, [&] { return ++checkpoints == stopAt; });
+        require(result.wasCancelled && !result.succeeded(),
+                "cancellation is distinct from save failure");
+        require(read(primary) == "original primary" && read(companion) == "original companion" &&
+                    QDir(directory.path()).entryList(QDir::Files | QDir::Hidden).size() == 2,
+                "cancelled staging cleans temporary files and preserves both original outputs");
+    }
+    const auto cancelled = ScreenshotRecognitionFileExport::quickSave(
+        snapshot, directory.path(), QStringLiteral("new"), [] { return true; });
+    require(cancelled.wasCancelled && !QFileInfo::exists(directory.filePath("new.md")),
+            "cancelled quick save never publishes an output");
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    ScreenshotRecognitionFileSnapshot table;
+    table.kind = ScreenshotRecognitionFileKind::Table;
+    table.table = ScreenshotTableDocument(100, 10);
+    table.table->setCellText(0, 0, QStringLiteral("value"));
+    int checkpoints = 0;
+    const auto workbook = ScreenshotRecognitionFileExport::saveToPath(
+        table, directory.filePath("cancelled.xlsx"), false, [&] { return ++checkpoints >= 20; });
+    require(workbook.wasCancelled && !QFileInfo::exists(directory.filePath("cancelled.xlsx")),
+            "workbook serialization observes cancellation between rows");
+#endif
+}
+
 void savesConversionPairsWithExactSource() {
     QTemporaryDir directory;
     require(directory.isValid(), "conversion save directory unavailable");
@@ -561,6 +596,7 @@ void overwriteButtonsFollowSelectedLanguage() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        cancellationLeavesExistingFilesAndCompanionsIntact();
         savesRealWorkbookWithLiteralCellsAndSpans();
         workbookPreservesColumnWidths();
         temporaryWorkbooksOpenOnlyAfterSavingAndSurviveSuccess();

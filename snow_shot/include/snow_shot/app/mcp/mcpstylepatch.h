@@ -558,6 +558,9 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
             flags |= properties.value(it.key());
         if constexpr (requires { canvas.applyStyleEdit(SnowCanvasSerialNumberEdit{style, flags}); })
             return canvas.applyStyleEdit(SnowCanvasSerialNumberEdit{style, flags});
+        else if constexpr (requires { commands.setSequenceNumberStyleFromToolbar(style, flags); })
+            return dispatch(
+                [&] { return commands.setSequenceNumberStyleFromToolbar(style, flags); });
         else
             return dispatch([&] { return commands.setSerialNumberStyleFromToolbar(style, flags); });
     } else if (target.endsWith(QStringLiteral("filter"))) {

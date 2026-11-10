@@ -19,7 +19,7 @@ WindowGroupSwitcherController::WindowGroupSwitcherController(GlobalShortcutManag
     connect(&groups, &PinnedWindowGroupManager::activeGroupChanged, this, [this] { cancel(); });
     connect(&shortcuts, &GlobalShortcutManager::registrationsSuspended, this,
             &WindowGroupSwitcherController::cancel);
-    connect(&shortcuts, &GlobalShortcutManager::globalHotkeysEnabledChanged, this,
+    connect(&shortcuts, &GlobalShortcutManager::globalShortcutsEnabledChanged, this,
             [this](bool enabled) {
                 if (!enabled)
                     cancel();
@@ -204,6 +204,6 @@ void WindowGroupSwitcherController::finish(const QString& commitId) {
     if (m_draining)
         m_timer.start();
     if (!target.isEmpty() && !m_groups.setActiveGroup(target))
-        emit errorOccurred(tr("Could not switch window group. Please try again."));
+        emit errorOccurred(tr("Could not switch window group. Please try again"));
 }
 } // namespace snow_shot::presentation

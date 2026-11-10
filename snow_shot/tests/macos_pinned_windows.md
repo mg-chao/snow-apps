@@ -64,6 +64,28 @@ clicks and dismissal release ownership. It returns CTest skip code 77 when the
 host lacks event-posting permission. It never prompts for permission or changes
 privacy settings. Basic pinning does not require this test permission.
 
+## Persistent stacking restoration
+
+Build `snow-shot-pinned-window-stacking-tests` and `snow-shot-pinned-window-tests`.
+Run the focused model, storage, and Cocoa application checks:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug \
+  -R '^snow-shot-pinned-(window-stacking(-native)?|stacking-restore(-native)?)-tests$' \
+  --output-on-failure
+```
+
+The native adapter checks order permutations, raise/lower, native levels, auxiliary
+ownership, surface rebinding, geometry, and the frontmost application/key window.
+The application case covers storage restart, group switches, hide/show, and explicit
+show commands while image loading is blocked. Cocoa capture uses visible window
+numbers so NSPanel pin surfaces participate.
+
+These Cocoa cases have been added but have not been run on a macOS host in the
+Windows implementation session. Native macOS qualification remains required;
+Windows and offscreen results do not qualify AppKit behavior. Include click-through,
+hide-to-top handles, and application reactivation in the native host pass.
+
 ## Input interruption and boundary audit — 2026-09-21
 
 The follow-up audit covers input behavior independently of the event source or
@@ -229,7 +251,7 @@ suite was run.
 
 ## Safe-area content alignment — 2026-10-22
 
-Investigation of [issue #2129](https://github.com/mg-chao/snow-apps/issues/2129)
+Investigation of [issue #2129](https://github.com/mg-chao/snow-shot/issues/2129)
 found a reproducible content-layout defect consistent with the reported border
 and image displacement near the menu bar. Qt enables safe-area contents margins
 for top-level widgets by default. Its Cocoa adapter includes the screen's notch
@@ -289,3 +311,52 @@ ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
 
 These are deterministic QPA-inset tests, not native notched-display or encoded
 recording validation. The hardware check described above remains outstanding.
+
+## Image drag-and-drop regression — 2026-11-04
+
+Pinned windows and their descendants now use a reserved native band above the
+menu bar, Dock, and desktop toolbar, but below AppKit's dragging window. The
+previous screen-saver-relative band prevented native drop delivery. Recording,
+global canvas, and screenshot windows retain their existing capture bands;
+turning off always-on-top still restores the normal level.
+
+Qt 6.12's Cocoa backend can return `IgnoreAction` after an external AppKit
+receiver has accepted a copy. Immediate cleanup then removes the exported image
+before the receiver opens its URL. On macOS every published drag now retains its
+file for the existing 30-minute transfer grace. The 64-file/512-MiB budgets,
+expiry, and failed-deletion retry remain enforced. Preparation failures still
+remove unpublished files immediately. Windows cancellation behavior is unchanged.
+
+The native regression uses the actual pin gesture and asynchronous exporter. It
+checks an AppKit receiver that decodes the image and copies its file after the
+drag returns, pin-to-pin replacement, external file URLs and TIFF pixels dropped
+onto a pin, and pin exports into Image Stitching and Image Splitting. It also
+checks that the system clipboard remains unchanged. With the old cleanup
+restored, the external receiver accepted the image, Qt returned `IgnoreAction`,
+and the post-drag file read failed. The corrected path passes.
+
+The related audit found that the desktop floating toolbar already uses a band
+below AppKit dragging; its native file, image, text, and HTML tests pass. Collage
+reordering and settings rearrangement use internal payloads and do not share the
+exported-file lease. No additional production change was needed for these paths.
+The floating-toolbar native test target's missing export dependencies were added
+so its existing coverage can link and run.
+
+The arm64 Debug application build and all 12 focused checks passed with Qt 6.12.0.
+Changed C++/Objective-C++ formatting and `git diff --check` also passed. No full
+suite or benchmarks ran; this build has clang-tidy disabled.
+
+Build `snow_shot`, `snow-shot-pinned-window-tests`,
+`snow-shot-macos-overlay-initialization-tests`, `snow-shot-macos-pinned-window-tests`,
+`snow-shot-macos-floating-toolbar-drop-tests`, and `snow-shot-global-canvas-tests`
+with `snow-shot-macos-arm64-debug`. Run only the focused checks:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(pinned-(drag-export|file-drop|auxiliary-ownership)|macos-(pinned-content-drag-.*|overlay-initialization|pinned-window|screenshot-stacking-native|floating-toolbar-drop-policy|floating-toolbar-content-drop-native)|global-canvas)-tests$'
+```
+
+Native input checks require existing event-posting permission and do not request
+or change privacy grants. The AppKit receiver covers Finder-style deferred file
+copying; it is not an automated test of Finder itself. Intel/macOS 15 and Windows
+native execution were not part of this validation.

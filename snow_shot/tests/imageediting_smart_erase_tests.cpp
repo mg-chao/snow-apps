@@ -108,7 +108,8 @@ void styledPinExportsCompleteReconstruction(
                 source = readImageEditingPinned(std::move(record), preparation);
             } else
                 source.resultStyle = style;
-            const auto actual = exportImage(imageEditingCompositeSource(source));
+            const auto actual = exportImage(closed ? imageEditingExportSource(source)
+                                                   : imageEditingCompositeSource(source));
             require(actual.succeeded(), "pending and closed pin erasures reconstruct on export");
             requirePixels(actual.image, expected.image,
                           "styled pin flattening preserves all completed erasure pixels");

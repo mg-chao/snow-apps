@@ -206,6 +206,64 @@ void imageFilesDecodeByContent() {
     }
 }
 
+void tiffFilesAndMimeDataPreservePixels() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "TIFF imports need temporary storage");
+    QImage pixels(3, 2, QImage::Format_RGBA8888);
+    pixels.fill(QColor(23, 117, 209, 127));
+    pixels.setPixelColor(0, 0, QColor(87, 42, 19, 0));
+    pixels.setPixelColor(2, 1, QColor(9, 33, 71, 255));
+    pixels.setColorSpace(QColorSpace::SRgb);
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    snow::image::EncodeOptions options;
+    options.format = snow::image::Format::tiff;
+    QString error;
+    require(buffer.open(QIODevice::WriteOnly) &&
+                snow_shot::image_codec::encodeToDevice(pixels, &buffer, options.format, options,
+                                                       &error),
+            "encode a TIFF import fixture with straight alpha");
+
+    QMimeData mime;
+    mime.setData(QStringLiteral("image/tiff"), bytes);
+    const auto decoded = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+    require(decoded && decoded->image.convertToFormat(pixels.format()) == pixels &&
+                !decoded->animationSource &&
+                ScreenshotClipboardContentReader::filePathsForImport(&mime).isEmpty(),
+            "TIFF MIME data must import as one still image with exact RGBA pixels");
+    for (const QString& suffix :
+         {QStringLiteral("TIF"), QStringLiteral("tiff"), QStringLiteral("png")}) {
+        const QString path = directory.filePath(QStringLiteral("scan.") + suffix);
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(),
+                "write TIFF with an accepted or misleading suffix");
+        file.close();
+        require(snow_shot::image_codec::decodeFileBgra(path, snow::image::Format::unknown)
+                        .convertToFormat(pixels.format()) == pixels,
+                "TIFF file decoding must support the app's BGRA import path");
+        const auto files = ScreenshotClipboardContentReader::snapshotLocalFiles({path});
+        require(files.size() == 1, "both TIFF suffixes must reach file import");
+        ScreenshotClipboardContentSnapshot snapshot;
+        snapshot.localImage = files.first();
+        const auto imported = ScreenshotClipboardContentReader::decode(snapshot);
+        require(imported && imported->image.convertToFormat(pixels.format()) == pixels &&
+                    !imported->animationSource && imported->originalContent.localFilePath == path,
+                "TIFF file imports must detect content and retain source identity");
+        require(ScreenshotClipboardContentReader::decodeImageFile(files.first())
+                            .convertToFormat(pixels.format()) == pixels &&
+                    ScreenshotClipboardContentReader::decodeImageFile(files.first(),
+                                                                      [] { return true; })
+                        .isNull(),
+                "first-page TIFF previews must preserve pixels and cancellation");
+    }
+    mime.setData(QStringLiteral("image/tiff"), QByteArrayLiteral("truncated TIFF"));
+    mime.setText(QStringLiteral("text fallback"));
+    const auto fallback = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+    require(fallback && fallback->isFormattedText() &&
+                fallback->plainText == QStringLiteral("text fallback"),
+            "an invalid TIFF offer must allow the existing text fallback");
+}
+
 void bmpFilesPreservePixelsAndIdentity() {
     QTemporaryDir directory;
     require(directory.isValid(), "BMP import fixture directory must exist");
@@ -1925,6 +1983,29 @@ void nativeDibMaskColoredPixelsRemainPixels() {
 #include "pinned_color_swatch_content_tests.h"
 } // namespace
 
+void textThumbnailsPreserveLayoutWithBoundedRasters() {
+    for (const bool html : {false, true}) {
+        ScreenshotClipboardOriginalContent content;
+        if (html)
+            content.html =
+                QStringLiteral("<table width='1500'><tr><td>Wide table</td></tr></table>");
+        else
+            content.text = QStringLiteral("A long pinned text line\n").repeated(120);
+        const auto full = ScreenshotClipboardContentReader::renderOriginalText(content, 2.0);
+        QSize naturalSize;
+        const auto thumbnail = ScreenshotClipboardContentReader::renderOriginalTextThumbnail(
+            content, 2.0, QSize(260, 156), &naturalSize);
+        require(full && thumbnail && naturalSize == full->image.size() &&
+                    thumbnail->image.width() <= 260 && thumbnail->image.height() <= 156 &&
+                    thumbnail->image.sizeInBytes() < full->image.sizeInBytes() &&
+                    thumbnail->formattedDocument->size() == full->formattedDocument->size(),
+                "text thumbnails preserve layout and natural dimensions with a bounded raster");
+        require(!ScreenshotClipboardContentReader::renderOriginalTextThumbnail(
+                    content, 2.0, QSize(260, 156), nullptr, [] { return true; }),
+                "cancelled text previews must not render");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
@@ -1935,6 +2016,9 @@ int main(int argc, char** argv) {
         "offscreen document tests require proportional and monospace fonts");
     QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
 #endif
+    textThumbnailsPreserveLayoutWithBoundedRasters();
+    if (application.arguments().contains(QStringLiteral("--thumbnail-only")))
+        return EXIT_SUCCESS;
     if (application.arguments().contains(QStringLiteral("--color-swatch-only"))) {
         pinnedColorSwatchContentTests();
         return EXIT_SUCCESS;
@@ -1946,7 +2030,13 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--import-routing-only"))) {
         imageFilesDecodeByContent();
+        tiffFilesAndMimeDataPreservePixels();
         clipboardImagesTakePriorityOverAccompanyingFiles();
+        return EXIT_SUCCESS;
+    }
+    if (application.arguments().contains(QStringLiteral("--tiff-only"))) {
+        imageFileExtensionsMatchShellRegistration();
+        tiffFilesAndMimeDataPreservePixels();
         return EXIT_SUCCESS;
     }
     if (application.arguments().contains(QStringLiteral("--text-layout-only"))) {
@@ -1960,6 +2050,7 @@ int main(int argc, char** argv) {
     }
     imageFileExtensionsMatchShellRegistration();
     imageFilesDecodeByContent();
+    tiffFilesAndMimeDataPreservePixels();
     clipboardImagesTakePriorityOverAccompanyingFiles();
     embeddedImagesUseManagedCachedPixels();
     if (application.arguments().contains(QStringLiteral("--embedded-images-only"))) {

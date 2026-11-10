@@ -24,7 +24,6 @@ namespace {
 // OCR asset cache root (configurationDirectory()/assets).
 constexpr auto kHistoryDirectoryName = "capture_history";
 constexpr auto kAssetDirectoryName = "assets";
-constexpr auto kThumbnailSuffix = "png";
 
 QString cleanDirectory(const QString& path) {
     return path.isEmpty() ? QString() : QDir::cleanPath(path);
@@ -199,6 +198,10 @@ AppStorageUsage StorageUsageTracker::scanNow() {
     }
     scanned.thumbnailCacheBytes = directoryBytes(m_thumbnailCacheDirectory);
     scanned.recordingTempBytes = directoryBytes(m_recordingTempDirectory);
+    const QString insideRoot = m_appDataDirectory.isEmpty()
+                                   ? QString()
+                                   : QDir(m_appDataDirectory).filePath(QStringLiteral("logs"));
+    bool insideLogsCounted = false;
     const QFileInfoList entries =
         m_appDataDirectory.isEmpty()
             ? QFileInfoList()
@@ -210,6 +213,22 @@ AppStorageUsage StorageUsageTracker::scanNow() {
             continue;
         }
         const QString name = entry.fileName();
+        if (name == QLatin1String("logs")) {
+            const QString normalized = QDir::cleanPath(entry.absoluteFilePath()).toCaseFolded();
+            const bool configured =
+                std::any_of(m_diagnosticsDirectories.cbegin(), m_diagnosticsDirectories.cend(),
+                            [&](const QString& root) {
+                                if (root.isEmpty())
+                                    return false;
+                                const QString parent = QDir::cleanPath(root).toCaseFolded();
+                                return normalized == parent || normalized.startsWith(parent + u'/');
+                            });
+            // A former custom/portable data directory can still contain old logs.
+            // Only the explicitly configured diagnostics roots belong to this session.
+            if (!configured)
+                continue;
+            insideLogsCounted = true;
+        }
         const bool history = name == QLatin1String(kHistoryDirectoryName);
         if (history && historyProvided) {
             continue;
@@ -251,11 +270,8 @@ AppStorageUsage StorageUsageTracker::scanNow() {
     if (historyProvided) {
         scanned.historyBytes = providedHistoryBytes;
     }
-    const QString insideRoot = m_appDataDirectory.isEmpty()
-                                   ? QString()
-                                   : QDir(m_appDataDirectory).filePath(QStringLiteral("logs"));
     QStringList counted;
-    if (!insideRoot.isEmpty())
+    if (insideLogsCounted)
         counted.append(QDir::cleanPath(insideRoot).toCaseFolded());
     QStringList roots = m_diagnosticsDirectories;
     std::sort(roots.begin(), roots.end(),
@@ -275,7 +291,7 @@ AppStorageUsage StorageUsageTracker::scanNow() {
         if (!m_appDataDirectory.isEmpty() &&
             (appRoot == normalized || appRoot.startsWith(normalized + u'/')))
             bytes -= directoryBytes(m_appDataDirectory);
-        else if (!insideRoot.isEmpty() &&
+        else if (insideLogsCounted &&
                  QDir::cleanPath(insideRoot).toCaseFolded().startsWith(normalized + u'/'))
             bytes -= directoryBytes(insideRoot);
         scanned.diagnosticsBytes += std::max<qint64>(0, bytes);
@@ -303,20 +319,30 @@ StorageResult StorageUsageTracker::clearNow(StorageCacheKind kind) {
         return StorageResult::ok();
     if (kind == StorageCacheKind::ThumbnailCache) {
         QDir directory(m_thumbnailCacheDirectory);
-        if (!directory.exists()) {
+        const QFileInfo root(m_thumbnailCacheDirectory);
+        if (!root.exists() || storageLink(root)) {
             return StorageResult::ok();
+        }
+        if (!root.isDir() || !directory.isReadable()) {
+            return StorageResult::failure(failureMessage(kind));
         }
         const QFileInfoList entries = directory.entryInfoList(QDir::Files | QDir::NoDotAndDotDot |
                                                               QDir::Hidden | QDir::System);
         int failures = 0;
         for (const QFileInfo& entry : entries) {
-            if (entry.isSymLink() ||
-                entry.suffix().compare(QLatin1String(kThumbnailSuffix), Qt::CaseInsensitive) != 0) {
+            if (storageLink(entry) ||
+                (!entry.fileName().endsWith(QLatin1String(".png"), Qt::CaseInsensitive) &&
+                 !entry.fileName().endsWith(QLatin1String(".png.size"), Qt::CaseInsensitive))) {
                 continue;
             }
             if (!QFile::remove(entry.absoluteFilePath())) {
                 ++failures;
             }
+        }
+        if (directory.isEmpty(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden |
+                              QDir::System) &&
+            !QDir().rmdir(m_thumbnailCacheDirectory)) {
+            ++failures;
         }
         return failures == 0 ? StorageResult::ok() : StorageResult::failure(failureMessage(kind));
     }

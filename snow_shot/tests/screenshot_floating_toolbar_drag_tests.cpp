@@ -228,9 +228,9 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeTool() override {}
     void setArrowTool() override {}
     void setLineTool() override {}
-    void setFreeDrawTool() override {}
+    void setBrushTool() override {}
     void setHighlightTool() override {}
-    void setPenHighlightTool() override {}
+    void setBrushHighlightTool() override {}
     void setEraserTool() override {}
     void setFilterTool() override {}
     void setWatermarkTool() override {}
@@ -238,7 +238,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
     void setTextTool() override {}
-    void setSerialNumberTool() override {}
+    void setSequenceNumberTool() override {}
     void setOcrTool() override {}
     void openSpreadsheetFile() override {
         ++openSpreadsheetCount;
@@ -271,10 +271,10 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
-    void decrementSelectedSerialNumbers() override {}
-    void incrementSelectedSerialNumbers() override {}
-    void createTextForSelectedSerialNumber() override {}
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSequenceNumbers() override {}
+    void incrementSelectedSequenceNumbers() override {}
+    void createTextForSelectedSequenceNumber() override {}
     void repositionToolbarForContentChange() override {
         ++repositionCount;
     }
@@ -1549,7 +1549,7 @@ void styleToolChangesKeepThePresetWindowSize() {
     options.showMoveTool = true;
     options.showSelectTool = true;
     options.showTextTool = true;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showOcrTool = true;
     options.showScrollingScreenshotTool = true;
     options.showScreenRecordButton = true;
@@ -1558,9 +1558,9 @@ void styleToolChangesKeepThePresetWindowSize() {
                       ScreenshotToolPalette::CopyAction;
     ScreenshotFloatingToolPaletteWindow window(options);
     constexpr ScreenshotToolPalette::Tool tools[] = {
-        ScreenshotToolPalette::Tool::Select,       ScreenshotToolPalette::Tool::Shape,
-        ScreenshotToolPalette::Tool::Arrow,        ScreenshotToolPalette::Tool::Text,
-        ScreenshotToolPalette::Tool::SerialNumber,
+        ScreenshotToolPalette::Tool::Select,         ScreenshotToolPalette::Tool::Shape,
+        ScreenshotToolPalette::Tool::Arrow,          ScreenshotToolPalette::Tool::Text,
+        ScreenshotToolPalette::Tool::SequenceNumber,
     };
     require(window.palette()->ensureActionFamily(ScreenshotToolPalette::ActionFamily::Selection),
             "preset test should materialize the inspected selection actions");
@@ -1588,12 +1588,12 @@ void placementRectsTrackTheDisplayedStyleToolbar() {
         ScreenshotToolPalette::Tool::Shape,
         ScreenshotToolPalette::Tool::Arrow,
         ScreenshotToolPalette::Tool::RectangleHighlight,
-        ScreenshotToolPalette::Tool::PenHighlight,
+        ScreenshotToolPalette::Tool::BrushHighlight,
         ScreenshotToolPalette::Tool::Spotlight,
         ScreenshotToolPalette::Tool::Text,
-        ScreenshotToolPalette::Tool::SerialNumber,
+        ScreenshotToolPalette::Tool::SequenceNumber,
         ScreenshotToolPalette::Tool::RectangleFilter,
-        ScreenshotToolPalette::Tool::PenFilter,
+        ScreenshotToolPalette::Tool::BrushFilter,
         ScreenshotToolPalette::Tool::Watermark,
     };
     for (const ScreenshotToolPalette::Tool tool : referenceFamilies) {
@@ -2375,7 +2375,7 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
     QWidget owner;
     owner.show();
     ScreenshotToolPalette::Options options;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showDistanceTool = true;
     ScreenshotFloatingToolPaletteWindow window(options);
     window.setTransientOwnerWindow(&owner);
@@ -2420,7 +2420,7 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
     };
     for (const auto tool :
          {ScreenshotToolPalette::Tool::Distance, ScreenshotToolPalette::Tool::Watermark,
-          ScreenshotToolPalette::Tool::SerialNumber}) {
+          ScreenshotToolPalette::Tool::SequenceNumber}) {
         adqt::widgets::AdInputNumber* number = nullptr;
         palette->setActiveTool(tool);
         QCoreApplication::processEvents();
@@ -2618,6 +2618,87 @@ void interruptedToolbarDragStopsMoving() {
 }
 
 #if defined(Q_OS_MACOS)
+void macosToolbarPlacementAtDisplayEdges() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "display-edge placement tests require isolated settings");
+    const auto storageLifetime = qScopeGuard([&] { storage.shutdown(); });
+    {
+        QWidget owner(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+        owner.setAttribute(Qt::WA_TranslucentBackground);
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow window(commands);
+        window.setToolbarSize(QStringLiteral("normal"));
+        const bool native = QGuiApplication::platformName() == QStringLiteral("cocoa");
+        for (QScreen* screen : QGuiApplication::screens()) {
+            const QRect bounds = native ? screen->geometry() : QRect(0, 0, 1600, 900);
+            owner.setGeometry(bounds);
+            owner.show();
+            window.setOwnerWindow(&owner);
+            window.setPlacementContext(native ? screen : nullptr, bounds, bounds);
+            snow_shot::platform::configureScreenshotOverlayWindow(&owner);
+            for (const auto tool :
+                 {ScreenshotToolPalette::Tool::Move, ScreenshotToolPalette::Tool::Shape}) {
+                window.setActiveTool(tool);
+                for (const int left : {0, bounds.width() - 200}) {
+                    for (const int lowerEdge : {400, bounds.height() - 110, bounds.height() - 20}) {
+                        window.hide();
+                        const QRect selection(bounds.topLeft() + QPoint(left, lowerEdge - 120),
+                                              QSize(200, 120));
+                        window.prepareForDisplay();
+                        const auto snapshot = window.placementSnapshot();
+                        const auto placement = ScreenshotGeometryMapper::anchoredToolbarPlacement(
+                            selection.bottomRight() + QPoint(1, 1),
+                            selection.topRight() + QPoint(1, 0), snapshot.bottom, snapshot.top,
+                            bounds, 4);
+                        const auto& layout =
+                            placement.usesTopRightPlacement ? snapshot.top : snapshot.bottom;
+                        const QRect expectedMain =
+                            layout.mainToolbarContentRect.translated(placement.contentPosition);
+                        window.setStyleToolbarAboveMain(placement.usesTopRightPlacement);
+                        window.resetPositionForSelection(placement.contentPosition);
+                        window.show();
+                        snow_shot::platform::configureScreenshotToolbarWindow(&window);
+                        settleQueuedRefreshes();
+                        const QRect actualMain(window.palette()->mainPanel()->mapToGlobal(QPoint()),
+                                               window.palette()->mainPanel()->size());
+                        if (actualMain != expectedMain)
+                            qWarning() << "Display-edge toolbar" << bounds << "DPR"
+                                       << screen->devicePixelRatio() << "expected" << expectedMain
+                                       << "actual" << actualMain << "frame" << window.geometry()
+                                       << "owner" << owner.geometry();
+                        require(actualMain == expectedMain,
+                                "showing a seam-clamped toolbar must retain its prepared position");
+                        const QRect occupied =
+                            window.occupiedContentRect().translated(window.contentPosition());
+                        require(window.isVisible() && bounds.contains(occupied) &&
+                                    !occupied.intersects(selection),
+                                "the displayed toolbar must remain within its display and outside "
+                                "the capture region");
+                        require(
+                            left == 0 ? occupied.left() == bounds.left()
+                                      : occupied.right() == bounds.right(),
+                            "display-edge clamping must preserve the visible toolbar alignment");
+                        require(bounds.contains(window.geometry()),
+                                "transparent toolbar reserve must not cross the selected display's "
+                                "edges and trigger AppKit screen adjustment");
+                        require(
+                            window.containsInteractiveGlobalPoint(actualMain.center()) &&
+                                window.mask().contains(window.mapFromGlobal(actualMain.center())),
+                            "moving the host within the native frame must preserve input and "
+                            "surface masks");
+                        window.prepareForDisplay();
+                        require(window.contentPosition() == placement.contentPosition,
+                                "layout preparation must retain the offset host's global anchor");
+                    }
+                }
+            }
+        }
+    }
+}
+
 void macosToolbarCrossDisplayDrag() {
     QTemporaryDir temporary;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -2979,7 +3060,7 @@ void borderCursorSurvivesToolRestoration() {
         QCoreApplication::testAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     using Tool = ScreenshotToolPalette::Tool;
-    for (const auto tool : {Tool::FreeDraw, Tool::Arrow, Tool::Shape, Tool::Select}) {
+    for (const auto tool : {Tool::Brush, Tool::Arrow, Tool::Shape, Tool::Select}) {
         QWidget overlay(nullptr, Qt::Tool | Qt::FramelessWindowHint);
         overlay.resize(800, 600);
         SnowCanvasWidget canvas(&overlay);
@@ -2992,10 +3073,10 @@ void borderCursorSurvivesToolRestoration() {
         ScreenshotToolPalette& palette = *toolbar.palette();
         toolbar.setActiveTool(tool);
         toolbar.show();
-        const auto canvasTool = tool == Tool::FreeDraw ? SnowCanvasTool::FreeDraw
-                                : tool == Tool::Arrow  ? SnowCanvasTool::Arrow
-                                : tool == Tool::Shape  ? SnowCanvasTool::Shape
-                                                       : SnowCanvasTool::Select;
+        const auto canvasTool = tool == Tool::Brush   ? SnowCanvasTool::FreeDraw
+                                : tool == Tool::Arrow ? SnowCanvasTool::Arrow
+                                : tool == Tool::Shape ? SnowCanvasTool::Shape
+                                                      : SnowCanvasTool::Select;
         QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
                          [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
         require(canvas.setCanvasTool(canvasTool), "activate drawing tool");
@@ -3116,6 +3197,7 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--macos-logical-only"))) {
             toolSwitchPreservesNativeFrame();
             macosToolbarUsesLogicalGeometry();
+            macosToolbarPlacementAtDisplayEdges();
             return 0;
         }
 #endif

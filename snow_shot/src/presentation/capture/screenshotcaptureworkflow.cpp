@@ -57,6 +57,12 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
     return m_toolbarVisibility == ToolbarVisibility::Suppressed;
 }
 
+void ScreenshotCaptureWorkflow::enableCaptureToolbar() {
+    if (!m_state.presentationSuppressed) {
+        m_toolbarVisibility = ToolbarVisibility::ShowAfterSelection;
+    }
+}
+
 void ScreenshotCaptureWorkflow::setCaptureSuspended(bool suspended) {
     m_captureSuspended = suspended;
 }
@@ -70,6 +76,7 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
                                              PresentationMode presentation) {
     if (m_captureSuspended)
         return;
+    m_context.captureStarting(presentation == PresentationMode::Visible);
     const QPoint initialCursorGlobalPosition = m_context.cursorPosition();
     completeRecapture(false);
     if (m_deferredExportCleanup) {
@@ -161,7 +168,8 @@ void ScreenshotCaptureWorkflow::handleInitialSmartSelectionResolved(quint64 sess
     showCapturePresentationWhenReady(sessionId);
 }
 
-void ScreenshotCaptureWorkflow::cancelCapture() {
+void ScreenshotCaptureWorkflow::cancelCapture(ScreenshotCaptureFocusDisposition focus) {
+    m_context.captureEnding(focus);
     const bool refreshAfterCancel = m_refreshAfterCapture || m_state.layoutDirty;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.cancel_requested");
     SNOW_SHOT_CAPTURE_PERF_FINISH(false);
@@ -180,12 +188,14 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     resetCaptureModels();
     resetCanvasRuntimeState();
     finishCaptureSession();
+    m_context.captureEnded();
     if (refreshAfterCancel) {
         scheduleLayoutRefresh(m_layoutChangeSerial);
     }
 }
 
 void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
+    m_context.captureEnding(ScreenshotCaptureFocusDisposition::KeepCurrent);
     *m_startup = {};
     SNOW_SHOT_PIN_PERF_SCOPE("cleanup.cancel_capture_for_export");
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.export_cancel_requested");
@@ -205,6 +215,7 @@ void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
     m_refreshAfterCapture = false;
     resetCaptureModels();
     finishCaptureSession(true);
+    m_context.captureEnded();
 }
 
 void ScreenshotCaptureWorkflow::clearCapturePresentationReadiness() {
@@ -512,15 +523,19 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
 
     m_context.displaySession.cursorAvailable = result.cursorAvailable;
     m_context.runtime.applyDisplayModels(m_context.displaySession);
+    if (sessionId != m_state.sessionId)
+        return;
     m_canvasRuntimeClean = false;
     if (m_context.presentation.updateOverlayState) {
         m_context.presentation.updateOverlayState();
     }
+    if (sessionId != m_state.sessionId)
+        return;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.displays_applied");
 
     m_capturedPresentationSessionId = sessionId;
     showCapturePresentationWhenReady(sessionId);
-    if (refreshAfterCapture) {
+    if (sessionId == m_state.sessionId && refreshAfterCapture) {
         scheduleLayoutRefresh(m_layoutChangeSerial);
     }
 }
@@ -631,6 +646,10 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
                                                : ScreenshotOverlayShowMode::CapturedImage;
     if (!m_state.presentationSuppressed)
         m_context.runtime.showOverlayWindows(m_context.displaySession, revealMode);
+    // Native show and all presentation callbacks may synchronously retire this session.
+    // View generations protect individual windows, not this workflow's continuation.
+    if (sessionId != m_state.sessionId)
+        return;
     SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION();
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.composited");
     SNOW_SHOT_CAPTURE_PERF_FINISH(true);
@@ -638,9 +657,13 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     if (!m_state.presentationSuppressed && m_context.presentation.updateColorPicker) {
         m_context.presentation.updateColorPicker();
     }
+    if (sessionId != m_state.sessionId)
+        return;
     if (m_context.presentation.capturePresented) {
         m_context.presentation.capturePresented();
     }
+    if (sessionId != m_state.sessionId)
+        return;
     if (!m_state.presentationSuppressed &&
         m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         m_startMode != StartMode::ExternalDrag &&

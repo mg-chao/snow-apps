@@ -8,10 +8,19 @@
 #include <QString>
 #include <QTransform>
 #include <QVector>
+#include <optional>
 
 enum class ScreenshotOcrTextDirection {
     Horizontal,
     Vertical,
+};
+
+// Measurements of the rendered source row, in units of its fitted font size.
+struct ScreenshotOcrSourceTextMetrics {
+    qreal spacingEm = 0; // Extra letter spacing for a row, cell advance for a vertical column.
+    qreal inkAscentEm = 0;
+    qreal inkDescentEm = 0;
+    bool operator==(const ScreenshotOcrSourceTextMetrics&) const = default;
 };
 
 struct ScreenshotOcrLine {
@@ -22,6 +31,11 @@ struct ScreenshotOcrLine {
     QVector<QPolygonF> sourceLineQuads{};
     bool paragraph = false;
     QColor backgroundFillColor{};
+    // Derived translation-only limit: effective font size / quad cross-axis size.
+    // Kept independent of translated text and reconstructed from source OCR on restore.
+    std::optional<qreal> fontSizeCapRatio{};
+    bool translationStreaming = false;
+    std::optional<ScreenshotOcrSourceTextMetrics> sourceTextMetrics{};
 };
 
 struct ScreenshotOcrTextPosition {
@@ -54,7 +68,7 @@ class ScreenshotOcrPresentation final {
     bool solidBackgroundFill = false;
 
     void prepareForRendering();
-    void setLineText(int lineIndex, const QString& text);
+    void setLineText(int lineIndex, const QString& text, bool streaming = false);
     [[nodiscard]] bool empty() const;
     [[nodiscard]] int lineAt(const QPointF& canvasPosition) const;
     [[nodiscard]] ScreenshotOcrTextPosition textPositionAt(const QPointF& canvasPosition,

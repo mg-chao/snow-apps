@@ -8,8 +8,8 @@
             <translation>%1 dB</translation>
         </message>
         <message>
-            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</source>
-            <translation>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</translation>
+            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level</source>
+            <translation>Adjust gain from -24 to +24 dB. The track shows the processed audio level</translation>
         </message>
         <message>
             <source>Microphone gain</source>
@@ -54,8 +54,8 @@
     <context>
         <name>RecordingRegionDragHandle</name>
         <message>
-            <source>Move recording area</source>
-            <translation>Move recording area</translation>
+            <source>Move screen recording area</source>
+            <translation>Move screen recording area</translation>
         </message>
     </context>
     <context>
@@ -65,8 +65,8 @@
             <translation>Cancel</translation>
         </message>
         <message>
-            <source>Cancelling rendering...</source>
-            <translation>Cancelling rendering...</translation>
+            <source>Canceling rendering...</source>
+            <translation>Canceling rendering...</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -77,12 +77,12 @@
             <translation>Finalizing recording...</translation>
         </message>
         <message>
-            <source>Keep Source</source>
-            <translation>Keep Source</translation>
+            <source>Keep source files</source>
+            <translation>Keep source files</translation>
         </message>
         <message>
-            <source>Preparing recording...</source>
-            <translation>Preparing recording...</translation>
+            <source>Preparing recording for export...</source>
+            <translation>Preparing recording for export...</translation>
         </message>
         <message>
             <source>Rendering canceled</source>
@@ -146,12 +146,12 @@
             <translation>Microphone enabled</translation>
         </message>
         <message>
-            <source>Speaker disabled</source>
-            <translation>Speaker disabled</translation>
+            <source>System audio disabled</source>
+            <translation>System audio disabled</translation>
         </message>
         <message>
-            <source>Speaker enabled</source>
-            <translation>Speaker enabled</translation>
+            <source>System audio enabled</source>
+            <translation>System audio enabled</translation>
         </message>
         <message>
             <source>WebP</source>
@@ -161,12 +161,12 @@
     <context>
         <name>RecordingTrimSession</name>
         <message>
-            <source>Choose a different file to preserve the original recording.</source>
-            <translation>Choose a different file to preserve the original recording.</translation>
+            <source>Choose a different file to preserve the original recording</source>
+            <translation>Choose a different file to preserve the original recording</translation>
         </message>
         <message>
-            <source>Save to File</source>
-            <translation>Save to File</translation>
+            <source>Save to file</source>
+            <translation>Save to file</translation>
         </message>
         <message>
             <source>Unable to export recording: %1</source>
@@ -223,12 +223,12 @@
             <translation>Flip vertically</translation>
         </message>
         <message>
-            <source>Move webcam</source>
-            <translation>Move webcam</translation>
+            <source>Move webcam preview</source>
+            <translation>Move webcam preview</translation>
         </message>
         <message>
-            <source>Resize webcam</source>
-            <translation>Resize webcam</translation>
+            <source>Resize webcam preview</source>
+            <translation>Resize webcam preview</translation>
         </message>
         <message>
             <source>Rotate clockwise</source>
@@ -242,8 +242,8 @@
     <context>
         <name>ScreenRecordingController</name>
         <message>
-            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder.</source>
-            <translation>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder.</translation>
+            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder</source>
+            <translation>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder</translation>
         </message>
         <message>
             <source>Keyboard recording failed: %1</source>
@@ -258,10 +258,6 @@
             <translation>Open folder</translation>
         </message>
         <message>
-            <source>Recording recovery</source>
-            <translation>Recording recovery</translation>
-        </message>
-        <message>
             <source>Recover</source>
             <translation>Recover</translation>
         </message>
@@ -270,22 +266,26 @@
             <translation>Screen recording</translation>
         </message>
         <message>
+            <source>Screen recording recovery</source>
+            <translation>Screen recording recovery</translation>
+        </message>
+        <message>
             <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
 %1
 
-Keep this folder to recover the recording.</source>
+Keep this folder to recover the recording</source>
             <translation>The recording could not be finalized. Recoverable media and its timeline were saved in:
 %1
 
-Keep this folder to recover the recording.</translation>
+Keep this folder to recover the recording</translation>
         </message>
         <message>
             <source>The recording operation failed</source>
             <translation>The recording operation failed</translation>
         </message>
         <message>
-            <source>The webcam could not be initialized.</source>
-            <translation>The webcam could not be initialized.</translation>
+            <source>The webcam could not be initialized</source>
+            <translation>The webcam could not be initialized</translation>
         </message>
         <message>
             <source>Unable to create the recording directory</source>
@@ -311,8 +311,8 @@ Keep this folder to recover the recording.</translation>
             <translation>Done</translation>
         </message>
         <message>
-            <source>Recording settings</source>
-            <translation>Recording settings</translation>
+            <source>Screen recording settings</source>
+            <translation>Screen recording settings</translation>
         </message>
     </context>
     <context>

@@ -1,13 +1,20 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/storage/exportfilename.h"
+#include "snow_shot/storage/clipboardfilecache.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "widgets/message.h"
+#include "../services/screenshotexportfiletransfer_p.h"
+#include <limits>
 
 #include <QFile>
+#include <QApplication>
+#include <QMimeData>
+#include <QUrl>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDir>
@@ -16,9 +23,9 @@
 #include <algorithm>
 
 namespace {
-QPointer<QObject> activeBatchSave;
+QPointer<QObject> activeBatchFileOperation;
 
-// QFile::copy refuses existing destinations, including files created after our collision check.
+// Exclusive publication refuses destinations created after our collision check.
 // Stage first so encoders never open a user-owned destination with overwrite semantics.
 ScreenshotExportTaskResult publishBatchFiles(const QStringList& sources, const QString& directory,
                                              const QString& baseName, int& suffix,
@@ -26,6 +33,9 @@ ScreenshotExportTaskResult publishBatchFiles(const QStringList& sources, const Q
     const auto failure = [](const QString& error) {
         return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File, error);
     };
+    if (baseName.isEmpty() || baseName.contains(u'/') || baseName.contains(u'\\'))
+        return failure(QCoreApplication::translate("ScreenshotImageFileService",
+                                                   "The screenshot filename format is invalid"));
     for (; suffix < 1000000; ++suffix) {
         if (cancellation.isCancellationRequested())
             return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled, {});
@@ -52,11 +62,11 @@ ScreenshotExportTaskResult publishBatchFiles(const QStringList& sources, const Q
         bool collision = false;
         QString error;
         for (qsizetype i = 0; i < sources.size(); ++i) {
-            QFile source(sources.at(i));
-            if (cancellation.isCancellationRequested() || !source.copy(destinations.at(i))) {
+            if (!screenshot_export_file_transfer::publishExclusive(
+                    sources.at(i), destinations.at(i),
+                    [&] { return cancellation.isCancellationRequested(); }, &error)) {
                 collision = QFileInfo::exists(destinations.at(i)) ||
                             QFileInfo(destinations.at(i)).isSymLink();
-                error = source.errorString();
                 break;
             }
             created.append(destinations.at(i));
@@ -82,17 +92,24 @@ ScreenshotExportTaskResult publishBatchFiles(const QStringList& sources, const Q
 // The owner and every target are identity-checked because live pin objects can be pooled.
 class ScreenshotPinnedBatchSaveSession final : public QObject {
   public:
-    explicit ScreenshotPinnedBatchSaveSession(ScreenshotPinnedWindow* owner)
+    ScreenshotPinnedBatchSaveSession(ScreenshotPinnedWindow* owner,
+                                     const QList<QPointer<ScreenshotPinnedWindow>>& targets,
+                                     ScreenshotClipboardService::PublicationId copyPublication = 0,
+                                     bool selected = false)
         : QObject(owner), m_owner(owner), m_ownerId(owner->persistenceId()),
-          m_ownerGeneration(owner->m_presentationGeneration) {
-        activeBatchSave = this;
-        for (const auto& window : owner->displayedPinnedWindows())
-            m_targets.append({window, window->persistenceId(), window->m_presentationGeneration});
+          m_ownerGeneration(owner->m_presentationGeneration), m_copyFiles(copyPublication != 0),
+          m_selected(selected), m_publicationId(copyPublication) {
+        activeBatchFileOperation = this;
+        for (const auto& window : targets)
+            m_targets.append({window, window ? window->persistenceId() : QString(),
+                              window ? window->m_presentationGeneration : 0});
         connect(owner, &ScreenshotPinnedWindow::closingForPersistence, this, [this] { cancel(); });
         const snow_shot::storage::ScreenshotSettings settings;
         m_baseName = ScreenshotImageFileService::suggestedBaseName(
-            settings.manualSaveFilenameFormat(), QDateTime::currentDateTime());
-        m_format = ScreenshotImageFileService::formatForKey(settings.lastManualSaveFormat());
+            m_copyFiles ? settings.autoSaveFilenameFormat() : settings.manualSaveFilenameFormat(),
+            QDateTime::currentDateTime());
+        m_format = ScreenshotImageFileService::formatForKey(
+            m_copyFiles ? settings.imageFormat() : settings.lastManualSaveFormat());
         m_encoding = snow_shot::presentation::screenshotEncodingOptions(settings);
         m_pdf = {screenshot_pdf::pageSizeForKey(settings.pdfPageSize())};
         setObjectName(QStringLiteral("screenshotPinnedBatchSaveSession"));
@@ -101,6 +118,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
     ~ScreenshotPinnedBatchSaveSession() override {
         releaseDialog();
         m_job.cancel();
+        m_clipboardCommit.cancel();
         if (m_artifact)
             m_artifact->cancel();
     }
@@ -113,7 +131,10 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
         m_dialogOpen = true;
         m_owner->setProperty("saveDialogOpen", true);
         const QString directory = QFileDialog::getExistingDirectory(
-            m_owner, ScreenshotPinnedWindow::tr("Save displayed windows"), initial);
+            m_owner,
+            m_selected ? ScreenshotPinnedWindow::tr("Save selected windows")
+                       : ScreenshotPinnedWindow::tr("Save displayed windows"),
+            initial);
         if (!lifetime)
             return;
         releaseDialog();
@@ -129,7 +150,53 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
         QTimer::singleShot(0, this, [this] { next(); });
     }
 
+    void startCopy() {
+        if (!ownerValid() || m_targets.isEmpty()) {
+            cancel();
+            return;
+        }
+        m_cache = std::make_shared<Cache>();
+        m_job = ScreenshotExportCoordinator::shared().submit(
+            this, ScreenshotExportCoordinator::Priority::Foreground,
+            [cache = m_cache](const auto& cancellation) {
+                if (cancellation.isCancellationRequested())
+                    return ScreenshotExportTaskResult::failure(
+                        ScreenshotExportFailureStage::Cancelled, {});
+                QString error;
+                cache->directory =
+                    snow_shot::storage::ClipboardFileCache::shared().createDirectory(&error);
+                if (!cache->directory)
+                    return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
+                                                               std::move(error));
+                ScreenshotExportTaskResult result;
+                result.savedPath = cache->directory->path();
+                return result;
+            },
+            [this](ScreenshotExportTaskResult result) {
+                if (!ownerValid()) {
+                    cancel();
+                    return;
+                }
+                if (!result.succeeded()) {
+                    m_failed = int(m_targets.size());
+                    m_lastError = result.error;
+                    showResult();
+                    return;
+                }
+                start(result.savedPath);
+            });
+        if (!m_job.isValid()) {
+            m_failed = int(m_targets.size());
+            m_lastError = ScreenshotPinnedWindow::tr("The pinned image copy could not be started");
+            showResult();
+        }
+    }
+
   private:
+    struct Cache {
+        std::unique_ptr<snow_shot::storage::ClipboardFileCache::ExportDirectory> directory;
+    };
+
     struct Target {
         QPointer<ScreenshotPinnedWindow> window;
         QString id;
@@ -156,6 +223,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
     void cancel() {
         m_cancelled = true;
         m_job.cancel();
+        m_clipboardCommit.cancel();
         if (m_artifact)
             m_artifact->cancel();
         deleteLater();
@@ -169,22 +237,10 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
         m_artifact.reset();
         m_staging.reset();
         if (m_index == m_targets.size()) {
-            const QPointer<ScreenshotPinnedBatchSaveSession> lifetime(this);
-            adqt::widgets::AdMessage::Request message;
-            message.key = QStringLiteral("pinned-batch-save");
-            message.content =
-                m_failed == 0 ? ScreenshotPinnedWindow::tr("Saved %n window(s).", nullptr, m_saved)
-                              : ScreenshotPinnedWindow::tr("Saved: %1; failed: %2.")
-                                    .arg(m_saved)
-                                    .arg(m_failed);
-            if (!m_lastError.isEmpty())
-                message.content += QLatin1Char('\n') + m_lastError;
-            if (m_failed)
-                adqt::widgets::AdMessageService::error(std::move(message), m_owner);
+            if (m_copyFiles && !m_paths.isEmpty())
+                publishClipboard();
             else
-                adqt::widgets::AdMessageService::success(std::move(message), m_owner);
-            if (lifetime)
-                deleteLater();
+                showResult();
             return;
         }
         prepare(m_targets.at(m_index));
@@ -199,11 +255,34 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
             target.window->property("saveDialogOpen").toBool()) {
             complete(ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::Source,
-                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save.")));
+                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save")));
             return;
         }
         const QPointer<ScreenshotPinnedBatchSaveSession> lifetime(this);
         auto* window = target.window.data();
+        if (m_copyFiles) {
+            window->requestRenderedImageSnapshot([lifetime,
+                                                  target](ScreenshotPinnedImageSnapshot snapshot) {
+                if (!lifetime)
+                    return;
+                if (!lifetime->ownerValid()) {
+                    lifetime->cancel();
+                    return;
+                }
+                if (!target.valid() || !snapshot.error.isEmpty() || !snapshot.source.isValid()) {
+                    lifetime->complete(ScreenshotExportTaskResult::failure(
+                        ScreenshotExportFailureStage::Source,
+                        snapshot.error.isEmpty()
+                            ? ScreenshotPinnedWindow::tr("The pinned image could not be prepared")
+                            : snapshot.error));
+                    return;
+                }
+                lifetime->m_artifact =
+                    std::make_shared<ScreenshotExportArtifact>(std::move(snapshot.source));
+                lifetime->saveArtifact(target);
+            });
+            return;
+        }
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         const auto recognition = window->m_recognitionSession
@@ -214,7 +293,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
         if (!target.valid()) {
             complete(ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::Source,
-                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save.")));
+                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save")));
             return;
         }
         if (recognition) {
@@ -251,6 +330,10 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
             return;
         }
         m_artifact = window->fileSaveArtifact();
+        saveArtifact(target);
+    }
+
+    void saveArtifact(const Target& target) {
         m_staging = std::make_shared<QTemporaryDir>();
         const QString path = m_staging->filePath(QStringLiteral("image.") +
                                                  ScreenshotImageFileService::extension(m_format));
@@ -266,7 +349,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
                         complete(ScreenshotExportTaskResult::failure(
                             ScreenshotExportFailureStage::Source,
                             ScreenshotPinnedWindow::tr(
-                                "A pinned window is no longer available to save.")));
+                                "A pinned window is no longer available to save")));
                     else if (result.succeeded())
                         submitPublication({path});
                     else
@@ -282,10 +365,13 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
     void submitPublication(const QStringList& paths,
                            std::optional<ScreenshotRecognitionFileSnapshot> recognition = {}) {
         auto suffix = std::make_shared<int>(m_suffix);
+        const qint64 workingBytes =
+            recognition ? std::numeric_limits<qint64>::max() : qint64(1024) * 1024;
         m_job = ScreenshotExportCoordinator::shared().submit(
             this, ScreenshotExportCoordinator::Priority::Foreground,
-            [paths, recognition = std::move(recognition), staging = m_staging,
+            [paths, recognition = std::move(recognition), staging = m_staging, cache = m_cache,
              directory = m_directory, baseName = m_baseName, suffix](const auto& cancellation) {
+                Q_UNUSED(cache);
                 if (!staging || !staging->isValid())
                     return ScreenshotExportTaskResult::failure(
                         ScreenshotExportFailureStage::File,
@@ -293,11 +379,14 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION
                 if (recognition) {
-                    const auto result =
-                        ScreenshotRecognitionFileExport::saveToPath(*recognition, paths.first());
+                    const auto result = ScreenshotRecognitionFileExport::saveToPath(
+                        *recognition, paths.first(), false,
+                        [&] { return cancellation.isCancellationRequested(); });
                     if (!result.succeeded())
                         return ScreenshotExportTaskResult::failure(
-                            ScreenshotExportFailureStage::File, result.error);
+                            result.wasCancelled ? ScreenshotExportFailureStage::Cancelled
+                                                : ScreenshotExportFailureStage::File,
+                            result.error);
                 }
 #else
                 Q_UNUSED(recognition);
@@ -307,7 +396,8 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
             [this, suffix](ScreenshotExportTaskResult result) {
                 m_suffix = *suffix;
                 complete(std::move(result));
-            });
+            },
+            workingBytes);
         if (!m_job.isValid())
             complete(ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::Queue,
@@ -321,17 +411,95 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
         }
         if (result.succeeded()) {
             ++m_saved;
-            const QPointer<ScreenshotPinnedBatchSaveSession> lifetime(this);
-            static_cast<void>(
-                snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(m_directory));
-            if (!lifetime)
-                return;
+            if (m_copyFiles) {
+                m_paths.append(result.savedPath);
+            } else {
+                const QPointer<ScreenshotPinnedBatchSaveSession> lifetime(this);
+                static_cast<void>(
+                    snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
+                        m_directory));
+                if (!lifetime)
+                    return;
+            }
         } else {
             ++m_failed;
             m_lastError = result.error;
         }
         ++m_index;
         QTimer::singleShot(0, this, [this] { next(); });
+    }
+
+    void publishClipboard() {
+        m_job = ScreenshotExportCoordinator::shared().submit(
+            this, ScreenshotExportCoordinator::Priority::Foreground,
+            [cache = m_cache](const auto& cancellation) {
+                if (cancellation.isCancellationRequested())
+                    return ScreenshotExportTaskResult::failure(
+                        ScreenshotExportFailureStage::Cancelled, {});
+                cache->directory->retain();
+                return ScreenshotExportTaskResult{};
+            },
+            [this](ScreenshotExportTaskResult result) {
+                if (!ownerValid()) {
+                    cancel();
+                    return;
+                }
+                if (!result.succeeded()) {
+                    showResult(result.error);
+                    return;
+                }
+                auto* mime = new QMimeData;
+                QList<QUrl> urls;
+                for (const auto& path : m_paths)
+                    urls.append(QUrl::fromLocalFile(path));
+                mime->setUrls(urls);
+                m_clipboardCommit = ScreenshotClipboardService::commitMimeData(
+                    QApplication::clipboard(), this, mime, m_publicationId,
+                    [this](ScreenshotClipboardCommitResult committed) {
+                        if (!ownerValid() ||
+                            committed.failure == ScreenshotClipboardCommitFailure::Cancelled ||
+                            committed.superseded) {
+                            cancel();
+                            return;
+                        }
+                        showResult(committed.succeeded() ? QString() : committed.errorString());
+                    });
+                if (!m_clipboardCommit.isValid())
+                    showResult(
+                        ScreenshotPinnedWindow::tr("The pinned image copy could not be started"));
+            });
+        if (!m_job.isValid())
+            showResult(ScreenshotPinnedWindow::tr("The pinned image copy could not be started"));
+    }
+
+    void showResult(const QString& copyError = {}) {
+        const QPointer<ScreenshotPinnedBatchSaveSession> lifetime(this);
+        adqt::widgets::AdMessage::Request message;
+        message.key = QStringLiteral("pinned-batch-save");
+        if (!copyError.isEmpty()) {
+            message.content = ScreenshotPinnedWindow::tr("The pinned image could not be copied: %1")
+                                  .arg(copyError);
+        } else if (m_copyFiles) {
+            message.content =
+                m_failed == 0 ? ScreenshotPinnedWindow::tr("Copied %n file(s)", nullptr, m_saved)
+                              : ScreenshotPinnedWindow::tr("Copied: %1; failed: %2")
+                                    .arg(m_saved)
+                                    .arg(m_failed);
+        } else {
+            message.content =
+                m_failed == 0 ? ScreenshotPinnedWindow::tr("Saved %n window(s)", nullptr, m_saved)
+                              : ScreenshotPinnedWindow::tr("Saved: %1; failed: %2")
+                                    .arg(m_saved)
+                                    .arg(m_failed);
+        }
+        if (!m_lastError.isEmpty())
+            message.content += QLatin1Char('\n') + m_lastError;
+        if (m_failed || !copyError.isEmpty())
+            adqt::widgets::AdMessageService::error(std::move(message), m_owner);
+        else
+            adqt::widgets::AdMessageService::success(std::move(message), m_owner);
+        if (lifetime)
+            deleteLater();
     }
 
     QPointer<ScreenshotPinnedWindow> m_owner;
@@ -344,6 +512,8 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
     int m_failed = 0;
     bool m_cancelled = false;
     bool m_dialogOpen = false;
+    bool m_copyFiles;
+    bool m_selected;
     QString m_directory;
     QString m_baseName;
     QString m_lastError;
@@ -353,19 +523,37 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
     std::shared_ptr<QTemporaryDir> m_staging;
     std::shared_ptr<ScreenshotExportArtifact> m_artifact;
     ScreenshotExportJobHandle m_job;
+    std::shared_ptr<Cache> m_cache;
+    QStringList m_paths;
+    ScreenshotClipboardService::PublicationId m_publicationId = 0;
+    ScreenshotClipboardCommitHandle m_clipboardCommit;
 };
 
 bool ScreenshotPinnedWindow::batchSavePending() {
-    return !activeBatchSave.isNull();
+    return !activeBatchFileOperation.isNull();
 }
 
 void ScreenshotPinnedWindow::saveDisplayedPinnedWindows() {
+    savePinnedWindows(displayedPinnedWindows(), false);
+}
+
+void ScreenshotPinnedWindow::savePinnedWindows(
+    const QList<QPointer<ScreenshotPinnedWindow>>& targets, bool selected) {
     if (!m_closing && !m_printPending && !property("saveDialogOpen").toBool() &&
         !batchSavePending())
-        (new ScreenshotPinnedBatchSaveSession(this))->chooseDirectory();
+        (new ScreenshotPinnedBatchSaveSession(this, targets, 0, selected))->chooseDirectory();
 }
 
 void ScreenshotPinnedWindow::saveDisplayedPinnedWindowsToDirectory(const QString& directory) {
     if (!m_closing && !batchSavePending())
-        (new ScreenshotPinnedBatchSaveSession(this))->start(directory);
+        (new ScreenshotPinnedBatchSaveSession(this, displayedPinnedWindows()))->start(directory);
+}
+
+void ScreenshotPinnedWindow::copyPinnedWindowFiles(
+    const QList<QPointer<ScreenshotPinnedWindow>>& targets) {
+    if (!m_closing && !m_printPending && !property("saveDialogOpen").toBool() &&
+        !batchSavePending()) {
+        const auto publicationId = beginCopyRequest();
+        (new ScreenshotPinnedBatchSaveSession(this, targets, publicationId))->startCopy();
+    }
 }

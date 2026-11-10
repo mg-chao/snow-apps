@@ -135,6 +135,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void applyDisplayModels(ScreenshotDisplaySession&) override {
         ++applyDisplayModelsCalls;
+        if (onApplyDisplayModels)
+            onApplyDisplayModels();
     }
     [[nodiscard]] bool
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override {
@@ -164,6 +166,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         if (mode == ScreenshotOverlayShowMode::CapturedImage) {
             ++capturedImageShowCalls;
         }
+        if (onShowOverlayWindows)
+            onShowOverlayWindows();
     }
     void hideOverlayWindowsImmediately(const ScreenshotDisplaySession&) override {
         ++hideOverlayImmediatelyCalls;
@@ -246,6 +250,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     QPoint queriedPoint;
     ScreenshotCaptureRequest lastCaptureRequest;
     QVector<QString> operations;
+    std::function<void()> onApplyDisplayModels;
+    std::function<void()> onShowOverlayWindows;
 };
 
 ScreenshotCaptureResult successfulResult(quint64 requestId, const CapturedDisplayModel& snapshot) {
@@ -1003,6 +1009,91 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
             "capture-presented callback must run once after the captured overlay is shown");
 }
 
+void presentationCallbacksCannotContinueIntoAnotherSession() {
+    enum class Boundary { Apply, OverlayState, BeforeShow, Show, Picker, Presented };
+    for (const auto boundary : {Boundary::Apply, Boundary::OverlayState, Boundary::BeforeShow,
+                                Boundary::Show, Boundary::Picker, Boundary::Presented}) {
+        for (const bool replace : {false, true}) {
+            ScreenshotCaptureState state;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotInteractionState interaction;
+            ScreenshotSelectionModel selection;
+            ScreenshotIntelligentSelectionModel intelligent;
+            CaptureRuntime runtime;
+            ScreenshotCaptureWorkflow* active = nullptr;
+            int pickerCalls = 0;
+            int presentedCalls = 0;
+            int pickerAfterReentry = 0;
+            int presentedAfterReentry = 0;
+            int refreshAfterReentry = 0;
+            bool reentered = false;
+            ScreenshotStartupContext::Phase phaseAfterReentry{};
+            const auto reenter = [&](Boundary point) {
+                if (point != boundary || reentered || state.captureInProgress)
+                    return;
+                reentered = true;
+                if (replace)
+                    active->startCapture();
+                else
+                    active->cancelCapture();
+                // Leave a selector refresh eligible so an obsolete continuation is visible.
+                runtime.selectorIsReady = false;
+                runtime.selectorRefreshActive = false;
+                pickerAfterReentry = pickerCalls;
+                presentedAfterReentry = presentedCalls;
+                refreshAfterReentry = runtime.startWorkflowRefreshCalls;
+                phaseAfterReentry = displays.startup->phase;
+            };
+            ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                     interaction, selection, intelligent, {}};
+            runtime.onApplyDisplayModels = [&] { reenter(Boundary::Apply); };
+            runtime.onShowOverlayWindows = [&] { reenter(Boundary::Show); };
+            context.presentation.updateOverlayState = [&] { reenter(Boundary::OverlayState); };
+            context.presentation.beforeCapturePresented = [&] { reenter(Boundary::BeforeShow); };
+            context.presentation.updateColorPicker = [&] {
+                ++pickerCalls;
+                reenter(Boundary::Picker);
+            };
+            context.presentation.capturePresented = [&] {
+                ++presentedCalls;
+                reenter(Boundary::Presented);
+            };
+            ScreenshotCaptureWorkflow workflow(std::move(context));
+            active = &workflow;
+            workflow.startCapture();
+            const auto oldSession = state.sessionId;
+            CapturedDisplayModel snapshot;
+            snapshot.stableId = QStringLiteral("primary");
+            snapshot.physicalRect = QRect(0, 0, 64, 48);
+            snapshot.logicalRect = snapshot.physicalRect;
+            snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGB32);
+            snapshot.image.fill(Qt::blue);
+            runtime.deliverResult(successfulResult(oldSession, snapshot));
+            require(reentered && state.sessionId != oldSession,
+                    "presentation fixture must cancel or replace the publishing session");
+            require(displays.startup->phase == phaseAfterReentry &&
+                        pickerCalls == pickerAfterReentry &&
+                        presentedCalls == presentedAfterReentry &&
+                        runtime.startWorkflowRefreshCalls == refreshAfterReentry,
+                    "obsolete publication cannot reveal, notify or refresh another session");
+            if (replace) {
+                require(state.captureInProgress &&
+                            displays.startup->phase == ScreenshotStartupContext::Phase::Preparing,
+                        "replacement must retain its own acquisition and preparation phase");
+            } else {
+                require(!state.captureInProgress && interaction.inactive(),
+                        "cancelled presentation remains retired after callback returns");
+                workflow.startCapture();
+            }
+            runtime.deliverResult(successfulResult(state.sessionId, snapshot));
+            require(displays.startup->phase == ScreenshotStartupContext::Phase::Revealed &&
+                        presentedCalls == presentedAfterReentry + 1,
+                    "fresh session still publishes readiness once after obsolete work retires");
+        }
+    }
+}
+
 void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
     for (bool selectionFirst : {false, true}) {
         ScreenshotCaptureState state;
@@ -1717,6 +1808,45 @@ void toolbarVisibilityIsIndependentOfInputAndPreparation() {
                         "of input mode, preparation strategy, or previous capture");
                 workflow.cancelCapture();
             }
+        }
+    }
+}
+
+void explicitToolCommandEnablesOnlyVisibleCaptureToolbar() {
+    using Mode = ScreenshotCaptureWorkflow::StartMode;
+    using Preparation = ScreenshotCaptureWorkflow::ToolbarPreparation;
+    using Visibility = ScreenshotCaptureWorkflow::ToolbarVisibility;
+    using Presentation = ScreenshotCaptureWorkflow::PresentationMode;
+    for (const auto mode : {Mode::Normal, Mode::ExternalDrag}) {
+        for (const auto presentation : {Presentation::Visible, Presentation::Silent}) {
+            ScreenshotCaptureState state;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotInteractionState interaction;
+            ScreenshotSelectionModel selection;
+            ScreenshotIntelligentSelectionModel intelligent;
+            CaptureRuntime runtime;
+            auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                         intelligent, runtime);
+            workflow.startCapture(mode, Preparation::OnDemand, Visibility::Suppressed,
+                                  presentation);
+            const quint64 sessionId = state.sessionId;
+            const int captureRequests = runtime.captureAllAsyncCalls;
+            workflow.enableCaptureToolbar();
+            workflow.enableCaptureToolbar();
+            require(workflow.suppressCaptureToolbar() == (presentation == Presentation::Silent) &&
+                        state.presentationSuppressed == (presentation == Presentation::Silent),
+                    "explicit tools must enable quick capture's toolbar while keeping silent "
+                    "sessions hidden");
+            require(state.sessionId == sessionId &&
+                        runtime.captureAllAsyncCalls == captureRequests &&
+                        runtime.showOverlayCalls == 0 && runtime.prewarmToolbarSurfaceCalls == 0,
+                    "enabling the toolbar must preserve capture and defer presentation until the "
+                    "requested tool is active");
+            workflow.cancelCapture();
+            workflow.startCapture(mode, Preparation::OnDemand, Visibility::Suppressed);
+            require(workflow.suppressCaptureToolbar(),
+                    "an explicit tool override must not change the next quick capture's policy");
         }
     }
 }
@@ -2487,7 +2617,59 @@ void suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff() {
             "resuming capture must also restore recapture acquisition");
 }
 
+void focusLifecycleBracketsPresentation() {
+    using Focus = ScreenshotCaptureFocusDisposition;
+    for (const auto disposition : {Focus::RestorePrevious, Focus::KeepCurrent}) {
+        ScreenshotCaptureState state;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        int starts = 0;
+        int endings = 0;
+        int ended = 0;
+        bool toolbarHidden = false;
+        ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                 interaction, selection, intelligent, {}};
+        context.captureStarting = [&](bool visible) {
+            require(visible && runtime.createColorPickerCalls == 0 &&
+                        runtime.captureAllAsyncCalls == 0,
+                    "focus snapshot must precede acquisition and presentation");
+            ++starts;
+        };
+        context.captureEnding = [&](Focus focus) {
+            require(focus == disposition && runtime.hideOverlayCalls == 0 &&
+                        runtime.hideOverlayImmediatelyCalls == 0,
+                    "foreground ownership must be checked before hiding any presentation");
+            ++endings;
+        };
+        context.captureTerminated = [&] {
+            require(endings == 1 && ended == 0,
+                    "existing termination hook must precede final focus restoration");
+        };
+        context.presentation.hideToolbar = [&] { toolbarHidden = true; };
+        context.captureEnded = [&] {
+            require(toolbarHidden && runtime.hideOverlayCalls > 0 &&
+                        state.sessionState == ScreenshotSessionState::IdlePrepared,
+                    "focus restoration must follow toolbar and overlay teardown");
+            ++ended;
+        };
+        ScreenshotCaptureWorkflow workflow(std::move(context));
+        workflow.setCaptureSuspended(true);
+        workflow.startCapture();
+        require(starts == 0, "rejected starts must not record foreground state");
+        workflow.setCaptureSuspended(false);
+        workflow.startCapture();
+        workflow.cancelCapture(disposition);
+        require(starts == 1 && endings == 1 && ended == 1,
+                "accepted capture must deliver one complete focus lifecycle");
+    }
+}
+
 int main() {
+    focusLifecycleBracketsPresentation();
     captureStartSoundDefaultsToDisabled();
     captureStartSoundFollowsSessionLifetime();
     suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff();
@@ -2506,6 +2688,7 @@ int main() {
     colorPickerFollowsCaptureSessionLifetime();
     recapturePreservesEditingStateAndRollsBackFailures();
     toolbarVisibilityIsIndependentOfInputAndPreparation();
+    explicitToolCommandEnablesOnlyVisibleCaptureToolbar();
     noToolbarCaptureWaitsForUserSelection();
     normalCaptureRestoresToolbarAfterSuppressedCapture();
     externalDragDisplayChangesInvalidatePendingCapture();
@@ -2522,6 +2705,7 @@ int main() {
     restartingCaptureReleasesPreviousSelectorCache();
     captureEndResetsPresentationBeforeDeferredCleanup();
     capturePresentedRunsAfterCapturedOverlayIsShown();
+    presentationCallbacksCannotContinueIntoAnotherSession();
     capturedOverlayWaitsForImageAndSelectionInEitherOrder();
     overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch();
     overlayCaptureDoesNotShowWarmSurfaceAfterCaptureDispatch();

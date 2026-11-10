@@ -119,6 +119,8 @@ QString normalizedClickAction(const QString& action, const char* defaultAction) 
                    action == QStringLiteral("show_main_window") ||
                    action == QStringLiteral("screenshot_copy") ||
                    action == QStringLiteral("screenshot_fixed") ||
+                   action == QStringLiteral("open_capture_history") ||
+                   action == QStringLiteral("open_pin_to_screen_management") ||
                    action == QStringLiteral("open_function_settings")
                ? action
                : QString::fromLatin1(defaultAction);
@@ -545,7 +547,11 @@ class SystemTrayController::Impl {
         } else if (action == QStringLiteral("screenshot_copy")) {
             emit q.quickActionRequested(GlobalShortcutAction::ScreenshotCopy);
         } else if (action == QStringLiteral("screenshot_fixed")) {
-            emit q.quickActionRequested(GlobalShortcutAction::ScreenshotFixed);
+            emit q.quickActionRequested(GlobalShortcutAction::ScreenshotPinToScreen);
+        } else if (action == QStringLiteral("open_capture_history")) {
+            emit q.quickActionRequested(GlobalShortcutAction::OpenCaptureHistory);
+        } else if (action == QStringLiteral("open_pin_to_screen_management")) {
+            emit q.quickActionRequested(GlobalShortcutAction::OpenPinToScreenManagement);
         } else if (action == QStringLiteral("open_function_settings")) {
             emit q.openFunctionSettingsRequested();
         } else {
@@ -673,7 +679,7 @@ class SystemTrayController::Impl {
     void updateGroupMenuTitle() {
         if (groupMenuAction)
             groupMenuAction->setText(
-                QCoreApplication::translate("SystemTrayController", "Window Group: %1")
+                QCoreApplication::translate("SystemTrayController", "Window group: %1")
                     .arg(groupManager->displayName(groupManager->activeGroupId())));
     }
 
@@ -708,13 +714,13 @@ class SystemTrayController::Impl {
         }
         groupMenu->addSeparator();
         QAction* newGroup =
-            groupMenu->addItem(QCoreApplication::translate("SystemTrayController", "New Group"),
+            groupMenu->addItem(QCoreApplication::translate("SystemTrayController", "New group"),
                                outlined_icons::FolderAdd());
         newGroup->setObjectName(QStringLiteral("systemTrayNewGroupAction"));
         QObject::connect(newGroup, &QAction::triggered, &q,
                          [this]() { groupManager->openCreateGroupModal(nullptr); });
         QAction* deleteEmpty = groupMenu->addItem(
-            QCoreApplication::translate("SystemTrayController", "Delete Empty Groups"),
+            QCoreApplication::translate("SystemTrayController", "Delete empty groups"),
             outlined_icons::Clear());
         deleteEmpty->setObjectName(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
         deleteEmpty->setEnabled(hasDeletableEmptyGroups);
@@ -722,7 +728,7 @@ class SystemTrayController::Impl {
                          [this]() { groupManager->openDeleteEmptyGroupsConfirmation(nullptr); });
 
         auto* deleteSpecified = groupMenu->addLazySubMenu(
-            QCoreApplication::translate("SystemTrayController", "Delete Specified Group"),
+            QCoreApplication::translate("SystemTrayController", "Delete specified group"),
             [this](auto* popup) {
                 popup->setObjectName(QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
                 popup->setMinimumWidth(300);
@@ -796,7 +802,7 @@ class SystemTrayController::Impl {
                         snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())
 #endif
                     ;
-                if (option.shortcutAction == GlobalShortcutAction::ToggleGlobalHotkeys)
+                if (option.shortcutAction == GlobalShortcutAction::ToggleGlobalShortcuts)
                     toggleVisible = visible;
                 if (action != nullptr) {
                     action->setVisible(visible);
@@ -818,16 +824,16 @@ class SystemTrayController::Impl {
         }
 
         // Session latches must not leave the user without a way back: hiding a
-        // checked ToggleGlobalHotkeys re-enables through the same quick action.
+        // checked ToggleGlobalShortcuts re-enables through the same quick action.
         // Persisted checkables such as fullscreen suppression must not be
         // flipped by menu visibility.
-        if (checkedQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys) &&
+        if (checkedQuickActions.value(GlobalShortcutAction::ToggleGlobalShortcuts) &&
             !toggleVisible) {
-            checkedQuickActions.insert(GlobalShortcutAction::ToggleGlobalHotkeys, false);
+            checkedQuickActions.insert(GlobalShortcutAction::ToggleGlobalShortcuts, false);
             if (auto* action =
-                    checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys).data())
+                    checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalShortcuts).data())
                 action->setChecked(false);
-            emit q.quickActionRequested(GlobalShortcutAction::ToggleGlobalHotkeys);
+            emit q.quickActionRequested(GlobalShortcutAction::ToggleGlobalShortcuts);
         }
     }
 
@@ -1120,7 +1126,7 @@ QStringList SystemTrayController::menuOptions() const {
 }
 
 void SystemTrayController::setQuickActionChecked(GlobalShortcutAction action, bool checked) {
-    if (action == GlobalShortcutAction::ToggleGlobalHotkeys &&
+    if (action == GlobalShortcutAction::ToggleGlobalShortcuts &&
         m_impl->globalShortcutsDisabled != checked) {
         m_impl->globalShortcutsDisabled = checked;
         m_impl->updateIcon();

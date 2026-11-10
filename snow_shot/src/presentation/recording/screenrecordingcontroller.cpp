@@ -23,6 +23,7 @@
 #include <QElapsedTimer>
 
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/components/screenrecordingmodal.h"
 #include "snow_shot/presentation/components/screenrecordingsettingsdialog.h"
 #include "widgets/modal.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
@@ -240,7 +241,7 @@ QString captureError() {
         return QCoreApplication::translate(
                    "ScreenRecordingController",
                    "The recording could not be finalized. Recoverable media and its timeline "
-                   "were saved in:\n%1\n\nKeep this folder to recover the recording.")
+                   "were saved in:\n%1\n\nKeep this folder to recover the recording")
             .arg(message.section(recoveryMarker, 1).trimmed());
     }
     if (message.contains(QStringLiteral("keyboard recording:"))) {
@@ -316,6 +317,10 @@ struct ScreenRecordingController::Impl {
         mouseHighlightRadius = settings.mouseHighlightRadius();
         showCursor = settings.showCursor();
         showKeyboard = settings.showKeyboard();
+        recordNumberKeys = settings.recordNumberKeys();
+        recordLettersAndSymbols = settings.recordLettersAndSymbols();
+        recordControlKeys = settings.recordControlKeys();
+        preserveKeyboardShortcuts = settings.preserveKeyboardShortcuts();
         startDelaySeconds = settings.startDelaySeconds();
         postProcessingEnabled = settings.postProcessingEnabled();
         postProcessingEffect = settings.postProcessingEffect();
@@ -856,6 +861,32 @@ struct ScreenRecordingController::Impl {
                              snow_shot::storage::RecordingSettings().setShowKeyboard(visible);
                              syncUi();
                          });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingRecordNumberKeysChanged,
+                         uiSession->connections.get(), [this](bool value) {
+                             setOption(recordNumberKeys, value);
+                             snow_shot::storage::RecordingSettings().setRecordNumberKeys(value);
+                             syncUi();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingRecordLettersAndSymbolsChanged,
+                         uiSession->connections.get(), [this](bool value) {
+                             setOption(recordLettersAndSymbols, value);
+                             snow_shot::storage::RecordingSettings().setRecordLettersAndSymbols(
+                                 value);
+                             syncUi();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingRecordControlKeysChanged,
+                         uiSession->connections.get(), [this](bool value) {
+                             setOption(recordControlKeys, value);
+                             snow_shot::storage::RecordingSettings().setRecordControlKeys(value);
+                             syncUi();
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingPreserveKeyboardShortcutsChanged,
+                         uiSession->connections.get(), [this](bool value) {
+                             setOption(preserveKeyboardShortcuts, value);
+                             snow_shot::storage::RecordingSettings().setPreserveKeyboardShortcuts(
+                                 value);
+                             syncUi();
+                         });
         QObject::connect(palette, &ScreenshotToolPalette::recordingWebcamEnabledChanged,
                          uiSession->connections.get(), [this](bool enabled) {
                              setOption(webcamEnabled, enabled);
@@ -948,19 +979,19 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::lineRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Line); });
-        QObject::connect(&palette, &ScreenshotToolPalette::freeDrawRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::brushRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::FreeDraw); });
         QObject::connect(&palette, &ScreenshotToolPalette::highlightRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::RectangleHighlight); });
-        QObject::connect(&palette, &ScreenshotToolPalette::penHighlightRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::brushHighlightRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::PenHighlight); });
         QObject::connect(&palette, &ScreenshotToolPalette::rectangleFilterRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::RectangleFilter); });
-        QObject::connect(&palette, &ScreenshotToolPalette::penFilterRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::brushFilterRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::PenFilter); });
         QObject::connect(&palette, &ScreenshotToolPalette::autoFilterRequested,
@@ -984,7 +1015,7 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::textRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Text); });
-        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::sequenceNumberRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::SerialNumber); });
         QObject::connect(&palette, &ScreenshotToolPalette::undoRequested,
@@ -1082,6 +1113,10 @@ struct ScreenRecordingController::Impl {
             mouseHighlightRadius = settings.mouseHighlightRadius();
             showCursor = settings.showCursor();
             showKeyboard = settings.showKeyboard();
+            recordNumberKeys = settings.recordNumberKeys();
+            recordLettersAndSymbols = settings.recordLettersAndSymbols();
+            recordControlKeys = settings.recordControlKeys();
+            preserveKeyboardShortcuts = settings.preserveKeyboardShortcuts();
             startDelaySeconds = settings.startDelaySeconds();
             postProcessingEnabled = settings.postProcessingEnabled();
             postProcessingEffect = settings.postProcessingEffect();
@@ -1323,6 +1358,10 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(webcamOffset.y()),
                 static_cast<uint32_t>(recordMouseScrolling),
                 static_cast<uint32_t>(webcamOrientation),
+                static_cast<uint32_t>(recordNumberKeys),
+                static_cast<uint32_t>(recordLettersAndSymbols),
+                static_cast<uint32_t>(recordControlKeys),
+                static_cast<uint32_t>(preserveKeyboardShortcuts),
             };
             sessionLoopAnimatedImages = config.loop_animated_images != 0;
             const QDateTime outputTimestamp = QDateTime::currentDateTime();
@@ -1768,9 +1807,9 @@ struct ScreenRecordingController::Impl {
         if (existing.isEmpty() && !QFileInfo(folder).isDir())
             return;
         auto* notice =
-            new QMessageBox(QMessageBox::Information, tr("Recording recovery"),
+            new QMessageBox(QMessageBox::Information, tr("Screen recording recovery"),
                             tr("A recording was interrupted when Windows ended the "
-                               "session. Recover the saved recording or open its folder."),
+                               "session. Recover the saved recording or open its folder"),
                             QMessageBox::NoButton, QApplication::activeWindow());
         notice->setAttribute(Qt::WA_DeleteOnClose);
         QStringList details{record->sourcePath, record->outputPath, folder};
@@ -2007,6 +2046,10 @@ struct ScreenRecordingController::Impl {
             {QStringLiteral("microphone_gain_db"), microphoneGainDb},
             {QStringLiteral("show_cursor"), showCursor},
             {QStringLiteral("show_keyboard"), showKeyboard},
+            {QStringLiteral("record_number_keys"), recordNumberKeys},
+            {QStringLiteral("record_letters_and_symbols"), recordLettersAndSymbols},
+            {QStringLiteral("record_control_keys"), recordControlKeys},
+            {QStringLiteral("preserve_keyboard_shortcuts"), preserveKeyboardShortcuts},
             {QStringLiteral("webcam"), webcamEnabled},
             {QStringLiteral("webcam_size"), webcamSize},
             {QStringLiteral("webcam_offset_left"), webcamOffset.x()},
@@ -2314,7 +2357,7 @@ struct ScreenRecordingController::Impl {
                 snow_webcam_create(static_cast<uint32_t>(webcamSize), 30), snow_webcam_destroy);
             if (!webcam) {
                 webcamFailed = true;
-                notifyWebcamError(tr("The webcam could not be initialized."));
+                notifyWebcamError(tr("The webcam could not be initialized"));
                 return;
             }
         }
@@ -2425,7 +2468,8 @@ struct ScreenRecordingController::Impl {
                 : SNOW_RECORDING_PLAYBACK_OVERLAY_PROGRESS_BAR,
             progressBarColor, webcamEnabled && !webcamFailed ? webcam.get() : nullptr, webcamSize,
             webcamShape == QStringLiteral("circle") ? 1u : 0u, webcamOffset, recordMouseScrolling,
-            static_cast<uint32_t>(webcamOrientation));
+            static_cast<uint32_t>(webcamOrientation), recordNumberKeys, recordLettersAndSymbols,
+            recordControlKeys, preserveKeyboardShortcuts);
         const bool audioSupported = outputFormat == QStringLiteral("mp4");
         uiSession->preview->setStatusPrompts(
             snow_shot::storage::RecordingSettings().showStatusPrompts(), outputFormat,
@@ -2477,6 +2521,10 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingStartDelaySeconds(startDelaySeconds);
             palette->setRecordingCursorVisible(showCursor);
             palette->setRecordingKeyboardVisible(showKeyboard);
+            palette->setRecordingRecordNumberKeys(recordNumberKeys);
+            palette->setRecordingRecordLettersAndSymbols(recordLettersAndSymbols);
+            palette->setRecordingRecordControlKeys(recordControlKeys);
+            palette->setRecordingPreserveKeyboardShortcuts(preserveKeyboardShortcuts);
         }
         syncAudioMeter();
     }
@@ -2501,8 +2549,16 @@ struct ScreenRecordingController::Impl {
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         if (automationOwned || automationCommand)
             return;
-        QMessageBox::critical(toolbarWindow, tr("Screen recording"),
-                              message.isEmpty() ? tr("The recording operation failed") : message);
+        using adqt::widgets::AdModal;
+        auto* modal = new AdModal(uiSession ? static_cast<QObject*>(uiSession) : &owner);
+        modal->setObjectName(QStringLiteral("screenRecordingErrorModal"));
+        snow_shot::presentation::configureScreenRecordingModal(*modal, areaWindow);
+        modal->setPreset(AdModal::Preset::Error);
+        modal->setWindowTitle(tr("Screen recording"));
+        modal->setText(message.isEmpty() ? tr("The recording operation failed") : message);
+        modal->setStandardButtons(AdModal::StandardButton::Ok);
+        QObject::connect(modal, &AdModal::finished, modal, &QObject::deleteLater);
+        modal->open();
     }
 
     PermissionCheck permissionCheck;
@@ -2608,6 +2664,10 @@ struct ScreenRecordingController::Impl {
     int mouseHighlightRadius = 41;
     bool showCursor = true;
     bool showKeyboard = false;
+    bool recordNumberKeys = true;
+    bool recordLettersAndSymbols = true;
+    bool recordControlKeys = true;
+    bool preserveKeyboardShortcuts = true;
     DirectRecordingSettings sessionOutputSettings;
     QColor sessionMouseTrailColor{0, 0, 0, 0};
     QColor sessionMouseClickColor{0, 0, 0, 0};
@@ -2954,6 +3014,14 @@ bool ScreenRecordingController::startAutomation(const QRect& region, const QJson
         options.value(QStringLiteral("start_delay_seconds")).toInt(settings.startDelaySeconds());
     s.showCursor = options.value(QStringLiteral("show_cursor")).toBool(settings.showCursor());
     s.showKeyboard = options.value(QStringLiteral("show_keyboard")).toBool(settings.showKeyboard());
+    s.recordNumberKeys =
+        options.value(QStringLiteral("record_number_keys")).toBool(settings.recordNumberKeys());
+    s.recordLettersAndSymbols = options.value(QStringLiteral("record_letters_and_symbols"))
+                                    .toBool(settings.recordLettersAndSymbols());
+    s.recordControlKeys =
+        options.value(QStringLiteral("record_control_keys")).toBool(settings.recordControlKeys());
+    s.preserveKeyboardShortcuts = options.value(QStringLiteral("preserve_keyboard_shortcuts"))
+                                      .toBool(settings.preserveKeyboardShortcuts());
     s.webcamEnabled = options.value(QStringLiteral("webcam")).toBool(settings.webcamEnabled());
     s.webcamSize = options.value(QStringLiteral("webcam_size")).toInt(settings.webcamSize());
     s.webcamOffset = QPoint(settings.webcamOffsetLeft(), settings.webcamOffsetBottom());

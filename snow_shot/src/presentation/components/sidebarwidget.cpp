@@ -486,7 +486,7 @@ void SidebarWidget::changeEvent(QEvent* event) {
 
 void SidebarWidget::syncCollapsedPresentation() {
     if (m_globalSearch != nullptr) {
-        const QString searchText = tr("Search Function");
+        const QString searchText = tr("Search function");
         m_globalSearch->setPlaceholderText(searchText);
         m_globalSearch->setVisible(!m_isCollapsed);
         m_searchButton->setVisible(m_isCollapsed);

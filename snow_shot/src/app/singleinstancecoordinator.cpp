@@ -181,6 +181,11 @@ QString SingleInstanceCoordinator::lockFilePath() const {
     return m_lockFilePath;
 }
 
+void SingleInstanceCoordinator::setLaunchRequestAdmission(
+    std::function<bool(const QStringList&)> admission) {
+    m_admission = std::move(admission);
+}
+
 void SingleInstanceCoordinator::setLaunchRequestHandler(
     std::function<void(const QStringList&)> handler) {
     m_handler = std::move(handler);
@@ -316,9 +321,15 @@ SingleInstanceCoordinator::forwardRequest(const QStringList& arguments, const QS
                         QJsonDocument::fromJson(receipt.mid(sizeof(quint32), size)).object();
                     if (response.value(QStringLiteral("version")).toInt() ==
                             kReceiptProtocolVersion &&
-                        response.value(QStringLiteral("accepted")).toBool() &&
-                        response.value(QStringLiteral("requestId")).toString() == requestId)
-                        return ForwardResult::Forwarded;
+                        response.value(QStringLiteral("requestId")).toString() == requestId &&
+                        response.value(QStringLiteral("accepted")).isBool()) {
+                        if (response.value(QStringLiteral("accepted")).toBool())
+                            return ForwardResult::Forwarded;
+                        if (error)
+                            *error = QStringLiteral(
+                                "The primary application refused the launch request");
+                        return ForwardResult::Failed;
+                    }
                     break;
                 }
             }
@@ -398,7 +409,17 @@ void SingleInstanceCoordinator::readSocket(QLocalSocket* socket, int protocolVer
             (!requestIdValue.isString() || requestId.isEmpty() || requestId.size() > 64))
             valid = false;
         if (valid) {
-            if (requestId.isEmpty() || !m_receivedRequestIds.contains(requestId)) {
+            const bool duplicate = !requestId.isEmpty() && m_receivedRequestIds.contains(requestId);
+            bool accepted = duplicate;
+            if (!duplicate) {
+                try {
+                    const auto admission = m_admission;
+                    accepted = !admission || admission(arguments);
+                } catch (...) {
+                    accepted = false;
+                }
+            }
+            if (accepted && !duplicate) {
                 if (!requestId.isEmpty()) {
                     m_receivedRequestIds.insert(requestId);
                     m_requestOrder.enqueue(requestId);
@@ -414,7 +435,7 @@ void SingleInstanceCoordinator::readSocket(QLocalSocket* socket, int protocolVer
             const auto receipt =
                 framedPayload(QJsonDocument(QJsonObject{
                                                 {QStringLiteral("version"), protocolVersion},
-                                                {QStringLiteral("accepted"), true},
+                                                {QStringLiteral("accepted"), accepted},
                                                 {QStringLiteral("requestId"), requestId},
                                             })
                                   .toJson(QJsonDocument::Compact));

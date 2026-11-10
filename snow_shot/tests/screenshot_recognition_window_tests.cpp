@@ -80,6 +80,16 @@
 #include <qt_windows.h>
 #endif
 
+class ScreenshotOriginalImagePreviewWindowTestAccess final {
+  public:
+    static const QImage& source(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_sourceImage;
+    }
+    static bool dimmed(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_dimmed;
+    }
+};
+
 namespace {
 class LatexPreviewTranslator final : public QTranslator {
   public:
@@ -1510,15 +1520,15 @@ void ocrDoubleClickPreservesEditorsAndResizeHandles() {
     bool resizing = false;
     int completedResizes = 0;
     ScreenshotRecognitionWindowActions actions;
-    actions.selectionResizeDragMode = [&](const QPointF& point) {
+    actions.selectionResizeDragModeAtGlobalPosition = [&](const QPointF& point) {
         return resizeEnabled && point.y() < 40 ? ScreenshotSelectionDragMode::Top
                                                : ScreenshotSelectionDragMode::None;
     };
-    actions.beginSelectionResize = [&](const QPointF&) {
+    actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         resizing = true;
         return true;
     };
-    actions.finishSelectionResize = [&](const QPointF&) {
+    actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         resizing = false;
         ++completedResizes;
     };
@@ -2933,6 +2943,88 @@ void originalImageOverrideHidesEveryContentPage() {
     }
 }
 
+void recognitionViewportExportsComposeTextAnnotationsOnce() {
+    ScreenshotRecognitionWindow window({});
+    const QRectF canvasRect(640, 360, 320, 180);
+    require(window.present(
+                {QGuiApplication::primaryScreen(), nullptr, QRect(20, 20, 320, 180), canvasRect}),
+            "present the recognition annotation export fixture");
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = canvasRect.toRect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Annotated OCR text");
+    line.quad = {{660, 380}, {920, 380}, {920, 420}, {660, 420}};
+    presentation->lines.append(line);
+    presentation->prepareForRendering();
+    window.setOcrPresentation(presentation);
+    QApplication::processEvents();
+    QImage source(320, 180, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::white);
+    QPainterPath highlight;
+    highlight.addRect(QRectF(650, 370, 280, 60));
+    QPainterPath underline;
+    underline.addRect(QRectF(650, 430, 280, 3));
+    ScreenshotTextAnnotationRenderSnapshot marks;
+    marks.items = {{highlight, QColor(255, 0, 0, 128), true},
+                   {underline, QColor(0, 0, 255, 128), false}};
+    marks.bounds = highlight.boundingRect().united(underline.boundingRect());
+    for (const int filter : {0, 1, 2}) {
+        const QRectF filteredRect = filter == 1 ? canvasRect : QRectF(800, 360, 160, 180);
+        QImage filtered;
+        if (filter != 0) {
+            filtered = QImage(filteredRect.size().toSize(), source.format());
+            filtered.fill(QColor(200, 220, 240));
+        }
+        for (const int scale : {1, 2}) {
+            for (const qreal opacity : {1.0, 0.6}) {
+                const QSize output = source.size() * scale;
+                auto reference = window.imageSnapshot(source.scaled(output), canvasRect, filtered,
+                                                      filteredRect, {});
+                require(reference.has_value(), "capture the file export reference");
+                // The two paths size OCR fonts in their respective coordinate spaces. Compare
+                // each with its own text raster, followed by exactly one annotation pass.
+                QImage expectedFile = renderScreenshotRecognitionImage(*reference);
+                QImage expectedViewport = window.printViewportSnapshot(source, canvasRect, filtered,
+                                                                       filteredRect, 1.0, output);
+                const QTransform mapping(scale, 0, 0, scale, -canvasRect.x() * scale,
+                                         -canvasRect.y() * scale);
+                for (QImage* expected : {&expectedFile, &expectedViewport}) {
+                    {
+                        QPainter painter(expected);
+                        paintScreenshotTextAnnotations(painter, marks, mapping);
+                    }
+                    *expected = ScreenshotResultCompositor::compose(*expected, {}, 1.0, opacity);
+                }
+                const auto image = window.printViewportSnapshot(
+                    source, canvasRect, filtered, filteredRect, opacity, output, marks);
+                reference->textAnnotations = marks;
+                reference->outputOpacity = opacity;
+                const auto file = renderScreenshotRecognitionImage(*reference);
+                require(!image.isNull() && image == expectedViewport && file == expectedFile,
+                        "viewport and file exports each compose text marks once after OCR text at "
+                        "every backing scale and opacity");
+                const auto sample = image.pixelColor(15 * scale, 15 * scale);
+                const QColor expectedColor =
+                    filter == 1 ? QColor(200, 110, 120) : QColor(255, 127, 127);
+                require(
+                    std::abs(sample.red() - expectedColor.red()) <= 1 &&
+                        std::abs(sample.green() - expectedColor.green()) <= 1 &&
+                        std::abs(sample.blue() - expectedColor.blue()) <= 1 &&
+                        sample.alpha() == qRound(255 * opacity),
+                    "a translucent highlight is applied once after filtering and before opacity");
+            }
+        }
+    }
+    require(source.pixelColor(15, 15) == QColor(Qt::white),
+            "recognition export does not bake marks into its source");
+    auto draft = std::make_shared<QTextDocument>();
+    draft->setPlainText(QStringLiteral("An unrelated recognition editor"));
+    window.showTextEditor(std::move(draft));
+    require(window.printViewportSnapshot({}, {}, {}, {}, 1.0, {}, marks) ==
+                window.printViewportSnapshot(),
+            "canvas text annotations never spill onto an unrelated editor page");
+}
+
 void imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult() {
     ScreenshotRecognitionWindow window({});
     QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
@@ -2978,9 +3070,10 @@ void defaultSelectionResizeActionsDeclineInteraction() {
     for (const auto& actions : {ScreenshotRecognitionWindowActions{},
                                 ScreenshotRecognitionWindowActions{.handleCancel = []() {}}}) {
         for (const QPointF& point : {QPointF(), QPointF(19.5, -42.0)}) {
-            require(actions.selectionResizeDragMode(point) == ScreenshotSelectionDragMode::None,
+            require(actions.selectionResizeDragModeAtGlobalPosition(point) ==
+                        ScreenshotSelectionDragMode::None,
                     "an unwired recognition surface must expose no resize handle");
-            require(!actions.beginSelectionResize(point),
+            require(!actions.beginSelectionResizeAtGlobalPosition(point),
                     "an unwired recognition surface must decline selection resizing");
         }
     }
@@ -2990,11 +3083,11 @@ void selectionResizeCompletionCanReplaceWindow() {
     QPointer<ScreenshotRecognitionWindow> window;
     bool finished = false;
     ScreenshotRecognitionWindowActions actions;
-    actions.selectionResizeDragMode = [](const QPointF&) {
+    actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
         return ScreenshotSelectionDragMode::Right;
     };
-    actions.beginSelectionResize = [](const QPointF&) { return true; };
-    actions.finishSelectionResize = [&](const QPointF&) {
+    actions.beginSelectionResizeAtGlobalPosition = [](const QPointF&) { return true; };
+    actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         require(QWidget::mouseGrabber() != window.data(),
                 "completion must release capture before deleting the recognition window");
         delete window.data();
@@ -3022,10 +3115,10 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
             int updates = 0;
             int finishes = 0;
             ScreenshotRecognitionWindowActions actions;
-            actions.selectionResizeDragMode = [](const QPointF&) {
+            actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
                 return ScreenshotSelectionDragMode::Right;
             };
-            actions.beginSelectionResize = [&](const QPointF&) {
+            actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF&) {
                 require(
                     QWidget::mouseGrabber() == surface,
                     "resize must own mouse capture before recognition clears the pressed child");
@@ -3035,8 +3128,8 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
                 }
                 return acceptResize;
             };
-            actions.updateSelectionResize = [&](const QPointF&) { ++updates; };
-            actions.finishSelectionResize = [&](const QPointF&) {
+            actions.updateSelectionResizeAtGlobalPosition = [&](const QPointF&) { ++updates; };
+            actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF&) {
                 require(QWidget::mouseGrabber() != surface,
                         "resize must release capture before completion can replace its window");
                 ++finishes;
@@ -3082,6 +3175,69 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
     }
 }
 
+void selectionResizeUsesGlobalPointerAcrossGeometryChanges() {
+    for (const auto mode : {ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+                            ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}) {
+        for (const bool table : {false, true}) {
+            QWidget host;
+            host.setGeometry(-400, -200, 500, 300);
+            QVector<QPointF> presses;
+            QVector<QPointF> moves;
+            QVector<QPointF> releases;
+            ScreenshotRecognitionWindowActions actions;
+            actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
+                return ScreenshotSelectionDragMode::TopLeft;
+            };
+            actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF& point) {
+                presses.append(point);
+                return true;
+            };
+            actions.updateSelectionResizeAtGlobalPosition = [&](const QPointF& point) {
+                moves.append(point);
+            };
+            actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF& point) {
+                releases.append(point);
+            };
+            ScreenshotRecognitionWindow window(std::move(actions), &host, mode);
+            require(window.present({QGuiApplication::primaryScreen(), nullptr,
+                                    QRect(-300, -100, 240, 120), QRectF(400, 300, 480, 240), mode}),
+                    "global pointer fixture presents at a different origin and scale");
+            if (table) {
+                window.setTableSession(std::make_shared<ScreenshotTableEditingSession>(
+                    ScreenshotTableDocument::fromPlainText(QStringLiteral("A\tB\nC\tD"))));
+            } else {
+                window.showQrContents({QStringLiteral("https://example.com")});
+            }
+            QApplication::processEvents();
+            QWidget* viewport = table ? window.findChild<ScreenshotTableEditor*>()->viewport()
+                                      : window.findChild<QTextBrowser*>()->viewport();
+            const QPointF local(2.25, 2.75);
+            const QPointF global = viewport->mapToGlobal(local);
+            QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(viewport, &press);
+            require(presses == QVector<QPointF>{global},
+                    "child resize presses must retain fractional global coordinates");
+            const QPointF queuedLocal = window.mapFromGlobal(global);
+            require(window.updateSelectionGeometry(QRect(-280, -70, 260, 140),
+                                                   QRectF(420, 330, 520, 280)),
+                    "the recognition surface follows the changed selection");
+            for (int sample = 0; sample < 3; ++sample) {
+                QMouseEvent move(QEvent::MouseMove, queuedLocal, global, Qt::NoButton,
+                                 Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(&window, &move);
+            }
+            QMouseEvent release(QEvent::MouseButtonRelease, queuedLocal, global, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(&window, &release);
+            require(moves == QVector<QPointF>{global, global, global} &&
+                        releases == QVector<QPointF>{global},
+                    "moving recognition surfaces must preserve queued screen positions through "
+                    "release");
+        }
+    }
+}
+
 void translationCopyProviderHandlesKeyboardAndContextMenu() {
     int completed = 0;
     bool fail = false;
@@ -3098,17 +3254,17 @@ void translationCopyProviderHandlesKeyboardAndContextMenu() {
     QApplication::processEvents();
     auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
     require(editor, "translation copy owns a result editor");
-    window.setTranslationClipboardProvider(
-        [] { return true; },
-        [&]() -> std::unique_ptr<QMimeData> {
-            if (fail)
-                return {};
-            if (auto selected = window.textSelectionClipboardMimeData())
-                return selected;
-            auto mime = std::make_unique<QMimeData>();
-            mime->setImageData(window.translationDocumentImage());
-            return mime;
-        });
+    static_cast<void>(window.attachSession(
+        &window, {[] { return true; },
+                  [&]() -> std::unique_ptr<QMimeData> {
+                      if (fail)
+                          return {};
+                      if (auto selected = window.textSelectionClipboardMimeData())
+                          return selected;
+                      auto mime = std::make_unique<QMimeData>();
+                      mime->setImageData(window.translationDocumentImage());
+                      return mime;
+                  }}));
     const auto image = window.translationDocumentImage();
     require(!image.isNull() && image.height() > editor->viewport()->height(),
             "translation image includes content below the viewport");
@@ -3174,7 +3330,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
     inspectContextMenu(window, window.rect().center(), [](adqt::widgets::AdContextMenu& menu) {
         require(menu.objectName() == QStringLiteral("screenshotOcrContextMenu") &&
                     contextMenuActionTexts(menu) ==
-                        QStringList{QStringLiteral("Copy"), QStringLiteral("Select All")},
+                        QStringList{QStringLiteral("Copy"), QStringLiteral("Select all")},
                 "OCR context menu should expose Copy and Select All");
         requireContextMenuShortcutsHidden(menu);
         contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
@@ -3195,7 +3351,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
     presentation->clearTextSelection();
     window.updateOcrSelection();
     inspectContextMenu(window, window.rect().center(), [](adqt::widgets::AdContextMenu& menu) {
-        contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+        contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
     });
     require(presentation->selectedText() == QStringLiteral("Alpha\nBeta"),
             "OCR context Select All should update the presentation selection");
@@ -3212,7 +3368,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
         *qr->viewport(), qr->viewport()->rect().center(), [](adqt::widgets::AdContextMenu& menu) {
             require(menu.objectName() == QStringLiteral("screenshotQrContextMenu") &&
                         contextMenuActionTexts(menu) ==
-                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select All")},
+                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select all")},
                     "QR context menu should expose Copy and Select All");
             requireContextMenuShortcutsHidden(menu);
             contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
@@ -3229,7 +3385,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "QR context Copy should fall back to all displayed payloads");
     inspectContextMenu(*qr->viewport(), qr->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(qr->textCursor().hasSelection() && qr->textCursor().selectionStart() == 0 &&
                 qr->textCursor().selectionEnd() == qr->document()->characterCount() - 1,
@@ -3250,7 +3406,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
         [](adqt::widgets::AdContextMenu& menu) {
             require(menu.objectName() == QStringLiteral("screenshotImageConversionContextMenu") &&
                         contextMenuActionTexts(menu) ==
-                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select All")},
+                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select all")},
                     "conversion context menu should use Ant Design actions");
             requireContextMenuShortcutsHidden(menu);
             contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
@@ -3267,7 +3423,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "conversion context Copy should fall back to the full source");
     inspectContextMenu(*preview->viewport(), preview->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(preview->textCursor().hasSelection() && preview->textCursor().selectionStart() == 0 &&
                 preview->textCursor().selectionEnd() == preview->document()->characterCount() - 1,
@@ -3327,7 +3483,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
                         contextMenuActionTexts(menu) ==
                             QStringList{QStringLiteral("Copy"), QStringLiteral("Cut"),
                                         QStringLiteral("Paste"), QStringLiteral("Delete"),
-                                        QStringLiteral("|"), QStringLiteral("Select All")},
+                                        QStringLiteral("|"), QStringLiteral("Select all")},
                     "text editor menu should expose all requested actions");
             requireContextMenuShortcutsHidden(menu);
             require(contextMenuAction(menu, QStringLiteral("Copy"))->isEnabled() &&
@@ -3372,7 +3528,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "text editor context Delete should remove selected text");
     inspectContextMenu(*textEditor->viewport(), textEditor->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(textEditor->textCursor().selectedText() == QStringLiteral(" !"),
             "text editor context Select All should select the document");
@@ -3384,7 +3540,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
                         !contextMenuAction(menu, QStringLiteral("Cut"))->isEnabled() &&
                         !contextMenuAction(menu, QStringLiteral("Paste"))->isEnabled() &&
                         !contextMenuAction(menu, QStringLiteral("Delete"))->isEnabled() &&
-                        contextMenuAction(menu, QStringLiteral("Select All"))->isEnabled(),
+                        contextMenuAction(menu, QStringLiteral("Select all"))->isEnabled(),
                     "read-only translation should expose only Copy and Select All");
         });
 
@@ -3429,14 +3585,14 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
                         contextMenuActionTexts(menu) ==
                             QStringList{QStringLiteral("Copy"), QStringLiteral("Cut"),
                                         QStringLiteral("Paste"), QStringLiteral("Delete"),
-                                        QStringLiteral("|"), QStringLiteral("Select All")},
+                                        QStringLiteral("|"), QStringLiteral("Select all")},
                     "inline table text should use the OCR-style Ant Design edit menu");
             requireContextMenuShortcutsHidden(menu);
             require(contextMenuAction(menu, QStringLiteral("Copy"))->isEnabled() &&
                         contextMenuAction(menu, QStringLiteral("Cut"))->isEnabled() &&
                         contextMenuAction(menu, QStringLiteral("Paste"))->isEnabled() &&
                         contextMenuAction(menu, QStringLiteral("Delete"))->isEnabled() &&
-                        contextMenuAction(menu, QStringLiteral("Select All"))->isEnabled(),
+                        contextMenuAction(menu, QStringLiteral("Select all"))->isEnabled(),
                     "selected inline table text should enable every edit command");
             contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
         });
@@ -3479,7 +3635,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "inline table context Delete should remove the character selection");
     inspectContextMenu(*cellEditor->viewport(), cellEditor->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(cellEditor->textCursor().selectedText() == QStringLiteral(" cell"),
             "inline table context Select All should select the cell text");
@@ -3822,6 +3978,106 @@ void originalImagePreviewPreservesSelectionAndOwnerLifecycle() {
     flush();
 }
 
+void latexPreviewStreamsWithoutWaitingForPause() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.theme();
+    const auto restoreTheme = qScopeGuard([&] { themes.setTheme(originalTheme); });
+    themes.setPreset(adqt::theme::ThemeScheme::Light, adqt::theme::ThemeDensity::Compact);
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "streaming preview fixture has a screen");
+    auto document = std::make_shared<QTextDocument>();
+    document->setPlainText(QStringLiteral("x"));
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    const QRect geometry(screen->availableGeometry().topLeft() + QPoint(320, 120), QSize(240, 140));
+    require(window.present({screen, nullptr, geometry, QRectF(0, 0, 240, 140)}),
+            "streaming formula preview presents");
+    window.showLatexEditor(document, {}, true);
+    const auto waitFor = [](const std::function<bool()>& predicate, const char* message) {
+        QEventLoop loop;
+        QTimer poll;
+        QTimer deadline;
+        deadline.setSingleShot(true);
+        QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+            if (predicate())
+                loop.quit();
+        });
+        QObject::connect(&deadline, &QTimer::timeout, &loop, &QEventLoop::quit);
+        poll.start(5);
+        deadline.start(10000);
+        if (!predicate())
+            loop.exec();
+        require(predicate(), message);
+    };
+    waitFor(
+        [&] {
+            auto* preview = window.findChild<ScreenshotOriginalImagePreviewWindow*>();
+            return preview && preview->isVisible() && preview->accessibleDescription().isEmpty();
+        },
+        "the first streamed formula renders before completion");
+    auto* renderer = window.findChild<ScreenshotLatexRenderer*>();
+    require(renderer != nullptr, "streaming formula starts the asynchronous renderer");
+    int validRenders = 0;
+    int invalidRenders = 0;
+    QObject::connect(renderer, &ScreenshotLatexRenderer::rendered, &window,
+                     [&](quint64, const QImage& image, ScreenshotLatexRenderer::Error error) {
+                         if (error == ScreenshotLatexRenderer::Error::None && !image.isNull())
+                             ++validRenders;
+                         if (error == ScreenshotLatexRenderer::Error::InvalidFormula)
+                             ++invalidRenders;
+                     });
+    QPointer<ScreenshotOriginalImagePreviewWindow> preview =
+        window.findChild<ScreenshotOriginalImagePreviewWindow*>();
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    auto* spin = window.findChild<adqt::widgets::AdSpin*>();
+    require(preview && preview->isVisible() && editor && editor->isReadOnly() && spin &&
+                spin->spinning(),
+            "source and passive preview are visible while formula conversion remains busy");
+    const QImage initial = ScreenshotOriginalImagePreviewWindowTestAccess::source(*preview);
+    document->setPlainText(QStringLiteral("x+\\frac{x}"));
+    waitFor([&] { return invalidRenders > 0; },
+            "an incomplete formula reaches the preview renderer");
+    require(preview->accessibleDescription().isEmpty() &&
+                !ScreenshotOriginalImagePreviewWindowTestAccess::dimmed(*preview) &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::source(*preview) == initial,
+            "an incomplete streamed formula retains the undimmed valid image without an error");
+    require(window.updateSelectionGeometry(QRect(geometry.topLeft(), QSize(280, 160)),
+                                           QRectF(0, 0, 280, 160)),
+            "resize the preview while formula source is incomplete");
+    waitFor([&] { return validRenders > 0; },
+            "an incomplete stream rerenders its retained formula at the new preview size");
+    require(preview->accessibleDescription().isEmpty(),
+            "resizing an incomplete streamed formula keeps syntax errors suppressed");
+
+    document->setPlainText(QStringLiteral("x"));
+    QTimer tokens;
+    int updates = 0;
+    QObject::connect(&tokens, &QTimer::timeout, &window, [&] {
+        ++updates;
+        QTextCursor cursor(document.get());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(QStringLiteral("+1"));
+    });
+    const int previousRenders = validRenders;
+    tokens.start(20);
+    waitFor([&] { return validRenders >= previousRenders + 3 && updates >= 6; },
+            "continuous source changes produce repeated previews without waiting for a pause");
+    require(tokens.isActive() && editor->isReadOnly(),
+            "preview updates do not complete the stream");
+    tokens.stop();
+    auto completed = std::make_shared<QTextDocument>();
+    completed->setPlainText(document->toPlainText());
+    const QPointer<QTextDocument> provisional = document.get();
+    window.showLatexEditor(completed);
+    document.reset();
+    require(preview == window.findChild<ScreenshotOriginalImagePreviewWindow*>() &&
+                preview->isVisible() && provisional.isNull() && !editor->isReadOnly() &&
+                !spin->spinning() && editor->document() == completed.get(),
+            "completion safely replaces the temporary document and retains the same companion");
+    window.hideTextEditor();
+    waitFor([&] { return preview.isNull(); },
+            "leaving the streamed formula cancels and releases its preview");
+}
+
 void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
 #ifdef Q_OS_WIN
     if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
@@ -4044,7 +4300,7 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
     require(waitFor([&] {
                 return preview() && preview()->accessibleDescription() ==
                                         QStringLiteral("Unable to preview this formula. Check the "
-                                                       "LaTeX source.");
+                                                       "LaTeX source");
             }),
             "language-change fixture starts with an invalid formula draft");
     QPointer<ScreenshotOriginalImagePreviewWindow> textPreview;
@@ -4061,7 +4317,7 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
                                QStringLiteral("Translated LaTeX formula preview") &&
                            preview()->accessibleDescription() ==
                                QStringLiteral("Translated Unable to preview this formula. Check "
-                                              "the LaTeX source.");
+                                              "the LaTeX source");
                 }),
                 "live language changes retranslate formula source, preview name and cached error");
         window.showTextEditor(&document);
@@ -4085,6 +4341,166 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
             "retranslation and text reuse preserve the editable draft");
 }
 
+void textSelectionNotificationsAreSynchronous() {
+    QWidget host;
+    host.resize(360, 160);
+    host.show();
+    // The top-level recognition surface owns its standard command bindings. Embedded
+    // surfaces delegate Select All to their actual host (the pinned-window fixtures cover it).
+    ScreenshotRecognitionWindow window(
+        {}, nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow);
+    require(
+        window.present({QGuiApplication::primaryScreen(), &host, host.rect(), QRectF(host.rect()),
+                        ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow, 1.0, false}),
+        "present the text-selection notification fixture");
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = host.rect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Selectable annotation text");
+    line.quad = ocrQuad(QRectF(20, 20, 300, 40));
+    presentation->lines.push_back(line);
+    presentation->prepareForRendering();
+    window.setOcrPresentation(presentation, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly,
+                              false);
+    QApplication::processEvents();
+    int changes = 0;
+    ScreenshotTextSelectionSnapshot notified;
+    QObject::connect(&window, &ScreenshotRecognitionWindow::textSelectionChanged, &window, [&] {
+        ++changes;
+        notified = window.textSelectionSnapshot();
+    });
+    const auto pointer = [](QWidget& receiver, QEvent::Type type, QPoint point,
+                            Qt::MouseButton changed, Qt::MouseButtons held) {
+        QMouseEvent event(type, QPointF(point), QPointF(receiver.mapToGlobal(point)), changed, held,
+                          Qt::NoModifier);
+        QApplication::sendEvent(&receiver, &event);
+    };
+    pointer(window, QEvent::MouseButtonPress, {50, 40}, Qt::LeftButton, Qt::LeftButton);
+    pointer(window, QEvent::MouseMove, {230, 40}, Qt::NoButton, Qt::LeftButton);
+    require(changes > 0 && !notified.empty() && !notified.canvasBounds.isEmpty() &&
+                notified.inProgress && presentation->textSelectionActive(),
+            "OCR drag selection must expose its in-progress state and bounds");
+    const auto deferredOcr = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(deferredOcr.inProgress && deferredOcr.empty() && deferredOcr.canvasBounds.isEmpty(),
+            "completed-only OCR snapshots defer ranges and geometry during pointer selection");
+    const int beforeRelease = changes;
+    const auto draggedRanges = notified.ranges;
+    pointer(window, QEvent::MouseButtonRelease, {230, 40}, Qt::LeftButton, Qt::NoButton);
+    require(changes > beforeRelease && !notified.inProgress && notified.ranges == draggedRanges,
+            "OCR mouse release must notify completion even when its selected range is unchanged");
+    const auto completedOcr = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(!completedOcr.inProgress && completedOcr.ranges == notified.ranges &&
+                completedOcr.canvasBounds == notified.canvasBounds,
+            "completed-only OCR snapshots expose final geometry immediately on release");
+    window.clearTextSelection();
+    require(notified.empty(), "clearing an OCR selection must synchronously notify its owner");
+    doubleClickWidget(window, {130, 40});
+    require(!notified.empty() && notified.ranges.front().start == 0 &&
+                notified.ranges.front().end == line.text.size(),
+            "OCR double-click must synchronously publish the selected line");
+    window.clearTextSelection();
+    PhysicalKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    QApplication::sendEvent(&window, &selectAll);
+    require(!notified.empty() && !notified.inProgress &&
+                notified.ranges.front().end == line.text.size(),
+            "OCR Select All must publish a selection without pointer movement");
+    window.setTextSelectionFocusPreserver([](QWidget*) { return true; });
+    QFocusEvent keepSelection(QEvent::FocusOut, Qt::OtherFocusReason);
+    QApplication::sendEvent(&window, &keepSelection);
+    require(presentation->hasTextSelection(),
+            "focus transfer to a selection toolbar must retain the OCR selection");
+    window.setTextSelectionFocusPreserver({});
+
+    auto document = std::make_shared<QTextDocument>();
+    document->setDocumentMargin(0);
+    document->setPlainText(QStringLiteral("Selectable formatted annotation text"));
+    document->setTextWidth(350);
+    window.showFormattedText(document, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly, false);
+    QApplication::processEvents();
+    auto* layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    auto* item = formattedTextItem(layer);
+    require(layer && item, "formatted notification fixture requires the native text item");
+    const auto block = document->firstBlock();
+    const auto textLine = block.layout()->lineAt(0);
+    const auto point = [&](int character) {
+        return layer->mapFromScene(item->mapToScene(
+            block.layout()->position() +
+            QPointF(textLine.cursorToX(character), textLine.y() + textLine.height() / 2)));
+    };
+    changes = 0;
+    pointer(*layer->viewport(), QEvent::MouseButtonPress, point(1), Qt::LeftButton, Qt::LeftButton);
+    pointer(*layer->viewport(), QEvent::MouseMove, point(7), Qt::NoButton, Qt::LeftButton);
+    require(changes > 0 && !notified.empty() &&
+                notified.source == ScreenshotTextAnnotationSource::Formatted &&
+                !notified.canvasBounds.isEmpty() && notified.inProgress &&
+                item->textCursor().hasSelection(),
+            "native formatted dragging must notify with its in-progress state");
+    const auto deferredFormatted = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(deferredFormatted.inProgress && deferredFormatted.empty() &&
+                deferredFormatted.canvasBounds.isEmpty() &&
+                deferredFormatted.source == ScreenshotTextAnnotationSource::Formatted,
+            "completed-only formatted snapshots defer ranges and geometry while dragging");
+    const int beforeFormattedRelease = changes;
+    const auto formattedRanges = notified.ranges;
+    pointer(*layer->viewport(), QEvent::MouseButtonRelease, point(7), Qt::LeftButton, Qt::NoButton);
+    require(changes > beforeFormattedRelease && !notified.inProgress &&
+                notified.ranges == formattedRanges,
+            "formatted release must notify completion even when its selected range is unchanged");
+    const auto completedFormatted = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(!completedFormatted.inProgress && completedFormatted.ranges == notified.ranges &&
+                completedFormatted.canvasBounds == notified.canvasBounds,
+            "completed-only formatted snapshots publish geometry inside the release notification");
+    window.clearTextSelection();
+    require(notified.empty(), "clearing formatted selection must notify synchronously");
+    layer->setFocus();
+    PhysicalKeyEvent selectDocument(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    QApplication::sendEvent(layer, &selectDocument);
+    require(!notified.empty() && !notified.inProgress && notified.ranges.front().start == 0 &&
+                notified.ranges.front().end == document->characterCount() - 1,
+            "native formatted Select All must publish its complete document range");
+    window.clearTextSelection();
+    require(doubleClickWidget(*layer->viewport(), point(4)) && !notified.empty(),
+            "native formatted double-click must synchronously publish its selected word");
+
+    auto structural = std::make_shared<QTextDocument>();
+    structural->setPlainText(QStringLiteral("First line\n\nLast line"));
+    window.showFormattedText(structural, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly,
+                             false);
+    layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    item = formattedTextItem(layer);
+    QTextCursor cursor(structural.get());
+    cursor.setPosition(11);
+    item->setTextCursor(cursor);
+    layer->setFocus();
+    item->setFocus();
+    PhysicalKeyEvent selectParagraph(QEvent::KeyPress, Qt::Key_Right, Qt::ShiftModifier);
+    QApplication::sendEvent(layer, &selectParagraph);
+    require(!notified.empty() && !notified.canvasBounds.isEmpty() &&
+                notified.ranges.front().start == 11 && notified.ranges.front().end == 12,
+            "selecting an empty paragraph must publish nonempty popover geometry immediately");
+
+    auto clusters = std::make_shared<QTextDocument>();
+    clusters->setPlainText(QStringLiteral("A e\u0301 \U0001f600 Z"));
+    window.showFormattedText(clusters, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly, false);
+    layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    item = formattedTextItem(layer);
+    for (const auto& positions : {QPair<int, int>(2, 4), QPair<int, int>(5, 7)}) {
+        QTextCursor partial(clusters.get());
+        partial.setPosition(positions.first + 1);
+        partial.setPosition(positions.second, QTextCursor::KeepAnchor);
+        item->setTextCursor(partial);
+        const auto snapshot = window.textSelectionSnapshot();
+        require(!snapshot.empty() && !snapshot.canvasBounds.isEmpty() &&
+                    snapshot.ranges.front().start == positions.first &&
+                    snapshot.ranges.front().end == positions.second,
+                "formatted annotation ranges must normalize native cursor endpoints to clusters");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
@@ -4097,6 +4513,26 @@ int main(int argc, char** argv) {
                 .success,
             "recognition test storage must initialize");
     const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+    if (application.arguments().contains(QStringLiteral("--text-annotation-exports-only"))) {
+#ifdef Q_OS_WIN
+        require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >=
+                    0,
+                "load the offscreen annotation export font");
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+        recognitionViewportExportsComposeTextAnnotationsOnce();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--text-selection-notifications-only"))) {
+#ifdef Q_OS_WIN
+        require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >=
+                    0,
+                "load the offscreen text-selection fixture font");
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+        textSelectionNotificationsAreSynchronous();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--text-editor-history-only"))) {
         textEditorHistoryShortcutsRespectReadOnlyState();
         return 0;
@@ -4129,6 +4565,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--latex-preview-only"))) {
         latexPreviewUsesPassiveCompanionAndSurvivesEditing();
+        latexPreviewStreamsWithoutWaitingForPause();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--preview-window-only"))) {
@@ -4184,6 +4621,7 @@ int main(int argc, char** argv) {
     defaultSelectionResizeActionsDeclineInteraction();
     selectionResizeKeepsMouseCaptureWhenContentIsCleared();
     selectionResizeCompletionCanReplaceWindow();
+    selectionResizeUsesGlobalPointerAcrossGeometryChanges();
     if (application.arguments().contains(QStringLiteral("--selection-resize-only"))) {
         return 0;
     }

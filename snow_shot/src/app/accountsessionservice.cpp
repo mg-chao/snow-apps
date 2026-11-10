@@ -10,8 +10,6 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QNetworkProxy>
-#include <QNetworkProxyFactory>
 #include <QRegularExpression>
 #include <QUrlQuery>
 #include <QUuid>
@@ -21,13 +19,6 @@
 
 namespace snow_shot::app {
 namespace {
-class AccountSystemProxyFactory final : public QNetworkProxyFactory {
-  public:
-    QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery& query) override {
-        return systemProxyForQuery(query);
-    }
-};
-
 QString translatedAccountMessage(const QString& source) {
     if (source.isEmpty())
         return {};
@@ -41,48 +32,48 @@ QString translatedAccountMessage(const QString& source) {
 QString accountError(const QString& code) {
     if (code == u"invalid_credentials")
         return QString::fromUtf8(
-            QT_TRANSLATE_NOOP("AccountSessionService", "The username or password is incorrect."));
+            QT_TRANSLATE_NOOP("AccountSessionService", "The username or password is incorrect"));
     if (code == u"account_inactive")
         return QString::fromUtf8(QT_TRANSLATE_NOOP(
-            "AccountSessionService", "Complete your first payment to activate this account."));
+            "AccountSessionService", "Complete your first payment to activate this account"));
     if (code == u"username_unavailable")
         return QString::fromUtf8(QT_TRANSLATE_NOOP(
-            "AccountSessionService", "This username is already taken or temporarily reserved."));
+            "AccountSessionService", "This username is already taken or temporarily reserved"));
     if (code == u"invalid_captcha")
         return QString::fromUtf8(
             QT_TRANSLATE_NOOP("AccountSessionService",
-                              "The image code is incorrect or expired. Refresh it and try again."));
+                              "The image code is incorrect or expired. Refresh it and try again"));
     if (code == u"password_mismatch")
         return QString::fromUtf8(
-            QT_TRANSLATE_NOOP("AccountSessionService", "The passwords do not match."));
+            QT_TRANSLATE_NOOP("AccountSessionService", "The passwords do not match"));
     if (code == u"payments_unavailable")
         return QString::fromUtf8(
             QT_TRANSLATE_NOOP("AccountSessionService",
-                              "Purchases are currently unavailable. Please try again later."));
+                              "Purchases are currently unavailable. Please try again later"));
     if (code == u"wechat_link_conflict")
         return QString::fromUtf8(QT_TRANSLATE_NOOP(
             "AccountSessionService",
-            "This purchase must use the WeChat account linked to your Snow Shot account."));
+            "This purchase must use the WeChat account linked to your Snow Shot account"));
     if (code == u"request_expired")
         return QString::fromUtf8(
             QT_TRANSLATE_NOOP("AccountSessionService",
-                              "This purchase code has expired. Generate a new code to continue."));
+                              "This purchase code has expired. Generate a new code to continue"));
     if (code == u"payment_pending" || code == u"payment_not_received")
         return QString::fromUtf8(QT_TRANSLATE_NOOP(
-            "AccountSessionService", "Payment has not been confirmed. We will keep checking."));
+            "AccountSessionService", "Payment has not been confirmed. We will keep checking"));
     if (code == u"reconciliation_required")
         return QString::fromUtf8(QT_TRANSLATE_NOOP(
             "AccountSessionService",
-            "The payment result needs confirmation. Your request remains reserved."));
+            "The payment result needs confirmation. Your request remains reserved"));
     if (code == u"invalid_session")
         return QString::fromUtf8(
-            QT_TRANSLATE_NOOP("AccountSessionService", "Your session has expired. Sign in again."));
+            QT_TRANSLATE_NOOP("AccountSessionService", "Your session has expired. Sign in again"));
     if (code == u"rate_limited")
         return QString::fromUtf8(QT_TRANSLATE_NOOP(
-            "AccountSessionService", "Too many requests. Wait a moment and try again."));
+            "AccountSessionService", "Too many requests. Wait a moment and try again"));
     return QString::fromUtf8(
         QT_TRANSLATE_NOOP("AccountSessionService",
-                          "Unable to complete the request. Check your connection and try again."));
+                          "Unable to complete the request. Check your connection and try again"));
 }
 bool continuingPurchase(const QString& state) {
     return state == u"awaiting_payment" || state == u"payment_pending" ||
@@ -182,12 +173,8 @@ void AccountSessionService::send(const QByteArray& method, const QString& path,
     const QString requestId =
         operation.isEmpty() ? QUuid::createUuid().toString(QUuid::Id128) : operation;
     QNetworkRequest request(QUrl(m_origin + QStringLiteral("/api/v2") + path));
-    if (m_client && m_client->usesSystemProxy()) {
-        if (!m_network->proxyFactory())
-            m_network->setProxyFactory(new AccountSystemProxyFactory);
-    } else {
-        m_network->setProxy(QNetworkProxy::NoProxy);
-    }
+    if (m_client)
+        m_client->configureNetworkProxy(*m_network);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::SameOriginRedirectPolicy);
     request.setTransferTimeout(20000);
@@ -311,7 +298,7 @@ void AccountSessionService::persist() {
         m_storageNotice = QString::fromUtf8(QT_TRANSLATE_NOOP(
             "snow_shot::app::AccountSessionService",
             "Your session could not be saved securely. Keep this app open until "
-            "payment is confirmed; you may need to sign in again after restarting."));
+            "payment is confirmed; you may need to sign in again after restarting"));
 }
 
 void AccountSessionService::refreshSession(std::function<void(bool)> completion) {
@@ -403,11 +390,11 @@ void AccountSessionService::signIn(const QString& username, const QString& passw
     if (username.trimmed().isEmpty())
         m_fieldErrors.insert(QStringLiteral("username"),
                              QString::fromUtf8(QT_TRANSLATE_NOOP(
-                                 "snow_shot::app::AccountSessionService", "Enter your username.")));
+                                 "snow_shot::app::AccountSessionService", "Enter your username")));
     if (password.isEmpty())
         m_fieldErrors.insert(QStringLiteral("password"),
                              QString::fromUtf8(QT_TRANSLATE_NOOP(
-                                 "snow_shot::app::AccountSessionService", "Enter your password.")));
+                                 "snow_shot::app::AccountSessionService", "Enter your password")));
     if (!m_fieldErrors.isEmpty()) {
         emit changed();
         return;
@@ -495,28 +482,27 @@ void AccountSessionService::registerAccount(const QString& username, const QStri
             QStringLiteral("username"),
             QString::fromUtf8(QT_TRANSLATE_NOOP(
                 "snow_shot::app::AccountSessionService",
-                "Use 3–32 letters, numbers, underscores, dots, or hyphens for your username.")));
+                "Use 3–32 letters, numbers, underscores, dots, or hyphens for your username")));
     }
     if (password.size() < 8 || password.size() > 16) {
         m_fieldErrors.insert(
             QStringLiteral("password"),
             QString::fromUtf8(QT_TRANSLATE_NOOP("snow_shot::app::AccountSessionService",
-                                                "Use a password between 8 and 16 characters.")));
+                                                "Use a password between 8 and 16 characters")));
     }
     if (confirmation.isEmpty()) {
         m_fieldErrors.insert(
             QStringLiteral("password_confirmation"),
             QString::fromUtf8(QT_TRANSLATE_NOOP("snow_shot::app::AccountSessionService",
-                                                "Confirm your password.")));
+                                                "Confirm your password")));
     } else if (password != confirmation) {
         m_fieldErrors.insert(QStringLiteral("password_confirmation"),
                              accountError(QStringLiteral("password_mismatch")));
     }
     if (answer.trimmed().isEmpty()) {
-        m_fieldErrors.insert(
-            QStringLiteral("captcha_answer"),
-            QString::fromUtf8(QT_TRANSLATE_NOOP("snow_shot::app::AccountSessionService",
-                                                "Enter the image code.")));
+        m_fieldErrors.insert(QStringLiteral("captcha_answer"),
+                             QString::fromUtf8(QT_TRANSLATE_NOOP(
+                                 "snow_shot::app::AccountSessionService", "Enter the image code")));
     }
     if (!m_fieldErrors.isEmpty()) {
         emit changed();
@@ -669,7 +655,7 @@ void AccountSessionService::claimRegistration() {
                 m_purchase.m_notice = QString::fromUtf8(
                     QT_TRANSLATE_NOOP("snow_shot::app::AccountSessionService",
                                       "Your account is activated. Sign in with your username "
-                                      "and password if automatic sign-in does not complete."));
+                                      "and password if automatic sign-in does not complete"));
                 if (error.status == 0 || error.status >= 500)
                     m_purchase.m_poll.start(m_options.pollIntervalMs);
             } else {
@@ -725,7 +711,7 @@ void AccountSessionService::cancelPurchase() {
                     m_purchase.m_notice = QString::fromUtf8(
                         QT_TRANSLATE_NOOP("snow_shot::app::AccountSessionService",
                                           "This payment is already being processed. We will keep "
-                                          "checking its result."));
+                                          "checking its result"));
                 }
                 persist();
             }

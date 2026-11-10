@@ -69,7 +69,7 @@ function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory,
     [ValidateSet('Full')][string]$Edition = 'Full') {
     $product = Get-SnowShotEdition $Edition
     $version = Get-SnowShotWingetVersion $Tag
-    $repository = 'mg-chao/snow-apps'
+    $repository = 'mg-chao/snow-shot'
     $release = Invoke-SnowShotWingetApi "repos/$repository/releases/tags/$Tag"
     if ($release.draft -or $release.tag_name -cne $Tag) { throw 'Expected the requested published release.' }
     $releaseDate = ([DateTimeOffset]$release.published_at).UtcDateTime.ToString('yyyy-MM-dd')

@@ -195,6 +195,43 @@ void toolbarRemainsInsideTheAvailableScreen() {
             "toolbar placement should clamp vertically to the screen");
 }
 
+void toolbarChoosesItsVerticalAnchorAfterHorizontalClamping() {
+    // The secondary row extends left of the main row. Placement must constrain
+    // all visible content, including on displays with nonzero desktop origins.
+    const ScreenshotToolbarPlacementGeometry bottom{QRect(120, 0, 620, 40), QRect(-40, 44, 780, 44),
+                                                    QRect(-40, 0, 780, 88)};
+    const ScreenshotToolbarPlacementGeometry top{QRect(120, 48, 620, 40), QRect(-40, 0, 780, 44),
+                                                 QRect(-40, 0, 780, 88)};
+    for (const QPoint origin : {QPoint(0, 0), QPoint(1600, 120), QPoint(-1600, -120)}) {
+        const QRect bounds(origin, QSize(1600, 900));
+        for (const int right : {200, 1800}) {
+            // 807 fits exactly below; one point lower must choose the top.
+            for (const int lowerEdge : {320, 807, 808, 880}) {
+                const QPoint bottomAnchor = origin + QPoint(right, lowerEdge);
+                const QPoint topAnchor = bottomAnchor - QPoint(0, 120);
+                const auto placement = ScreenshotGeometryMapper::anchoredToolbarPlacement(
+                    bottomAnchor, topAnchor, bottom, top, bounds, 4);
+                const bool above = lowerEdge > 807;
+                require(placement.usesTopRightPlacement == above,
+                        "horizontal overflow must not reject a vertically fitting toolbar anchor");
+                const auto& layout = above ? top : bottom;
+                const QRect occupied =
+                    layout.occupiedContentRect.translated(placement.contentPosition);
+                const QRect main =
+                    layout.mainToolbarContentRect.translated(placement.contentPosition);
+                require(bounds.contains(occupied),
+                        "horizontal adjustment must keep every toolbar row on its display");
+                require(right == 200 ? occupied.left() == bounds.left()
+                                     : occupied.right() == bounds.right(),
+                        "horizontal clamping must use the occupied extent and desktop origin");
+                require(above ? main.bottom() == topAnchor.y() - 5
+                              : main.top() == bottomAnchor.y() + 5,
+                        "horizontal adjustment must preserve the vertical anchor and gap");
+            }
+        }
+    }
+}
+
 void toolbarAnchorsTheMainRowAndUsesTheVisibleSecondaryRow() {
     const QRect bounds(0, 0, 1000, 800);
     const ScreenshotToolbarPlacementGeometry bottom{
@@ -419,6 +456,7 @@ int main(int argc, char** argv) {
     recordingFrameStaysOutsideTheSelection(2.0);
     toolbarUsesBottomRightThenTopRight();
     toolbarRemainsInsideTheAvailableScreen();
+    toolbarChoosesItsVerticalAnchorAfterHorizontalClamping();
     toolbarAnchorsTheMainRowAndUsesTheVisibleSecondaryRow();
     encoderCompatibilityNeverShrinksTheSelection();
     recordingBorderStaysOutsideTheEncoderPadding();

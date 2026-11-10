@@ -237,6 +237,9 @@ void captureFamiliesFollowOwnership() {
     require(pinLevel > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
                 pinLevel > CGWindowLevelForKey(kCGDockWindowLevelKey),
             "topmost pins must cover both the menu bar and Dock");
+    require(captureWindowLevel({CaptureFamily::Pinned, 1000}) <
+                CGWindowLevelForKey(kCGDraggingWindowLevelKey),
+            "pins and their deepest descendants must accept native content drags");
     require(pinLevel < captureWindowLevel({CaptureFamily::Recording, kOverlayLayer}) &&
                 captureWindowLevel({CaptureFamily::Recording, 1000}) <
                     captureWindowLevel({CaptureFamily::Screenshot, kOverlayLayer}),

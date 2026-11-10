@@ -1,3 +1,4 @@
+#include "snow_shot/network/proxyconfiguration.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/update/updateservice.h"
 
@@ -8,7 +9,6 @@
 #include <QJsonObject>
 #include <QUrlQuery>
 #include <QNetworkAccessManager>
-#include <QNetworkProxyFactory>
 #include <QNetworkReply>
 #include <QPointer>
 #include <QRegularExpression>
@@ -80,11 +80,6 @@ int compareVersions(const Version& left, const Version& right) {
                : (left.prerelease.size() < right.prerelease.size() ? -1 : 1);
 }
 
-class SystemProxyFactory final : public QNetworkProxyFactory {
-    QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery& query) override {
-        return systemProxyForQuery(query);
-    }
-};
 } // namespace
 
 struct UpdateService::Impl {
@@ -175,7 +170,7 @@ struct UpdateService::Impl {
         reset(channel(source));
         if (!busy())
             finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "Could not check for updates. Please try again."));
+                                            "Could not check for updates. Please try again"));
     }
     bool validUrl(const QUrl& url) const {
         const bool local =
@@ -195,7 +190,7 @@ struct UpdateService::Impl {
         const QString tag = QStringLiteral("v%1_snow-shot").arg(text);
         const QString root =
             source == Source::GitHub
-                ? QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/")
+                ? QStringLiteral("https://github.com/mg-chao/snow-shot/releases/tag/")
                 : QStringLiteral("https://gitee.com/mg-chao/snow-apps/releases/tag/");
         resetAll();
         status = {available ? UpdateState::Available : UpdateState::Idle,
@@ -233,7 +228,7 @@ struct UpdateService::Impl {
                 if (source == Source::GitHub) {
                     const QUrl expected(
                         QStringLiteral(
-                            "https://github.com/mg-chao/snow-apps/releases/download/%1/%2")
+                            "https://github.com/mg-chao/snow-shot/releases/download/%1/%2")
                             .arg(tag, assetName));
                     if (url != expected)
                         return false;
@@ -421,7 +416,7 @@ struct UpdateService::Impl {
         if (!parseVersion(options.installedVersion) || !validUrl(options.githubApiUrl) ||
             !validUrl(options.giteeApiUrl)) {
             finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "Could not check for updates. Please try again."));
+                                            "Could not check for updates. Please try again"));
             return;
         }
         resetAll();
@@ -457,6 +452,11 @@ UpdateService::~UpdateService() {
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
 }
+UpdateCapabilities UpdateService::capabilities() const {
+    return {true, false, false};
+}
+void UpdateService::setHandoffApproval(QObject*, std::function<bool()>) {}
+void UpdateService::setHandoffValidation(QObject*, std::function<bool()>) {}
 bool UpdateService::managedByStore() const {
     return false;
 }
@@ -483,10 +483,10 @@ void UpdateService::setMode(const QString& value) {
     }
 }
 void UpdateService::setSystemProxy(bool enabled) {
-    if (enabled)
-        m_impl->network.setProxyFactory(new SystemProxyFactory);
-    else
-        m_impl->network.setProxy(QNetworkProxy::NoProxy);
+    setProxyConfiguration(enabled ? QStringLiteral("system") : QStringLiteral("none"), {});
+}
+void UpdateService::setProxyConfiguration(const QString& mode, const QString& address) {
+    network::configureProxy(m_impl->network, mode, address);
 }
 void UpdateService::check(bool manual) {
     m_impl->check(manual);
@@ -501,14 +501,25 @@ void UpdateService::cancel() {
     emit statusChanged();
     emit operationFinished(QStringLiteral("check"), QStringLiteral("cancelled"));
 }
-// These Windows installation operations intentionally have no macOS implementation.
-void UpdateService::download() {}
-void UpdateService::requestRestart() {}
-void UpdateService::beginApply() {}
-void UpdateService::applyAtStartup() {
-    emit operationFinished(QStringLiteral("apply"), QStringLiteral("success"));
+// Discovery hands off to a release host; this service never owns macOS installation.
+void UpdateService::download() {
+    emit operationFinished(QStringLiteral("download"), QStringLiteral("unsupported"));
 }
-void UpdateService::setRelaunchArguments(const QStringList&) {}
+void UpdateService::requestRestart() {
+    emit operationFinished(QStringLiteral("restart"), QStringLiteral("unsupported"));
+}
+void UpdateService::beginApply() {
+    emit operationFinished(QStringLiteral("apply"), QStringLiteral("unsupported"));
+}
+void UpdateService::applyAtStartup() {
+    emit operationFinished(QStringLiteral("apply"), QStringLiteral("unsupported"));
+}
+bool UpdateService::setRelaunchArguments(const QStringList&) {
+    return true;
+}
+bool UpdateService::acceptsRelaunchArguments(const QStringList&) const {
+    return true;
+}
 void UpdateService::clearRelaunchArguments() {}
 bool UpdateService::handoffPending() const {
     return false;

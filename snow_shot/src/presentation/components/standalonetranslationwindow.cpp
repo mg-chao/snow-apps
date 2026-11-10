@@ -48,7 +48,7 @@ StandaloneTranslationWindow::StandaloneTranslationWindow(SnowShotApiClient* clie
     m_modal->setWindowModeDetached(true);
     m_modal->setWindowModality(Qt::NonModal);
     m_modal->setWindowTitle(tr("Translation"));
-    m_modal->setAcceptText(tr("Copy and Close"));
+    m_modal->setAcceptText(tr("Copy and close"));
     m_modal->setRejectText(tr("Close"));
     m_modal->setCentered(true);
     m_modal->setWindowPreferredSize(
@@ -90,7 +90,7 @@ StandaloneTranslationWindow::StandaloneTranslationWindow(SnowShotApiClient* clie
     });
     connect(&LanguageManager::instance(), &LanguageManager::languageChanged, this, [this] {
         m_modal->setWindowTitle(tr("Translation"));
-        m_modal->setAcceptText(tr("Copy and Close"));
+        m_modal->setAcceptText(tr("Copy and close"));
         m_modal->setRejectText(tr("Close"));
     });
     connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, this,

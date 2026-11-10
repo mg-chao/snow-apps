@@ -32,7 +32,7 @@ constexpr quint32 kLineShapeProperties =
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
     SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyArrowType |
     SnowCanvasShapeStylePropertyStrokeRenderingStyle | SnowCanvasShapeStylePropertyOpacity;
-constexpr quint32 kFreeDrawShapeProperties =
+constexpr quint32 kBrushShapeProperties =
     SnowCanvasShapeStylePropertyFillColor | SnowCanvasShapeStylePropertyFillStyle |
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
     SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyOpacity |
@@ -40,12 +40,12 @@ constexpr quint32 kFreeDrawShapeProperties =
 constexpr quint32 kRectangleHighlightProperties = SnowCanvasShapeStylePropertyFillColor |
                                                   SnowCanvasShapeStylePropertyStrokeColor |
                                                   SnowCanvasShapeStylePropertyStrokeWidth;
-constexpr quint32 kPenHighlightProperties =
+constexpr quint32 kBrushHighlightProperties =
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth;
 constexpr quint32 kAllFilterProperties =
     SnowCanvasFilterStylePropertyType | SnowCanvasFilterStylePropertyStrength |
     SnowCanvasFilterStylePropertyOpacity | SnowCanvasFilterStylePropertyStrokeWidth;
-constexpr quint32 kSerialNumberAppearanceProperties =
+constexpr quint32 kSequenceNumberAppearanceProperties =
     SnowCanvasSerialNumberStyleMixedColor | SnowCanvasSerialNumberStyleMixedFill |
     SnowCanvasSerialNumberStyleMixedFillStyle | SnowCanvasSerialNumberStyleMixedFontSize |
     SnowCanvasSerialNumberStyleMixedFontFamily | SnowCanvasSerialNumberStyleMixedStrokeWidth |
@@ -61,14 +61,14 @@ const QString kDistanceKey = QStringLiteral("drawing/distance_style");
 const QString kAngleKey = QStringLiteral("drawing/angle_style");
 const QString kBracketKey = QStringLiteral("drawing/bracket_style");
 const QString kMagnifierKey = QStringLiteral("drawing/magnifier_style");
-const QString kFreeDrawKey = QStringLiteral("drawing/free_draw_style");
+const QString kBrushKey = QStringLiteral("drawing/free_draw_style");
 const QString kRectangleHighlightKey = QStringLiteral("drawing/rectangle_highlight_style");
-const QString kPenHighlightKey = QStringLiteral("drawing/pen_highlight_style");
+const QString kBrushHighlightKey = QStringLiteral("drawing/pen_highlight_style");
 const QString kRectangleFilterKey = QStringLiteral("drawing/rectangle_filter_style");
-const QString kPenFilterKey = QStringLiteral("drawing/pen_filter_style");
+const QString kBrushFilterKey = QStringLiteral("drawing/pen_filter_style");
 const QString kBrushEraserKey = QStringLiteral("drawing/brush_eraser_style");
 const QString kTextKey = QStringLiteral("drawing/text_style");
-const QString kSerialNumberKey = QStringLiteral("drawing/serial_number_style");
+const QString kSequenceNumberKey = QStringLiteral("drawing/serial_number_style");
 const QString kWatermarkKey = QStringLiteral("drawing/watermark_style");
 const QString kSpotlightKey = QStringLiteral("drawing/spotlight_style");
 
@@ -319,7 +319,7 @@ QJsonObject lineValue(const SnowCanvasShapeStyle& style) {
     return value;
 }
 
-QJsonObject freeDrawValue(const SnowCanvasShapeStyle& style) {
+QJsonObject brushValue(const SnowCanvasShapeStyle& style) {
     QJsonObject value = shapeValue(style);
     value.insert(QStringLiteral("brush_mode"),
                  style.brushMode == SnowCanvasBrushMode::PressureSensitive
@@ -451,7 +451,7 @@ void readTextValue(const QJsonObject& object, SnowCanvasTextStyle* style) {
     readDouble(object, QStringLiteral("opacity"), &style->opacity);
 }
 
-QJsonObject serialNumberValue(const SnowCanvasSerialNumberStyle& style) {
+QJsonObject sequenceNumberValue(const SnowCanvasSerialNumberStyle& style) {
     QJsonObject value;
     // The current number belongs to the editing session, not the saved appearance.
     putEnum(&value, QStringLiteral("type"), style.type);
@@ -468,7 +468,7 @@ QJsonObject serialNumberValue(const SnowCanvasSerialNumberStyle& style) {
     return value;
 }
 
-void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyle* style) {
+void readSequenceNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyle* style) {
     if (style == nullptr)
         return;
     readEnum(object, QStringLiteral("numeric_type"),
@@ -556,21 +556,22 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readBracketValue(configuration.value(kBracketKey).toObject(), &defaults.bracket);
     readMagnifierValue(configuration.value(kMagnifierKey).toObject(), &defaults.magnifier);
     readLineValue(configuration.value(kLineKey).toObject(), &defaults.line);
-    readShapeValue(configuration.value(kFreeDrawKey).toObject(), &defaults.freeDraw);
+    readShapeValue(configuration.value(kBrushKey).toObject(), &defaults.freeDraw);
     defaults.freeDraw.brushMode =
-        configuration.value(kFreeDrawKey).toObject().value(QStringLiteral("brush_mode")) ==
+        configuration.value(kBrushKey).toObject().value(QStringLiteral("brush_mode")) ==
                 QStringLiteral("pressure-sensitive")
             ? SnowCanvasBrushMode::PressureSensitive
             : SnowCanvasBrushMode::Regular;
     readShapeValue(configuration.value(kRectangleHighlightKey).toObject(),
                    &defaults.rectangleHighlight);
-    readShapeValue(configuration.value(kPenHighlightKey).toObject(), &defaults.penHighlight);
+    readShapeValue(configuration.value(kBrushHighlightKey).toObject(), &defaults.penHighlight);
     readFilterValue(configuration.value(kRectangleFilterKey).toObject(), &defaults.rectangleFilter);
-    readFilterValue(configuration.value(kPenFilterKey).toObject(), &defaults.penFilter);
+    readFilterValue(configuration.value(kBrushFilterKey).toObject(), &defaults.penFilter);
     readDouble(configuration.value(kBrushEraserKey).toObject(), QStringLiteral("stroke_width"),
                &defaults.brushEraser.strokeWidth);
     readTextValue(configuration.value(kTextKey).toObject(), &defaults.text);
-    readSerialNumberValue(configuration.value(kSerialNumberKey).toObject(), &defaults.serialNumber);
+    readSequenceNumberValue(configuration.value(kSequenceNumberKey).toObject(),
+                            &defaults.serialNumber);
     readWatermarkValue(configuration.value(kWatermarkKey).toObject(), &defaults.watermark);
     readSpotlightValue(configuration.value(kSpotlightKey).toObject(), &defaults.spotlight);
     readEnum(configuration.value(kSpotlightKey).toObject(), QStringLiteral("shape"),
@@ -587,7 +588,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
         return true;
     };
     if (!readStrength(kRectangleFilterKey)) {
-        readStrength(kPenFilterKey);
+        readStrength(kBrushFilterKey);
     }
     defaults.rectangleFilter.strength = defaults.penFilter.strength = sharedStrength;
     const auto normalizeShape = [](SnowCanvasShapeStyle& style, bool rectangle) {
@@ -647,6 +648,8 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
         bounded(defaults.spotlightCornerRadii.bottomRight, 0.0, 83.0);
     defaults.spotlightCornerRadii.bottomLeft =
         bounded(defaults.spotlightCornerRadii.bottomLeft, 0.0, 83.0);
+    if (storage::DrawingSettings().syncToolColors())
+        snowCanvasSetCreationColor(defaults, storage::DrawingSettings().sharedToolColor());
     return defaults;
 }
 
@@ -656,8 +659,8 @@ bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
     auto& storage = storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return false;
-    SnowCanvasFilterStyle penFilter = defaults.penFilter;
-    penFilter.strength = defaults.rectangleFilter.strength;
+    SnowCanvasFilterStyle brushFilter = defaults.penFilter;
+    brushFilter.strength = defaults.rectangleFilter.strength;
     QMap<QString, QJsonValue> values{
         {kShapeKey, shapeValue(defaults.rectangle)},
         {kSpeechBubbleKey, shapeValue(defaults.speechBubble)},
@@ -667,15 +670,15 @@ bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
         {kBracketKey, bracketValue(defaults.bracket)},
         {kMagnifierKey, magnifierValue(defaults.magnifier)},
         {kLineKey, lineValue(defaults.line)},
-        {kFreeDrawKey, freeDrawValue(defaults.freeDraw)},
+        {kBrushKey, brushValue(defaults.freeDraw)},
         {kRectangleHighlightKey, shapeValue(defaults.rectangleHighlight)},
-        {kPenHighlightKey, shapeValue(defaults.penHighlight)},
+        {kBrushHighlightKey, shapeValue(defaults.penHighlight)},
         {kRectangleFilterKey, filterValue(defaults.rectangleFilter)},
-        {kPenFilterKey, filterValue(penFilter)},
+        {kBrushFilterKey, filterValue(brushFilter)},
         {kBrushEraserKey,
          QJsonObject{{QStringLiteral("stroke_width"), defaults.brushEraser.strokeWidth}}},
         {kTextKey, textValue(defaults.text)},
-        {kSerialNumberKey, serialNumberValue(defaults.serialNumber)},
+        {kSequenceNumberKey, sequenceNumberValue(defaults.serialNumber)},
         {kWatermarkKey, watermarkValue(defaults.watermark)},
         {kSpotlightKey, spotlightValue(defaults.spotlight, defaults.spotlightShape,
                                        defaults.spotlightCornerRadii)},
@@ -685,7 +688,7 @@ bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
         return false;
     }
     values.insert(additionalValues);
-    return configuration.setValues(values);
+    return storage::setDrawingStyleValues(std::move(values));
 }
 } // namespace
 
@@ -702,6 +705,14 @@ bool persistScreenshotCanvasStyleEdit(const SnowCanvasStyleEdit& edit) {
     auto defaults = screenshotCanvasToolStyleDefaults();
     snowCanvasMergeStyleEdit(defaults, edit);
     QMap<QString, QJsonValue> additionalValues;
+    if (storage::DrawingSettings().syncToolColors()) {
+        if (const auto color = snowCanvasCreationColorEdit(edit)) {
+            if (!color->isValid())
+                return false;
+            additionalValues.insert(QStringLiteral("drawing/shared_tool_color"),
+                                    colorValue(*color));
+        }
+    }
     if (const auto* watermark = std::get_if<SnowCanvasWatermarkEdit>(&edit);
         watermark != nullptr &&
         (watermark->properties & (SnowCanvasWatermarkText | SnowCanvasWatermarkTemplate)) != 0) {
@@ -740,10 +751,10 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
         SnowCanvasMagnifierEdit{defaults.magnifier, SnowCanvasMagnifierStyleAllProperties,
                                 SnowCanvasStyleEditTarget::Creation}));
     applyShape(defaults.line, kLineShapeProperties, SnowCanvasShapeKind::Line);
-    applyShape(defaults.freeDraw, kFreeDrawShapeProperties, SnowCanvasShapeKind::FreeDraw);
+    applyShape(defaults.freeDraw, kBrushShapeProperties, SnowCanvasShapeKind::FreeDraw);
     applyShape(defaults.rectangleHighlight, kRectangleHighlightProperties,
                SnowCanvasShapeKind::RectangleHighlight);
-    applyShape(defaults.penHighlight, kPenHighlightProperties, SnowCanvasShapeKind::PenHighlight);
+    applyShape(defaults.penHighlight, kBrushHighlightProperties, SnowCanvasShapeKind::PenHighlight);
     SnowCanvasShapeStyle spotlightStyle;
     spotlightStyle.shape = defaults.spotlightShape;
     spotlightStyle.cornerRadii = defaults.spotlightCornerRadii;
@@ -753,7 +764,7 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     static_cast<void>(canvas.setCanvasTextStyle(defaults.text));
     // Saved appearance must preserve every numeric type's session sequence.
     static_cast<void>(canvas.applyStyleEdit(
-        SnowCanvasSerialNumberEdit{defaults.serialNumber, kSerialNumberAppearanceProperties}));
+        SnowCanvasSerialNumberEdit{defaults.serialNumber, kSequenceNumberAppearanceProperties}));
     static_cast<void>(canvas.setCanvasFilterCreationStyle(
         defaults.rectangleFilter, kAllFilterProperties, SnowCanvasTool::RectangleFilter));
     static_cast<void>(canvas.setCanvasFilterCreationStyle(defaults.penFilter, kAllFilterProperties,

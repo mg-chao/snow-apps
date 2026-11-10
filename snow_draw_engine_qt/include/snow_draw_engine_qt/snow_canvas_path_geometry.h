@@ -3,9 +3,18 @@
 #include <QPainterPath>
 #include <QPointF>
 #include <QVector>
+#include "snow_draw_engine_qt/snow_canvas_types.h"
 
 // Stateless access to the engine's free-draw curve algorithm.
 QPainterPath snowCanvasCatmullRomPath(const QVector<QPointF>& vertices, bool closed);
+
+// Vector ink coverage using the same dash and hand-drawn treatment as canvas lines.
+// Geometry is independent of colour, opacity, viewport and pixel density.
+QPainterPath snowCanvasStrokeCoverage(const QPainterPath& path, qreal width,
+                                      SnowCanvasStrokeStyle pattern,
+                                      SnowCanvasStrokeRenderingStyle rendering, quint32 seed);
+// Maximum displacement of the hand-drawn centerline, before adding half the pen width.
+qreal snowCanvasStrokeRenderingOutset(SnowCanvasStrokeRenderingStyle rendering);
 
 struct SnowStrokeFilter;
 

@@ -56,7 +56,7 @@ class RestartHandoff final : public QObject {
         nonce = QUuid::createUuid().toString(QUuid::Id128).toLatin1();
         if (!server->listen(name)) {
             return failure(translated(
-                QT_TRANSLATE_NOOP("ApplicationRestart", "Could not create the restart handoff.")));
+                QT_TRANSLATE_NOOP("ApplicationRestart", "Could not create the restart handoff")));
         }
 
         const QStringList arguments{QString::fromLatin1(kHelperArgument), name,
@@ -66,7 +66,7 @@ class RestartHandoff final : public QObject {
                                      QCoreApplication::applicationDirPath(), &processId) ||
             processId <= 0) {
             return failure(translated(QT_TRANSLATE_NOOP(
-                "ApplicationRestart", "Could not start the replacement application.")));
+                "ApplicationRestart", "Could not start the replacement application")));
         }
 
         QElapsedTimer timer;
@@ -89,7 +89,7 @@ class RestartHandoff final : public QObject {
             candidate->disconnectFromServer();
         }
         return failure(translated(QT_TRANSLATE_NOOP(
-            "ApplicationRestart", "The replacement application did not become ready.")));
+            "ApplicationRestart", "The replacement application did not become ready")));
     }
 
     ApplicationRestartResult commit() {
@@ -97,7 +97,7 @@ class RestartHandoff final : public QObject {
             readLine(*socket, 10000) != QByteArrayLiteral("committed")) {
             return failure(translated(
                 QT_TRANSLATE_NOOP("ApplicationRestart",
-                                  "The replacement application did not acknowledge the restart.")));
+                                  "The replacement application did not acknowledge the restart")));
         }
         committed = true;
         return {true, {}};
@@ -127,7 +127,7 @@ runApplicationRestartTransaction(const ApplicationRestartTransactionOperations& 
     if (!operations.guard || !operations.guard()) {
         return failure(translated(QT_TRANSLATE_NOOP(
             "ApplicationRestart",
-            "Finish capturing, recording, exporting, or updating before restarting.")));
+            "Finish capturing, recording, exporting, or updating before restarting")));
     }
     const ApplicationRestartResult prepared = operations.prepare();
     if (!prepared.success) {
@@ -142,13 +142,21 @@ runApplicationRestartTransaction(const ApplicationRestartTransactionOperations& 
         cancel();
         return failure(translated(QT_TRANSLATE_NOOP(
             "ApplicationRestart",
-            "Finish capturing, recording, exporting, or updating before restarting.")));
+            "Finish capturing, recording, exporting, or updating before restarting")));
     }
     if (!operations.flush || !operations.flush()) {
         cancel();
+        return failure(translated(
+            QT_TRANSLATE_NOOP("ApplicationRestart",
+                              "Your settings could not be saved. Please retry before restarting")));
+    }
+    // Flush can synchronously checkpoint live UI and dispatch application callbacks. Revalidate
+    // the facts immediately before giving the prepared replacement authority to continue.
+    if (!operations.guard()) {
+        cancel();
         return failure(translated(QT_TRANSLATE_NOOP(
             "ApplicationRestart",
-            "Your settings could not be saved. Please retry before restarting.")));
+            "Finish capturing, recording, exporting, or updating before restarting")));
     }
     const ApplicationRestartResult committed = operations.commit();
     if (!committed.success) {
@@ -169,7 +177,7 @@ ApplicationRestartCoordinator::restart(const std::function<bool()>& guard,
                                        const std::function<bool()>& flush) {
     if (m_pending) {
         return failure(translated(
-            QT_TRANSLATE_NOOP("ApplicationRestart", "Another restart operation is in progress.")));
+            QT_TRANSLATE_NOOP("ApplicationRestart", "Another restart operation is in progress")));
     }
     m_pending = true;
     auto handoff = std::make_unique<RestartHandoff>(m_application);

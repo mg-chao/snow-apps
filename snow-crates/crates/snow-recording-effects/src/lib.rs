@@ -1,4 +1,5 @@
 //! Timestamp-driven input effects shared by video composition and canvas previews.
+pub mod keyboard_filter;
 pub mod keyboard_hook;
 pub mod keyboard_overlay;
 pub mod keyboard_rasterizer;
@@ -11,6 +12,7 @@ pub mod recorded;
 pub mod state;
 pub mod surface;
 pub mod webcam;
+pub use keyboard_filter::KeyboardFilterConfig;
 pub use keyboard_overlay::{KeyboardOverlayConfig, KeyboardOverlayFont};
 pub use recorded::RecordedEffects;
 pub use snow_recording_model::{

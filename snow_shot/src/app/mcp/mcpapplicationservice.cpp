@@ -27,6 +27,7 @@
 #include <QScreen>
 #include <QSysInfo>
 #include <QThreadPool>
+#include <QTimer>
 #include <algorithm>
 #include <atomic>
 
@@ -117,14 +118,10 @@ QJsonObject updateJson(update::UpdateService* service) {
             {QStringLiteral("version"), status.version},
             {QStringLiteral("received_bytes"), status.received},
             {QStringLiteral("total_bytes"), status.total},
-#ifdef Q_OS_MACOS
-            {QStringLiteral("installation"), QStringLiteral("official_website")}
-#else
-            {QStringLiteral("installation"), service->managedByStore()
-                                                 ? QStringLiteral("microsoft_store")
-                                                 : QStringLiteral("native_updater")}
-#endif
-    };
+            {QStringLiteral("installation"),
+             service->managedByStore()         ? QStringLiteral("microsoft_store")
+             : service->capabilities().install ? QStringLiteral("native_updater")
+                                               : QStringLiteral("official_website")}};
 }
 } // namespace
 
@@ -783,18 +780,16 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
     } else if (method == u"snow_shot_updates_status") {
         finish(updateJson(ports.updates));
     } else if (method == u"snow_shot_updates_action") {
-        if (!ports.updates || ports.updates->managedByStore()) {
+        if (!ports.updates || !ports.updates->capabilities().check) {
             error(QStringLiteral("unsupported"));
             return;
         }
         const auto action = params.value(QStringLiteral("action")).toString();
         if (action == u"check" || action == u"download") {
-#ifdef Q_OS_MACOS
-            if (action == u"download") {
+            if (action == u"download" && !ports.updates->capabilities().download) {
                 error(QStringLiteral("unsupported"));
                 return;
             }
-#endif
             if (ports.updates->busy() || !activeUpdateJob.isEmpty()) {
                 error(QStringLiteral("busy"));
                 return;
@@ -868,6 +863,10 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
             if (!lifetime)
                 return;
         } else if (action == u"apply") {
+            if (!ports.updates->capabilities().install) {
+                error(QStringLiteral("unsupported"));
+                return;
+            }
             if (ports.updates->status().state != update::UpdateState::Ready) {
                 error(QStringLiteral("invalid_state"));
                 return;
@@ -1081,7 +1080,9 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                 const bool ok = configuration().mutateIfRevision(
                     revision,
                     [&] {
-                        read.preserveOmittedCredentials(configuration().snapshot());
+                        const auto current = configuration().snapshot();
+                        read.preserveOmittedDirectories(current);
+                        read.preserveOmittedCredentials(current);
                         return ports.settings->importConfigurationSnapshot(
                             read.values, read.schemaVersion, &runtimeCompletion);
                     },
@@ -1090,15 +1091,21 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                     return;
                 if (runtimeCompletion.valid()) {
                     ++admittedWork;
-                    auto* runtimeWatcher = new QFutureWatcher<storage::StorageResult>(&q);
+                    // Native login-item completion needs the GUI event loop. A pool worker
+                    // waiting on get() would deadlock shutdown's waitForDone().
+                    auto* poll = new QTimer(&q);
+                    poll->setInterval(16);
                     QObject::connect(
-                        runtimeWatcher, &QFutureWatcher<storage::StorageResult>::finished, &q,
-                        [this, runtimeWatcher, id, ok] {
-                            const auto result = runtimeWatcher->result();
-                            runtimeWatcher->deleteLater();
+                        poll, &QTimer::timeout, &q, [this, poll, runtimeCompletion, id, ok] {
+                            if (!stopping && runtimeCompletion.wait_for(std::chrono::milliseconds(
+                                                 0)) != std::future_status::ready)
+                                return;
+                            poll->stop();
+                            poll->deleteLater();
                             --admittedWork;
                             if (stopping)
                                 return;
+                            const auto result = runtimeCompletion.get();
                             if (ok && result.success)
                                 ports.jobs->complete(
                                     id, {{QStringLiteral("revision"),
@@ -1106,8 +1113,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                             else
                                 ports.jobs->fail(id, QStringLiteral("storage_failed"));
                         });
-                    runtimeWatcher->setFuture(runMcpWork(
-                        &workers, [runtimeCompletion] { return runtimeCompletion.get(); }));
+                    poll->start();
                 } else if (ok)
                     ports.jobs->complete(id, {{QStringLiteral("revision"),
                                                static_cast<qint64>(configuration().revision())}});
@@ -1122,17 +1128,21 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
     } else if (method == u"snow_shot_settings_action" || method == u"snow_shot_storage_cleanup") {
         settings::SettingsActionBinding binding;
         if (method == u"snow_shot_settings_action") {
-            const auto* field = ports.settings->registry().field(
-                params.value(QStringLiteral("field_id")).toString());
+            const QString fieldId = params.value(QStringLiteral("field_id")).toString();
+            const auto* field = ports.settings->registry().field(fieldId);
             const auto* action =
                 field && field->definition
                     ? std::get_if<settings::SettingsActionDefinition>(&field->definition->payload)
                     : nullptr;
-            if (!action) {
+            if (action) {
+                binding = action->binding;
+            } else if (fieldId == u"storage.clear-thumbnails") {
+                // Preserve cleanup callers after retiring the visible settings row.
+                binding = settings::SettingsActionBinding::ClearThumbnailCache;
+            } else {
                 error(QStringLiteral("invalid_parameters"), QStringLiteral("field_id"));
                 return;
             }
-            binding = action->binding;
         } else {
             const auto kind = params.value(QStringLiteral("kind")).toString();
             if (kind == u"history")
@@ -1216,7 +1226,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
             if (observation)
                 observation->deleteLater();
         };
-        if (binding == settings::SettingsActionBinding::CopyTodayLog) {
+        if (binding == settings::SettingsActionBinding::ExportLogs) {
             QObject::connect(
                 ports.settings, &settings::SettingsRuntimeSession::actionFinished, observation,
                 [this, observation = QPointer<QObject>(observation), id,
@@ -1268,7 +1278,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                 {QStringLiteral("revision"), static_cast<qint64>(configuration().revision())}});
         if (!lifetime)
             return;
-        if (binding != settings::SettingsActionBinding::CopyTodayLog && !cache)
+        if (binding != settings::SettingsActionBinding::ExportLogs && !cache)
             observe();
     } else if (method == u"snow_shot_templates_list") {
         const auto kind = params.value(QStringLiteral("kind")).toString();

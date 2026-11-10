@@ -15,7 +15,7 @@ constexpr const char* kCategories[] = {"text", "text_in_box", "image",     "avat
                                        "icon", "message_box", "text_block"};
 QString detectionError() {
     return QCoreApplication::translate("ScreenshotAutoFilterController",
-                                       "Region identification failed. Try Auto Filter again.");
+                                       "Region identification failed. Try auto filter again");
 }
 ScreenshotExportJobHandle detect(QObject* receiver, QImage image,
                                  ScreenshotAutoFilterController::Completion completion) {
@@ -310,7 +310,7 @@ void ScreenshotAutoFilterController::finish(quint64 session, quint64 generation,
     }
     if (!error.isEmpty() || pixels.isEmpty()) {
         const QString message =
-            error.isEmpty() ? tr("Region identification failed. Try Auto Filter again.") : error;
+            error.isEmpty() ? tr("Region identification failed. Try auto filter again") : error;
         if (active()) {
             emit detectionFailed(message);
         } else {

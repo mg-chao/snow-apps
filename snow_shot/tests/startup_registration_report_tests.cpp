@@ -28,10 +28,10 @@ void startupFailuresStayInLogs() {
     const auto restoreHandler =
         qScopeGuard([previousHandler] { qInstallMessageHandler(previousHandler); });
     for (const QString& error :
-         {QStringLiteral("Elevated auto-start needs repair. Turn Launch as administrator off and "
-                         "on again."),
+         {QStringLiteral("Elevated auto-start needs repair. Turn launch as administrator off and "
+                         "on again"),
           QStringLiteral("An interrupted startup change needs administrator authorization. "
-                         "Reapply your startup setting.")}) {
+                         "Reapply your startup setting")}) {
         startupWarnings.clear();
         snow_shot::app::reportStartupRegistrationFailure(error);
         // Drain deferred reporting too: the original foreground notification was queued.

@@ -3,22 +3,39 @@
 #include "screenshot_controller_test_access.h"
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/shellimagelaunch.h"
+#include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
+#include "snow_shot/presentation/screenshotselectionsettingsstore.h"
+#include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/collagewindow.h"
 #include "snow_shot/presentation/imagesplitwindow.h"
 #include "snow_shot/presentation/imageeditingwindow.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/screenshottoolbarcommands.h"
+#include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "snow_shot/presentation/screenshotoverlayinputhandler.h"
+#include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshotinteractionstate.h"
+#include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "widgets/modal.h"
+#include "snow_shot/presentation/screenshotsavepreviewcanvas.h"
+#include "snow_shot/presentation/screenshotscrollingsnapshot.h"
+#include "snow_stitch_images.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "../src/presentation/pinned/screenshotclipboardplacementgeometry.h"
+#include "snowimageqtcodec.h"
 
 #include "widgets/platform_compatibility.h"
 
@@ -30,13 +47,21 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QInputMethodEvent>
+#include <QPainter>
 #include <QScopeGuard>
+#include <QSemaphore>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 #include <QUrl>
+#include <QUuid>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -47,7 +72,10 @@
 #endif
 
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
+#include <stdexcept>
+#include <vector>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -72,7 +100,9 @@ QList<ScreenshotPinnedWindow*> visiblePins() {
     QList<ScreenshotPinnedWindow*> result;
     for (auto* widget : QApplication::topLevelWidgets()) {
         auto* pin = qobject_cast<ScreenshotPinnedWindow*>(widget);
-        if (pin && pin->isVisible() && !pin->persistenceSnapshot().image.isNull())
+        if (pin && pin->isVisible() &&
+            pin->automationState().value(QStringLiteral("ready")).toBool() &&
+            !pin->persistenceSnapshot().image.isNull())
             result.append(pin);
     }
     return result;
@@ -90,6 +120,387 @@ QImage fixture() {
     image.setPixelColor(0, 0, QColor(201, 19, 79, 43));
     image.setColorSpace(QColorSpace::SRgb);
     return image;
+}
+
+void mcpSelectionPreservesLiveInputTransactions() {
+    using namespace snow_shot::app::mcp;
+    const auto requireAdmission = [](bool condition, const char* message) {
+        if (!condition)
+            throw std::runtime_error(message);
+    };
+    enum class Gesture { Resize, Effect, Polyline, Curve, Freehand, Region, SmartPress, External };
+    for (const auto gesture :
+         {Gesture::Resize, Gesture::Effect, Gesture::Polyline, Gesture::Curve, Gesture::Freehand,
+          Gesture::Region, Gesture::SmartPress, Gesture::External}) {
+        ScreenshotController controller;
+        ScreenshotSelectionParams initial;
+        initial.selection = QRect(10, 12, 80, 50);
+        ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), initial);
+        auto& input = ScreenshotControllerTestAccess::overlayInput(controller);
+        auto& selection = ScreenshotControllerTestAccess::selection(controller);
+        selection.setRegionType(ScreenshotRegionType::Rectangle);
+        auto& interaction = ScreenshotControllerTestAccess::interaction(controller);
+        auto& intelligent = ScreenshotControllerTestAccess::intelligentSelection(controller);
+
+        bool started = false;
+        int selectionCalls = 0;
+        int operationCancellations = 0;
+        ScreenshotMcpSession::Ports::CommandCompletion completeOperation;
+        ScreenshotMcpSession::Ports ports;
+        ports.state = [&] {
+            return started ? controller.mcpState()
+                           : QJsonObject{{QStringLiteral("capture_phase"), QStringLiteral("idle")}};
+        };
+        ports.begin = [&](const QJsonObject&, QString*) {
+            started = true;
+            return true;
+        };
+        ports.cancel = [] {};
+        ports.selection = [&](const QJsonObject& params, QString* error) {
+            ++selectionCalls;
+            return controller.mcpSetSelection(params, error);
+        };
+        ports.command = [&](const QString&, const QJsonObject&, auto completion) {
+            completeOperation = std::move(completion);
+        };
+        ports.cancelCommand = [&] { ++operationCancellations; };
+        ScreenshotMcpSession session(std::move(ports));
+        quint64 sequence = 0;
+        const auto call = [&](const QString& method, QJsonObject params,
+                              std::optional<quint64> revision = {}) {
+            ScreenshotMcpRequest request;
+            request.connectionId = 1;
+            request.requestId = request.idempotencyKey = QString::number(++sequence);
+            request.sessionId = session.state().value(QStringLiteral("session_id")).toString();
+            request.method = method;
+            request.params = std::move(params);
+            request.expectedRevision = revision.value_or(static_cast<quint64>(
+                session.state().value(QStringLiteral("revision")).toInteger()));
+            std::optional<ScreenshotMcpResponse> response;
+            session.request(request, [&](auto value) { response = std::move(value); });
+            if (method == QStringLiteral("snow_shot_screenshot_begin") && !response)
+                session.capturePresented();
+            requireAdmission(response.has_value(), "selection admission completes synchronously");
+            return *response;
+        };
+        requireAdmission(call(QStringLiteral("snow_shot_screenshot_begin"), {}).ok,
+                         "selection admission owns a ready editor session");
+        requireAdmission(call(QStringLiteral("snow_shot_screenshot_recognize"),
+                              {{QStringLiteral("kind"), QStringLiteral("text")}})
+                             .ok,
+                         "background recognition can coexist with local input");
+        if (gesture == Gesture::Resize) {
+            requireAdmission(input.beginSelectionResizeAtCanvasPosition(QPointF(90, 32)),
+                             "selection fixture starts a real border resize");
+            input.updateSelectionResizeAtCanvasPosition(QPointF(95, 32));
+        } else if (gesture == Gesture::Effect) {
+            ScreenshotInteractionState::EffectGesture effect;
+            effect.handle = ScreenshotSelectionEffectHandle::TopLeft;
+            effect.originalValue = selection.cornerRadius();
+            effect.rollback = [&, original = effect.originalValue] {
+                static_cast<void>(selection.setCornerRadius(original));
+            };
+            requireAdmission(interaction.beginEffectDrag(std::move(effect)),
+                             "effect transaction starts");
+            static_cast<void>(selection.setCornerRadius(5));
+        } else if (gesture == Gesture::Polyline || gesture == Gesture::Curve ||
+                   gesture == Gesture::Freehand) {
+            interaction.returnToSelectionMode(false);
+            input.setRegionType(gesture == Gesture::Polyline ? ScreenshotRegionType::Polyline
+                                : gesture == Gesture::Curve  ? ScreenshotRegionType::Curve
+                                                             : ScreenshotRegionType::Freehand);
+            input.handleMousePress(nullptr, QPointF(15, 15));
+            if (gesture != Gesture::Freehand) {
+                input.handleMouseRelease(nullptr, QPointF(15, 15));
+                input.handleMousePress(nullptr, QPointF(70, 15));
+                input.handleMouseRelease(nullptr, QPointF(70, 15));
+            }
+            requireAdmission(selection.constructionActive(), "custom region transaction starts");
+        } else if (gesture == Gesture::Region) {
+            input.beginRegionOperation(true);
+            requireAdmission(selection.regionOperationActive(),
+                             "region operand transaction starts");
+        } else if (gesture == Gesture::SmartPress) {
+            interaction.enterOverlayVisible(true);
+            intelligent.beginPress(QPointF(30, 30), initial.selection);
+        } else {
+            input.setExternalDragActive(true);
+        }
+
+        session.observe();
+        const auto revision =
+            static_cast<quint64>(session.state().value(QStringLiteral("revision")).toInteger());
+        const auto before = controller.mcpState();
+        const auto sessionBefore = session.state();
+        const auto modelRevision = selection.changeRevision();
+        const QJsonObject replacement{{QStringLiteral("bounds"), QJsonArray{20, 20, 25, 20}}};
+        requireAdmission(
+            call(QStringLiteral("snow_shot_screenshot_set_selection"), replacement, revision - 1)
+                        .errorCode == QStringLiteral("stale_revision") &&
+                selectionCalls == 0,
+            "stale revision is rejected before consulting input transaction admission");
+        requireAdmission(
+            call(QStringLiteral("snow_shot_screenshot_set_selection"), replacement, revision)
+                        .errorCode == QStringLiteral("busy") &&
+                selectionCalls == 1 && controller.mcpState() == before &&
+                selection.changeRevision() == modelRevision && operationCancellations == 0 &&
+                session.state() == sessionBefore,
+            "busy selection preserves the live input, recognition operation and protocol revision");
+
+        if (gesture == Gesture::Resize) {
+            input.finishSelectionResizeAtCanvasPosition(QPointF(100, 32));
+            requireAdmission(
+                !interaction.dragging() && selection.pixelSelection().left() == 10 &&
+                    selection.pixelSelection().right() >= 98,
+                "denied API replacement preserves resize originals through pointer release");
+        } else if (gesture == Gesture::Effect) {
+            requireAdmission(input.cancelEffectDrag() && selection.cornerRadius() == initial.radius,
+                             "denied API replacement preserves effect rollback ownership");
+            input.handleMouseRelease(nullptr, QPointF(30, 30));
+        } else if (gesture == Gesture::Polyline || gesture == Gesture::Curve) {
+            input.handleMousePress(nullptr, QPointF(40, 55));
+            input.handleMouseRelease(nullptr, QPointF(40, 55));
+            requireAdmission(input.handleRegionDoubleClick(nullptr, QPointF(40, 55)),
+                             "denied API replacement leaves a finishable custom draft");
+            input.handleMouseRelease(nullptr, QPointF(40, 55));
+            requireAdmission(!selection.constructionActive() &&
+                                 selection.selectionRegion().contains(QPointF(40, 30)),
+                             "custom draft commits its original vertices after API rejection");
+        } else if (gesture == Gesture::Freehand) {
+            input.handleMouseMove(nullptr, QPointF(70, 15));
+            input.handleMouseMove(nullptr, QPointF(70, 55));
+            input.handleMouseMove(nullptr, QPointF(15, 55));
+            input.handleMouseRelease(nullptr, QPointF(15, 15));
+            requireAdmission(
+                !selection.constructionActive() && selection.hasPixelSelection(),
+                "freehand release completes the same admitted stroke after API rejection");
+        } else if (gesture == Gesture::Region) {
+            requireAdmission(input.cancelRegionOperation() &&
+                                 selection.pixelSelection() == initial.selection,
+                             "denied API replacement leaves the operand rollback intact");
+        } else if (gesture == Gesture::SmartPress) {
+            input.handleMouseRelease(nullptr, QPointF(30, 30));
+            requireAdmission(!intelligent.pressActive() &&
+                                 selection.pixelSelection() == initial.selection,
+                             "smart release confirms the original frozen press candidate");
+        } else {
+            input.setExternalDragActive(false);
+        }
+        session.observe();
+        requireAdmission(
+            call(QStringLiteral("snow_shot_screenshot_set_selection"), replacement).ok &&
+                selection.pixelSelection() == QRect(20, 20, 25, 20) &&
+                operationCancellations == 1 &&
+                session.state().value(QStringLiteral("operations")).toArray().isEmpty(),
+            "the current API request succeeds after the input owner completes or cancels");
+        const auto committed = session.state();
+        completeOperation({{QStringLiteral("text"), QStringLiteral("obsolete")}}, {});
+        requireAdmission(
+            session.state() == committed,
+            "late recognition cannot restore operations discarded by an accepted selection");
+        session.shutdown();
+    }
+}
+
+ScreenshotOcrRecognitionService::Options isolatedRecognitionOptions(const QString& directory) {
+    ScreenshotOcrRecognitionService::Options options;
+    // Explicit local paths keep an unexpected recognition request away from downloads.
+    options.processPath = QDir(directory).filePath(QStringLiteral("missing-ocr-worker.exe"));
+    options.detectorModelPath = QDir(directory).filePath(QStringLiteral("missing-detector.onnx"));
+    options.recognizerModelPath =
+        QDir(directory).filePath(QStringLiteral("missing-recognizer.onnx"));
+    options.dictionaryPath = QDir(directory).filePath(QStringLiteral("missing-dictionary.txt"));
+    return options;
+}
+
+void captureActionsChooseToolBeforeFirstPresentation(const QString& directory) {
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const snow_shot::storage::DrawingSettings drawingSettings;
+    const auto originalTool = toolbarSettings.lastDrawingTool();
+    const bool originalRemember = drawingSettings.rememberLastUsedTool();
+    const auto restoreSettings = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalTool));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRemember));
+    });
+    require(drawingSettings.setRememberLastUsedTool(true), "enable remembered drawing tools");
+    using Action = ScreenshotController::CaptureAction;
+    for (const auto action : {Action::None, Action::RecognizeText, Action::RecognizeTextAndCopy,
+                              Action::RecognizeTextTranslation}) {
+        require(toolbarSettings.setLastDrawingTool(QStringLiteral("shape")),
+                "seed a competing remembered tool for every capture action");
+        ScreenshotOcrRecognitionService recognition(isolatedRecognitionOptions(directory));
+        ScreenshotController controller(nullptr, nullptr, &recognition);
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 10, 60, 40);
+        ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+        ScreenshotControllerTestAccess::presentSelection(controller);
+        const QString expected = action == Action::None ? QStringLiteral("rectangle")
+                                 : action == Action::RecognizeTextTranslation
+                                     ? QStringLiteral("text_translation")
+                                     : QStringLiteral("ocr");
+        struct ToolbarObserver final : QObject {
+            ScreenshotController& controller;
+            QString expected;
+            int presentations = 0;
+            ToolbarObserver(ScreenshotController& capture, QString tool)
+                : controller(capture), expected(std::move(tool)) {}
+            bool eventFilter(QObject* watched, QEvent* event) override {
+                if (event->type() == QEvent::Show &&
+                    qobject_cast<ScreenshotToolbarWindow*>(watched)) {
+                    ++presentations;
+                    require(controller.mcpState().value(QStringLiteral("active_tool")).toString() ==
+                                expected,
+                            "the first toolbar presentation must already use the capture tool");
+                }
+                return false;
+            }
+        } observer(controller, expected);
+        qApp->installEventFilter(&observer);
+        ScreenshotControllerTestAccess::confirmCaptureSelection(controller, action);
+        qApp->removeEventFilter(&observer);
+        require(observer.presentations == 1 &&
+                    controller.mcpState().value(QStringLiteral("active_tool")).toString() ==
+                        expected,
+                "capture actions and remembered tools must activate synchronously exactly once");
+        controller.mcpCancelCapture();
+    }
+}
+
+void queuedRecognitionDoesNotOverrideReselection(const QString& directory) {
+    ScreenshotOcrRecognitionService recognition(isolatedRecognitionOptions(directory));
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(10, 10, 60, 40);
+
+    for (int scenario = 0; scenario < 5; ++scenario) {
+        ScreenshotController controller(nullptr, nullptr, &recognition);
+        ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+        QString error;
+        require(controller.mcpSetTool(QStringLiteral("ocr"), &error),
+                "queue recognition activation after selection confirmation");
+        require(controller.mcpState().value(QStringLiteral("active_tool")).toString() ==
+                    QStringLiteral("move"),
+                "recognition restoration waits until the input event finishes");
+        if (scenario == 0) {
+            ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+        } else if (scenario == 1) {
+            controller.mcpCancelCapture();
+            ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+        } else {
+            if (scenario == 3) {
+                require(controller.mcpSetTool(QStringLiteral("table"), &error),
+                        "a later recognition command replaces the queued tool");
+            }
+            require(controller.mcpSetTool(QStringLiteral("move"), &error),
+                    "an explicit Edit selection command supersedes queued recognition");
+        }
+        bool dispatched = false;
+        QTimer::singleShot(0, &controller, [&] { dispatched = true; });
+        waitUntil([&] { return dispatched; }, "dispatch queued recognition restoration");
+        require(controller.mcpState().value(QStringLiteral("active_tool")).toString() ==
+                    QStringLiteral("move"),
+                "stale recognition restoration cannot override selection or explicit tool changes");
+        require(!recognition.storageBusy() && recognition.liveWorkerCount() == 0,
+                "discarded recognition restoration must not request model work");
+    }
+}
+
+QPointer<ScreenshotRecognitionWindow> visibleRecognitionWindow() {
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (auto* window = qobject_cast<ScreenshotRecognitionWindow*>(widget);
+            window != nullptr && window->isVisible()) {
+            return window;
+        }
+    }
+    return {};
+}
+
+void sendMouse(QWidget& target, QEvent::Type type, const QPointF& point, Qt::MouseButton button,
+               Qt::MouseButtons buttons) {
+    QMouseEvent event(type, point, target.mapToGlobal(point), button, buttons, Qt::NoModifier);
+    QApplication::sendEvent(&target, &event);
+}
+
+void recognitionWindowsFollowSelectionTransitions(const QString& directory) {
+    const snow_shot::storage::ScreenshotSettings settings;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+    require(settings.setAutoRecognizeQrCode(false),
+            "recognition transition tests must not run automatic QR recognition");
+#endif
+    require(settings.setAutoExecuteAfterTextRecognition(QStringLiteral("no_action")),
+            "recognition transition tests must not run automatic follow-up commands");
+    for (const QString& tool : {QStringLiteral("ocr"), QStringLiteral("text_translation")}) {
+        for (const bool resize : {false, true}) {
+            ScreenshotOcrRecognitionService recognition(isolatedRecognitionOptions(directory));
+            ScreenshotController controller(nullptr, nullptr, &recognition);
+            QImage image(240, 180, QImage::Format_RGB32);
+            image.fill(Qt::white);
+            ScreenshotSelectionParams params;
+            params.selection = QRect(40, 40, 120, 100);
+            ScreenshotControllerTestAccess::prepareSelection(controller, image, params);
+            auto* overlay = ScreenshotControllerTestAccess::presentSelection(controller);
+            require(overlay != nullptr && overlay->isVisible(), "present the capture overlay");
+            QString error;
+            const auto activeTool = [&] {
+                return controller.mcpState().value(QStringLiteral("active_tool")).toString();
+            };
+            require(controller.mcpSetTool(tool, &error), "activate recognition for selection");
+            waitUntil([&] { return activeTool() == tool && visibleRecognitionWindow(); },
+                      "recognition must present an input-bearing window");
+            const QPointer<ScreenshotRecognitionWindow> original = visibleRecognitionWindow();
+            if (resize) {
+                const QPointF edge(original->width() - 1, original->height() / 2);
+                sendMouse(*original, QEvent::MouseButtonPress, edge, Qt::LeftButton,
+                          Qt::LeftButton);
+                require(original && original->isVisible() && activeTool() == QStringLiteral("move"),
+                        "a resize must retain its recognition event receiver until release");
+                sendMouse(*original, QEvent::MouseMove, edge + QPointF(20, 0), Qt::NoButton,
+                          Qt::LeftButton);
+                require(original && original->isVisible(),
+                        "the recognition resize receiver must survive pointer movement");
+                sendMouse(*original, QEvent::MouseButtonRelease, edge + QPointF(20, 0),
+                          Qt::LeftButton, Qt::NoButton);
+            } else {
+                auto* canvas = overlay->canvas();
+                sendMouse(*canvas, QEvent::MouseButtonPress, {200, 160}, Qt::RightButton,
+                          Qt::RightButton);
+                sendMouse(*canvas, QEvent::MouseButtonRelease, {200, 160}, Qt::RightButton,
+                          Qt::NoButton);
+                require(!original || !original->isVisible(),
+                        "reselection must retire the old recognition input surface");
+                require(activeTool() == QStringLiteral("move") &&
+                            controller.mcpState()
+                                    .value(QStringLiteral("selection"))
+                                    .toObject()
+                                    .value(QStringLiteral("bounds"))
+                                    .toArray() == QJsonArray{0, 0, 0, 0},
+                        "outside right click must enter empty selection mode");
+                QCoreApplication::processEvents();
+                QWidget* receiver = QApplication::widgetAt(canvas->mapToGlobal(QPoint(60, 60)));
+                require(receiver != nullptr && receiver->window() == overlay,
+                        "the previous capture area must receive reselection input");
+                sendMouse(*canvas, QEvent::MouseButtonPress, {60, 60}, Qt::LeftButton,
+                          Qt::LeftButton);
+                sendMouse(*canvas, QEvent::MouseMove, {99, 89}, Qt::NoButton, Qt::LeftButton);
+                sendMouse(*canvas, QEvent::MouseButtonRelease, {99, 89}, Qt::LeftButton,
+                          Qt::NoButton);
+            }
+            require(activeTool() == tool && visibleRecognitionWindow(),
+                    "selection completion must restore recognition before returning to the event "
+                    "loop");
+            const auto bounds = controller.mcpState()
+                                    .value(QStringLiteral("selection"))
+                                    .toObject()
+                                    .value(QStringLiteral("bounds"))
+                                    .toArray();
+            require(resize ? bounds.at(2).toInt() > 120 : bounds == QJsonArray{60, 60, 40, 30},
+                    "the replacement selection must keep the completed gesture geometry");
+            const QPointer<ScreenshotRecognitionWindow> restored = visibleRecognitionWindow();
+            require(controller.mcpSetTool(QStringLiteral("move"), &error) &&
+                        (!restored || !restored->isVisible()) && !visibleRecognitionWindow(),
+                    "an explicit Move command must retire recognition rather than suspend it");
+            controller.mcpCancelCapture();
+        }
+    }
 }
 
 std::pair<QImage, QString> captureClipboardOutput() {
@@ -165,7 +576,12 @@ void combinedCopiesPreserveImagePlacementAndAppearance(ScreenshotController& con
             mime->setUrls({QUrl::fromLocalFile(path)});
             QApplication::clipboard()->setMimeData(mime);
             controller.pinClipboardContentToScreen();
-            waitUntil([] { return visiblePins().size() == 1; }, "combined copy must create a pin");
+            const auto scenario = QStringLiteral("combined copy must create a pin (format=%1, "
+                                                 "removed=%2)")
+                                      .arg(static_cast<int>(format))
+                                      .arg(removeFile)
+                                      .toUtf8();
+            waitUntil([] { return visiblePins().size() == 1; }, scenario.constData());
             const auto record = visiblePins().constFirst()->persistenceSnapshot();
             require(record.nativeGeometry == geometry && record.initialWindowSize == image.size(),
                     "combined clipboard pin must restore its image placement");
@@ -207,6 +623,148 @@ void fileOnlyClipboardStillPinsEveryFile(ScreenshotController& controller) {
     closePins();
 }
 
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+void clipboardFormulasPinAsImages(ScreenshotController& controller) {
+    const auto samePixels = [](const QImage& first, const QImage& second) {
+        if (first.isNull() || second.isNull() || first.size() != second.size())
+            return false;
+        // PNG decoding adds an explicit sRGB tag. Assert the pixel contents independently
+        // of color metadata, as in the pinned-window repository's round-trip fixtures.
+        const auto firstArgb = first.convertToFormat(QImage::Format_ARGB32);
+        const auto secondArgb = second.convertToFormat(QImage::Format_ARGB32);
+        const auto rowBytes = static_cast<std::size_t>(first.width()) * sizeof(QRgb);
+        for (int row = 0; row < first.height(); ++row) {
+            if (std::memcmp(firstArgb.constScanLine(row), secondArgb.constScanLine(row),
+                            rowBytes) != 0)
+                return false;
+        }
+        return true;
+    };
+    const snow_shot::storage::PinToScreenSettings settings;
+    const auto previousAction = settings.duplicateContentAction();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(settings.setDuplicateContentAction(previousAction)); });
+    require(settings.setDuplicateContentAction(QStringLiteral("none")),
+            "formula pin duplicate policy must be deterministic");
+    auto* clipboard = QApplication::clipboard();
+    struct BeforeFormulaCompletion final : QObject {
+        ScreenshotController& controller;
+        std::function<void()> action;
+        bool fired = false;
+        explicit BeforeFormulaCompletion(ScreenshotController& owner) : controller(owner) {}
+        bool eventFilter(QObject* watched, QEvent* event) override {
+            if (watched == qApp && event->type() == QEvent::MetaCall && !fired &&
+                ScreenshotControllerTestAccess::clipboardFormulaPending(controller)) {
+                fired = true;
+                action();
+            }
+            return false;
+        }
+    } observer(controller);
+    observer.action = [&] {
+        require(controller.blocksApplicationUpdate() && controller.blocksMemoryTrimming(),
+                "pending formula rendering participates in application busy state");
+        const auto generation = ScreenshotControllerTestAccess::clipboardPinGeneration(controller);
+        controller.pinClipboardContentToScreen();
+        require(ScreenshotControllerTestAccess::clipboardPinGeneration(controller) == generation,
+                "a duplicate action must not cancel or replace the in-flight formula request");
+    };
+    qApp->installEventFilter(&observer);
+    clipboard->setText(QStringLiteral("\\[\\frac{x^2}{\\sqrt{y}}\\]"));
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "clipboard formula must create an image pin");
+    qApp->removeEventFilter(&observer);
+    require(observer.fired, "duplicate pin action must be exercised during formula rendering");
+    const auto record = visiblePins().first()->persistenceSnapshot();
+    require(record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ImageData &&
+                record.originalText.isEmpty() && record.originalHtml.isEmpty() &&
+                record.image.pixelColor(0, 0) == QColor(Qt::white),
+            "formula pins must persist as opaque images without a text source");
+    QTemporaryDir directory;
+    require(directory.isValid(), "formula image persistence needs isolated storage");
+    {
+        snow_shot::storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "formula image must save through the normal image repository");
+    }
+    {
+        snow_shot::storage::PinnedWindowRepository repository(directory.path());
+        const auto restored = repository.loadRecord(record.id);
+        require(restored && restored->sourceKind == record.sourceKind &&
+                    samePixels(restored->image, record.image),
+                "formula image pixels must survive repository restart");
+    }
+    const auto exported = directory.filePath(QStringLiteral("formula.png"));
+    require(record.image.save(exported, "PNG") && samePixels(QImage(exported), record.image),
+            "formula images must export without losing their rendered pixels");
+    closePins();
+
+    clipboard->setText(QStringLiteral("$x") + QString(32000, QLatin1Char('\n')) +
+                       QStringLiteral("$"));
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "formula pins must not depend on rendering an oversized text fallback");
+    require(visiblePins().first()->persistenceSnapshot().sourceKind ==
+                    snow_shot::storage::PinnedWindowSourceKind::ImageData &&
+                visiblePins().first()->persistenceSnapshot().originalText.isEmpty(),
+            "the controller must attempt a compact formula before laying out its source text");
+    closePins();
+
+    // Replace the clipboard while the old formula result is waiting on the GUI queue.
+    observer.fired = false;
+    observer.action = [&] {
+        clipboard->setImage(fixture());
+        controller.pinClipboardContentToScreen();
+    };
+    qApp->installEventFilter(&observer);
+    clipboard->setText(QStringLiteral("$\\alpha+\\beta$"));
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "superseding clipboard image must be pinned");
+    qApp->removeEventFilter(&observer);
+    require(observer.fired && visiblePins().first()->persistenceSnapshot().image.convertToFormat(
+                                  QImage::Format_RGBA8888) == fixture(),
+            "a superseded formula must never publish over a newer clipboard request");
+    closePins();
+
+    auto* mime = new QMimeData;
+    mime->setImageData(fixture());
+    mime->setText(QStringLiteral("$x^2$"));
+    clipboard->setMimeData(mime);
+    controller.pinClipboardContentToScreen();
+    waitUntil([] { return visiblePins().size() == 1; },
+              "clipboard image must outrank formula text");
+    require(visiblePins().first()->persistenceSnapshot().image.convertToFormat(
+                QImage::Format_RGBA8888) == fixture(),
+            "formula recognition must preserve inline image precedence");
+    closePins();
+
+    clipboard->setText(QStringLiteral("$\\snowUndefined$"));
+    controller.pinClipboardContentToScreen();
+    QPointer<ScreenshotPinnedWindow> fallback;
+    waitUntil(
+        [&] {
+            for (auto* widget : QApplication::topLevelWidgets()) {
+                if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                    pin && pin->isVisible()) {
+                    if (pin->persistenceSnapshot().originalText ==
+                        QStringLiteral("$\\snowUndefined$")) {
+                        fallback = pin;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        },
+        "unsupported LaTeX must fall back to the original text pin");
+    require(fallback->persistenceSnapshot().sourceKind ==
+                snow_shot::storage::PinnedWindowSourceKind::ClipboardText,
+            "invalid formula source must preserve ordinary text persistence");
+    fallback->close();
+}
+#endif
+
 void imageToolsPreferInlineClipboardPixels() {
     const QImage image = fixture();
     QImage fileImage(image.size(), image.format());
@@ -226,14 +784,17 @@ void imageToolsPreferInlineClipboardPixels() {
                image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     };
     {
-        snow_shot::presentation::CollageWindow collage;
-        collage.present();
-        collage.paste();
-        waitUntil([&] { return !collage.loading() && collage.document()->items().size() == 1; },
-                  "collage must import the combined clipboard");
-        require(samePixels(collage.document()->items().constFirst().image),
+        snow_shot::presentation::ImageStitchingWindow imageStitching;
+        imageStitching.present();
+        imageStitching.paste();
+        waitUntil(
+            [&] {
+                return !imageStitching.loading() && imageStitching.document()->items().size() == 1;
+            },
+            "collage must import the combined clipboard");
+        require(samePixels(imageStitching.document()->items().constFirst().image),
                 "collage must use inline pixels instead of the exported file");
-        collage.shutdown();
+        imageStitching.shutdown();
     }
     {
         snow_shot::presentation::ImageSplitWindowServices services;
@@ -249,6 +810,481 @@ void imageToolsPreferInlineClipboardPixels() {
                 "image splitting must use inline pixels instead of the exported file");
         split.shutdown();
     }
+}
+
+QByteArray editablePinRectangle(int x, int y, const QColor& color) {
+    return QStringLiteral(
+               R"({"version":1,"operations":[{"type":"rectangle","bounds":[%1,%2,18,14],"style":{"fill":[%3,%4,%5,255],"stroke":[0,0,0,0]}}]})")
+        .arg(x)
+        .arg(y)
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .toUtf8();
+}
+
+QImage editablePinImage(ScreenshotPinnedWindow& pin) {
+    QImage image;
+    bool done = false;
+    const auto artifact = pin.automationArtifact();
+    require(artifact &&
+                artifact->requestImage(&pin,
+                                       [&](ScreenshotExportImageResult result) {
+                                           require(result.succeeded(),
+                                                   "editable pin composite export succeeds");
+                                           image = std::move(result.image);
+                                           done = true;
+                                       }),
+            "editable pin composite export starts");
+    waitUntil([&] { return done; }, "editable pin composite export finishes");
+    return image;
+}
+
+bool samePixels(const QImage& a, const QImage& b) {
+    return a.convertToFormat(QImage::Format_ARGB32_Premultiplied) ==
+           b.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+}
+
+void capturePinKeepsEditableAnnotations() {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(!settings.keepAnnotationsEditableAfterPinningToScreen(), "editable pins default off");
+    require(snow_shot::storage::PinToScreenSettings().setExitAnnotationModeBeforeClosing(false),
+            "close annotation fixtures directly");
+    // One controller exercises fresh and reused pin shells across both setting values.
+    ScreenshotController controller;
+    for (int scenario = 0; scenario < 4; ++scenario) {
+        const bool editable = scenario != 0;
+        const bool redoOnly = scenario == 2;
+        const bool compact = scenario == 3;
+        const bool save = scenario == 1 || scenario == 4;
+        const bool copy = scenario != 4;
+        QTemporaryDir directory;
+        require(directory.isValid() &&
+                    settings.setKeepAnnotationsEditableAfterPinningToScreen(editable) &&
+                    settings.setCopyAfterPinningToScreen(copy) &&
+                    settings.setCopyImageFileToClipboard(save) &&
+                    settings.setImageSaveDirectory(directory.path()) &&
+                    settings.setAutoSaveAfterExecutionActions(
+                        save ? QStringList{QStringLiteral("pin_to_screen"),
+                                           QStringLiteral("copy_screenshot")}
+                             : QStringList{}),
+                "configure editable pin and associated outputs");
+        QGuiApplication::clipboard()->setText(QStringLiteral("editable pin clipboard sentinel"));
+        auto policy = storage.captureHistory().policy();
+        policy.enabled = !redoOnly;
+        require(storage.requestCaptureHistoryPolicy(policy),
+                "configure screenshot history independently");
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 12, 90, 55);
+        selection.radius = compact ? 0 : 7;
+        selection.shadowWidth = 4;
+        if (compact) {
+            selection.region =
+                ScreenshotRegionGeometry(QRegion(10, 12, 30, 55) + QRect(70, 12, 30, 55));
+            selection.layoutCompaction = {true, 2};
+        }
+        ScreenshotSelectionSettingsStore selectionSettings;
+        selectionSettings.setLayoutCompaction(selection.layoutCompaction);
+        const auto base = fixture();
+        const auto styledBase = ScreenshotResultCompositor::compose(base.copy(selection.selection),
+                                                                    selection.resultStyle());
+        ScreenshotControllerTestAccess::prepareSelection(controller, base, selection);
+        auto& source = ScreenshotControllerTestAccess::runtime(controller);
+        require(source.clearDocumentPreservingViewports(),
+                "each capture starts with a fresh canvas");
+        require(
+            !source.applyAnnotationTransaction(editablePinRectangle(20, 22, Qt::red)).isEmpty() &&
+                !source.applyAnnotationTransaction(editablePinRectangle(75, 42, Qt::blue))
+                     .isEmpty() &&
+                source.undo() && (!redoOnly || source.undo()),
+            "capture annotations have undo and redo history before pinning");
+        const QByteArray expectedCheckpoint = source.documentCheckpoint();
+        SnowCanvasRuntime expected;
+        require(expected.restoreDocumentSession(source.serializeDocumentSession()),
+                "snapshot the source history");
+        const auto historyCount = storage.captureHistory().records().size();
+        controller.mcpPinSelectionToScreen();
+        waitUntil(
+            [&] {
+                return visiblePins().size() == 1 &&
+                       !ScreenshotControllerTestAccess::exportActive(controller) &&
+                       !controller.blocksApplicationUpdate();
+            },
+            "editable pin and optional outputs finish");
+        auto* pin = visiblePins().first();
+        const auto state = pin->automationState();
+        require(!state.value(QStringLiteral("editing")).toBool(),
+                "editable pin keeps the normal initial mode");
+        auto snapshot = pin->persistenceSnapshot();
+        auto* canvas = pin->findChild<SnowCanvasWidget*>();
+        require(canvas != nullptr, "pin owns an editable canvas");
+        SnowCanvasRuntime imported;
+        require(imported.restoreDocumentSession(snapshot.canvasSession),
+                "pin session is restorable");
+        const QImage composite = editablePinImage(*pin);
+        if (copy) {
+            const auto [copied, copyFile] = captureClipboardOutput();
+            require(samePixels(copied, composite) && (!copyFile.isEmpty() == save),
+                    "copy after pin uses the annotated composite and honors file copying");
+        } else {
+            require(QGuiApplication::clipboard()->text() ==
+                        QStringLiteral("editable pin clipboard sentinel"),
+                    "automatic saving without copy leaves the clipboard unchanged");
+        }
+        require(selectionSettings.layoutCompaction() == selection.layoutCompaction,
+                "editable pin leaves the stored layout compaction preference unchanged");
+        require(QDir(directory.path()).entryList(QDir::Files).size() == (save ? 1 : 0),
+                "overlapping pin and copy auto-save scenarios write once");
+        if (save) {
+            const auto files = QDir(directory.path()).entryList(QDir::Files);
+            require(samePixels(QImage(QDir(directory.path()).filePath(files.first())), composite),
+                    "automatic save includes transferred annotations");
+        }
+        if (!redoOnly) {
+            waitUntil([&] { return storage.captureHistory().records().size() > historyCount; },
+                      "pin history preview is published");
+            const auto preview = storage.captureHistory().loadResultImage(
+                storage.captureHistory().records().first());
+            require(preview && samePixels(*preview, composite),
+                    "history preview includes annotations and retains the original layout");
+        }
+        if (!editable) {
+            require(!imported.hasDocumentContent() && !imported.canUndo() && !imported.canRedo() &&
+                        samePixels(snapshot.image, composite),
+                    "disabled pins still flatten annotations and start without inherited history");
+            closePins();
+            continue;
+        }
+        require(imported.documentCheckpoint() == expectedCheckpoint,
+                "editable pin keeps the exact source document");
+        require(imported.canUndo() == !redoOnly && imported.canRedo(),
+                "editable pin keeps both history stacks");
+        require(samePixels(snapshot.image, styledBase),
+                "editable pin bakes selection effects into the background without annotations");
+        require(snapshot.canvasSourceRect == QRectF(selection.selection).adjusted(-4, -4, 4, 4) &&
+                    snapshot.contentCanvasRect == snapshot.canvasSourceRect &&
+                    snapshot.surfaceCanvasRect == snapshot.canvasSourceRect,
+                "editable pin uses the same styled surface coordinates as a flattened pin");
+        const auto liveStyle = decodeScreenshotResultStyle(snapshot.resultStyle);
+        require(liveStyle && liveStyle->cornerRadius == 0 && liveStyle->effectWidth() == 0 &&
+                    !liveStyle->region && liveStyle->backgroundOpacityPercent == 0,
+                "the pin does not apply baked selection effects again");
+        require(composite.size() == QSize(98, 63),
+                "editable pin keeps original dimensions and applies shadow once");
+        require(canvas->redo() && expected.redo(),
+                "transferred redo restores an undone annotation");
+        require(imported.restoreDocumentSession(pin->persistenceSnapshot().canvasSession) &&
+                    imported.documentCheckpoint() == expected.documentCheckpoint(),
+                "redo reaches exactly the source document state");
+        if (!redoOnly) {
+            require(canvas->undo() && expected.undo() && canvas->undo() && expected.undo(),
+                    "undo reaches through all inherited edits");
+            require(imported.restoreDocumentSession(pin->persistenceSnapshot().canvasSession) &&
+                        !imported.hasDocumentContent() && imported.canRedo(),
+                    "undo removes inherited annotations from the visible base");
+            const auto clean = editablePinImage(*pin);
+            require(samePixels(clean, styledBase),
+                    "undo leaves exactly the styled background without baked annotations");
+            require(canvas->redo() && expected.redo(), "restore first annotation for editing");
+        }
+        // Hit testing and a style mutation prove this is a selectable canvas object.
+        QString error;
+        static_cast<void>(pin->automationEdit(
+            QStringLiteral("tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}, &error));
+        require(error.isEmpty(), "activate selection on imported annotations");
+        const QPointF point = canvas->canvasToViewTransform().map(QPointF(28, 29));
+        for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(type, point, canvas->mapToGlobal(point.toPoint()), Qt::LeftButton,
+                              type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton,
+                              Qt::NoModifier);
+            QCoreApplication::sendEvent(canvas, &event);
+        }
+        require(canvas->canvasStyleToolbarState().selectedElementCount == 1 &&
+                    canvas->setSelectedOpacity(0.5),
+                "imported annotation is selectable and editable");
+        require(canvas->undo() &&
+                    imported.restoreDocumentSession(pin->persistenceSnapshot().canvasSession) &&
+                    imported.documentCheckpoint() == expected.documentCheckpoint(),
+                "new edits append to the inherited history and undo independently");
+        // Store a state with both undo and redo; source pixels must remain clean on disk.
+        snapshot = pin->persistenceSnapshot();
+        const QString id = snapshot.id;
+        pin->checkpointStorage();
+        waitUntil([&] { return storage.pinnedWindows().pendingSummaries().isEmpty(); },
+                  "editable pin source persistence completes");
+        closePins();
+        require(storage.pinnedWindows().flush().success, "editable pin state flush succeeds");
+        const auto stored = storage.pinnedWindows().loadRecord(id);
+        require(stored && samePixels(stored->image, styledBase) &&
+                    imported.restoreDocumentSession(stored->canvasSession) && imported.canUndo() &&
+                    imported.canRedo(),
+                "persisted pin keeps clean pixels and complete undo/redo history");
+        controller.showPinnedRecord(id);
+        waitUntil([&] { return visiblePins().size() == 1; }, "editable pin restores from storage");
+        pin = visiblePins().first();
+        canvas = pin->findChild<SnowCanvasWidget*>();
+        require(canvas && canvas->redo() && canvas->undo() && canvas->undo(),
+                "restored pin supports new-edit redo and inherited annotation undo");
+        require(imported.restoreDocumentSession(pin->persistenceSnapshot().canvasSession) &&
+                    !imported.hasDocumentContent(),
+                "restored undo removes the final inherited annotation");
+        if (redoOnly)
+            require(storage.captureHistory().records().size() == historyCount,
+                    "editable pin transfer does not require screenshot history storage");
+        closePins();
+    }
+    require(settings.setKeepAnnotationsEditableAfterPinningToScreen(false) &&
+                settings.setCopyAfterPinningToScreen(false) &&
+                settings.setCopyImageFileToClipboard(false) &&
+                settings.setAutoSaveAfterExecutionActions({}),
+            "reset editable pin test settings");
+}
+
+void capturePinCommitsPendingText() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(settings.setKeepAnnotationsEditableAfterPinningToScreen(true),
+            "enable pending text transfer");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    auto policy = storage.captureHistory().policy();
+    policy.enabled = false;
+    require(storage.requestCaptureHistoryPolicy(policy),
+            "disable screenshot history for pending text transfer");
+    ScreenshotController controller;
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(0, 0, 120, 80);
+    ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+    auto* overlay = ScreenshotControllerTestAccess::presentSelection(controller);
+    auto* canvas = overlay ? overlay->canvas() : nullptr;
+    QString error;
+    require(canvas && controller.mcpSetTool(QStringLiteral("text"), &error),
+            "activate text on the screenshot canvas");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    canvas->setInteractionEnabled(true);
+    const QPointF point = canvas->canvasToViewTransform().map(QPointF(20, 20));
+    for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, point, canvas->mapToGlobal(point.toPoint()), Qt::LeftButton,
+                          type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &event);
+    }
+    QInputMethodEvent input;
+    input.setCommitString(QStringLiteral("Pending annotation"));
+    QCoreApplication::sendEvent(canvas, &input);
+    require(canvas->hasActiveTextEditing(), "screenshot text is still an uncommitted draft");
+    controller.mcpPinSelectionToScreen();
+    waitUntil(
+        [&] {
+            return visiblePins().size() == 1 &&
+                   !ScreenshotControllerTestAccess::exportActive(controller);
+        },
+        "pending text pin finishes without screenshot history");
+    auto* pin = visiblePins().first();
+    SnowCanvasRuntime imported;
+    require(imported.restoreDocumentSession(pin->persistenceSnapshot().canvasSession) &&
+                imported.canUndo() &&
+                imported.documentCheckpoint().contains("Pending annotation") && imported.undo() &&
+                !imported.hasDocumentContent(),
+            "pending text is committed once and remains undoable after pinning");
+    closePins();
+    require(settings.setKeepAnnotationsEditableAfterPinningToScreen(false),
+            "reset pending text transfer setting");
+}
+
+void capturePinSamplesOnlyCroppedImage() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(settings.setKeepAnnotationsEditableAfterPinningToScreen(true) &&
+                settings.setCopyAfterPinningToScreen(true),
+            "enable sampling annotation transfer");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    auto policy = storage.captureHistory().policy();
+    policy.enabled = false;
+    require(storage.requestCaptureHistoryPolicy(policy),
+            "disable capture history to verify pin source ownership");
+    const auto normalize = [](const QImage& value) {
+        auto pixels = value.convertToFormat(QImage::Format_ARGB32);
+        pixels.setColorSpace(QColorSpace::SRgb);
+        pixels.setDevicePixelRatio(1);
+        return pixels;
+    };
+    for (const bool magnifier : {false, true}) {
+        ScreenshotController controller;
+        QImage image(200, 140, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::blue);
+        image.setColorSpace(QColorSpace::SRgb);
+        {
+            QPainter painter(&image);
+            painter.fillRect(QRect(0, 0, 100, 140), Qt::green);
+        }
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(100, 0, 100, 140);
+        ScreenshotControllerTestAccess::prepareSelection(controller, image, selection);
+        auto& runtime = ScreenshotControllerTestAccess::runtime(controller);
+        SnowCanvasWidget editor(runtime);
+        editor.resize(200, 140);
+        editor.show();
+        QCoreApplication::processEvents();
+        require(editor.setViewportCamera(100, 70, 1) &&
+                    editor.setCanvasTool(magnifier ? SnowCanvasTool::Magnifier
+                                                   : SnowCanvasTool::RectangleFilter),
+                "create a sampling annotation in the source canvas");
+        const auto drag = [&](QPointF from, QPointF to) {
+            for (const auto type :
+                 {QEvent::MouseButtonPress, QEvent::MouseMove, QEvent::MouseButtonRelease}) {
+                const auto point = type == QEvent::MouseButtonPress ? from : to;
+                QMouseEvent event(type, point, editor.mapToGlobal(point.toPoint()),
+                                  type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                                  type == QEvent::MouseButtonRelease ? Qt::NoButton
+                                                                     : Qt::LeftButton,
+                                  Qt::NoModifier);
+                QCoreApplication::sendEvent(&editor, &event);
+            }
+        };
+        if (magnifier) {
+            drag({20, 50}, {40, 70});
+            drag({30, 60}, {30, 60});
+            drag({30, 104}, {160, 104});
+        } else {
+            SnowCanvasFilterStyle style;
+            style.type = SnowCanvasFilterType::GaussianBlur;
+            style.strength = 0.7;
+            require(editor.setCanvasFilterStyle(style, SnowCanvasFilterStylePropertyType |
+                                                           SnowCanvasFilterStylePropertyStrength),
+                    "configure blur sampling");
+            drag({90, 20}, {130, 100});
+        }
+        require(editor.resetEditingState() && runtime.canUndo(), "commit sampling annotation");
+        const auto expected = runtime.renderToImage(selection.selection, selection.selection.size(),
+                                                    {{image, QRectF(0, 0, 200, 140)}});
+        require(!expected.isNull(), "source sampling export succeeds");
+        if (magnifier)
+            require(expected.pixelColor(60, 60) == QColor(Qt::green),
+                    "magnifier samples pixels outside the crop");
+        const auto cropped = image.copy(selection.selection);
+        const auto expectedPin = runtime.renderToImage(
+            selection.selection, selection.selection.size(), {{cropped, selection.selection}});
+        require(!expectedPin.isNull(), "cropped sampling export succeeds");
+        if (magnifier)
+            require(normalize(expectedPin) != normalize(expected),
+                    "magnifier sampling outside the crop loses access to the full capture");
+        controller.mcpPinSelectionToScreen();
+        waitUntil(
+            [&] {
+                return visiblePins().size() == 1 &&
+                       !ScreenshotControllerTestAccess::exportActive(controller) &&
+                       !controller.blocksApplicationUpdate();
+            },
+            "sampling annotation pin finishes");
+        auto* pin = visiblePins().first();
+        require(normalize(captureClipboardOutput().first) == normalize(expectedPin),
+                "automatic copying uses the pin's cropped sampling and transferred annotations");
+        require(normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                "pinned filters and magnifiers sample only the cropped image");
+        require(normalize(pin->persistenceSnapshot().image) == normalize(cropped),
+                "pin retains only the clean cropped background");
+        waitUntil([&] { return image.isDetached(); },
+                  "pin releases the full capture after producing its cropped background");
+        auto* canvas = pin->findChild<SnowCanvasWidget*>();
+        require(canvas && canvas->undo() && canvas->redo() &&
+                    normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                "sampling stays within the crop through undo and redo");
+        const auto transform = [&](const QJsonObject& properties) {
+            QString error;
+            require(pin->automationUpdate(properties, &error) && error.isEmpty(),
+                    "change sampling pin orientation");
+        };
+        const auto resetAndVerify = [&] {
+            transform({{QStringLiteral("rotation"), QStringLiteral("reset")}});
+            require(canvas->undo() && canvas->redo() &&
+                        normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                    "reset and undo/redo continue to sample only the cropped background");
+        };
+        for (const auto& properties :
+             {QJsonObject{{QStringLiteral("flip"), QStringLiteral("horizontal")}},
+              QJsonObject{{QStringLiteral("flip"), QStringLiteral("vertical")}},
+              QJsonObject{{QStringLiteral("rotation"), QStringLiteral("clockwise")}}}) {
+            transform(properties);
+            if (magnifier)
+                require(canvas->undo() && canvas->redo() &&
+                            editablePinImage(*pin).pixelColor(60, 60) == QColor(Qt::blue),
+                        "transformed magnifiers sample the oriented background");
+            resetAndVerify();
+        }
+        for (int turn = 0; turn < 4; ++turn)
+            transform({{QStringLiteral("rotation"), QStringLiteral("clockwise")}});
+        require(pin->persistenceSnapshot().imageTransform.isIdentity() && canvas->undo() &&
+                    canvas->redo() && normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                "a full rotation preserves crop-limited sampling");
+        // Restore a transformed pin and check that reset still uses only the cropped image.
+        transform({{QStringLiteral("flip"), QStringLiteral("horizontal")}});
+        auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+        const auto id = pin->persistenceSnapshot().id;
+        pin->checkpointStorage();
+        waitUntil([&] { return repository.pendingSummaries().isEmpty(); },
+                  "cropped pin persistence completes");
+        closePins();
+        require(repository.flush().success, "cropped pin flushes to disk");
+        const auto stored = repository.loadRecord(id);
+        require(stored && !stored->imageTransform.isIdentity() &&
+                    normalize(stored->image) == normalize(cropped),
+                "transformed pins persist only their cropped background");
+        controller.showPinnedRecord(id);
+        waitUntil([&] { return visiblePins().size() == 1; }, "sampling pin restores from disk");
+        pin = visiblePins().first();
+        canvas = pin->findChild<SnowCanvasWidget*>();
+        require(canvas && !pin->persistenceSnapshot().imageTransform.isIdentity(),
+                "sampling pin restores its transformed orientation");
+        resetAndVerify();
+        closePins();
+    }
+    require(settings.setKeepAnnotationsEditableAfterPinningToScreen(false) &&
+                settings.setCopyAfterPinningToScreen(false),
+            "reset sampling transfer settings");
+}
+
+void editablePinRejectsInvalidDocument() {
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedSelectionRequest request;
+    request.selection = QRect(0, 0, 120, 80);
+    request.contentCanvasRect = request.surfaceCanvasRect = QRectF(request.selection);
+    request.initialWindowSize = request.selection.size();
+    request.geometry.nativeGeometry = QRect(40, 40, 120, 80);
+    request.geometry.canvasSourceRect = request.contentCanvasRect;
+    request.geometry.initialWindowSize = request.initialWindowSize;
+    request.screen = QGuiApplication::primaryScreen();
+    request.canvasSession = QByteArrayLiteral("invalid canvas session");
+    auto artifact =
+        std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(fixture()));
+    int completions = 0;
+    require(request.isPrepared() &&
+                !services.presentPinnedArtifact(
+                    request, artifact,
+                    [&](bool ok, auto) {
+                        require(!ok, "invalid canvas import must fail instead of flattening");
+                        ++completions;
+                    }),
+            "invalid canvas import rejects pin presentation");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(completions == 1 && visiblePins().isEmpty() &&
+                snow_shot::storage::ApplicationStorage::instance()
+                    .pinnedWindows()
+                    .pendingSummaries()
+                    .isEmpty(),
+            "failed editable handoff completes once and releases its persistence reservation");
+    request.canvasSession = SnowCanvasRuntime().serializeDocumentSession();
+    artifact =
+        std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(fixture()));
+    bool ready = false;
+    require(services.presentPinnedArtifact(request, artifact,
+                                           [&](bool ok, auto) {
+                                               require(ok,
+                                                       "valid pin succeeds after a failed import");
+                                               ready = true;
+                                           }),
+            "reuse pin services after a rejected handoff");
+    waitUntil([&] { return ready && visiblePins().size() == 1; },
+              "valid pin after failed import finishes");
+    closePins();
 }
 
 void capturePinCopiesOnlyWhenEnabled() {
@@ -348,7 +1384,584 @@ void capturePinCopiesOnlyWhenEnabled() {
                 settings.setAutoSaveAfterExecutionActions({}),
             "restore screenshot copy settings");
 }
+
+void historyPinAccountsForDecodeBeforeDelivery() {
+    auto& history = snow_shot::storage::ApplicationStorage::instance().captureHistory();
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    qint64 previousWorkingBytes = 0;
+    for (const QSize size : {QSize(24, 16), QSize(120, 80)}) {
+        require(coordinator.pendingJobCount() == 0 && coordinator.activeWorkingBytes() == 0,
+                "history admission starts without unrelated export work");
+        QImage image(size, QImage::Format_RGBA8888);
+        image.fill(QColor(23, 117, 209, 127));
+        image.setColorSpace(QColorSpace::SRgb);
+        snow_shot::storage::CaptureHistoryDraft draft;
+        draft.contentKind = snow_shot::storage::CaptureHistoryContentKind::Image;
+        draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        draft.createdUtc = QDateTime::currentDateTimeUtc();
+        draft.canvasBounds = QRect(QPoint(), size);
+        draft.selection.rectangle = draft.canvasBounds;
+        draft.selection.shadowColor = Qt::black;
+        draft.canvasHistory = QByteArrayLiteral("{}");
+        draft.displays.append(
+            {QStringLiteral("history-admission"), QStringLiteral("Display"), image});
+        draft.resultImage = image;
+        const auto published = history.publish(std::move(draft)).get();
+        require(published.storage.success && published.record.result,
+                "publish a real isolated history image for decode admission");
+        ScreenshotController controller;
+        controller.pinHistoryRecord(published.record.id);
+        // Submission accounts for bytes immediately, and completion releases them only on
+        // GUI delivery. No timing assumption about the worker is needed for this observation.
+        const qint64 workingBytes = coordinator.activeWorkingBytes();
+        require(workingBytes >= image.sizeInBytes() + published.record.result->encodedBytes &&
+                    workingBytes > previousWorkingBytes,
+                "history pin reserves encoded input, decoded pixels and size-dependent scratch");
+        previousWorkingBytes = workingBytes;
+        waitUntil(
+            [&] {
+                return visiblePins().size() == 1 && coordinator.pendingJobCount() == 0 &&
+                       coordinator.activeWorkingBytes() == 0;
+            },
+            "history decode releases its working reservation after completing presentation");
+        require(samePixels(visiblePins().first()->persistenceSnapshot().image, image),
+                "accounted history decode preserves the requested image pixels");
+        closePins();
+    }
+}
+
+ScreenshotScrollingSnapshot scrollingSnapshot(QImage image) {
+    SnowStitchConfig config{};
+    require(snow_stitch_config_default(&config) != 0, "initialize scrolling fixture config");
+    auto* session = snow_stitch_session_create(&config);
+    require(session != nullptr, "create scrolling fixture session");
+    auto* owner = new QImage(std::move(image));
+    const QSize size = owner->size();
+    SnowStitchFrameOutcome outcome{};
+    require(snow_stitch_session_push_external_rgba(
+                session, uint32_t(size.width()), uint32_t(size.height()), owner->constBits(),
+                size_t(owner->sizeInBytes()),
+                [](void* context) { delete static_cast<QImage*>(context); }, owner, &outcome) != 0,
+            "seed scrolling fixture pixels");
+    auto* snapshot = snow_stitch_session_snapshot(session, 0, uint32_t(size.height()));
+    snow_stitch_session_destroy(session);
+    require(snapshot != nullptr, "create immutable scrolling fixture snapshot");
+    return ScreenshotScrollingSnapshot::adoptNative(snapshot, size);
+}
+
+void scrollingMcpExportCompletesWhenMaterializationIsRejected() {
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    ScreenshotController controller;
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(10, 12, 80, 50);
+    ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+    const auto snapshot = scrollingSnapshot(fixture());
+    ScreenshotControllerTestAccess::prepareScrollingSnapshot(controller, snapshot);
+    const auto rejected = controller.mcpExportArtifact(1.0);
+    require(rejected && rejected->isValid(), "create an accepted scrolling MCP source");
+    require(coordinator.pendingJobCount() == 0, "scrolling admission starts without export work");
+
+    QObject receiver;
+    const auto gate = std::make_shared<QSemaphore>();
+    std::vector<ScreenshotExportJobHandle> blockers;
+    const auto unblock = qScopeGuard([&] { gate->release(int(blockers.size())); });
+    // Keep both active workers and every pending slot occupied. None can retire before
+    // release, so rejection is independent of worker speed and owner-thread timer ordering.
+    for (int index = 0; index < 16; ++index) {
+        auto blocker = coordinator.submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+            [gate](const auto&) {
+                gate->acquire();
+                return ScreenshotExportTaskResult{};
+            },
+            [](auto) {});
+        require(blocker.isValid(), "fill the bounded export coordinator");
+        blockers.push_back(std::move(blocker));
+    }
+    require(!coordinator
+                 .submit(
+                     &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                     [](const auto&) { return ScreenshotExportTaskResult{}; }, [](auto) {})
+                 .isValid(),
+            "the scrolling materialization will encounter a full coordinator");
+
+    int completions = 0;
+    require(rejected->requestImage(&receiver,
+                                   [&](ScreenshotExportImageResult result) {
+                                       require(
+                                           !result.succeeded() && result.image.isNull(),
+                                           "rejected scrolling materialization reports failure");
+                                       ++completions;
+                                   }),
+            "scrolling snapshot acquisition accepts the artifact request");
+    waitUntil([&] { return completions == 1; },
+              "queue rejection must terminalize the accepted scrolling MCP loader");
+    QCoreApplication::processEvents();
+    require(completions == 1 && coordinator.pendingJobCount() == int(blockers.size()),
+            "rejection completes once without adding work or waiting for unrelated exports");
+
+    gate->release(int(blockers.size()));
+    waitUntil([&] { return coordinator.pendingJobCount() == 0; },
+              "release every saturated export slot");
+    const auto retry = controller.mcpExportArtifact(1.0);
+    bool recovered = false;
+    require(retry && retry->requestImage(&receiver,
+                                         [&](ScreenshotExportImageResult result) {
+                                             require(result.succeeded() &&
+                                                         samePixels(result.image, fixture()),
+                                                     "a later scrolling export keeps its pixels");
+                                             recovered = true;
+                                         }),
+            "accept a new scrolling export after capacity returns");
+    waitUntil([&] { return recovered; }, "scrolling capture remains usable after queue rejection");
+}
+
+void scrollingMcpExportCompletesWhenSnapshotIsCancelled() {
+    ScreenshotController controller;
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(10, 12, 80, 50);
+    ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+    ScreenshotControllerTestAccess::prepareScrollingSnapshot(controller,
+                                                             scrollingSnapshot(fixture()));
+    const auto artifact = controller.mcpExportArtifact(1.0);
+    QObject receiver;
+    int completions = 0;
+    require(artifact &&
+                artifact->requestImage(&receiver,
+                                       [&](ScreenshotExportImageResult result) {
+                                           require(!result.succeeded(),
+                                                   "cancelled snapshot fails its live export");
+                                           ++completions;
+                                       }),
+            "accept the scrolling snapshot before capture cancellation");
+    require(completions == 0,
+            "cached scrolling snapshot completion is queued before capture cancellation");
+    controller.mcpCancelCapture();
+    waitUntil([&] { return completions == 1; },
+              "snapshot cancellation terminalizes the live artifact without an MCP timeout");
+    QCoreApplication::processEvents();
+    require(completions == 1 && !artifact->isCancelled() &&
+                !controller.mcpState()
+                     .value(QStringLiteral("scrolling"))
+                     .toObject()
+                     .value(QStringLiteral("active"))
+                     .toBool(),
+            "late cached snapshot cannot revive cancelled acquisition or finish it twice");
+}
+
+void scrollingCopyUsesHiDpiScalingWithEveryFileOption() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    QTemporaryDir output;
+    require(output.isValid() && settings.setImageSaveDirectory(output.path()) &&
+                settings.setImageFormat(QStringLiteral("png")) && settings.setShowSaveResult(false),
+            "configure scrolling copy outputs");
+    for (const int flags : {0, 1, 2, 3}) {
+        require(settings.setHiDpiImageScaling(flags == 3 ? QStringLiteral("auto")
+                                                         : QStringLiteral("200")) &&
+                    settings.setAutoSaveFilenameFormat(QStringLiteral("scrolling_%1").arg(flags)) &&
+                    settings.setCopyImageFileToClipboard((flags & 2) != 0) &&
+                    settings.setAutoSaveAfterExecutionActions(
+                        (flags & 1) ? QStringList{QStringLiteral("copy_scrolling_screenshot")}
+                                    : QStringList{}),
+                "configure scrolling copy scenario");
+        ScreenshotController controller;
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 12, 80, 50);
+        ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+        ScreenshotControllerTestAccess::setDisplayScale(controller, 2.0);
+        const auto snapshot = scrollingSnapshot(fixture());
+        ScreenshotControllerTestAccess::prepareScrollingSnapshot(controller, snapshot);
+        ScreenshotControllerTestAccess::commands(controller).copySelectionToClipboard();
+        require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                "queued scrolling export must retain its accepted scale");
+        waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(controller); },
+                  "scaled scrolling copy completes");
+        const auto [copied, path] = captureClipboardOutput();
+        require(copied.size() == QSize(60, 40) && snapshot.rowSource().size == QSize(120, 80),
+                "plain and file scrolling copies scale once without changing the source");
+        if (flags & 2)
+            require(!path.isEmpty() && QImage(path).size() == QSize(60, 40),
+                    "scrolling clipboard file uses the same scale");
+        if (flags & 1) {
+            const QString savedPath =
+                QDir(output.path()).filePath(QStringLiteral("scrolling_%1.png").arg(flags));
+            waitUntil([&] { return QImage(savedPath).size() == QSize(60, 40); },
+                      "scrolling auto-save uses the same scale");
+        }
+    }
+    require(settings.setCopyImageFileToClipboard(false) &&
+                settings.setAutoSaveAfterExecutionActions({}),
+            "reset scrolling copy settings");
+}
+
+void hiDpiScalingAffectsOnlyCopiedAndSavedOutputs() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    QTemporaryDir output;
+    require(output.isValid() && settings.setImageSaveDirectory(output.path()) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("hidpi_{HH-mm-ss-zzz}")) &&
+                settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setCopyAfterPinningToScreen(false) && settings.setShowSaveResult(false),
+            "configure deterministic HiDPI output settings");
+    const QImage image = fixture();
+    for (const int scenario : {0, 1, 2, 3, 4}) {
+        const QString mode = scenario == 0   ? QStringLiteral("disabled")
+                             : scenario == 1 ? QStringLiteral("150")
+                             : scenario == 2 ? QStringLiteral("225")
+                             : scenario == 3 ? QStringLiteral("auto")
+                                             : QStringLiteral("350");
+        require(
+            settings.setHiDpiImageScaling(mode) &&
+                settings.setCopyImageFileToClipboard(scenario == 2) &&
+                settings.setAutoSaveAfterExecutionActions(
+                    scenario == 2 ? QStringList{QStringLiteral("copy_screenshot")} : QStringList{}),
+            "configure HiDPI copy/save scenario");
+        ScreenshotController controller;
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 12, 81, 51);
+        ScreenshotControllerTestAccess::prepareSelection(controller, image, selection);
+        ScreenshotControllerTestAccess::setDisplayScale(controller, 1.5);
+        auto& commands = ScreenshotControllerTestAccess::commands(controller);
+        const QSize expected = scenario == 0   ? QSize(81, 51)
+                               : scenario == 1 ? QSize(54, 34)
+                               : scenario == 2 ? QSize(36, 23)
+                               : scenario == 3 ? QSize(54, 34)
+                                               : QSize(23, 15);
+        auto& history = snow_shot::storage::ApplicationStorage::instance().captureHistory();
+        const qsizetype before = history.records().size();
+        if (scenario == 4) {
+            const auto explicitArtifact = controller.mcpExportArtifact(1.0);
+            QImage explicitImage;
+            require(explicitArtifact &&
+                        explicitArtifact->requestImage(
+                            &controller, [&](auto result) { explicitImage = result.image; }),
+                    "explicit MCP output must prepare");
+            waitUntil([&] { return !explicitImage.isNull(); }, "explicit MCP output completes");
+            require(explicitImage.size() == selection.selection.size(),
+                    "explicit MCP scale must remain independent of the setting");
+        }
+        if (scenario >= 3) {
+            commands.quickSaveSelection();
+        } else {
+            commands.copySelectionToClipboard();
+            // Changing the setting after acceptance must not change this export.
+            require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                    "mutate settings while output is queued");
+        }
+        waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(controller); },
+                  "HiDPI output completes");
+        if (scenario < 3) {
+            const auto [copied, path] = captureClipboardOutput();
+            require(copied.size() == expected, "clipboard dimensions must use the captured ratio");
+            if (scenario == 2)
+                require(!path.isEmpty() && QImage(path).size() == expected,
+                        "clipboard files and auto-save must use the same scaled image");
+        }
+        waitUntil([&] { return history.records().size() == before + 1; },
+                  "HiDPI output commits one history result");
+        const auto record = history.records().first();
+        const auto result = history.loadResultImage(record);
+        require(result && result->size() == expected && !record.displays.isEmpty() &&
+                    record.displays.first().imageSize == image.size(),
+                "history output must match export dimensions while source displays stay full size");
+        if (scenario >= 2) {
+            waitUntil(
+                [&] {
+                    for (const auto& name :
+                         QDir(output.path()).entryList({QStringLiteral("*.png")}, QDir::Files)) {
+                        if (QImage(QDir(output.path()).filePath(name)).size() == expected)
+                            return true;
+                    }
+                    return false;
+                },
+                "automatic and quick saves must write the scaled dimensions");
+        }
+    }
+    {
+        require(settings.setHiDpiImageScaling(QStringLiteral("200")) &&
+                    settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
+                "configure scaled save-dialog dimensions");
+        ScreenshotController dialogController;
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 12, 80, 50);
+        ScreenshotControllerTestAccess::prepareSelection(dialogController, image, selection);
+        ScreenshotControllerTestAccess::presentSelection(dialogController);
+        ScreenshotControllerTestAccess::commands(dialogController).saveSelectionToFile();
+        require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                "change the setting after the save dialog snapshots its output");
+        QPointer<adqt::widgets::AdModal> modal;
+        waitUntil(
+            [&] {
+                modal = dialogController.findChild<adqt::widgets::AdModal*>(
+                    QStringLiteral("screenshotSaveAsFileModal"));
+                const auto* preview =
+                    modal && modal->contentWidget()
+                        ? modal->contentWidget()->findChild<ScreenshotSavePreviewCanvas*>()
+                        : nullptr;
+                return preview && preview->outputImage().size() == QSize(40, 25);
+            },
+            "save dialog starts from the scaled screenshot dimensions");
+        modal->reject();
+        waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(dialogController); },
+                  "cancelling the scaled dialog retires its output job");
+    }
+    require(settings.setHiDpiImageScaling(QStringLiteral("200")) &&
+                settings.setCopyImageFileToClipboard(false) &&
+                settings.setAutoSaveAfterExecutionActions({}),
+            "configure an unscaled pin");
+    ScreenshotController controller;
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(10, 12, 80, 50);
+    ScreenshotControllerTestAccess::prepareSelection(controller, image, selection);
+    controller.mcpPinSelectionToScreen();
+    waitUntil(
+        [&] {
+            return visiblePins().size() == 1 &&
+                   !ScreenshotControllerTestAccess::exportActive(controller);
+        },
+        "full-resolution pin completes with HiDPI scaling enabled");
+    require(visiblePins().first()->persistenceSnapshot().image.size() == QSize(80, 50),
+            "pinning must preserve the full-resolution selection");
+    closePins();
+    require(settings.setHiDpiImageScaling(QStringLiteral("disabled")), "reset HiDPI test setting");
+}
+
+void pinOutputsUseHiDpiScaling() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    auto& history = snow_shot::storage::ApplicationStorage::instance().captureHistory();
+    for (int sourceKind = 0; sourceKind < 3; ++sourceKind) {
+        const bool editable = sourceKind == 1;
+        const bool scrolling = sourceKind == 2;
+        for (int outputKind = 0; outputKind < 5; ++outputKind) {
+            const bool copy = outputKind < 3;
+            const bool copyFile = outputKind == 1 || outputKind == 2;
+            const bool save = outputKind == 2 || outputKind == 3;
+            QTemporaryDir directory;
+            QStringList actions;
+            if (save)
+                actions.append(QStringLiteral("pin_to_screen"));
+            if (outputKind >= 2)
+                actions.append(scrolling ? QStringLiteral("copy_scrolling_screenshot")
+                                         : QStringLiteral("copy_screenshot"));
+            require(directory.isValid() &&
+                        settings.setHiDpiImageScaling(outputKind == 2 ? QStringLiteral("auto")
+                                                                      : QStringLiteral("200")) &&
+                        settings.setKeepAnnotationsEditableAfterPinningToScreen(editable) &&
+                        settings.setCopyAfterPinningToScreen(copy) &&
+                        settings.setCopyImageFileToClipboard(copyFile) &&
+                        settings.setAutoSaveAfterExecutionActions(actions) &&
+                        settings.setImageSaveDirectory(directory.path()) &&
+                        settings.setAutoSaveFilenameFormat(QStringLiteral("scaled-pin")) &&
+                        settings.setImageFormat(QStringLiteral("png")) &&
+                        settings.setShowSaveResult(false),
+                    "configure scaled pin outputs");
+            QApplication::clipboard()->setText(QStringLiteral("scaled pin clipboard sentinel"));
+            const qsizetype before = history.records().size();
+            ScreenshotController controller;
+            ScreenshotSelectionParams selection;
+            selection.selection = QRect(10, 12, 80, 50);
+            selection.radius = 6;
+            selection.shadowWidth = 4;
+            ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+            ScreenshotControllerTestAccess::setDisplayScale(controller, 2.0);
+            if (scrolling) {
+                ScreenshotControllerTestAccess::prepareScrollingSnapshot(
+                    controller, scrollingSnapshot(fixture()));
+            } else {
+                auto& runtime = ScreenshotControllerTestAccess::runtime(controller);
+                require(
+                    runtime.clearDocumentPreservingViewports() &&
+                        !runtime.applyAnnotationTransaction(editablePinRectangle(20, 22, Qt::red))
+                             .isEmpty(),
+                    "pin output includes the captured annotations");
+            }
+            controller.mcpPinSelectionToScreen();
+            require(settings.setHiDpiImageScaling(QStringLiteral("disabled")),
+                    "pin outputs retain the scale accepted before the first frame");
+            waitUntil(
+                [&] {
+                    return visiblePins().size() == 1 &&
+                           !ScreenshotControllerTestAccess::exportActive(controller) &&
+                           !controller.blocksApplicationUpdate() &&
+                           history.records().size() == before + 1;
+                },
+                "pin, optional outputs and native history finish");
+            auto* pin = visiblePins().first();
+            const QImage native = editablePinImage(*pin);
+            const QSize nativeSize =
+                scrolling ? fixture().size()
+                          : ScreenshotResultCompositor::layoutForContent(selection.selection.size(),
+                                                                         selection.resultStyle())
+                                .outputRect.size();
+            require(native.size() == nativeSize &&
+                        pin->persistenceSnapshot().image.size() == nativeSize,
+                    "scaled exports preserve native pin pixels");
+            const auto record = history.records().first();
+            const auto historyImage = history.loadResultImage(record);
+            require(record.source == snow_shot::storage::CaptureHistorySource::PinnedToScreen &&
+                        historyImage && samePixels(*historyImage, native),
+                    "optional scaled outputs preserve one native pin history result");
+            const QSize scaledSize(qRound(nativeSize.width() * 0.5),
+                                   qRound(nativeSize.height() * 0.5));
+            QImage expected(scaledSize, QImage::Format_RGBA8888);
+            expected.setColorSpace(QColorSpace::SRgb);
+            // Use the native export rows retained in history as the resampling reference.
+            require(snow_shot::image_codec::resizeToRgba8(
+                        snow_shot::image_codec::srgbRowSource(*historyImage), scaledSize,
+                        expected.bits(), expected.bytesPerLine(), expected.sizeInBytes()),
+                    "prepare the expected downscaled composite");
+            if (copy) {
+                const auto [copied, path] = captureClipboardOutput();
+                if (!samePixels(copied, expected) || !path.isEmpty() != copyFile)
+                    std::cerr << "pin output mismatch: source=" << sourceKind
+                              << " output=" << outputKind << " copied=" << copied.width() << 'x'
+                              << copied.height() << " expected=" << expected.width() << 'x'
+                              << expected.height() << " file=" << !path.isEmpty() << '\n';
+                require(samePixels(copied, expected) && !path.isEmpty() == copyFile,
+                        "copy after pin scales the composite once and honors file copying");
+                if (copyFile)
+                    require(samePixels(QImage(path), expected),
+                            "clipboard files share the downscaled pixels");
+            } else {
+                require(QApplication::clipboard()->text() ==
+                            QStringLiteral("scaled pin clipboard sentinel"),
+                        "pin auto-save without copying leaves the clipboard untouched");
+            }
+            const auto files = QDir(directory.path()).entryList(QDir::Files);
+            require(files.size() == (save ? 1 : 0),
+                    "overlapping pin and copy actions produce at most one automatic save");
+            if (save)
+                require(
+                    samePixels(QImage(QDir(directory.path()).filePath(files.first())), expected),
+                    "pin auto-save shares the downscaled pixels even without copying");
+            closePins();
+        }
+    }
+    require(settings.setHiDpiImageScaling(QStringLiteral("disabled")) &&
+                settings.setKeepAnnotationsEditableAfterPinningToScreen(false) &&
+                settings.setCopyAfterPinningToScreen(false) &&
+                settings.setCopyImageFileToClipboard(false) &&
+                settings.setAutoSaveAfterExecutionActions({}),
+            "restore pin output settings");
+}
+
 } // namespace
+
+#ifdef Q_OS_MACOS
+namespace {
+void screenshotSessionFocusRouting() {
+    using namespace snow_shot::platform::macos;
+    struct Target final : ScreenshotFocusTarget {
+        Target(ScreenshotController& controller, int& restores, int& live)
+            : controller(controller), restores(restores), live(live) {
+            ++this->live;
+        }
+        ~Target() override {
+            --live;
+        }
+        bool canRestore() const override {
+            return true;
+        }
+        void restore() override {
+            require(controller.captureAvailable(), "focus must return only after session teardown");
+            ++restores;
+        }
+        ScreenshotController& controller;
+        int& restores;
+        int& live;
+    };
+    QTemporaryDir output;
+    require(output.isValid(), "focus routing needs isolated output storage");
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(settings.setImageSaveDirectory(output.path()) &&
+                settings.setLastManualSaveDirectory(output.path()) &&
+                settings.setSaveAsFileDialog(QStringLiteral("system")) &&
+                settings.setShowSaveResult(false) && settings.setCopyAfterPinningToScreen(false),
+            "focus routing must isolate save and pin settings");
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    for (int action = 0; action < 8; ++action) {
+        int restores = 0;
+        int live = 0;
+        {
+            ScreenshotController controller;
+            ScreenshotSelectionParams selection;
+            selection.selection = QRect(0, 0, 100, 60);
+            ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+            ScreenshotControllerTestAccess::installSessionFocus(
+                controller, [&] { return std::make_unique<Target>(controller, restores, live); });
+            auto& commands = ScreenshotControllerTestAccess::commands(controller);
+            switch (action) {
+            case 0:
+                controller.mcpCancelCapture();
+                controller.mcpCancelCapture();
+                break;
+            case 1:
+                controller.mcpCopySelectionToClipboard();
+                break;
+            case 2:
+                commands.quickSaveSelection();
+                break;
+            case 3:
+            case 4: {
+                bool dialogHandled = false;
+                QTimer closeDialog;
+                closeDialog.setInterval(10);
+                QObject::connect(&closeDialog, &QTimer::timeout, &controller, [&] {
+                    for (auto* widget : QApplication::topLevelWidgets()) {
+                        auto* dialog = qobject_cast<QFileDialog*>(widget);
+                        if (!dialog || !dialog->isVisible())
+                            continue;
+                        closeDialog.stop();
+                        dialogHandled = true;
+                        if (action == 3) {
+                            dialog->selectFile(output.filePath(QStringLiteral("manual.png")));
+                            QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
+                        } else {
+                            dialog->reject();
+                        }
+                        return;
+                    }
+                });
+                closeDialog.start();
+                commands.saveSelectionToFile();
+                require(dialogHandled, "manual save must exercise the real file dialog");
+                if (action == 4) {
+                    QCoreApplication::processEvents();
+                    require(restores == 0 && live == 1 && !controller.captureAvailable(),
+                            "cancelling Save must retain the session and its original target");
+                    controller.mcpCancelCapture();
+                }
+                break;
+            }
+            case 5:
+                controller.mcpPinSelectionToScreen();
+                break;
+            case 6:
+                commands.startScreenRecording();
+                break;
+            case 7:
+                break; // Destruction of an active session must not reactivate another app.
+            }
+            if (action < 7) {
+                waitUntil([&] { return live == 0; },
+                          "terminal action must release its focus target");
+                require(restores == (action < 5 ? 1 : 0),
+                        "copy/save/cancel restore focus; pin/recording preserve destination focus");
+                waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(controller); },
+                          "focus fixture export must settle");
+                QCoreApplication::processEvents();
+                require(restores == (action < 5 ? 1 : 0),
+                        "late export completion must not restore focus again");
+            }
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+        require(live == 0 && (action != 7 || restores == 0),
+                "shutdown must discard the target and pending restoration");
+        closePins();
+    }
+}
+} // namespace
+#endif
 
 int runScreenshotControllerClipboardTests(int argc, char** argv) {
     QStandardPaths::setTestModeEnabled(true);
@@ -357,8 +1970,10 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
     adqt::widgets::initializePlatformCompatibility(application);
     QTemporaryDir directory;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
-    require(directory.isValid() &&
-                storage.initialize({directory.path(), directory.path(), 60000}).success,
+    snow_shot::storage::StorageInitializationOptions options{directory.path(), directory.path(),
+                                                             60000};
+    options.isolateAuxiliaryStorage = true;
+    require(directory.isValid() && storage.initialize(options).success,
             "clipboard controller tests need isolated storage");
     const snow_shot::storage::PinToScreenSettings settings;
     require(settings.setAutomaticTextRecognition(false) &&
@@ -366,6 +1981,62 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
                 settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
             "clipboard controller settings must be isolated and deterministic");
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
+    if (application.arguments().contains(QStringLiteral("--history-pin-admission-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        historyPinAccountsForDecodeBeforeDelivery();
+        return EXIT_SUCCESS;
+    }
+    if (application.arguments().contains(QStringLiteral("--mcp-scrolling-admission-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        scrollingMcpExportCompletesWhenMaterializationIsRejected();
+        scrollingMcpExportCompletesWhenSnapshotIsCancelled();
+        return EXIT_SUCCESS;
+    }
+    if (application.arguments().contains(QStringLiteral("--mcp-selection-admission-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        try {
+            mcpSelectionPreservesLiveInputTransactions();
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (application.arguments().contains(QStringLiteral("--formula-only"))) {
+        {
+            ScreenshotController controller;
+            clipboardFormulasPinAsImages(controller);
+        }
+        QApplication::clipboard()->clear();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        storage.shutdown();
+        return EXIT_SUCCESS;
+    }
+#endif
+    if (application.arguments().contains(QStringLiteral("--hidpi-scaling-tests"))) {
+        scrollingCopyUsesHiDpiScalingWithEveryFileOption();
+        hiDpiScalingAffectsOnlyCopiedAndSavedOutputs();
+        pinOutputsUseHiDpiScaling();
+        QApplication::clipboard()->clear();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        storage.shutdown();
+        return EXIT_SUCCESS;
+    }
+    if (application.arguments().contains(QStringLiteral("--controller-reselection-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        captureActionsChooseToolBeforeFirstPresentation(directory.path());
+        queuedRecognitionDoesNotOverrideReselection(directory.path());
+        recognitionWindowsFollowSelectionTransitions(directory.path());
+        return EXIT_SUCCESS;
+    }
+#ifdef Q_OS_MACOS
+    if (application.arguments().contains(QStringLiteral("--session-focus-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        screenshotSessionFocusRouting();
+        return 0;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--shell-file-startup-tests"))) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
         auto& configuration = storage.configuration();
@@ -490,6 +2161,16 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
         });
         storage.shutdown();
         return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--editable-pin-tests"))) {
+        capturePinKeepsEditableAnnotations();
+        capturePinCommitsPendingText();
+        capturePinSamplesOnlyCroppedImage();
+        editablePinRejectsInvalidDocument();
+        QApplication::clipboard()->clear();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        storage.shutdown();
+        return EXIT_SUCCESS;
     }
     if (application.arguments().contains(QStringLiteral("--copy-after-pin-tests"))) {
         capturePinCopiesOnlyWhenEnabled();

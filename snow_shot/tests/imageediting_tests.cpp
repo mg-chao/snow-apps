@@ -11,6 +11,7 @@
 #include "widgets/modal.h"
 #include "widgets/message.h"
 #include <QApplication>
+#include <QByteArrayView>
 #include <QFontDatabase>
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -46,6 +47,7 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshottextannotationgeometry.h"
 #include "snow_shot/presentation/screenshotscrollingsnapshot.h"
 #include "snow_stitch_images.h"
 #include <QColorSpace>
@@ -73,6 +75,29 @@ void awaitCondition(const std::function<bool()>& condition, const char* message)
         QThread::msleep(1);
     }
     require(condition(), message);
+}
+QImage readCopiedImage() {
+#if defined(Q_OS_WIN)
+    // Image exports use the native clipboard even with the offscreen QPA plugin.
+    // Its QClipboard is separate, so inspect the published PNG directly on Windows.
+    const UINT pngFormat = RegisterClipboardFormatW(L"PNG");
+    require(pngFormat != 0, "register copied image PNG format");
+    bool opened = false;
+    awaitCondition([&] { return opened || (opened = OpenClipboard(nullptr) != FALSE); },
+                   "open native clipboard to inspect the copied image");
+    const auto close = qScopeGuard([] { CloseClipboard(); });
+    const auto handle = static_cast<HGLOBAL>(GetClipboardData(pngFormat));
+    require(handle != nullptr, "copied image publishes native PNG data");
+    const auto* bytes = static_cast<const char*>(GlobalLock(handle));
+    require(bytes != nullptr, "copied image PNG data can be read");
+    const auto unlock = qScopeGuard([handle] { GlobalUnlock(handle); });
+    const auto image =
+        QImage::fromData(QByteArrayView(bytes, static_cast<qsizetype>(GlobalSize(handle))), "PNG");
+    require(!image.isNull(), "copied image PNG data decodes successfully");
+    return image;
+#else
+    return QApplication::clipboard()->image();
+#endif
 }
 void sendWindowInteraction(snow_shot::presentation::ImageEditingWindow& window, bool active) {
 #if defined(Q_OS_WIN)
@@ -369,6 +394,30 @@ void verifyScrollingSourceImport() {
         require(editor.document()->image() == expected &&
                     editor.document()->bounds() == QRectF(QPointF(), QSizeF(expected.size())),
                 "editor imports exact stitched pixels and trim after scrolling session teardown");
+        require(editor.document()->crop(ImageEditingDocument::CropAxis::Rows, 4, 8),
+                "scrolling screenshot can be edited before copying");
+        const auto edited = editor.document()->image();
+        adqt::widgets::AdButton* copy = nullptr;
+        for (auto* button : editor.palette()->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->property("screenshotToolbarItemId").toString() == QStringLiteral("copy") &&
+                !button->isHidden()) {
+                copy = button;
+                break;
+            }
+        }
+        require(copy && copy->isEnabled(),
+                "copy button stays enabled after asynchronous scrolling import and editing");
+        bool copied = false;
+        QObject::connect(&editor, &ImageEditingWindow::exportFinished, &editor, [&](bool success) {
+            require(success, "edited scrolling screenshot copies successfully");
+            copied = true;
+        });
+        copy->click();
+        awaitCondition([&] { return copied; }, "clicking copy exports the edited scrolling image");
+        require(readCopiedImage().convertToFormat(QImage::Format_RGBA8888) ==
+                        edited.convertToFormat(QImage::Format_RGBA8888) &&
+                    !editor.dirty() && editor.modal()->isOpen(),
+                "copy publishes the full edited image and keeps the editor open");
         editor.shutdown();
     }
 }
@@ -733,10 +782,17 @@ void verifyCropToolHighlight(snow_shot::presentation::ImageEditingWindow& window
             require(window.canvas()->mode() == (selected == rows
                                                     ? ImageEditingCanvas::Mode::CropRows
                                                     : ImageEditingCanvas::Mode::CropColumns),
-                    "crop clicks preserve the selected editing mode");
+                    "the first crop click selects its editing mode");
             requireHighlight(selected);
+            selected->click();
+            require(window.canvas()->mode() == ImageEditingCanvas::Mode::Pan &&
+                        window.palette()->activeTool() == ScreenshotToolPalette::Tool::Move &&
+                        !window.canvas()->interactionEnabled(),
+                    "clicking the active crop tool restores Pan and disables annotation input");
+            requireHighlight(nullptr);
         }
     }
+    rows->click();
     window.palette()->shapeRequested();
     require(window.canvas()->mode() == ImageEditingCanvas::Mode::Draw, "drawing exits crop mode");
     requireHighlight(nullptr);
@@ -748,6 +804,40 @@ void verifyCropToolHighlight(snow_shot::presentation::ImageEditingWindow& window
 void verifyEditingToolbar(snow_shot::presentation::ImageEditingWindow& window) {
     verifyCropToolHighlight(window);
     using Tool = ScreenshotToolPalette::Tool;
+    using Mode = snow_shot::presentation::ImageEditingCanvas::Mode;
+    auto* palette = window.palette();
+    const auto checkpoint = window.document()->checkpoint();
+    for (const auto& [tool, label] :
+         {std::pair{Tool::Select, "Select elements"}, std::pair{Tool::Shape, "Shape"},
+          std::pair{Tool::Move, "Pan"}}) {
+        adqt::widgets::AdButton* button = nullptr;
+        for (auto* candidate : palette->findChildren<adqt::widgets::AdButton*>()) {
+            if (candidate->accessibleName() == QLatin1String(label)) {
+                button = candidate;
+                break;
+            }
+        }
+        require(button, "the editor exposes the tool's toolbar control");
+        for (const bool shortcut : {false, true}) {
+            palette->clearActiveTool();
+            const auto activate = [&] {
+                if (shortcut)
+                    require(palette->activateToolShortcut(tool), "editor tool shortcut activates");
+                else
+                    button->click();
+            };
+            activate();
+            require(palette->activeTool() == tool &&
+                        window.canvas()->mode() == (tool == Tool::Move ? Mode::Pan : Mode::Draw),
+                    "the first activation selects the requested editor mode");
+            activate();
+            require(palette->activeTool() == Tool::Move && window.canvas()->mode() == Mode::Pan &&
+                        !window.canvas()->interactionEnabled(),
+                    "repeating an editor tool returns to Pan and disables annotation interaction");
+        }
+    }
+    require(window.document()->checkpoint() == checkpoint,
+            "returning to Pan preserves the editor document and history");
     auto* screen = QGuiApplication::primaryScreen();
     require(screen && screen->handle(), "editing toolbar fixture has a screen");
     const auto originalBounds = screen->handle()->geometry();
@@ -1045,6 +1135,7 @@ void runImageEditingEntryPointTests() {
     verifySourceLoading(source());
     verifyScrollingSourceImport();
 }
+void runImageEditingImportTests();
 void runImageEditingLifetimeTests();
 void runImageEditingCloseTests();
 void runImageEditingSourceTests();
@@ -1065,6 +1156,144 @@ void runImageEditingTests() {
         QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
     require(font >= 0, "editor fixtures load the bundled font");
     QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
+    if (QApplication::arguments().contains(QStringLiteral("--image-editing-import-only"))) {
+        runImageEditingImportTests();
+        return;
+    }
+    if (QApplication::arguments().contains(
+            QStringLiteral("--image-editing-text-annotations-only"))) {
+        ImageEditingSource original;
+        original.image = QImage(80, 60, QImage::Format_ARGB32_Premultiplied);
+        original.image.fill(Qt::white);
+        original.canvasRect = QRectF(100, 200, 80, 60);
+        SnowCanvasRuntime drawing;
+        require(
+            !drawing
+                 .applyAnnotationTransaction(
+                     R"({"version":1,"operations":[{"type":"rectangle","bounds":[115,215,10,10],"style":{"fill":[0,0,255,255],"stroke":[0,0,0,0]}}]})")
+                 .isEmpty(),
+            "create ordinary drawing content for quick annotation import");
+        original.canvasSession = drawing.serializeDocumentSession();
+        QPainterPath highlight;
+        highlight.addRect(QRectF(105, 205, 40, 30));
+        original.textAnnotations.items.append({highlight, QColor(255, 0, 0, 128), true});
+        original.textAnnotations.bounds = highlight.boundingRect();
+        const auto expected = renderScreenshotTextAnnotations(original.image, original.canvasRect,
+                                                              original.textAnnotations);
+        ImageEditingWindow window;
+        bool loaded = false;
+        QObject::connect(&window, &ImageEditingWindow::loaded, &window, [&](bool success) {
+            require(success, "quick text annotation import completes successfully");
+            loaded = true;
+        });
+        window.present(original);
+        awaitCondition([&] { return loaded; }, "wait for the asynchronous text annotation bake");
+        require(window.document()->image() == expected &&
+                    original.image.pixelColor(12, 12) == QColor(Qt::white),
+                "quick annotations bake into an owned editing base exactly once");
+        const auto snapshot = window.document()->snapshot();
+        require(snapshot.textAnnotations.empty() &&
+                    window.document()->runtime().hasDocumentContent(),
+                "import consumes quick annotation metadata while preserving ordinary drawing");
+        QImage output;
+        ScreenshotExportArtifact artifact(imageEditingExportSource(snapshot));
+        require(artifact.requestImage(&window,
+                                      [&](ScreenshotExportImageResult result) {
+                                          require(result.succeeded(),
+                                                  "export the imported text annotation image");
+                                          output = std::move(result.image);
+                                      }),
+                "schedule an image-editor export after text mark transfer");
+        awaitCondition([&] { return !output.isNull(); }, "complete imported text mark export");
+        require(output.pixelColor(12, 12) == expected.pixelColor(12, 12) &&
+                    output.pixelColor(20, 20) == QColor(Qt::blue),
+                "editor export preserves text marks without duplicate alpha below ordinary shapes");
+        window.shutdown();
+
+        auto cropped = original;
+        cropped.canvasSession.clear();
+        cropped.resultStyle = ScreenshotResultStyle{};
+        cropped.resultStyle->cornerRadius = 30;
+        const auto rounded = ScreenshotResultCompositor::compose(expected, *cropped.resultStyle);
+        const auto expectedCrop = rounded.copy(QRect(0, 0, 70, 50));
+        require(expectedCrop.pixelColor(5, 5).alpha() == 0,
+                "the rounded text annotation fixture has a transparent selected corner");
+        restrictImageEditingSource(cropped, original.canvasRect.adjusted(0, 0, -10, -10));
+        loaded = false;
+        ImageEditingWindow croppedWindow;
+        QObject::connect(&croppedWindow, &ImageEditingWindow::loaded, &croppedWindow,
+                         [&](bool success) {
+                             require(success, "cropped rounded text annotation import succeeds");
+                             loaded = true;
+                         });
+        croppedWindow.present(cropped);
+        awaitCondition([&] { return loaded; }, "complete cropped rounded text annotation import");
+        require(croppedWindow.document()->image() == expectedCrop,
+                "text annotation import preserves rounded alpha and paints each mark once");
+        require(cropped.textAnnotations.empty() && !cropped.resultStyle &&
+                    cropped.samplingSources.size() == 1 &&
+                    cropped.samplingSources.front().image == original.image,
+                "cropping consumes marks before the appearance and retains pristine donors");
+        croppedWindow.shutdown();
+
+        snow_shot::storage::PinnedWindowRecord record;
+        record.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardText;
+        record.originalText = QStringLiteral("Preserved source text");
+        record.firstCreationTextDpi = 1.5;
+        const auto preparation = captureScreenshotPinnedTextPreparation();
+        ScreenshotClipboardOriginalContent content;
+        content.text = record.originalText;
+        const auto rendered =
+            prepareScreenshotPinnedText(content, record.firstCreationTextDpi, preparation);
+        require(rendered && rendered->formattedDocument,
+                "prepare the closed formatted pin annotation fixture");
+        ScreenshotTextAnnotationDocument annotations;
+        annotations.bindSource(
+            ScreenshotTextAnnotationSource::Formatted,
+            screenshotFormattedTextAnnotationFingerprint(*rendered->formattedDocument));
+        ScreenshotTextAnnotationStyle style;
+        style.color = QColor(30, 180, 60, 150);
+        require(annotations.toggle({{0, 0, 9}}, ScreenshotTextAnnotationTool::Highlight, style),
+                "annotate the persisted formatted text source");
+        record.textAnnotations = annotations.serialize();
+        record.canvasSession = original.canvasSession;
+        record.canvasSourceRect = record.contentCanvasRect =
+            QRectF(QPointF(100, 200), rendered->image.size());
+        record.initialWindowSize = rendered->image.size();
+        record.nativeGeometry = QRect(QPoint(), rendered->image.size());
+        auto restored = readImageEditingPinned(record, preparation);
+        require(restored.error.isEmpty() && restored.textAnnotations.empty() &&
+                    restored.canvasSession.isEmpty() && restored.flattened,
+                "closed-pin import bakes quick marks and drawing into the shared rendered base");
+        QTransform toCanvas;
+        toCanvas.translate(100, 200);
+        const auto marks = screenshotFormattedTextAnnotationSnapshot(
+            annotations, *rendered->formattedDocument, QTransform::fromScale(1.5, 1.5) * toCanvas);
+        ScreenshotPinnedViewportExportSource expectedSource{
+            original.canvasSession,
+            ScreenshotResultCompositor::normalizeImage(rendered->image),
+            record.contentCanvasRect,
+            rendered->image.size(),
+            {},
+            {}};
+        expectedSource.textAnnotations = marks;
+        const auto expectedStored = renderScreenshotPinnedViewport(expectedSource);
+        loaded = false;
+        ImageEditingWindow storedWindow;
+        QObject::connect(&storedWindow, &ImageEditingWindow::loaded, &storedWindow,
+                         [&](bool success) {
+                             require(success, "stored pin text annotation import succeeds");
+                             loaded = true;
+                         });
+        storedWindow.present(restored);
+        awaitCondition([&] { return loaded; }, "complete closed pin annotation import");
+        require(storedWindow.document()->image() == expectedStored &&
+                    !storedWindow.document()->runtime().hasDocumentContent() &&
+                    record.originalText == QStringLiteral("Preserved source text"),
+                "closed-pin marks survive editing transfer while source text remains unchanged");
+        storedWindow.shutdown();
+        return;
+    }
     if (QApplication::arguments().contains(QStringLiteral("--image-editing-pin-only"))) {
         runImageEditingPinTests();
         return;
@@ -1170,7 +1399,7 @@ void runImageEditingTests() {
             auto* surface = editor.canvas()->window();
             require(surface->isVisible() && surface->windowHandle() &&
                         surface->windowHandle()->isVisible(),
-                    "the image editor surface opens with its floating toolbar");
+                    "the image editor surface opens immediately");
 #if defined(Q_OS_WIN)
             if (QGuiApplication::platformName() == QStringLiteral("windows")) {
                 const auto hwnd = reinterpret_cast<HWND>(surface->winId());
@@ -1179,6 +1408,11 @@ void runImageEditingTests() {
             }
 #endif
             auto* toolbar = editor.palette()->window();
+            if (editor.document()->image().isNull()) {
+                require(!toolbar->isVisible(),
+                        "editing controls stay hidden until the first image loads");
+                return;
+            }
             require(toolbar->isVisible() && editor.palette()->mainPanel()->isVisible() &&
                         toolbar->windowHandle() && toolbar->windowHandle()->isVisible(),
                     "main editing toolbar opens immediately without a resize or user interaction");
@@ -1501,12 +1735,12 @@ void runImageEditingTests() {
     EditorTranslator translator;
     QApplication::installTranslator(&translator);
     QApplication::processEvents();
-    require(rowButton->accessibleName() == QStringLiteral("[translated] Vertical Crop") &&
+    require(rowButton->accessibleName() == QStringLiteral("[translated] Vertical crop") &&
                 rowButton->toolTip() == rowButton->accessibleName() && rowButton->text().isEmpty(),
             "open editor retranslates at runtime");
     QApplication::removeTranslator(&translator);
     QApplication::processEvents();
-    require(rowButton->accessibleName() == QStringLiteral("Vertical Crop"),
+    require(rowButton->accessibleName() == QStringLiteral("Vertical crop"),
             "runtime language restored");
     rowButton->click();
     const auto map = window.canvas()->canvasToViewTransform();
@@ -1752,11 +1986,15 @@ void runImageEditingTests() {
     const auto published = repository->publish(std::move(draft)).get();
     require(published.storage.success, "history fixture publishes");
     const auto snapshotRevision = repository->recordsSnapshot().revision;
+    const auto storedResult = repository->loadResultImagePreservingRecord(published.record);
+    require(storedResult.has_value(), "history fixture retains its encoded result image");
     const auto historySource = readImageEditingHistory(*repository, published.record);
-    require(historySource.error.isEmpty() && !historySource.canvasHistory.isEmpty() &&
-                historySource.canvasRect == original.canvasRect &&
-                historySource.image.size() == original.image.size(),
-            "history restores editable data and mixed DPI mapping");
+    require(historySource.error.isEmpty() && historySource.flattened &&
+                historySource.canvasHistory.isEmpty() && historySource.canvasSession.isEmpty() &&
+                historySource.canvasRect == QRectF(QPointF(), QSizeF(original.image.size())) &&
+                historySource.image == *storedResult &&
+                historySource.pixelSize == original.image.size(),
+            "history opens its stored result as a new image in pixel coordinates");
     require(repository->recordsSnapshot().revision == snapshotRevision,
             "opening history never writes record");
     const auto assets = repository->displayAssets(published.record);
@@ -1767,7 +2005,7 @@ void runImageEditingTests() {
         "corrupt history fixture");
     const auto flattened = readImageEditingHistory(*repository, published.record);
     require(flattened.error.isEmpty() && flattened.flattened && flattened.canvasHistory.isEmpty(),
-            "unreadable edit payload uses composite");
+            "history opens the result independently of its unreadable canvas history");
     require(repository->records().size() == 1 &&
                 repository->recordsSnapshot().revision == snapshotRevision,
             "failed read never prunes history");
@@ -1783,18 +2021,32 @@ void runImageEditingTests() {
     pinRecord.canvasSession = saved.serializeDocumentSession();
     pinRecord.imageTransform.rotate(90);
     pinRecord.imageTransform.scale(-1, 1);
+    pinRecord.quarterTurns = 1;
+    pinRecord.canvasSourceRect = original.canvasRect;
     pinRecord.contentCanvasRect = QRectF(-20, 15, 5, 6);
-    const auto textPreparation = captureScreenshotPinnedTextPreparation();
-    auto rotated = readImageEditingPinned(pinRecord, textPreparation);
-    require(rotated.image == snowCanvasTransformImage(original.image, pinRecord.imageTransform,
-                                                      Qt::SmoothTransformation) &&
-                rotated.canvasSession == pinRecord.canvasSession,
-            "pinned transform preserves annotation mapping");
+    pinRecord.initialWindowSize = QSize(6, 5);
+    pinRecord.nativeGeometry = QRect(0, 0, 10, 12);
+    const auto renderPreparation = captureScreenshotPinnedRenderPreparation();
+    const auto textPreparation = renderPreparation.text;
+    auto rotated = readImageEditingPinned(pinRecord, renderPreparation);
+    const auto transformed = ScreenshotResultCompositor::normalizeImage(snowCanvasTransformImage(
+        original.image, pinRecord.imageTransform, Qt::SmoothTransformation));
+    const qreal pinScale =
+        screenshotPinnedRenderScale(200, transformed.size(), pinRecord.contentCanvasRect);
+    const QSize pinPixels(qRound(pinRecord.contentCanvasRect.width() * pinScale),
+                          qRound(pinRecord.contentCanvasRect.height() * pinScale));
+    ScreenshotPinnedViewportExportSource expectedPin{
+        pinRecord.canvasSession, transformed, pinRecord.contentCanvasRect, pinPixels, {}, {}};
+    require(rotated.image == renderScreenshotPinnedViewport(expectedPin) &&
+                rotated.canvasSession.isEmpty() && rotated.flattened,
+            "pinned transform and annotations bake into the shared rendering output");
     auto animation = std::make_shared<ScreenshotAnimationSource>();
     animation->firstFrame = original.image;
     pinRecord.animationSource = animation;
     pinRecord.image.fill(Qt::black);
-    require(readImageEditingPinned(pinRecord, textPreparation).image == rotated.image,
+    expectedPin.documentSession.clear();
+    require(readImageEditingPinned(pinRecord, renderPreparation).image ==
+                renderScreenshotPinnedViewport(expectedPin),
             "closed animation uses first frame");
     pinRecord = {};
     pinRecord.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardText;

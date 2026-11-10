@@ -158,6 +158,21 @@ class ScreenshotResultCompositor final {
     [[nodiscard]] static QImage compose(const QImage& content, const ScreenshotResultStyle& style,
                                         qreal devicePixelRatio = 1.0, qreal outputOpacity = 1.0,
                                         const QImage& background = {});
+    // Compose only a pixel viewport of the DPR-1 result, preserving the full content origin,
+    // rounded geometry, shadow tile phase and transparent padding outside the result bounds.
+    [[nodiscard]] static QImage composeViewport(const QImage& content,
+                                                const ScreenshotResultStyle& style,
+                                                const QRect& viewport, qreal outputOpacity = 1.0);
+    // Includes complete corner and border curves where clipping would change pixel coverage.
+    // content is an unscaled tile of the full content raster at contentOffset.
+    [[nodiscard]] static QImage composeViewport(const QImage& content, const QSize& fullContentSize,
+                                                QPoint contentOffset,
+                                                const ScreenshotResultStyle& style,
+                                                const QRect& viewport, qreal outputOpacity = 1.0);
+
+    [[nodiscard]] static QRect viewportRenderRect(const QSize& contentPixelSize,
+                                                  const ScreenshotResultStyle& style,
+                                                  const QRect& viewport);
 
     // Paint color over the viewport outside the selection, preserving its fill rule
     // and curves. Honors the caller's transform, clip and opacity and restores state.

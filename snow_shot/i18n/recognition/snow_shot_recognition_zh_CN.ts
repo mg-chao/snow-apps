@@ -24,7 +24,7 @@
             <translation>移除换行</translation>
         </message>
         <message>
-            <source>Smart Typesetting</source>
+            <source>Smart typesetting</source>
             <translation>智能排版</translation>
         </message>
     </context>
@@ -43,8 +43,8 @@
             <translation>图像转换设置</translation>
         </message>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>模型配置已更改。请重试以使用更新后的设置。</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>模型配置已更改。请重试以使用更新后的设置</translation>
         </message>
         <message>
             <source>No vision models are available</source>
@@ -75,7 +75,7 @@
             <translation>无法加载视觉模型</translation>
         </message>
         <message>
-            <source>Vision Model</source>
+            <source>Vision model</source>
             <translation>视觉模型</translation>
         </message>
     </context>
@@ -102,7 +102,7 @@
             <translation>重试</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全选</translation>
         </message>
     </context>
@@ -129,12 +129,12 @@
             <translation>文本识别失败</translation>
         </message>
         <message>
-            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac.</source>
-            <translation>内置文字识别运行时已损坏或不兼容。请重新安装适用于此 Mac 的 Snow Shot。</translation>
+            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac</source>
+            <translation>内置文本识别运行时已损坏或不兼容。请重新安装适用于此 Mac 的 Snow Shot</translation>
         </message>
         <message>
-            <source>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store.</source>
-            <translation>软件包中的文字识别运行时缺失或已损坏。请通过 Microsoft Store 修复或重新安装 Snow Shot。</translation>
+            <source>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store</source>
+            <translation>软件包中的文本识别运行时缺失或已损坏。请通过 Microsoft Store 修复或重新安装 Snow Shot</translation>
         </message>
         <message>
             <source>The text recognition component could not be started: %1</source>
@@ -156,12 +156,12 @@
             <translation>条码识别失败</translation>
         </message>
         <message>
-            <source>Barcode recognition is unavailable</source>
-            <translation>条码识别服务不可用</translation>
-        </message>
-        <message>
             <source>Barcode recognition request could not be prepared</source>
             <translation>无法准备条码识别请求</translation>
+        </message>
+        <message>
+            <source>Barcode recognition service is unavailable</source>
+            <translation>条码识别服务不可用</translation>
         </message>
         <message>
             <source>Converting to HTML</source>
@@ -188,8 +188,8 @@
             <translation>LaTeX 识别服务不可用</translation>
         </message>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>模型配置已更改。请重试以使用更新后的设置。</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>模型配置已更改。请重试以使用更新后的设置</translation>
         </message>
         <message>
             <source>No barcode was recognized</source>
@@ -208,8 +208,8 @@
             <translation>正在准备文本识别组件（%1%）</translation>
         </message>
         <message>
-            <source>Recognition service changed. Retry to use the updated settings.</source>
-            <translation>识别服务已更改。请重试以使用更新后的设置。</translation>
+            <source>Recognition service changed. Retry to use the updated settings</source>
+            <translation>识别服务已更改。请重试以使用更新后的设置</translation>
         </message>
         <message>
             <source>Recognizing LaTeX formula</source>
@@ -228,8 +228,8 @@
             <translation>正在识别文本</translation>
         </message>
         <message>
-            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry.</source>
-            <translation>Snow Shot 的视觉理解模型不可用。请选择其他模型或重试。</translation>
+            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry</source>
+            <translation>Snow Shot 的视觉理解模型不可用。请选择其他模型或重试</translation>
         </message>
         <message>
             <source>Some text could not be translated</source>
@@ -268,8 +268,8 @@
             <translation>无法准备文本识别请求</translation>
         </message>
         <message>
-            <source>The selected recognition model is unavailable. Choose another model or retry.</source>
-            <translation>所选识别模型不可用。请选择其他模型或重试。</translation>
+            <source>The selected recognition model is unavailable. Choose another model or retry</source>
+            <translation>所选识别模型不可用。请选择其他模型或重试</translation>
         </message>
         <message>
             <source>Translation failed</source>
@@ -311,12 +311,12 @@
             <translation>删除</translation>
         </message>
         <message>
-            <source>Formula preview limit exceeded.</source>
-            <translation>公式预览超出限制。</translation>
+            <source>Formula preview limit exceeded</source>
+            <translation>公式预览超出限制</translation>
         </message>
         <message>
-            <source>Formula renderer is unavailable.</source>
-            <translation>公式渲染器不可用。</translation>
+            <source>Formula renderer is unavailable</source>
+            <translation>公式渲染器不可用</translation>
         </message>
         <message>
             <source>LaTeX formula preview</source>
@@ -351,12 +351,35 @@
             <translation>重试识别</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全选</translation>
         </message>
         <message>
-            <source>Unable to preview this formula. Check the LaTeX source.</source>
-            <translation>无法预览此公式。请检查 LaTeX 源码。</translation>
+            <source>Unable to preview this formula. Check the LaTeX source</source>
+            <translation>无法预览此公式。请检查 LaTeX 源码</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotTableConversionController</name>
+        <message>
+            <source>No table cells were recognized</source>
+            <translation>未识别到表格单元格</translation>
+        </message>
+        <message>
+            <source>Table recognition failed</source>
+            <translation>表格识别失败</translation>
+        </message>
+        <message>
+            <source>Table recognition request could not be prepared</source>
+            <translation>无法准备表格识别请求</translation>
+        </message>
+        <message>
+            <source>Table recognition service is unavailable</source>
+            <translation>表格识别服务不可用</translation>
+        </message>
+        <message>
+            <source>The model returned no usable table after correction</source>
+            <translation>修正后模型仍未返回可用的表格</translation>
         </message>
     </context>
     <context>
@@ -406,7 +429,7 @@
             <translation>重置表格</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全选</translation>
         </message>
         <message>

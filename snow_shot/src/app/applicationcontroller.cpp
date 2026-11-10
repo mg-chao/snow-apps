@@ -1,16 +1,13 @@
-#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/app/applicationcontroller.h"
-#include <QScopeGuard>
 #include "snow_shot/app/distribution.h"
 #include "snow_shot/app/storeupdatelifecycle.h"
 #include "snow_shot/app/shellimagelaunch.h"
-#include "snow_shot/app/supportedpinfiles.h"
+#include "snow_shot/app/shelllaunchcoordinator.h"
 #include "snow_shot/runtime/memoryoptimizationcontroller.h"
 #include "snow_shot/runtime/memoryoptimizationuisafety.h"
 #include "snow_shot/app/applicationrestart.h"
-#include "snow_shot/app/updateconfirmationdialog.h"
-#include "snow_shot/app/featureavailability.h"
+#include "snow_shot/app/applicationactiongate.h"
 #include "snow_shot/app/applicationinputguard.h"
 #include "snow_shot/presentation/apppermissionservice.h"
 #ifdef Q_OS_MACOS
@@ -32,12 +29,14 @@
 #include "snow_shot/presentation/imagesplitwindow.h"
 #include "snow_shot/presentation/imageeditingwindow.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotexportcache.h"
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalcanvascontroller.h"
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/pinnedwindowstackingcoordinator.h"
 #include "snow_shot/presentation/windowgroupswitchercontroller.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
@@ -49,17 +48,17 @@
 #include "snow_shot/presentation/selectedtexttranslationcontroller.h"
 #endif
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrproxyconfiguration.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenrecordingfolder.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snow_shot/presentation/systemnotificationfeedback.h"
 #include "snow_shot/presentation/floatingtoolbarcontroller.h"
-#include "snow_shot/app/mcp/screenshotmcpserver.h"
-#include "snow_shot/app/mcp/screenshotmcpsession.h"
-#include "snow_shot/app/mcp/mcpapplicationservice.h"
-#include "snow_shot/app/mcp/mcpdocumentservice.h"
-#include "snow_shot/app/mcp/mcpjobregistry.h"
-#include "snow_shot/app/mcp/mcpmediaservice.h"
+#include "snow_shot/app/mcp/mcpruntimelifecycle.h"
+#include "snow_shot/app/mcp/mcpruntimegraph.h"
+#include "snow_shot/app/operationadmission.h"
+#include "snow_shot/app/quiescencesession.h"
+#include "snow_shot/app/deferredstartup.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshothistorytypes.h"
@@ -76,14 +75,11 @@
 
 #include <QApplication>
 #include <QEvent>
-#include <QClipboard>
-#include <QFutureWatcher>
-#include "mcp/mcpasyncwork_p.h"
 #include <QDir>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QTimer>
 #include <QtMath>
@@ -91,11 +87,9 @@
 
 #include <memory>
 #include <utility>
-#include <atomic>
-#include <cmath>
-#include <mutex>
 #include <future>
 #include <thread>
+#include <vector>
 #ifdef Q_OS_WIN
 #include "snow_shot/platform/windows/windowalwaysontop.h"
 #include <qt_windows.h>
@@ -147,13 +141,13 @@ storage::PinnedWindowRepository* initializedPinnedWindowRepository() {
 
 class ApplicationController::Impl {
   public:
-    enum class QuickActionOrigin { Other, GlobalHotkey };
+    enum class QuickActionOrigin { Other, GlobalShortcut };
+    enum class OwnedPause { None, Relocation, UpdateHandoff };
 
     Impl(ApplicationController& owner, QApplication& application)
         : q(owner), app(application), restartCoordinator(application),
           groupManager(initializedPinnedWindowRepository()),
-          systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager),
-          featureRouter([this](FeatureFamily feature) { showUnavailableFeature(feature); }) {
+          systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager) {
         QObject::connect(&systemTray,
                          &presentation::SystemTrayController::notificationDeliveryFinished, &q,
                          [this](const platform::SystemNotificationRequest& request,
@@ -179,8 +173,7 @@ class ApplicationController::Impl {
             [this](ScreenshotClipboardContentSnapshot snapshot, QStringList paths) {
                 if (storage::ApplicationStorage::instance().directoryChanging())
                     return;
-                static_cast<void>(featureRouter.dispatch(
-                    FeatureFamily::PinToScreen,
+                static_cast<void>(actionGate.dispatch(
                     [this, snapshot = std::move(snapshot), paths = std::move(paths)]() mutable {
                         if (auto* controller = ensureScreenshotController())
                             controller->pinDroppedContent(std::move(snapshot), std::move(paths));
@@ -189,19 +182,8 @@ class ApplicationController::Impl {
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &floatingToolbar,
                          &presentation::FloatingToolbarController::shutdown);
         QObject::connect(
-            &systemTray, &presentation::SystemTrayController::screenshotRequested, &q, [this]() {
-                if (storage::ApplicationStorage::instance().directoryChanging())
-                    return;
-                if (!allowPermissions(presentation::requiredPermissions(
-                        presentation::GlobalShortcutAction::Screenshot,
-                        permissions.microphoneEnabled())))
-                    return;
-                static_cast<void>(featureRouter.dispatch(FeatureFamily::Screenshot, [this]() {
-                    if (ScreenshotController* controller = ensureScreenshotController()) {
-                        controller->startCapture();
-                    }
-                }));
-            });
+            &systemTray, &presentation::SystemTrayController::screenshotRequested, &q,
+            [this]() { dispatchQuickAction(presentation::GlobalShortcutAction::Screenshot); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::showMainWindowRequested,
                          &q, [this]() { showMainWindow(); });
         QObject::connect(
@@ -235,18 +217,24 @@ class ApplicationController::Impl {
         auto& pinnedStorage = storage::ApplicationStorage::instance();
         QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowShowRequested,
                          &q, [this](const QString& id) {
-                             if (auto* controller = ensureScreenshotController())
-                                 controller->showPinnedRecord(id);
+                             static_cast<void>(actionGate.dispatch([this, id] {
+                                 if (auto* controller = ensureScreenshotController())
+                                     controller->showPinnedRecord(id);
+                             }));
                          });
         QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowsShowRequested,
                          &q, [this](const QStringList& ids) {
-                             if (auto* controller = ensureScreenshotController())
-                                 controller->showPinnedRecords(ids);
+                             static_cast<void>(actionGate.dispatch([this, ids] {
+                                 if (auto* controller = ensureScreenshotController())
+                                     controller->showPinnedRecords(ids);
+                             }));
                          });
         QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowDeleteRequested,
                          &q, [this](const QVector<QString>& ids) {
-                             if (auto* controller = ensureScreenshotController())
-                                 controller->destroyPinnedRecords(ids);
+                             static_cast<void>(actionGate.dispatch([this, ids] {
+                                 if (auto* controller = ensureScreenshotController())
+                                     controller->destroyPinnedRecords(ids);
+                             }));
                          });
         QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowsChanged,
                          &groupManager,
@@ -255,19 +243,16 @@ class ApplicationController::Impl {
             &groupManager,
             &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,
             [this]() {
-                static_cast<void>(featureRouter.dispatch(
-                    FeatureFamily::PinToScreen,
-                    [this]() {
-                        if (ScreenshotController* controller = ensureScreenshotController()) {
-                            controller->restoreActivePinnedGroupWindows();
-                        }
-                    },
-                    started));
+                static_cast<void>(actionGate.dispatch([this]() {
+                    if (ScreenshotController* controller = ensureScreenshotController()) {
+                        controller->restoreActivePinnedGroupWindows();
+                    }
+                }));
             });
         QObject::connect(&globalShortcutManager, &presentation::GlobalShortcutManager::activated,
                          &q, [this](presentation::GlobalShortcutAction action) {
                              if (action != presentation::GlobalShortcutAction::SwitchWindowGroup)
-                                 dispatchQuickAction(action, QuickActionOrigin::GlobalHotkey);
+                                 dispatchQuickAction(action, QuickActionOrigin::GlobalShortcut);
                          });
         QObject::connect(&globalShortcutManager,
                          &presentation::GlobalShortcutManager::bindingActivated, &q,
@@ -282,10 +267,11 @@ class ApplicationController::Impl {
                              systemTray.setGlobalShortcuts(action, state.shortcuts);
                          });
         QObject::connect(&globalShortcutManager,
-                         &presentation::GlobalShortcutManager::globalHotkeysEnabledChanged, &q,
+                         &presentation::GlobalShortcutManager::globalShortcutsEnabledChanged, &q,
                          [this](bool enabled) {
                              systemTray.setQuickActionChecked(
-                                 presentation::GlobalShortcutAction::ToggleGlobalHotkeys, !enabled);
+                                 presentation::GlobalShortcutAction::ToggleGlobalShortcuts,
+                                 !enabled);
                          });
         QObject::connect(
             &globalShortcutManager,
@@ -307,26 +293,32 @@ class ApplicationController::Impl {
 #endif
                 systemTray.showCaptureMessage(message, true);
             });
-        QObject::connect(
-            &globalMouseManager, &presentation::GlobalMouseManager::dragEvent, &q,
-            [this](const presentation::GlobalMouseDragEvent& event) {
-                using Kind = presentation::GlobalMouseDragEvent::Kind;
-                const FeatureFamily feature = featureFamilyFor(event.action);
-                if (event.kind == Kind::Begin) {
-                    if (!allowPermissions(presentation::requiredPermissions(
-                            event.action, permissions.microphoneEnabled()))) {
-                        globalMouseManager.cancelGesture(event.id);
-                        return;
-                    }
-                    static_cast<void>(featureRouter.beginGesture(
-                        feature, [this, id = event.id]() { globalMouseManager.cancelGesture(id); },
-                        [this, event]() { dispatchGlobalMouseEvent(event); }));
-                    return;
-                }
-                static_cast<void>(featureRouter.dispatch(
-                    feature, [this, event]() { dispatchGlobalMouseEvent(event); }, false));
-            });
+        QObject::connect(&globalMouseManager, &presentation::GlobalMouseManager::dragEvent, &q,
+                         [this](const presentation::GlobalMouseDragEvent& event) {
+                             using Kind = presentation::GlobalMouseDragEvent::Kind;
+                             if (event.kind == Kind::Begin) {
+                                 const QPointer<ApplicationController> lifetime(&q);
+                                 static_cast<void>(actionGate.beginGesture(
+                                     [this, lifetime, id = event.id] {
+                                         if (lifetime)
+                                             globalMouseManager.cancelGesture(id);
+                                     },
+                                     [this, event] { dispatchGlobalMouseEvent(event); },
+                                     [this, event] {
+                                         return allowPermissions(presentation::requiredPermissions(
+                                             event.action, permissions.microphoneEnabled()));
+                                     }));
+                                 return;
+                             }
+                             static_cast<void>(actionGate.dispatch(
+                                 [this, event]() { dispatchGlobalMouseEvent(event); }));
+                         });
         auto& applicationStorage = storage::ApplicationStorage::instance();
+        auto* stacking = groupManager.stackingCoordinator();
+        QObject::connect(&applicationStorage, &storage::ApplicationStorage::checkpointRequested,
+                         stacking, &presentation::PinnedWindowStackingCoordinator::checkpoint);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, stacking,
+                         &presentation::PinnedWindowStackingCoordinator::shutdown);
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
         }
@@ -338,7 +330,8 @@ class ApplicationController::Impl {
                     .toString()));
         auto* accountSession = AccountSessionService::forClient(translationClient.get());
         QObject::connect(accountSession, &AccountSessionService::registrationActivated, &q, [this] {
-            ensureMainWindow().showSettingsLocation(QStringLiteral("account"));
+            static_cast<void>(actionGate.dispatch(
+                [this] { ensureMainWindow().showSettingsLocation(QStringLiteral("account")); }));
         });
         translationService = &translation::TranslationService::forClient(
             *translationClient, applicationStorage.configuration(),
@@ -370,6 +363,7 @@ class ApplicationController::Impl {
             applicationStorage.configuration().value(kOcrTextDetectionProcessingKey).toString());
         ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, &q);
         auto& configuration = applicationStorage.configuration();
+        presentation::bindOcrProxyConfiguration(*ocrRecognition, configuration);
         updates = new update::UpdateService(update::defaultUpdateServiceOptions(), &app);
         updates->setProgressAppearance(
             presentation::styles::ThemeManager::instance().updateProgressAppearance());
@@ -380,8 +374,9 @@ class ApplicationController::Impl {
                     presentation::styles::ThemeManager::instance().updateProgressAppearance());
             });
         updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
-        updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
-                                u"system");
+        updates->setProxyConfiguration(
+            configuration.value(QStringLiteral("network/proxy")).toString(),
+            configuration.value(QStringLiteral("network/http_proxy")).toString());
         QObject::connect(&presentation::LanguageManager::instance(),
                          &presentation::LanguageManager::languageChanged, updates,
                          [updateService = updates] {
@@ -394,10 +389,10 @@ class ApplicationController::Impl {
                 systemTray.showUpdateMessage(
                     (edition::isMini
                          ? ApplicationController::tr(
-                               "%1 %2 is available. Open About for update options.")
+                               "%1 %2 is available. Open About for update options")
                                .arg(edition::productName(), version)
                          : ApplicationController::tr(
-                               "Snow Shot %1 is available. Open About for update options.")
+                               "Snow Shot %1 is available. Open About for update options")
                                .arg(version)));
             });
 #ifndef Q_OS_MACOS
@@ -405,10 +400,10 @@ class ApplicationController::Impl {
             systemTray.showUpdateMessage(
                 (edition::isMini
                      ? ApplicationController::tr(
-                           "An update is ready. Open About to restart and update %1.")
+                           "An update is ready. Open About to restart and update %1")
                            .arg(edition::productName())
                      : ApplicationController::tr(
-                           "An update is ready. Open About to restart and update Snow Shot.")));
+                           "An update is ready. Open About to restart and update Snow Shot")));
         });
 #endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
@@ -417,85 +412,81 @@ class ApplicationController::Impl {
         app.installEventFilter(migrationInput);
         applicationStorage.setDirectoryChangeHooks(
             [this] {
-                if (!restartAllowed() || (ocrRecognition && ocrRecognition->storageBusy()) ||
-                    ScreenshotExportCoordinator::shared().pendingJobCount() != 0 ||
-                    mcpSourceWork != 0 || (mcpJobs && mcpJobs->hasRunningJobs()) ||
-                    diagnostics::DiagnosticsService::instance().status().exporting)
+                if (!inspectAdmission(ApplicationOperation::Relocation).allowed())
                     return storage::StorageResult::failure(ApplicationController::tr(
                         "Finish capturing, recording, exporting, recognizing text, or updating "
-                        "before changing storage."));
-                migrationSource = storage::ApplicationStorage::instance().configurationDirectory();
-                migrationInput->active = true;
-                systemTray.setEnabled(false);
+                        "before changing storage"));
+                auto pause = std::make_unique<DirectoryPause>();
+                pause->sourceRoot =
+                    storage::ApplicationStorage::instance().configurationDirectory();
+                pause->restoredRoot = pause->sourceRoot;
+                acquireApplicationPause(pause->resources, *migrationInput);
+                auto* context = pause.get();
+                // Restored root is assigned by storage after its durable transaction resolves.
                 for (auto* window : QApplication::topLevelWidgets()) {
-                    if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(window))
+                    if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(window)) {
                         pin->suspendStorageWrites();
+                        pause->resources.acquired(
+                            [pin = QPointer<ScreenshotPinnedWindow>(pin), context] {
+                                if (pin)
+                                    pin->resumeStorageWrites(context->sourceRoot,
+                                                             context->restoredRoot);
+                            });
+                    }
                 }
-                migrationShortcuts = globalShortcutManager.suspendRegistrations();
-                globalMouseManager.setCaptureAvailable(false);
-                migrationMcp = mcpServer && mcpServer->isRunning();
-                stopMcp();
-                if (ocrRecognition)
+                if (ocrRecognition) {
                     ocrRecognition->suspendStorage();
+                    pause->resources.acquired([this, context] {
+                        ocrRecognition->resumeStorage(
+                            QDir(context->restoredRoot).filePath(QStringLiteral("assets/ocr")));
+                    });
+                }
+                // Suspension can publish checkpoints and retire listeners synchronously.
+                // Exclude only our reservation after every participant has finished acquiring.
+                if (!inspectAdmission(ApplicationOperation::Relocation, OwnedPause::Relocation)
+                         .allowed())
+                    return storage::StorageResult::failure(ApplicationController::tr(
+                        "Finish capturing, recording, exporting, recognizing text, or updating "
+                        "before changing storage"));
+                migrationPause = std::move(pause);
                 return storage::StorageResult::ok();
             },
             [this](const QString& root) {
-                if (ocrRecognition)
-                    ocrRecognition->resumeStorage(
-                        QDir(root).filePath(QStringLiteral("assets/ocr")));
-                for (auto* window : QApplication::topLevelWidgets()) {
-                    if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(window))
-                        pin->resumeStorageWrites(migrationSource, root);
+                if (migrationPause) {
+                    migrationPause->restoredRoot = root;
+                    migrationPause.reset();
                 }
-                migrationInput->active = false;
-                systemTray.setEnabled(storage::ApplicationStorage::instance()
-                                          .configuration()
-                                          .value(kTrayEnabledKey)
-                                          .toBool());
-                globalShortcutManager.resumeRegistrations(migrationShortcuts);
-                globalMouseManager.setCaptureAvailable(true);
-                if (migrationMcp)
-                    startMcp();
+                reconcileMcpConfiguration();
             },
             [this] {
                 if (ocrRecognition)
                     ocrRecognition->drainStorage();
             });
-        QObject::connect(
-            &applicationStorage, &storage::ApplicationStorage::directoryChangeFinished, &q, [this] {
-                const auto paths = std::move(deferredStorageShellFilePaths);
-                deferredStorageShellFilePaths.clear();
-                const bool foreground = std::exchange(deferredStorageShellForeground, false);
-                if (paths.isEmpty())
-                    return;
-                auto arguments = shellImageLaunchArguments(paths);
-                if (foreground)
-                    arguments.append(QStringLiteral("--show-main-window"));
-                q.handleLaunchRequest(arguments);
-            });
+        QObject::connect(&applicationStorage, &storage::ApplicationStorage::directoryChangeFinished,
+                         &q, [this] {
+                             const auto intent = shellLaunches.takeStorage();
+                             if (intent.paths.isEmpty())
+                                 return;
+                             q.handleLaunchRequest(intent.replayArguments());
+                         });
 #endif
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
             if (platform::windows::administratorOperationPending())
                 return;
-            if ((screenshotController != nullptr &&
-                 screenshotController->blocksApplicationUpdate()) ||
-                (directCaptureController != nullptr &&
-                 directCaptureController->blocksApplicationUpdate())) {
+            if (!inspectAdmission(ApplicationOperation::UpdateRequest).allowed()) {
                 updates->reportBlocked(ApplicationController::tr(
-                    "Finish capturing, recording, or exporting before updating."));
-                return;
-            }
-            if (!confirmRestartAndUpdate(mainWindow)) {
+                    "Finish capturing, recording, or exporting before updating"));
                 return;
             }
             if (!storage::ApplicationStorage::instance().flushNow().success) {
                 updates->reportBlocked(ApplicationController::tr(
-                    "Your settings could not be saved. Please retry before updating."));
+                    "Your settings could not be saved. Please retry before updating"));
                 return;
             }
             if (imageEditingWindowCoordinator) {
                 imageEditingWindowCoordinator->confirmShutdown([this](bool accepted) {
-                    if (!accepted)
+                    if (!accepted ||
+                        !inspectAdmission(ApplicationOperation::UpdateRequest).allowed())
                         return;
                     imageEditingWindowCoordinator->shutdown();
                     updates->beginApply();
@@ -507,22 +498,71 @@ class ApplicationController::Impl {
         app.installEventFilter(handoffInput);
         QObject::connect(updates, &update::UpdateService::handoffPendingChanged, &q,
                          [this](bool pending) { setUpdateHandoffPending(pending); });
-        QObject::connect(updates, &update::UpdateService::handoffReady, &q, [this] {
-            if ((screenshotController != nullptr &&
-                 screenshotController->blocksApplicationUpdate()) ||
-                (directCaptureController != nullptr &&
-                 directCaptureController->blocksApplicationUpdate()) ||
-                mcpSourceWork != 0 || (mcpJobs && mcpJobs->hasRunningJobs()) ||
-                !storage::ApplicationStorage::instance().flushNow().success) {
+        updates->setHandoffApproval(&q, [this] {
+            const QPointer<ApplicationController> lifetime(&q);
+            const auto prepare = [this, &lifetime] {
+                if (!inspectAdmission(ApplicationOperation::UpdateHandoff).allowed())
+                    return false;
+                if (imageEditingWindowCoordinator &&
+                    !imageEditingWindowCoordinator->prepareForUpdateHandoff())
+                    return false;
+                return lifetime && inspectAdmission(ApplicationOperation::UpdateHandoff).allowed();
+            };
+            const auto refuse = [this, &lifetime] {
+                if (lifetime)
+                    updates->reportBlocked(ApplicationController::tr(
+                        "Finish capturing, recording, or exporting before updating"));
+                return false;
+            };
+            if (!prepare())
+                return refuse();
+            const bool flushed = storage::ApplicationStorage::instance().flushNow().success;
+            if (!lifetime)
+                return false;
+            // Checkpoint observers can admit work or create/change an editor. Reprepare pending
+            // edits without prompting, then inspect immediately before the updater freezes input.
+            if (!flushed || !prepare())
+                return refuse();
+            return true;
+        });
+        updates->setHandoffValidation(&q, [this] {
+            const QPointer<ApplicationController> lifetime(&q);
+            // Pause acquisition can synchronously publish checkpoints or retire MCP resources.
+            // Ignore only this handoff's reservation, retaining every newly observed blocker.
+            const auto prepare = [this, &lifetime] {
+                if (!handoffPause || !inspectAdmission(ApplicationOperation::UpdateHandoff,
+                                                       OwnedPause::UpdateHandoff)
+                                          .allowed())
+                    return false;
+                if (imageEditingWindowCoordinator &&
+                    !imageEditingWindowCoordinator->prepareForUpdateHandoff())
+                    return false;
+                return lifetime && handoffPause &&
+                       inspectAdmission(ApplicationOperation::UpdateHandoff,
+                                        OwnedPause::UpdateHandoff)
+                           .allowed();
+            };
+            if (!prepare())
+                return false;
+            // Closing admission can checkpoint stacking/configuration after initial approval's
+            // flush. Persist that state with the pause held, then recheck flush observers too.
+            const bool flushed = storage::ApplicationStorage::instance().flushNow().success;
+            if (!lifetime)
+                return false;
+            if (!flushed) {
                 updates->reportBlocked(ApplicationController::tr(
-                    "Finish capturing, recording, or exporting before updating."));
-                return;
+                    "Your settings could not be saved. Please retry before updating"));
+                return false;
             }
+            return prepare();
         });
         QObject::connect(updates, &update::UpdateService::handoffCommitted, &q, [this] {
-            handoffInput->active = false;
-            globalShortcutManager.setGlobalHotkeysEnabled(false);
+            if (handoffPause)
+                handoffPause->commit();
+            globalShortcutManager.setGlobalShortcutsEnabled(false);
             globalMouseManager.shutdown();
+            // Keep resources paused, but permit the terminal Quit event through the input filter.
+            handoffInput->active = false;
             QApplication::quit();
         });
         applyRuntimeConfiguration(configuration.value(kPinBorderColorKey), kPinBorderColorKey);
@@ -556,25 +596,23 @@ class ApplicationController::Impl {
                          [this](const QString& key, const QJsonValue& value) {
                              applyRuntimeConfiguration(value, key);
                          });
+        mcpLifecycle = std::make_unique<mcp::McpRuntimeLifecycle>(mcp::McpRuntimeLifecycle::Hooks{
+            [this] { return startMcp(); }, [this](auto done) { mcpGraph.drain(std::move(done)); },
+            [this] { mcpGraph.stop(); }});
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &q, [this] {
+            shuttingDown = true;
+            deferredStartup.stop();
+            mcpLifecycle->shutdown();
+        });
         QObject::connect(&configuration, &storage::ConfigurationStore::valueChanged, &q,
                          [this](const QString& key, const QJsonValue&) {
                              if (key == kMcpEnabledKey) {
-                                 QTimer::singleShot(0, &q, [this] {
-                                     if (storage::ApplicationStorage::instance()
-                                             .configuration()
-                                             .value(kMcpEnabledKey)
-                                             .toBool())
-                                         startMcp();
-                                     else if (mcpServer)
-                                         mcpServer->drainAndStop([this] { stopMcp(); });
-                                     else
-                                         stopMcp();
-                                 });
+                                 // Yield so a settings mutation can return through its current
+                                 // service graph.
+                                 QTimer::singleShot(0, &q, [this] { reconcileMcpConfiguration(); });
                              }
                          });
-        if (configuration.value(kMcpEnabledKey).toBool()) {
-            startMcp();
-        }
+        reconcileMcpConfiguration();
 #ifdef Q_OS_MACOS
         reopenHandler = std::make_unique<platform::macos::ApplicationReopenHandler>(
             [this]() { showMainWindow(); });
@@ -588,6 +626,12 @@ class ApplicationController::Impl {
                        .toString() == QStringLiteral("smart_control");
         };
         memoryOptions.safe = [this] { return memoryTrimmingIsSafe(); };
+        memoryOptions.trim = [nativeTrim = std::move(memoryOptions.trim)] {
+            ScreenshotExportCache::pinnedPixels().clear();
+            ScreenshotExportCache::encodedBytes().clear();
+            ScreenshotExportCache::encodedFiles().clear();
+            return nativeTrim();
+        };
         memoryOptimization = std::make_unique<runtime::MemoryOptimizationController>(
             runtime::RuntimeActivityTracker::shared(), std::move(memoryOptions), &q);
 #endif
@@ -601,26 +645,47 @@ class ApplicationController::Impl {
                         screenshotController->prepareForSessionEnd(timeoutMs);
                 },
                 [this] {
+                    shuttingDown = true;
+                    deferredStartup.stop();
+                    if (handoffPause)
+                        handoffPause->commit();
                     handoffInput->active = true;
-                    featureRouter.setSuspended(true);
+                    mcpGraph.setSourcesSuspended(true);
                     if (screenshotController)
                         screenshotController->setCaptureSuspended(true);
-                    handoffShortcuts = globalShortcutManager.suspendRegistrations();
+                    static_cast<void>(globalShortcutManager.suspendRegistrations());
                     globalMouseManager.setCaptureAvailable(false);
                     systemTray.setEnabled(false);
                 },
                 [this] { return terminalCheckpointForStoreUpdate(); },
+                [this] {
+                    return handoffPause &&
+                           inspectAdmission(ApplicationOperation::Store, OwnedPause::UpdateHandoff)
+                               .allowed();
+                },
             });
             storeLifecycle->install();
         }
     }
 
     ~Impl() {
+        shuttingDown = true;
+        deferredStartup.stop();
+        if (updates) {
+            updates->setHandoffApproval(nullptr, {});
+            updates->setHandoffValidation(nullptr, {});
+        }
+        if (mcpLifecycle)
+            mcpLifecycle->shutdown();
+        storage::ApplicationStorage::instance().waitForDirectoryChange();
+        if (handoffPause)
+            handoffPause->commit();
+        groupManager.stackingCoordinator()->shutdown();
         storeLifecycle.reset();
         if (memoryOptimization)
             memoryOptimization->stop();
         floatingToolbar.shutdown();
-        stopMcp();
+        mcpGraph.stop();
         platform::windows::setAdministratorRestartGuard({});
         storage::ApplicationStorage::instance().setDirectoryChangeHooks({}, {});
         if (mainWindow != nullptr) {
@@ -629,22 +694,55 @@ class ApplicationController::Impl {
         }
     }
 
-    [[nodiscard]] bool storeUpdateBusy() const {
-        if (storage::ApplicationStorage::instance().directoryChanging() ||
-            diagnostics::DiagnosticsService::instance().status().exporting ||
-            ScreenshotExportCoordinator::shared().pendingJobCount() != 0 ||
-            (screenshotController && screenshotController->blocksMemoryTrimming()) ||
-            (directCaptureController && directCaptureController->blocksApplicationUpdate()) ||
-            (globalCanvasController && globalCanvasController->active()) ||
-            (ocrRecognition && ocrRecognition->storageBusy()) || mcpSourceWork != 0 ||
-            (mcpJobs && mcpJobs->hasRunningJobs()) || floatingToolbar.blocksMemoryTrimming())
-            return true;
-        for (const auto* window : QApplication::topLevelWidgets()) {
-            if (const auto* pin = qobject_cast<const ScreenshotPinnedWindow*>(window);
-                pin && pin->blocksMemoryTrimming())
-                return true;
+    [[nodiscard]] OperationAdmission
+    inspectAdmission(ApplicationOperation operation,
+                     OwnedPause ownedPause = OwnedPause::None) const {
+        const auto& applicationStorage = storage::ApplicationStorage::instance();
+        OperationFacts facts;
+        facts.suspended =
+            (ownedPause != OwnedPause::Relocation && migrationInput && migrationInput->active) ||
+            (ownedPause != OwnedPause::UpdateHandoff &&
+             (handoffPauseRequested || (handoffInput && handoffInput->active) ||
+              (handoffPause && handoffPause->committed())));
+        facts.storageChanging = applicationStorage.directoryChanging();
+        facts.updaterUnavailableOrApplying =
+            !updates || updates->status().state == update::UpdateState::Applying;
+        facts.updaterBusy = updates && (updates->busy() || updates->handoffPending());
+        facts.captureBusy = screenshotController && screenshotController->blocksApplicationUpdate(
+                                                        ownedPause == OwnedPause::None);
+        facts.directCaptureBusy =
+            directCaptureController && directCaptureController->blocksApplicationUpdate();
+        facts.unsavedEditors =
+            imageEditingWindowCoordinator && imageEditingWindowCoordinator->hasUnsavedChanges();
+        facts.ocrBusy = ocrRecognition && ocrRecognition->storageBusy();
+        facts.mcpBusy = mcpGraph.busy();
+        facts.diagnosticsBusy =
+            operation == ApplicationOperation::Trim
+                ? applicationStorage.status().diagnostics.exporting
+                : diagnostics::DiagnosticsService::instance().status().exporting;
+        facts.exports = ScreenshotExportCoordinator::shared().pendingJobCount() != 0;
+        facts.administratorPending = platform::windows::administratorOperationPending();
+        if (operation == ApplicationOperation::Trim || operation == ApplicationOperation::Store) {
+            facts.captureInteracting =
+                screenshotController &&
+                screenshotController->blocksMemoryTrimming(ownedPause == OwnedPause::None);
+            facts.pinOrToolbarInteraction = floatingToolbar.blocksMemoryTrimming();
         }
-        return false;
+        if (operation == ApplicationOperation::Store) {
+            facts.globalCanvas = globalCanvasController && globalCanvasController->active();
+            for (const auto* window : QApplication::topLevelWidgets()) {
+                if (const auto* pin = qobject_cast<const ScreenshotPinnedWindow*>(window);
+                    pin && pin->blocksMemoryTrimming())
+                    facts.pinOrToolbarInteraction = true;
+            }
+        }
+        if (operation == ApplicationOperation::Trim)
+            facts.foreground = runtime::currentProcessOwnsForegroundWindow();
+        return inspectOperation(operation, facts);
+    }
+
+    [[nodiscard]] bool storeUpdateBusy() const {
+        return !inspectAdmission(ApplicationOperation::Store).allowed();
     }
 
     bool checkpointForStoreUpdate() {
@@ -656,6 +754,7 @@ class ApplicationController::Impl {
     }
 
     std::shared_future<void> terminalCheckpointForStoreUpdate() {
+        groupManager.stackingCoordinator()->shutdown();
         auto& storage = storage::ApplicationStorage::instance();
         auto* configuration = &storage.configuration();
         auto* pins = &storage.pinnedWindows();
@@ -683,25 +782,11 @@ class ApplicationController::Impl {
     }
 
     [[nodiscard]] bool restartAllowed() const {
-        return !(handoffInput && handoffInput->active) &&
-               !storage::ApplicationStorage::instance().directoryChanging() && updates != nullptr &&
-               updates->status().state != update::UpdateState::Applying &&
-               !(screenshotController && screenshotController->blocksApplicationUpdate()) &&
-               !(directCaptureController && directCaptureController->blocksApplicationUpdate()) &&
-               !(imageEditingWindowCoordinator &&
-                 imageEditingWindowCoordinator->hasUnsavedChanges());
+        return inspectAdmission(ApplicationOperation::Restart).allowed();
     }
 
     [[nodiscard]] bool memoryTrimmingIsSafe() const {
-        if ((handoffInput && handoffInput->active) ||
-            runtime::currentProcessOwnsForegroundWindow() ||
-            storage::ApplicationStorage::instance().directoryChanging() ||
-            storage::ApplicationStorage::instance().status().diagnostics.exporting ||
-            (updates && (updates->busy() || updates->handoffPending())) ||
-            (screenshotController && screenshotController->blocksMemoryTrimming()) ||
-            (directCaptureController && directCaptureController->blocksApplicationUpdate()) ||
-            (ocrRecognition && ocrRecognition->storageBusy()) || mcpSourceWork > 0 ||
-            (mcpJobs && mcpJobs->hasRunningJobs()) || floatingToolbar.blocksMemoryTrimming())
+        if (!inspectAdmission(ApplicationOperation::Trim).allowed())
             return false;
         return runtime::memoryOptimizationUiIsSafe([this](const QWidget* window) {
             if (const auto* pin = qobject_cast<const ScreenshotPinnedWindow*>(window))
@@ -710,49 +795,149 @@ class ApplicationController::Impl {
         });
     }
 
-    void setUpdateHandoffPending(bool pending) {
-        handoffInput->active = pending;
-        featureRouter.setSuspended(pending);
+    void restoreApplicationInput(ApplicationInputGuard& input) {
+        const QPointer<ApplicationController> lifetime(&q);
+        input.active = &input == handoffInput && handoffPauseRequested;
+        reconcileSuspension();
+        if (!lifetime)
+            return;
+        globalMouseManager.setCaptureAvailable(
+            !applicationSuspended() &&
+            (!screenshotController || screenshotController->captureAvailable()));
+        if (!lifetime)
+            return;
+        systemTray.setEnabled(!applicationSuspended() && storage::ApplicationStorage::instance()
+                                                             .configuration()
+                                                             .value(kTrayEnabledKey)
+                                                             .toBool());
+    }
+
+    void acquireApplicationPause(QuiescenceSession& pause, ApplicationInputGuard& input) {
+        const QPointer<ApplicationController> lifetime(&q);
+        input.active = true;
+        pause.acquired([this, lifetime, &input] {
+            if (lifetime)
+                restoreApplicationInput(input);
+        });
+        // Close admission before the stacking checkpoint can notify reentrant producers.
         if (screenshotController)
-            screenshotController->setCaptureSuspended(pending);
-        if (pending) {
-            handoffShortcuts = globalShortcutManager.suspendRegistrations();
-            globalMouseManager.setCaptureAvailable(false);
-            systemTray.setEnabled(false);
-            handoffMcp = mcpServer && mcpServer->isRunning();
-            stopMcp();
-        } else {
-            globalShortcutManager.resumeRegistrations(handoffShortcuts);
-            handoffShortcuts = 0;
-            globalMouseManager.setCaptureAvailable(!screenshotController ||
-                                                   screenshotController->captureAvailable());
-            systemTray.setEnabled(storage::ApplicationStorage::instance()
-                                      .configuration()
-                                      .value(kTrayEnabledKey)
-                                      .toBool());
-            if (handoffMcp && storage::ApplicationStorage::instance()
-                                  .configuration()
-                                  .value(kMcpEnabledKey)
-                                  .toBool())
-                startMcp();
-            handoffMcp = false;
-#ifdef Q_OS_WIN
-            const auto deferredPaths = std::move(deferredShellFilePaths);
-            deferredShellFilePaths.clear();
-            const bool foreground = std::exchange(deferredShellForeground, false);
-            updates->clearRelaunchArguments();
-            if (!deferredPaths.isEmpty())
-                pinShellFiles(deferredPaths);
-            if (foreground)
-                showMainWindow();
-#endif
+            screenshotController->setCaptureSuspended(true);
+        if (!lifetime)
+            return;
+        mcpGraph.setSourcesSuspended(true);
+        if (!lifetime)
+            return;
+        groupManager.stackingCoordinator()->beginMutation();
+        if (!lifetime)
+            return;
+        pause.acquired([this, lifetime] {
+            if (lifetime)
+                groupManager.stackingCoordinator()->endMutation();
+        });
+        reconcileSuspension(); // close delayed/programmatic admission before draining producers
+        if (!lifetime)
+            return;
+        systemTray.setEnabled(false);
+        globalMouseManager.setCaptureAvailable(false);
+        if (!lifetime)
+            return;
+        const auto token = globalShortcutManager.suspendRegistrations();
+        pause.acquired([this, lifetime, token] {
+            if (lifetime)
+                globalShortcutManager.resumeRegistrations(token);
+        });
+    }
+
+    void setUpdateHandoffPending(bool pending) {
+        // Retain the latest request, but let the current acquisition/restoration stack
+        // finish before changing its resource ownership. In particular a listener-stop
+        // observer may cancel the handoff before acquisition has returned.
+        if (shuttingDown || (handoffPause && handoffPause->committed()))
+            return;
+        handoffPauseRequested = pending;
+        if (handoffPauseReconciling) {
+            // A restoration observer can enter a native event loop before reacquisition.
+            // Its new request closes widget input immediately while the old owner is visible.
+            if (pending)
+                handoffInput->active = true;
+            return;
         }
+        const QPointer<ApplicationController> lifetime(&q);
+        reconcileUpdateHandoffPause();
+        // Replay can dispatch another native query. Its pause must acquire and restore
+        // synchronously, outside the resource reconciliation stack that has just finished.
+        // A failed acquisition may already have retired its owner before this cancellation.
+        if (lifetime && !shuttingDown && !handoffPauseRequested && !handoffPause)
+            resumeAfterUpdateHandoff();
+    }
+
+    void reconcileUpdateHandoffPause() {
+        handoffPauseReconciling = true;
+        const QPointer<ApplicationController> lifetime(&q);
+        const auto reconciliation = qScopeGuard([this, lifetime] {
+            if (lifetime)
+                handoffPauseReconciling = false;
+        });
+        while (lifetime && !shuttingDown && !(handoffPause && handoffPause->committed()) &&
+               (handoffPauseRequested != static_cast<bool>(handoffPause) ||
+                (!handoffPauseRequested && handoffInput->active))) {
+            if (!handoffPauseRequested) {
+                if (const auto pause = handoffPause) {
+                    // Terminal callbacks must still see and commit the restoring owner.
+                    pause->restore();
+                    if (!lifetime || pause->committed())
+                        return;
+                    handoffPause.reset();
+                } else {
+                    // A request cancelled inside restoration can leave input preclosed
+                    // after its owner retires. Reconcile that state before replay too.
+                    restoreApplicationInput(*handoffInput);
+                }
+                continue;
+            }
+            std::shared_ptr<QuiescenceSession> pause;
+            try {
+                pause = std::make_shared<QuiescenceSession>();
+                // Publish before callbacks, keeping a local reference through acquisition.
+                handoffPause = pause;
+                acquireApplicationPause(*pause, *handoffInput);
+            } catch (...) {
+                if (lifetime && !shuttingDown) {
+                    handoffPauseRequested = false;
+                    if (pause)
+                        pause->restore();
+                    else
+                        restoreApplicationInput(*handoffInput);
+                    if (lifetime && (!pause || !pause->committed()))
+                        handoffPause.reset();
+                }
+                throw;
+            }
+        }
+    }
+
+    void resumeAfterUpdateHandoff() {
+        if (shuttingDown || handoffPauseRequested || (updates && updates->handoffPending()))
+            return;
+        const QPointer<ApplicationController> lifetime(&q);
+        reconcileMcpConfiguration();
+        if (!lifetime || shuttingDown || handoffPauseRequested ||
+            (handoffPause && handoffPause->committed()))
+            return;
+#ifdef Q_OS_WIN
+        const auto intent = shellLaunches.takeUpdate();
+        updates->clearRelaunchArguments();
+        if (!intent.paths.isEmpty())
+            pinShellFiles(intent.paths);
+        if (intent.foreground)
+            showMainWindow();
+#endif
     }
 
     void reportSelectedFilePinFailure(const QString& message) {
         if (!mainWindow || !mainWindow->isVisible() || mainWindow->isMinimized()) {
-            systemTray.showWarningMessage(ApplicationController::tr("Could not pin selected files"),
-                                          message);
+            systemTray.showWarningMessage(
+                ApplicationController::tr("Could not pin selected files to screen"), message);
             return;
         }
         MainWindow& window = ensureMainWindow();
@@ -765,23 +950,22 @@ class ApplicationController::Impl {
 
 #ifdef Q_OS_WIN
     void pinShellFiles(QStringList paths, std::function<void()> finished = {}) {
-        if (!featureRouter.dispatch(FeatureFamily::PinToScreen,
-                                    [this, paths = std::move(paths), finished]() mutable {
-                                        if (auto* controller = ensureScreenshotController())
-                                            controller->pinFilesToScreen(std::move(paths),
-                                                                         std::move(finished));
-                                        else if (finished)
-                                            finished();
-                                    }) &&
+        if (!actionGate.dispatch([this, paths = std::move(paths), finished]() mutable {
+                if (auto* controller = ensureScreenshotController())
+                    controller->pinFilesToScreen(std::move(paths), std::move(finished));
+                else if (finished)
+                    finished();
+            }) &&
             finished)
             finished();
     }
 
-    void preserveShellLaunchForUpdate(const QStringList& paths, bool foreground) {
-        deferredShellFilePaths.append(paths);
-        deferredShellForeground = deferredShellForeground || foreground;
-        updates->setRelaunchArguments(update::startupUpdateRelaunchArguments(
-            deferredShellForeground, deferredShellFilePaths));
+    void preserveShellLaunchForUpdate(const ShellLaunchCoordinator::Request& request) {
+        const auto intent = shellLaunches.retainUpdate(request);
+        // Transport admission checked the cumulative intent before its receipt. Retain
+        // accepted paths until helper acknowledgement or normal replay after failure.
+        updates->setRelaunchArguments(
+            update::startupUpdateRelaunchArguments(intent.foreground, intent.paths));
     }
 #endif
 
@@ -801,680 +985,283 @@ class ApplicationController::Impl {
                  .toBool()});
     }
 
-    void startMcp() {
-        if ((updates && updates->handoffPending()) || (handoffInput && handoffInput->active))
-            return;
-        if (mcpServer && mcpServer->isRunning())
-            return;
+    void reconcileMcpConfiguration() {
+        const bool enabled =
+            storage::ApplicationStorage::instance().configuration().value(kMcpEnabledKey).toBool();
+        if (!enabled)
+            app.setProperty("snowShotMcpStartError", QVariant());
+        if (mcpLifecycle)
+            mcpLifecycle->setEnabled(enabled);
+    }
+
+    bool applicationSuspended() const {
+        return (migrationInput && migrationInput->active) || handoffPauseRequested ||
+               (handoffInput && handoffInput->active) ||
+               (handoffPause && handoffPause->committed());
+    }
+
+    bool actionsAvailable() const {
+        return !shuttingDown && !applicationSuspended() &&
+               !storage::ApplicationStorage::instance().directoryChanging() &&
+               (!updates || !updates->handoffPending());
+    }
+
+    void reconcileSuspension() {
+        const bool suspended = applicationSuspended();
+        if (screenshotController)
+            screenshotController->setCaptureSuspended(suspended);
+        mcpGraph.setSourcesSuspended(suspended);
+        if (mcpLifecycle) {
+            if (suspended)
+                mcpLifecycle->setSuspended(true);
+            // Read desired state before reopening: its deferred settings callback may not
+            // have run while a synchronous storage completion was waiting for the worker.
+            reconcileMcpConfiguration();
+            if (!suspended)
+                mcpLifecycle->setSuspended(false);
+        }
+        if (!suspended && !shuttingDown) {
+            deferredStartup.resume();
+        }
+    }
+
+    mcp::McpRuntimeLifecycle::StartOutcome startMcp() {
+        app.setProperty("snowShotMcpStartError", QVariant());
+        if (shuttingDown || applicationSuspended() ||
+            storage::ApplicationStorage::instance().directoryChanging())
+            return {};
         auto* controller = ensureScreenshotController();
         ensureDirectCaptureController();
         ensureSettingsRuntime();
-        if (!mcpJobs) {
-            mcpSourceWorkers.setMaxThreadCount(2);
-            mcpJobs = std::make_unique<mcp::McpJobRegistry>(&q);
-            mcp::McpApplicationService::Ports appPorts;
-            appPorts.storage = &storage::ApplicationStorage::instance();
-            appPorts.settings = runtimeSession.get();
-            appPorts.permissions = &permissions;
-#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-            appPorts.translation = translationService;
-#endif
-            appPorts.updates = updates;
-            appPorts.jobs = mcpJobs.get();
-            appPorts.artifactWriter = [this](quint64 owner, QByteArray bytes, QString mime) {
-                return mcpDocuments ? mcpDocuments->storeArtifact(owner, std::move(bytes), mime)
-                                    : QJsonObject();
-            };
-            appPorts.restartAllowed = [this] { return restartAllowed(); };
-            appPorts.action = [this](const QString& action, const QJsonObject& params) {
-                if (action == u"show_main")
-                    showMainWindow();
-                else if (action == u"show_history")
-                    ensureMainWindow().showScreenshotHistory();
-                else if (action == u"show_pinned")
-                    ensureMainWindow().showPinToScreenManagement();
-                else if (action == u"show_translation") {
-#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-                    ensureMainWindow().showTranslation({});
-#else
-                    return false;
-#endif
-                } else if (action == u"show_settings") {
-                    const auto page = params.value(QStringLiteral("page_id")).toString();
-                    if (page.isEmpty())
-                        ensureMainWindow().showScreenshotSettings();
-                    else if (settingsRegistry->catalog().page(page))
-                        ensureMainWindow().showSettingsLocation(
-                            page, params.value(QStringLiteral("section_id")).toString());
-                    else
-                        return false;
-                } else if (action == u"restart") {
-                    return restartCoordinator
-                        .restart(
-                            [this] { return restartAllowed(); },
-                            [] {
-                                return storage::ApplicationStorage::instance().flushNow().success;
-                            })
-                        .success;
-                } else if (action == u"quit") {
-                    if (!restartAllowed())
-                        return false;
-                    app.quit();
-                } else
-                    return false;
-                return true;
-            };
-            appPorts.historyAction = [controller](const QString& id, const QString& action) {
-                if (controller->blocksApplicationUpdate())
-                    return false;
-                if (action == u"edit")
-                    controller->editHistoryRecord(id);
-                else if (action == u"pin")
-                    controller->pinHistoryRecord(id);
-                else
-                    return false;
-                return true;
-            };
-#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-            appPorts.selectedText = [this](auto done) -> std::function<void()> {
-                auto* capture =
-                    new presentation::SelectedTextTranslationController(mcpApplication.get());
-                QObject::connect(capture,
-                                 &presentation::SelectedTextTranslationController::textReady,
-                                 capture, [capture, done = std::move(done)](const QString& text) {
-                                     done(text, {});
-                                     capture->deleteLater();
-                                 });
-                capture->capture();
-                return
-                    [capture = QPointer<presentation::SelectedTextTranslationController>(capture)] {
-                        if (capture) {
-                            capture->cancel();
-                            capture->deleteLater();
-                        }
-                    };
-            };
-#endif
-            mcpApplication = std::make_unique<mcp::McpApplicationService>(std::move(appPorts), &q);
-            mcp::McpDocumentService::Ports documentPorts;
-            documentPorts.jobs = mcpJobs.get();
-            documentPorts.recognition = ocrRecognition.get();
-            documentPorts.qrRecognition = controller->mcpQrRecognition();
-            documentPorts.api = apiClient();
-            documentPorts.autoFilter = ScreenshotAutoFilterController::detectRegions;
-            documentPorts.cancelSource = [this](quint64 owner, const QString& requestId) {
-                cancelMcpSource(owner, requestId);
-            };
-            documentPorts.resolveSource = [this](const mcp::ScreenshotMcpRequest& request,
-                                                 auto completion, auto budget) {
-                resolveMcpSource(request, std::move(completion), std::move(budget));
-            };
-            documentPorts.pin = [controller](QImage image, auto done) {
-                ScreenshotClipboardContent content;
-                content.image = std::move(image);
-                return controller->mcpPinContent(std::move(content), std::move(done));
-            };
-            const auto historyEntryFromSource = [](mcp::McpDocumentService::Source source) {
-                ScreenshotHistoryEntry entry;
-                entry.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-                entry.createdUtc = QDateTime::currentDateTimeUtc();
-                entry.persistent = false;
-                entry.recordedCanvasBounds = source.canvasBounds.toAlignedRect();
-                if (source.images.isEmpty() && !source.image.isNull()) {
-                    if (entry.recordedCanvasBounds.isEmpty())
-                        entry.recordedCanvasBounds = QRect(QPoint(), source.image.size());
-                    source.images.append({source.image, QRectF(entry.recordedCanvasBounds)});
-                }
-                entry.selection = source.selection.value_or(ScreenshotSelectionParams{});
-                if (!source.selection)
-                    entry.selection.selection = entry.recordedCanvasBounds;
-                entry.canvasHistory = std::move(source.documentHistory);
-                entry.documentSession = std::move(source.documentSession);
-                entry.originalContent = std::move(source.originalContent);
-                entry.recognitionResults = std::move(source.recognitionResults);
-                entry.tool = std::move(source.tool);
-                for (const auto& image : source.images) {
-                    ScreenshotHistoryDisplay display;
-                    display.stableId = QStringLiteral("mcp:%1").arg(entry.displays.size());
-                    display.name = display.stableId;
-                    display.image = image.image;
-                    display.sourceCanvasRect = image.canvasRect.toAlignedRect();
-                    display.sourceCanvasOrigin = display.sourceCanvasRect->topLeft();
+        mcp::McpRuntimeGraph::Ports graphPorts;
+        graphPorts.screenshots = controller;
+        graphPorts.groups = &groupManager;
+        auto& sourcePorts = graphPorts.sources;
+        sourcePorts.captureAllowed = [this] {
+            if (applicationSuspended() || shuttingDown)
+                return QStringLiteral("busy");
 #ifdef Q_OS_MACOS
-                    display.canvasUsesPoints = true;
+            if (!permissions.allow({presentation::AppPermission::ScreenRecording}))
+                return QStringLiteral("permission_required");
 #endif
-                    display.backingScale = image.canvasRect.width() > 0
-                                               ? image.image.width() / image.canvasRect.width()
-                                               : 1.0;
-                    entry.displays.append(std::move(display));
-                }
-                return entry;
-            };
-            documentPorts.present = [controller, historyEntryFromSource](auto source, auto done) {
-                return controller->mcpPresentDocument(historyEntryFromSource(std::move(source)),
-                                                      std::move(done));
-            };
-            documentPorts.pinDocument =
-                [controller, historyEntryFromSource](auto source, QImage background, auto done) {
-                    return controller->mcpPinDocument(historyEntryFromSource(std::move(source)),
-                                                      std::move(background), std::move(done));
-                };
-            mcpDocuments = std::make_unique<mcp::McpDocumentService>(std::move(documentPorts), &q);
-            mcpMedia = std::make_unique<mcp::McpMediaService>(*controller, groupManager, &q);
-            auto artifactWriter = [this](quint64 owner, QByteArray bytes, const QString& mime) {
-                return mcpDocuments ? mcpDocuments->storeArtifact(owner, std::move(bytes), mime)
-                                    : QJsonObject();
-            };
-            mcpJobs->setArtifactPublisher(artifactWriter);
-            mcpMedia->setArtifactWriter(artifactWriter);
-            mcpMedia->setFileArtifactWriter(
-                [this](quint64 owner, QString path, QString mime, auto completion) {
-                    if (mcpDocuments)
-                        mcpDocuments->storeFileArtifact(owner, std::move(path), std::move(mime),
-                                                        std::move(completion));
-                    else
-                        completion(QJsonObject(), QStringLiteral("unavailable"));
-                });
-            QObject::connect(
-                mcpJobs.get(), &mcp::McpJobRegistry::changed, &q,
-                [this](quint64 owner, const QString& id) {
-                    if (mcpServer)
-                        mcpServer->publishEvent(
-                            owner,
-                            {{QStringLiteral("event"), QStringLiteral("resource_changed")},
-                             {QStringLiteral("uri"), QStringLiteral("snow-shot://jobs/") + id}});
-                });
-            QObject::connect(
-                mcpDocuments.get(), &mcp::McpDocumentService::changed, &q,
-                [this](quint64 owner, const QString& id) {
-                    if (mcpServer)
-                        mcpServer->publishEvent(
-                            owner, {{QStringLiteral("event"), QStringLiteral("resource_changed")},
-                                    {QStringLiteral("uri"),
-                                     QStringLiteral("snow-shot://documents/") + id}});
-                });
-            QObject::connect(
-                mcpDocuments.get(), &mcp::McpDocumentService::artifactChanged, &q,
-                [this](quint64 owner, const QString& id) {
-                    if (mcpServer)
-                        mcpServer->publishEvent(
-                            owner, {{QStringLiteral("event"), QStringLiteral("resource_changed")},
-                                    {QStringLiteral("uri"),
-                                     QStringLiteral("snow-shot://artifacts/") + id}});
-                });
-        }
-        if (!mcpSession) {
-            mcp::ScreenshotMcpSession::Ports ports;
-            ports.state = [controller] { return controller->mcpState(); };
-            ports.command = [controller](const QString& method, const QJsonObject& params,
-                                         mcp::ScreenshotMcpSession::Ports::CommandCompletion done) {
-                controller->mcpCommand(method, params, std::move(done));
-            };
-            ports.cancelCommand = [controller] { controller->mcpCancelCommand(); };
-            ports.detached = [controller] { controller->mcpDetached(); };
-            ports.begin = [this, controller](const QJsonObject& options, QString* error) {
-                if (directCaptureController->blocksApplicationUpdate()) {
-                    if (error)
-                        *error = QStringLiteral("busy");
-                    return false;
-                }
-#ifdef Q_OS_MACOS
-                if (!permissions.allow({presentation::AppPermission::ScreenRecording})) {
-                    if (error)
-                        *error = QStringLiteral("permission_required");
-                    return false;
-                }
-#endif
-                return controller->mcpBegin(options, error);
-            };
-            ports.cancel = [this, controller]() {
-                controller->mcpCancelCapture();
-                if (directCaptureController)
-                    directCaptureController->cancelMcpCapture();
-            };
-            ports.selection = [controller](const QJsonObject& params, QString* error) {
-                return controller->mcpSetSelection(params, error);
-            };
-            ports.tool = [controller](const QString& tool, QString* error) {
-                return controller->mcpSetTool(tool, error);
-            };
-            ports.annotations = [controller](const QByteArray& bytes, QJsonObject* result,
-                                             QString* error) {
-                return controller->mcpApplyAnnotations(bytes, result, error);
-            };
-            ports.history = [controller](bool redo) {
-                if (redo)
-                    controller->mcpRedoCanvasEdit();
-                else
-                    controller->mcpUndoCanvasEdit();
-            };
-            ports.artifact = [controller](qreal scale) {
-                return controller->mcpExportArtifact(scale);
-            };
-            ports.pin = [controller](auto artifact, auto completion) {
-                return controller->mcpPinArtifact(std::move(artifact), std::move(completion));
-            };
-            ports.direct = [this](const QJsonObject& params, auto completion) {
-                return directCaptureController->mcpCapture(params, std::move(completion));
-            };
-            mcpSession = std::make_unique<mcp::ScreenshotMcpSession>(std::move(ports), &q);
-            QObject::connect(controller, &ScreenshotController::mcpCapturePresented,
-                             mcpSession.get(), &mcp::ScreenshotMcpSession::capturePresented);
-            QObject::connect(controller, &ScreenshotController::mcpCaptureTerminated,
-                             mcpSession.get(), &mcp::ScreenshotMcpSession::captureTerminated);
-            QObject::connect(controller, &ScreenshotController::mcpCanvasChanged, mcpSession.get(),
-                             &mcp::ScreenshotMcpSession::observe);
-            QObject::connect(&app, &QCoreApplication::aboutToQuit, mcpSession.get(),
-                             [this] { stopMcp(); });
-        }
-        if (!mcpServer) {
-            mcpServer = std::make_unique<mcp::ScreenshotMcpServer>(&q);
-            mcpServer->setRequestHandler([this](const auto& request, auto completion) {
-                if (mcpApplication && mcpApplication->handles(request.method))
-                    mcpApplication->request(request, std::move(completion));
-                else if (mcpDocuments && mcpDocuments->handles(request.method))
-                    mcpDocuments->request(request, std::move(completion));
-                else if (mcpMedia && mcpMedia->handles(request.method))
-                    mcpMedia->request(request, std::move(completion));
-                else
-                    mcpSession->request(request, std::move(completion));
-            });
-            mcpServer->setClientDisconnectedHandler([this](quint64 connection) {
-                const auto prefix = QString::number(connection) + u':';
-                for (auto it = mcpSources.begin(); it != mcpSources.end();)
-                    if (it.key().startsWith(prefix)) {
-                        it.value()->store(true);
-                        delete mcpSourceDelays.take(it.key());
-                        it = mcpSources.erase(it);
-                    } else
-                        ++it;
-                if (mcpSourceCaptureOwner == connection && directCaptureController) {
-                    directCaptureController->cancelMcpCapture();
-                    mcpSourceCaptureOwner = 0;
-                }
-                mcpSession->disconnected(connection);
-                if (mcpApplication)
-                    mcpApplication->disconnected(connection);
-                if (mcpDocuments)
-                    mcpDocuments->disconnected(connection);
-                if (mcpMedia)
-                    mcpMedia->disconnected(connection);
-                if (mcpJobs)
-                    mcpJobs->disconnected(connection);
-            });
-            mcpServer->setRequestCancellationHandler([this](quint64 owner, const QString& id) {
-                bool accepted = cancelMcpSource(owner, id);
-                if (mcpDocuments)
-                    accepted |= mcpDocuments->cancelRequest(owner, id);
-                if (mcpApplication)
-                    accepted |= mcpApplication->cancelRequest(owner, id);
-                if (mcpMedia)
-                    accepted |= mcpMedia->cancelRequest(owner, id);
-                if (mcpSession)
-                    accepted |= mcpSession->cancelRequest(owner, id);
-                return accepted;
-            });
-        }
-        QString error;
-        if (!mcpServer->start(&error))
-            qWarning("Unable to start Snow Shot MCP server: %s", qPrintable(error));
-    }
-    bool cancelMcpSource(quint64 owner, const QString& requestId) {
-        const auto key = QString::number(owner) + u':' + requestId;
-        const auto cancel = mcpSources.take(key);
-        if (!cancel)
-            return false;
-        cancel->store(true);
-        delete mcpSourceDelays.take(key);
-        if (mcpSourceCaptureOwner == owner && mcpSourceCaptureRequest == requestId &&
-            directCaptureController) {
-            directCaptureController->cancelMcpCapture();
-            mcpSourceCaptureOwner = 0;
-            mcpSourceCaptureRequest.clear();
-        }
-        return true;
-    }
-    void stopMcp() {
-        for (const auto& canceled : mcpSources)
-            canceled->store(true);
-        mcpSources.clear();
-        qDeleteAll(mcpSourceDelays);
-        mcpSourceDelays.clear();
-        if (mcpSourceCaptureOwner && directCaptureController)
-            directCaptureController->cancelMcpCapture();
-        mcpSourceCaptureOwner = 0;
-        mcpSourceCaptureRequest.clear();
-        if (mcpSession)
-            mcpSession->shutdown();
-        if (mcpServer)
-            mcpServer->stop();
-        if (mcpDocuments)
-            mcpDocuments->shutdown();
-        if (mcpMedia)
-            mcpMedia->shutdown();
-        if (mcpApplication)
-            mcpApplication->shutdown();
-        if (mcpJobs)
-            mcpJobs->shutdown();
-        mcpSourceWorkers.waitForDone();
-        mcpSourceWork = 0;
-        // Shutdown is terminal. A new server run needs fresh session ownership and callbacks.
-        mcpSession.reset();
-        mcpDocuments.reset();
-        mcpMedia.reset();
-        mcpApplication.reset();
-        mcpJobs.reset();
-    }
-
-    void resolveMcpSource(const mcp::ScreenshotMcpRequest& request,
-                          mcp::McpDocumentService::Ports::SourceCompletion completion,
-                          mcp::McpDocumentService::Ports::SourceBudget sourceBudget) {
-        using Source = mcp::McpDocumentService::Source;
-        const auto& params = request.params;
-        const auto source = params.value(QStringLiteral("source")).toString();
-        const auto key = QString::number(request.connectionId) + u':' + request.requestId;
-        const auto canceled = std::make_shared<std::atomic_bool>(false);
-        const auto rejected = std::make_shared<std::atomic_bool>(false);
-        struct BudgetState {
-            std::mutex mutex;
-            qint64 peak = 0;
+            if (screenshotController && screenshotController->captureAcquisitionActive())
+                return QStringLiteral("busy");
+            return QString();
         };
-        const auto budgetState = std::make_shared<BudgetState>();
-        const auto budget = [sourceBudget = std::move(sourceBudget), canceled, rejected,
-                             budgetState](qint64 bytes) {
-            // Native fallback and resize checks can overlap. Keep the shared
-            // document reservation monotonic across every admission callback.
-            const std::lock_guard lock(budgetState->mutex);
-            if (canceled->load())
-                return false;
-            const qint64 total = std::max(budgetState->peak, bytes);
-            if (bytes < 0 || !sourceBudget || !sourceBudget(total)) {
-                rejected->store(true);
-                return false;
+        sourcePorts.capture = [this](const auto& params, auto done, auto budget) {
+            return directCaptureController->mcpCapture(params, std::move(done), std::move(budget));
+        };
+        sourcePorts.cancelCapture = [this] { directCaptureController->cancelMcpCapture(); };
+        sourcePorts.history = &storage::ApplicationStorage::instance().captureHistory();
+        sourcePorts.loadPin = [](const QString& id, auto budget) {
+            return storage::ApplicationStorage::instance().pinnedWindows().loadRecord(id, budget);
+        };
+        sourcePorts.livePin =
+            [this](const QString& id,
+                   auto budget) -> std::optional<mcp::McpSourceResolver::LivePin> {
+            const auto* window = groupManager.liveWindow(id);
+            if (!window)
+                return std::nullopt;
+            const auto state = window->automationState();
+            const auto size = state.value(QStringLiteral("source_size")).toArray();
+            const qint64 width = size.size() == 2 ? size[0].toInt() : 0;
+            const qint64 height = size.size() == 2 ? size[1].toInt() : 0;
+            const qint64 pixels = width * height;
+            if (width <= 0 || height <= 0 || pixels > 64000000) {
+                static_cast<void>(budget(-1));
+                return std::nullopt;
             }
-            budgetState->peak = total;
+            if (!budget(pixels * 8 + 64 * 1024 * 1024))
+                return std::nullopt;
+            return mcp::McpSourceResolver::LivePin{
+                window->persistenceSnapshot(), window->recognitionSnapshot(),
+                state.value(QStringLiteral("active_tool")).toString()};
+        };
+        auto& appPorts = graphPorts.application;
+        appPorts.storage = &storage::ApplicationStorage::instance();
+        appPorts.settings = runtimeSession.get();
+        appPorts.permissions = &permissions;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        appPorts.translation = translationService;
+#endif
+        appPorts.updates = updates;
+        appPorts.restartAllowed = [this] { return restartAllowed(); };
+        appPorts.action = [this](const QString& action, const QJsonObject& params) {
+            if (action == u"show_main")
+                showMainWindow();
+            else if (action == u"show_history")
+                ensureMainWindow().showScreenshotHistory();
+            else if (action == u"show_pinned")
+                ensureMainWindow().showPinToScreenManagement();
+            else if (action == u"show_translation") {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+                ensureMainWindow().openTranslationPage();
+#else
+                return false;
+#endif
+            } else if (action == u"show_settings") {
+                const auto page = params.value(QStringLiteral("page_id")).toString();
+                if (page.isEmpty())
+                    ensureMainWindow().showScreenshotSettings();
+                else if (settingsRegistry->catalog().page(page))
+                    ensureMainWindow().showSettingsLocation(
+                        page, params.value(QStringLiteral("section_id")).toString());
+                else
+                    return false;
+            } else if (action == u"restart") {
+                return restartCoordinator
+                    .restart(
+                        [this] { return restartAllowed(); },
+                        [] { return storage::ApplicationStorage::instance().flushNow().success; })
+                    .success;
+            } else if (action == u"quit") {
+                if (!restartAllowed())
+                    return false;
+                app.quit();
+            } else
+                return false;
             return true;
         };
-        const auto rasterBytes = [](QSize size) -> qint64 {
-            const qint64 pixels = static_cast<qint64>(size.width()) * size.height();
-            return size.width() > 0 && size.height() > 0 && pixels <= 64000000 ? pixels * 8 : -1;
+        appPorts.historyAction = [controller](const QString& id, const QString& action) {
+            if (controller->blocksApplicationUpdate())
+                return false;
+            if (action == u"edit")
+                controller->editHistoryRecord(id);
+            else if (action == u"pin")
+                controller->pinHistoryRecord(id);
+            else
+                return false;
+            return true;
         };
-        mcpSources.insert(key, canceled);
-        const QPointer<mcp::McpDocumentService> guard(mcpDocuments.get());
-        auto sourceDone = [this, guard, key, canceled, rejected,
-                           completion = std::move(completion)](Source sourceData,
-                                                               QString error) mutable {
-            if (!guard || canceled->exchange(true))
-                return;
-            mcpSources.remove(key);
-            completion(std::move(sourceData),
-                       rejected->load() ? QStringLiteral("resource_limit") : std::move(error));
-        };
-        auto done = [sourceDone](QImage image, QJsonObject metadata, QString error) mutable {
-            Source sourceData;
-            sourceData.image = std::move(image);
-            sourceData.metadata = std::move(metadata);
-            sourceDone(std::move(sourceData), std::move(error));
-        };
-        if (source == u"capture") {
-            const int delay = params.value(QStringLiteral("delay_seconds")).toInt(0);
-            if (delay < 0 || delay > 10) {
-                done({}, {}, QStringLiteral("invalid_parameters"));
-                return;
-            }
-            auto* delayed = new QTimer(mcpDocuments.get());
-            delayed->setSingleShot(true);
-            mcpSourceDelays.insert(key, delayed);
-            QObject::connect(
-                delayed, &QTimer::timeout, mcpDocuments.get(),
-                [this, guard, delayed, key, params, owner = request.connectionId,
-                 id = request.requestId, canceled, budget, done = std::move(done)]() mutable {
-                    mcpSourceDelays.remove(key);
-                    delayed->deleteLater();
-                    if (!guard || canceled->load())
-                        return;
-#ifdef Q_OS_MACOS
-                    if (!permissions.allow({presentation::AppPermission::ScreenRecording})) {
-                        done({}, {}, QStringLiteral("permission_required"));
-                        return;
-                    }
-#endif
-                    if (mcpSourceCaptureOwner ||
-                        (screenshotController &&
-                         screenshotController->captureAcquisitionActive())) {
-                        done({}, {}, QStringLiteral("busy"));
-                        return;
-                    }
-                    const auto scale = params.value(QStringLiteral("scale")).toDouble(1.0);
-                    if (!std::isfinite(scale) || scale < 0.1 || scale > 4.0) {
-                        done({}, {}, QStringLiteral("invalid_parameters"));
-                        return;
-                    }
-                    // Target identity is resolved once by mcpCapture. Native preparation
-                    // admits that target's geometry before allocating its raster.
-                    mcpSourceCaptureOwner = owner;
-                    mcpSourceCaptureRequest = id;
-                    if (!directCaptureController->mcpCapture(
-                            params,
-                            [this, done](QImage image, QJsonObject metadata,
-                                         QString error) mutable {
-                                mcpSourceCaptureOwner = 0;
-                                mcpSourceCaptureRequest.clear();
-                                done(std::move(image), std::move(metadata), std::move(error));
-                            },
-                            budget)) {
-                        mcpSourceCaptureOwner = 0;
-                        mcpSourceCaptureRequest.clear();
-                        done({}, {}, QStringLiteral("busy"));
-                    }
-                });
-            delayed->start(delay * 1000);
-        } else if (source == u"clipboard" || source == u"history" || source == u"pinned" ||
-                   source == u"text" || source == u"html") {
-            if (mcpSourceWork >= 2) {
-                done({}, {}, QStringLiteral("queue_full"));
-                return;
-            }
-            ++mcpSourceWork;
-            std::optional<ScreenshotClipboardContentSnapshot> clipboard;
-            if (source == u"clipboard")
-                clipboard = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(),
-                                                                       1.0, budget);
-            std::optional<storage::PinnedWindowRecord> livePin;
-            std::optional<ScreenshotRecognitionResults> liveRecognition;
-            QString livePinTool;
-            if (source == u"pinned") {
-                if (const auto* window = groupManager.liveWindow(
-                        params.value(QStringLiteral("source_id")).toString())) {
-                    const auto state = window->automationState();
-                    const auto size = state.value(QStringLiteral("source_size")).toArray();
-                    const auto pixels =
-                        size.size() == 2
-                            ? rasterBytes(QSize(size.at(0).toInt(), size.at(1).toInt()))
-                            : -1;
-                    // The engine caps a serialized document session at 16 MiB.
-                    // Allow both serialization buffers and the owned snapshot.
-                    if (pixels < 0 || !budget(pixels + 64 * 1024 * 1024)) {
-                        --mcpSourceWork;
-                        done({}, {}, QStringLiteral("resource_limit"));
-                        return;
-                    }
-                    livePin = window->persistenceSnapshot();
-                    liveRecognition = window->recognitionSnapshot();
-                    livePinTool = state.value(QStringLiteral("active_tool")).toString();
-                }
-            }
-            auto* watcher = new QFutureWatcher<Source>(mcpDocuments.get());
-            QObject::connect(watcher, &QFutureWatcher<Source>::finished, mcpDocuments.get(),
-                             [this, watcher, sourceDone = std::move(sourceDone)]() mutable {
-                                 --mcpSourceWork;
-                                 auto result = watcher->result();
-                                 watcher->deleteLater();
-                                 const auto error = result.image.isNull() && result.images.isEmpty()
-                                                        ? QStringLiteral("invalid_source")
-                                                        : QString();
-                                 sourceDone(std::move(result), error);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        graphPorts.selectedText = [](QObject* lifetime, auto done) -> std::function<void()> {
+            auto* capture = new presentation::SelectedTextTranslationController(lifetime);
+            QObject::connect(capture, &presentation::SelectedTextTranslationController::textReady,
+                             capture, [capture, done = std::move(done)](const QString& text) {
+                                 done(text, {});
+                                 capture->deleteLater();
                              });
-            const auto swatchStyle = capturePinnedColorSwatchStyle();
-            watcher->setFuture(mcp::runMcpWork(&mcpSourceWorkers, [source, clipboard, livePin,
-                                                                   liveRecognition, livePinTool,
-                                                                   params, canceled, budget,
-                                                                   rasterBytes, swatchStyle] {
-                Source result;
-                if (canceled->load())
-                    return result;
-                if (source == u"clipboard") {
-                    if (!clipboard)
-                        return result;
-                    const auto content = ScreenshotClipboardContentReader::decode(
-                        *clipboard, [canceled] { return canceled->load(); }, budget);
-                    if (content) {
-                        result.image = content->image;
-                        result.originalContent = content->originalContent;
-                    }
-                    return result;
+            capture->capture();
+            return [capture = QPointer<presentation::SelectedTextTranslationController>(capture)] {
+                if (capture) {
+                    capture->cancel();
+                    capture->deleteLater();
                 }
-                if (source == u"text" || source == u"html") {
-                    ScreenshotClipboardOriginalContent original;
-                    original.text = params.value(QStringLiteral("text")).toString();
-                    if (source == u"html")
-                        original.html = params.value(QStringLiteral("html")).toString();
-                    result.originalContent = original;
-                    const auto content = ScreenshotClipboardContentReader::renderOriginalText(
-                        original, 1.0, {}, budget);
-                    if (content)
-                        result.image = content->image;
-                    return result;
-                }
-                if (source == u"pinned") {
-                    const auto record =
-                        livePin
-                            ? livePin
-                            : storage::ApplicationStorage::instance().pinnedWindows().loadRecord(
-                                  params.value(QStringLiteral("source_id")).toString(), budget);
-                    if (!record)
-                        return result;
-                    result.image = record->image;
-                    result.originalContent = {record->originalHtml, record->originalText,
-                                              record->originalFilePath, record->textStyle,
-                                              record->textFormat};
-                    result.recognitionResults =
-                        liveRecognition.value_or(ScreenshotPinnedWindow::decodeRecognitionSnapshot(
-                            record->recognitionResults));
-                    if (record->sourceKind == storage::PinnedWindowSourceKind::ClipboardText) {
-                        const auto content = ScreenshotClipboardContentReader::renderOriginalText(
-                            result.originalContent, record->firstCreationTextDpi, {}, budget,
-                            swatchStyle);
-                        if (content)
-                            result.image = content->image;
-                    }
-                    // A pinned record retains original pixels plus a separate
-                    // transform. Its annotations already use the current canvas
-                    // coordinates, so import the transformed background into the
-                    // current content rectangle without flattening annotations.
-                    const auto originalPixels = result.image.size();
-                    const auto transformedPixels =
-                        record->imageTransform.mapRect(QRectF(QPointF(), originalPixels))
-                            .toAlignedRect()
-                            .size();
-                    const auto sourceBytes = rasterBytes(originalPixels);
-                    const auto transformedBytes = rasterBytes(transformedPixels);
-                    if (sourceBytes < 0 || transformedBytes < 0 ||
-                        !budget(sourceBytes + transformedBytes + (livePin ? 64 * 1024 * 1024 : 0) +
-                                8LL * (record->canvasSession.size() +
-                                       record->recognitionResults.size() +
-                                       record->originalHtml.size() + record->originalText.size())))
-                        return Source{};
-                    if (!record->imageTransform.isIdentity())
-                        result.image = snowCanvasTransformImage(
-                            result.image, record->imageTransform, Qt::SmoothTransformation);
-                    const auto style = decodeScreenshotResultStyle(record->resultStyle);
-                    if (result.image.isNull() || !style)
-                        return Source{};
-                    const auto contentBounds = !record->contentCanvasRect.isEmpty()
-                                                   ? record->contentCanvasRect
-                                                   : record->canvasSourceRect;
-                    result.canvasBounds = record->surfaceCanvasRect;
-                    if (result.canvasBounds.isEmpty())
-                        result.canvasBounds = QRectF(QPointF(), result.image.size());
-                    const auto selectionBounds =
-                        contentBounds.isEmpty() ? result.canvasBounds : contentBounds;
-                    result.recognitionResults =
-                        ScreenshotPinnedWindow::transformedRecognitionSnapshot(
-                            std::move(result.recognitionResults), record->canvasSourceRect,
-                            originalPixels, record->imageTransform, result.image.size(),
-                            selectionBounds);
-                    result.images.append({result.image, selectionBounds});
-                    result.selection = ScreenshotSelectionParams{selectionBounds.toAlignedRect(),
-                                                                 style->cornerRadius,
-                                                                 style->shadowWidth,
-                                                                 style->shadowColor,
-                                                                 false,
-                                                                 false,
-                                                                 style->region};
-                    result.selection->borderType = style->borderType;
-                    result.selection->borderWidth = style->borderWidth;
-                    result.selection->borderColor = style->borderColor;
-                    result.documentSession = record->canvasSession;
-                    if (!livePinTool.isEmpty())
-                        result.tool = livePinTool;
-                    return result;
-                }
-                auto& history = storage::ApplicationStorage::instance().captureHistory();
-                for (const auto& record : history.records()) {
-                    if (record.id != params.value(QStringLiteral("source_id")).toString())
-                        continue;
-                    qint64 historyBytes =
-                        record.canvasBytes >= 0 && record.canvasBytes <= 64 * 1024 * 1024
-                            ? 8 * record.canvasBytes
-                            : -1;
-                    if (!budget(historyBytes))
-                        return result;
-                    const auto addImage = [&](QSize size, qint64 encodedBytes) {
-                        const auto bytes = rasterBytes(size);
-                        if (bytes < 0 || encodedBytes < 0 || encodedBytes > 256 * 1024 * 1024)
-                            return budget(-1);
-                        historyBytes += bytes + 2 * encodedBytes;
-                        return budget(historyBytes);
-                    };
-                    for (const auto& display : record.displays) {
-                        if (!addImage(display.imageSize, display.encodedBytes))
-                            return result;
-                    }
-                    if (record.result &&
-                        !addImage(record.result->imageSize, record.result->encodedBytes))
-                        return result;
-                    const auto payload = history.load(record);
-                    if (!payload)
-                        return result;
-                    result.documentHistory = payload->canvasHistory;
-                    result.canvasBounds = record.canvasBounds;
-                    const auto& selected = record.selection;
-                    result.selection = ScreenshotSelectionParams{
-                        selected.rectangle,       selected.cornerRadius,
-                        selected.shadowWidth,     selected.shadowColor,
-                        selected.lockAspectRatio, selected.lockDragAspectRatio,
-                        selected.region};
-                    result.selection->borderType = selected.borderType;
-                    result.selection->borderWidth = selected.borderWidth;
-                    result.selection->borderColor = selected.borderColor;
-                    for (qsizetype index = 0;
-                         index < payload->displayImages.size() && index < record.displays.size();
-                         ++index) {
-                        const auto& image = payload->displayImages[index];
-                        const auto& display = record.displays[index];
-                        const auto bounds = display.sourceCanvasRect.value_or(
-                            QRect(display.sourceCanvasOrigin.value_or(QPoint()), image.size()));
-                        result.images.append({image, QRectF(bounds)});
-                    }
-                    if (result.images.isEmpty())
-                        result.image = history.loadResultImage(record).value_or(QImage());
-                    return result;
-                }
-                return result;
-            }));
-        } else
-            done({}, {}, QStringLiteral("unsupported_source"));
+            };
+        };
+#endif
+        auto& documentPorts = graphPorts.documents;
+        documentPorts.recognition = ocrRecognition.get();
+        documentPorts.qrRecognition = controller->mcpQrRecognition();
+        documentPorts.api = apiClient();
+        documentPorts.autoFilter = ScreenshotAutoFilterController::detectRegions;
+        documentPorts.pin = [controller](QImage image, auto done) {
+            ScreenshotClipboardContent content;
+            content.image = std::move(image);
+            return controller->mcpPinContent(std::move(content), std::move(done));
+        };
+        const auto historyEntryFromSource = [](mcp::McpDocumentService::Source source) {
+            ScreenshotHistoryEntry entry;
+            entry.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            entry.createdUtc = QDateTime::currentDateTimeUtc();
+            entry.persistent = false;
+            entry.recordedCanvasBounds = source.canvasBounds.toAlignedRect();
+            if (source.images.isEmpty() && !source.image.isNull()) {
+                if (entry.recordedCanvasBounds.isEmpty())
+                    entry.recordedCanvasBounds = QRect(QPoint(), source.image.size());
+                source.images.append({source.image, QRectF(entry.recordedCanvasBounds)});
+            }
+            entry.selection = source.selection.value_or(ScreenshotSelectionParams{});
+            if (!source.selection)
+                entry.selection.selection = entry.recordedCanvasBounds;
+            entry.canvasHistory = std::move(source.documentHistory);
+            entry.documentSession = std::move(source.documentSession);
+            entry.originalContent = std::move(source.originalContent);
+            entry.recognitionResults = std::move(source.recognitionResults);
+            entry.tool = std::move(source.tool);
+            for (const auto& image : source.images) {
+                ScreenshotHistoryDisplay display;
+                display.stableId = QStringLiteral("mcp:%1").arg(entry.displays.size());
+                display.name = display.stableId;
+                display.image = image.image;
+                display.sourceCanvasRect = image.canvasRect.toAlignedRect();
+                display.sourceCanvasOrigin = display.sourceCanvasRect->topLeft();
+#ifdef Q_OS_MACOS
+                display.canvasUsesPoints = true;
+#endif
+                display.backingScale = image.canvasRect.width() > 0
+                                           ? image.image.width() / image.canvasRect.width()
+                                           : 1.0;
+                entry.displays.append(std::move(display));
+            }
+            return entry;
+        };
+        documentPorts.present = [controller, historyEntryFromSource](auto source, auto done) {
+            return controller->mcpPresentDocument(historyEntryFromSource(std::move(source)),
+                                                  std::move(done));
+        };
+        documentPorts.pinDocument =
+            [controller, historyEntryFromSource](auto source, QImage background, auto done) {
+                return controller->mcpPinDocument(historyEntryFromSource(std::move(source)),
+                                                  std::move(background), std::move(done));
+            };
+        auto& ports = graphPorts.session;
+        ports.state = [controller] { return controller->mcpState(); };
+        ports.command = [controller](const QString& method, const QJsonObject& params,
+                                     mcp::ScreenshotMcpSession::Ports::CommandCompletion done) {
+            controller->mcpCommand(method, params, std::move(done));
+        };
+        ports.cancelCommand = [controller] { controller->mcpCancelCommand(); };
+        ports.detached = [controller] { controller->mcpDetached(); };
+        ports.begin = [this, controller](const QJsonObject& options, QString* error) {
+            if (directCaptureController->blocksApplicationUpdate()) {
+                if (error)
+                    *error = QStringLiteral("busy");
+                return false;
+            }
+#ifdef Q_OS_MACOS
+            if (!permissions.allow({presentation::AppPermission::ScreenRecording})) {
+                if (error)
+                    *error = QStringLiteral("permission_required");
+                return false;
+            }
+#endif
+            return controller->mcpBegin(options, error);
+        };
+        ports.cancel = [this, controller]() {
+            controller->mcpCancelCapture();
+            if (directCaptureController)
+                directCaptureController->cancelMcpCapture();
+        };
+        ports.selection = [controller](const QJsonObject& params, QString* error) {
+            return controller->mcpSetSelection(params, error);
+        };
+        ports.tool = [controller](const QString& tool, QString* error) {
+            return controller->mcpSetTool(tool, error);
+        };
+        ports.annotations = [controller](const QByteArray& bytes, QJsonObject* result,
+                                         QString* error) {
+            return controller->mcpApplyAnnotations(bytes, result, error);
+        };
+        ports.history = [controller](bool redo) {
+            if (redo)
+                controller->mcpRedoCanvasEdit();
+            else
+                controller->mcpUndoCanvasEdit();
+        };
+        ports.artifact = [controller](qreal scale) { return controller->mcpExportArtifact(scale); };
+        ports.pin = [controller](auto artifact, auto completion) {
+            return controller->mcpPinArtifact(std::move(artifact), std::move(completion));
+        };
+        ports.direct = [this](const QJsonObject& params, auto completion) {
+            return directCaptureController->mcpCapture(params, std::move(completion));
+        };
+        auto outcome = mcpGraph.start(std::move(graphPorts));
+        if (!outcome.available) {
+            app.setProperty("snowShotMcpStartError", QVariant::fromValue(mcpGraph.startupError()));
+            qWarning("Unable to start Snow Shot MCP server: %s", qPrintable(outcome.error));
+        }
+        return outcome;
     }
 
     void start(const QStringList& initialArguments, std::function<void()> maintenance) {
@@ -1527,47 +1314,26 @@ class ApplicationController::Impl {
     }
 
     void finishStartup(std::function<void()> maintenance) {
-        if (backgroundStartupScheduled)
-            return;
-        backgroundStartupScheduled = true;
-        // Return from the first-frame callback before any unrelated work can run.
-        QTimer::singleShot(0, &q, [this, maintenance = std::move(maintenance)] {
-            startBackgroundWork();
-            if (maintenance)
-                maintenance();
-        });
-    }
-
-    void startBackgroundWork() {
-        updates->start();
-        static_cast<void>(featureRouter.dispatch(
-            FeatureFamily::Screenshot,
-            [this]() {
-                QTimer::singleShot(0, &q, [this]() {
-                    if (ScreenshotController* controller = ensureScreenshotController()) {
-                        controller->prewarmResources();
-                    }
-                });
-            },
-            false));
-        static_cast<void>(featureRouter.dispatch(
-            FeatureFamily::PinToScreen,
-            [this]() { QTimer::singleShot(0, &q, [this]() { restorePinnedWindows(); }); }, false));
-        QTimer::singleShot(0, &q, [this]() { applyOcrConfiguration(); });
-        if (distribution::isStoreManaged()) {
-            QTimer::singleShot(0, &q, [this] {
-                if (auto* controller = ensureScreenshotController())
-                    controller->offerRecordingRecovery();
-            });
-        }
+        deferredStartup.start({[this] { updates->start(); }, std::move(maintenance),
+                               [this] {
+                                   if (auto* controller = ensureScreenshotController())
+                                       controller->prewarmResources();
+                               },
+                               [this] { restorePinnedWindows(); },
+                               [this] { applyOcrConfiguration(); },
+                               [this] {
+                                   if (distribution::isStoreManaged()) {
+                                       if (auto* controller = ensureScreenshotController())
+                                           controller->offerRecordingRecovery();
+                                   }
+                               }});
     }
 
     ScreenshotController* ensureScreenshotController() {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), apiClient());
-            screenshotController->setCaptureSuspended((updates && updates->handoffPending()) ||
-                                                      (handoffInput && handoffInput->active));
+            screenshotController->setCaptureSuspended(applicationSuspended());
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::recordingExportNotificationRequested,
                              &systemTray,
@@ -1602,25 +1368,33 @@ class ApplicationController::Impl {
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });
-            QObject::connect(screenshotController.get(),
-                             &ScreenshotController::imageStitchingRequested, &q,
-                             [this](const QVector<ScreenshotPinnedImageSnapshot>& snapshots) {
-                                 ensureCollageWindowCoordinator().presentPinnedWindows(snapshots);
-                             });
+            QObject::connect(
+                screenshotController.get(), &ScreenshotController::imageStitchingRequested, &q,
+                [this](const QVector<ScreenshotPinnedImageSnapshot>& snapshots) {
+                    static_cast<void>(actionGate.dispatch([this, snapshots] {
+                        ensureImageStitchingWindowCoordinator().presentPinnedWindows(snapshots);
+                    }));
+                });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::imageSplittingRequested, &q,
                              [this](const presentation::ImageSplitSource& source) {
-                                 ensureImageSplitWindowCoordinator().presentSource(source);
+                                 static_cast<void>(actionGate.dispatch([this, source] {
+                                     ensureImageSplitWindowCoordinator().presentSource(source);
+                                 }));
                              });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::scrollingImageEditingRequested, &q,
                              [this](const ScreenshotExportSource& source) {
-                                 ensureImageEditingWindowCoordinator().presentSource(source);
+                                 static_cast<void>(actionGate.dispatch([this, source] {
+                                     ensureImageEditingWindowCoordinator().presentSource(source);
+                                 }));
                              });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::pinnedImageEditingRequested, &q,
                              [this](const QString& id) {
-                                 ensureImageEditingWindowCoordinator().presentPinnedRecord(id);
+                                 static_cast<void>(actionGate.dispatch([this, id] {
+                                     ensureImageEditingWindowCoordinator().presentPinnedRecord(id);
+                                 }));
                              });
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             QObject::connect(screenshotController.get(),
@@ -1629,13 +1403,9 @@ class ApplicationController::Impl {
                                  ensureSelectedTextTranslationCoordinator().presentText(text);
                              });
 #endif
-            if (isFeatureAvailable(FeatureFamily::Screenshot) ||
-                isFeatureAvailable(FeatureFamily::PinToScreen) ||
-                isFeatureAvailable(FeatureFamily::ScreenRecording)) {
-                QObject::connect(
-                    screenshotController.get(), &ScreenshotController::captureAvailabilityChanged,
-                    &globalMouseManager, &presentation::GlobalMouseManager::setCaptureAvailable);
-            }
+            QObject::connect(screenshotController.get(),
+                             &ScreenshotController::captureAvailabilityChanged, &globalMouseManager,
+                             &presentation::GlobalMouseManager::setCaptureAvailable);
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::globalMouseCaptureEnded, &globalMouseManager,
                              &presentation::GlobalMouseManager::cancelGesture);
@@ -1657,8 +1427,12 @@ class ApplicationController::Impl {
 #endif
         if (key == u"updates/mode" && updates != nullptr) {
             updates->setMode(value.toString());
-        } else if (key == u"network/proxy" && updates != nullptr) {
-            updates->setSystemProxy(value.toString() == u"system");
+        } else if ((key == u"network/proxy" || key == u"network/http_proxy") &&
+                   updates != nullptr) {
+            const auto& configuration = storage::ApplicationStorage::instance().configuration();
+            updates->setProxyConfiguration(
+                configuration.value(QStringLiteral("network/proxy")).toString(),
+                configuration.value(QStringLiteral("network/http_proxy")).toString());
         } else if (key == kPinBorderColorKey) {
             QColor color = storage::colorFromRgbaString(value.toString());
             if (!color.isValid()) {
@@ -1685,7 +1459,7 @@ class ApplicationController::Impl {
                 storage::colorFromRgbaString(value.toString()));
         } else if (key == kTrayEnabledKey) {
             const bool enabled = value.isBool() ? value.toBool() : true;
-            systemTray.setEnabled(enabled);
+            systemTray.setEnabled(enabled && !applicationSuspended());
             ScreenshotPinnedWindow::setRuntimeTrayEnabled(enabled);
         } else if (key == kTrayUseSystemIconColorKey) {
             systemTray.setUseSystemIconColor(value.toBool(false));
@@ -1726,73 +1500,77 @@ class ApplicationController::Impl {
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
             QObject::connect(mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
-                if (!allowPermissions(presentation::requiredPermissions(
-                        presentation::GlobalShortcutAction::Screenshot,
-                        permissions.microphoneEnabled())))
-                    return;
-                static_cast<void>(featureRouter.dispatch(FeatureFamily::Screenshot, [this]() {
-                    if (ScreenshotController* controller = ensureScreenshotController()) {
-                        controller->startCapture();
-                    }
-                }));
+                dispatchQuickAction(presentation::GlobalShortcutAction::Screenshot);
             });
             QObject::connect(
                 mainWindow, &MainWindow::quickActionRequested, &q,
                 [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
-            QObject::connect(mainWindow, &MainWindow::globalMouseDragRequested, &q,
-                             [this](presentation::settings::SettingsGlobalMouseAction action) {
-                                 if (!allowPermissions(presentation::requiredPermissions(
-                                         action, permissions.microphoneEnabled())))
-                                     return;
-                                 static_cast<void>(featureRouter.dispatch(
-                                     featureFamilyFor(action), [this, action]() {
-                                         globalMouseManager.beginButtonDrag(action);
-                                     }));
+            QObject::connect(
+                mainWindow, &MainWindow::globalMouseDragRequested, &q,
+                [this](presentation::settings::SettingsGlobalMouseAction action) {
+                    static_cast<void>(actionGate.dispatch(
+                        [this, action]() { globalMouseManager.beginButtonDrag(action); },
+                        [this, action] {
+                            return allowPermissions(presentation::requiredPermissions(
+                                action, permissions.microphoneEnabled()));
+                        }));
+                });
+            QObject::connect(mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
+                             [this](const QString& recordId) {
+                                 static_cast<void>(actionGate.dispatch([this, recordId]() {
+                                     if (ScreenshotController* controller =
+                                             ensureScreenshotController()) {
+                                         controller->editHistoryRecord(recordId);
+                                     }
+                                 }));
                              });
-            QObject::connect(
-                mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
-                [this](const QString& recordId) {
-                    static_cast<void>(
-                        featureRouter.dispatch(FeatureFamily::Screenshot, [this, recordId]() {
-                            if (ScreenshotController* controller = ensureScreenshotController()) {
-                                controller->editHistoryRecord(recordId);
-                            }
-                        }));
-                });
-            QObject::connect(
-                mainWindow, &MainWindow::screenshotHistoryPinRequested, &q,
-                [this](const QString& recordId) {
-                    static_cast<void>(
-                        featureRouter.dispatch(FeatureFamily::PinToScreen, [this, recordId]() {
-                            if (ScreenshotController* controller = ensureScreenshotController()) {
-                                controller->pinHistoryRecord(recordId);
-                            }
-                        }));
-                });
-            QObject::connect(mainWindow, &MainWindow::screenshotHistoryCollageRequested, &q,
+            QObject::connect(mainWindow, &MainWindow::screenshotHistoryPinRequested, &q,
+                             [this](const QString& recordId) {
+                                 static_cast<void>(actionGate.dispatch([this, recordId]() {
+                                     if (ScreenshotController* controller =
+                                             ensureScreenshotController()) {
+                                         controller->pinHistoryRecord(recordId);
+                                     }
+                                 }));
+                             });
+            QObject::connect(mainWindow, &MainWindow::screenshotHistoryStitchImagesRequested, &q,
                              [this](const QVector<storage::CaptureHistoryRecord>& records) {
-                                 ensureCollageWindowCoordinator().present(records);
+                                 static_cast<void>(actionGate.dispatch([this, records] {
+                                     ensureImageStitchingWindowCoordinator().present(records);
+                                 }));
                              });
             QObject::connect(mainWindow, &MainWindow::screenshotHistorySplitRequested, &q,
                              [this](const storage::CaptureHistoryRecord& record) {
-                                 ensureImageSplitWindowCoordinator().presentHistory(record);
+                                 static_cast<void>(actionGate.dispatch([this, record] {
+                                     ensureImageSplitWindowCoordinator().presentHistory(record);
+                                 }));
                              });
             QObject::connect(mainWindow, &MainWindow::screenshotHistoryImageEditingRequested, &q,
                              [this](const storage::CaptureHistoryRecord& record) {
-                                 ensureImageEditingWindowCoordinator().presentHistory(record);
+                                 static_cast<void>(actionGate.dispatch([this, record] {
+                                     ensureImageEditingWindowCoordinator().presentHistory(record);
+                                 }));
                              });
-            QObject::connect(mainWindow, &MainWindow::pinnedWindowCollageRequested, &q,
+            QObject::connect(mainWindow, &MainWindow::pinnedWindowStitchImagesRequested, &q,
                              [this](const QStringList& recordIds) {
-                                 ensureCollageWindowCoordinator().presentPinnedRecords(recordIds);
+                                 static_cast<void>(actionGate.dispatch([this, recordIds] {
+                                     ensureImageStitchingWindowCoordinator().presentPinnedRecords(
+                                         recordIds);
+                                 }));
                              });
             QObject::connect(mainWindow, &MainWindow::pinnedWindowSplitRequested, &q,
                              [this](const QString& recordId) {
-                                 ensureImageSplitWindowCoordinator().presentPinnedRecord(recordId);
+                                 static_cast<void>(actionGate.dispatch([this, recordId] {
+                                     ensureImageSplitWindowCoordinator().presentPinnedRecord(
+                                         recordId);
+                                 }));
                              });
             QObject::connect(mainWindow, &MainWindow::pinnedWindowImageEditingRequested, &q,
                              [this](const QString& recordId) {
-                                 ensureImageEditingWindowCoordinator().presentPinnedRecord(
-                                     recordId);
+                                 static_cast<void>(actionGate.dispatch([this, recordId] {
+                                     ensureImageEditingWindowCoordinator().presentPinnedRecord(
+                                         recordId);
+                                 }));
                              });
         }
         return *mainWindow;
@@ -1845,10 +1623,15 @@ class ApplicationController::Impl {
         static const QHash<QString, Quick> quickActions{
             {QStringLiteral("screenshot"), Quick::Screenshot},
             {QStringLiteral("screenshot-delay"), Quick::ScreenshotDelay},
-            {QStringLiteral("pin-to-screen"), Quick::ScreenshotFixed},
+            {QStringLiteral("pin-to-screen"), Quick::ScreenshotPinToScreen},
             {QStringLiteral("text-recognition"), Quick::ScreenshotOcr},
             {QStringLiteral("text-translation"), Quick::ScreenshotTranslation},
             {QStringLiteral("record-screen"), Quick::ScreenRecord},
+            {QStringLiteral("screenshot-history"), Quick::OpenCaptureHistory},
+            {QStringLiteral("global-canvas"), Quick::GlobalCanvas},
+            {QStringLiteral("stitch-selected-images"), Quick::StitchSelectedImages},
+            {QStringLiteral("split-selected-images"), Quick::SplitSelectedImages},
+            {QStringLiteral("edit-selected-images"), Quick::EditSelectedImages},
         };
         if (const auto action = quickActions.constFind(id); action != quickActions.cend()) {
             dispatchQuickAction(*action);
@@ -1865,40 +1648,33 @@ class ApplicationController::Impl {
             {QStringLiteral("save-as-file"), Action::Save},
         };
         const auto action = selectionActions.constFind(id);
-        if (action == selectionActions.cend() ||
-            storage::ApplicationStorage::instance().directoryChanging() ||
-            !allowPermissions(presentation::requiredPermissions(Quick::Screenshot, false)))
+        if (action == selectionActions.cend())
             return;
-        static_cast<void>(
-            featureRouter.dispatch(FeatureFamily::Screenshot, [this, action = *action] {
+        static_cast<void>(actionGate.dispatch(
+            [this, action = *action] {
                 if (auto* controller = ensureScreenshotController())
                     static_cast<void>(controller->captureForAction(action));
+            },
+            [this] {
+                return allowPermissions(
+                    presentation::requiredPermissions(Quick::Screenshot, false));
             }));
     }
 
     void dispatchQuickAction(presentation::GlobalShortcutAction action,
                              QuickActionOrigin origin = QuickActionOrigin::Other) {
         runtime::RuntimeActivityTracker::shared().markActivity();
-        if (storage::ApplicationStorage::instance().directoryChanging() ||
-            (updates && updates->handoffPending()))
-            return;
-        if (!allowPermissions(
-                presentation::requiredPermissions(action, permissions.microphoneEnabled())))
-            return;
-        const std::optional<FeatureFamily> feature = featureFamilyFor(action);
-        if (feature && !featureRouter.dispatch(*feature, [this, action, origin]() {
-                dispatchAvailableQuickAction(action, origin);
-            })) {
-            return;
-        }
-        if (!feature) {
-            dispatchAvailableQuickAction(action, origin);
-        }
+        static_cast<void>(actionGate.dispatch(
+            [this, action, origin] { dispatchAvailableQuickAction(action, origin); },
+            [this, action] {
+                return allowPermissions(
+                    presentation::requiredPermissions(action, permissions.microphoneEnabled()));
+            }));
     }
 
     void dispatchAvailableQuickAction(presentation::GlobalShortcutAction action,
                                       QuickActionOrigin origin) {
-        if (origin == QuickActionOrigin::GlobalHotkey && screenshotController &&
+        if (origin == QuickActionOrigin::GlobalShortcut && screenshotController &&
             screenshotController->handleActiveScreenshotShortcut(action))
             return;
         switch (action) {
@@ -1912,7 +1688,7 @@ class ApplicationController::Impl {
                 controller->startDelayedCapture(storage::ScreenshotSettings().delaySeconds());
             }
             break;
-        case presentation::GlobalShortcutAction::ScreenshotFixed:
+        case presentation::GlobalShortcutAction::ScreenshotPinToScreen:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->captureAndPinSelection();
             }
@@ -1934,6 +1710,12 @@ class ApplicationController::Impl {
                 controller->captureAndTranslateText();
             }
 #endif
+            break;
+        case presentation::GlobalShortcutAction::ScreenshotScrolling:
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                static_cast<void>(controller->captureForAction(
+                    ScreenshotController::CaptureAction::StartScrolling));
+            }
             break;
         case presentation::GlobalShortcutAction::ScreenshotCopy:
             if (ScreenshotController* controller = ensureScreenshotController()) {
@@ -1995,13 +1777,20 @@ class ApplicationController::Impl {
         case presentation::GlobalShortcutAction::StitchSelectedImages: {
             auto backend = platform::createSelectedFileBackend();
             const auto target = backend->captureTarget();
-            ensureCollageWindowCoordinator().presentSelectedFiles(std::move(backend), target);
+            ensureImageStitchingWindowCoordinator().presentSelectedFiles(std::move(backend),
+                                                                         target);
             break;
         }
         case presentation::GlobalShortcutAction::SplitSelectedImages: {
             auto backend = platform::createSelectedFileBackend();
             const auto target = backend->captureTarget();
             ensureImageSplitWindowCoordinator().presentSelectedFiles(std::move(backend), target);
+            break;
+        }
+        case presentation::GlobalShortcutAction::EditSelectedImages: {
+            auto backend = platform::createSelectedFileBackend();
+            const auto target = backend->captureTarget();
+            ensureImageEditingWindowCoordinator().presentSelectedFiles(std::move(backend), target);
             break;
         }
         case presentation::GlobalShortcutAction::OpenPinToScreenManagement:
@@ -2043,9 +1832,9 @@ class ApplicationController::Impl {
                 controller->pinClipboardContentToScreen();
             }
             break;
-        case presentation::GlobalShortcutAction::ToggleGlobalHotkeys:
-            globalShortcutManager.setGlobalHotkeysEnabled(
-                !globalShortcutManager.globalHotkeysEnabled());
+        case presentation::GlobalShortcutAction::ToggleGlobalShortcuts:
+            globalShortcutManager.setGlobalShortcutsEnabled(
+                !globalShortcutManager.globalShortcutsEnabled());
             break;
         case presentation::GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow: {
             storage::GlobalShortcutSettings shortcutSettings;
@@ -2054,6 +1843,19 @@ class ApplicationController::Impl {
             break;
         }
         }
+    }
+
+    ScreenshotPinnedImageSnapshotRequest pinnedImageSnapshotRequest() {
+        return [this](const QString& id, auto complete) {
+            if (auto* pin = groupManager.liveWindow(id)) {
+                pin->requestRenderedImageSnapshot(
+                    [complete = std::move(complete)](ScreenshotPinnedImageSnapshot snapshot) {
+                        complete(std::move(snapshot));
+                    });
+            } else {
+                complete(std::nullopt);
+            }
+        };
     }
 
     presentation::ImageEditingWindowCoordinator& ensureImageEditingWindowCoordinator() {
@@ -2084,8 +1886,9 @@ class ApplicationController::Impl {
     presentation::ImageSplitWindowCoordinator& ensureImageSplitWindowCoordinator() {
         if (!imageSplitWindowCoordinator) {
             presentation::ImageSplitWindowServices services;
+            services.requestPinnedSnapshot = pinnedImageSnapshotRequest();
             services.stitchToPdf = [this](presentation::ImageSplitSnapshot snapshot) {
-                return ensureCollageWindowCoordinator().presentSplitImagesAsPdf(
+                return ensureImageStitchingWindowCoordinator().presentSplitImagesAsPdf(
                     std::move(snapshot));
             };
             imageSplitWindowCoordinator =
@@ -2098,13 +1901,18 @@ class ApplicationController::Impl {
         return *imageSplitWindowCoordinator;
     }
 
-    presentation::CollageWindowCoordinator& ensureCollageWindowCoordinator() {
-        if (!collageWindowCoordinator) {
-            collageWindowCoordinator = std::make_unique<presentation::CollageWindowCoordinator>(&q);
-            QObject::connect(&app, &QCoreApplication::aboutToQuit, collageWindowCoordinator.get(),
-                             &presentation::CollageWindowCoordinator::shutdown);
+    presentation::ImageStitchingWindowCoordinator& ensureImageStitchingWindowCoordinator() {
+        if (!imageStitchingWindowCoordinator) {
+            presentation::ImageStitchingWindowServices services;
+            services.requestPinnedSnapshot = pinnedImageSnapshotRequest();
+            imageStitchingWindowCoordinator =
+                std::make_unique<presentation::ImageStitchingWindowCoordinator>(
+                    &q, std::move(services));
+            QObject::connect(&app, &QCoreApplication::aboutToQuit,
+                             imageStitchingWindowCoordinator.get(),
+                             &presentation::ImageStitchingWindowCoordinator::shutdown);
         }
-        return *collageWindowCoordinator;
+        return *imageStitchingWindowCoordinator;
     }
 
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -2154,7 +1962,7 @@ class ApplicationController::Impl {
     }
 
     void restorePinnedWindows() {
-        static_cast<void>(featureRouter.dispatch(FeatureFamily::PinToScreen, [this]() {
+        static_cast<void>(actionGate.dispatch([this]() {
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->restorePinnedWindows();
             }
@@ -2184,32 +1992,6 @@ class ApplicationController::Impl {
         }
     }
 
-    QString unavailableFeatureMessage(FeatureFamily feature) const {
-        Q_UNUSED(feature);
-        return {};
-    }
-
-    QString unavailableFeatureKey(FeatureFamily feature) const {
-        Q_UNUSED(feature);
-        return {};
-    }
-
-    void showUnavailableFeatureInWindow(MainWindow& window, FeatureFamily feature) {
-        adqt::widgets::AdMessage::Request request;
-        request.key = unavailableFeatureKey(feature);
-        request.content = unavailableFeatureMessage(feature);
-        adqt::widgets::AdMessageService::warning(std::move(request), &window);
-    }
-
-    void showUnavailableFeature(FeatureFamily feature) {
-        if (mainWindow != nullptr && mainWindow->isVisible() && !mainWindow->isMinimized()) {
-            showUnavailableFeatureInWindow(*mainWindow, feature);
-            return;
-        }
-        systemTray.showWarningMessage(ApplicationController::tr("Feature unavailable"),
-                                      unavailableFeatureMessage(feature));
-    }
-
     void showGeneralSettings() {
         ensureMainWindow().showGeneralSettings();
     }
@@ -2219,16 +2001,22 @@ class ApplicationController::Impl {
     ApplicationRestartCoordinator restartCoordinator;
     ApplicationInputGuard* migrationInput = nullptr;
     ApplicationInputGuard* handoffInput = nullptr;
-    quint64 handoffShortcuts = 0;
-    bool handoffMcp = false;
-    quint64 migrationShortcuts = 0;
-    bool migrationMcp = false;
-    QString migrationSource;
+    struct DirectoryPause {
+        QString sourceRoot;
+        QString restoredRoot;
+        QuiescenceSession resources;
+    };
+    std::unique_ptr<DirectoryPause> migrationPause;
+    std::shared_ptr<QuiescenceSession> handoffPause;
+    bool handoffPauseRequested = false;
+    bool handoffPauseReconciling = false;
     // These services outlive the disposable configuration window.
     presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;
     presentation::FloatingToolbarController floatingToolbar;
-    FeatureActionRouter featureRouter;
+    ApplicationActionGate actionGate{[this, lifetime = QPointer<ApplicationController>(&q)] {
+        return lifetime && actionsAvailable();
+    }};
     presentation::GlobalShortcutManager globalShortcutManager;
     std::unique_ptr<presentation::WindowGroupSwitcherController> windowGroupSwitcher;
     presentation::AppPermissionService permissions;
@@ -2257,20 +2045,12 @@ class ApplicationController::Impl {
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
     std::unique_ptr<presentation::GlobalCanvasController> globalCanvasController;
-    std::unique_ptr<mcp::ScreenshotMcpServer> mcpServer;
-    std::unique_ptr<mcp::ScreenshotMcpSession> mcpSession;
-    std::unique_ptr<mcp::McpJobRegistry> mcpJobs;
-    std::unique_ptr<mcp::McpApplicationService> mcpApplication;
-    std::unique_ptr<mcp::McpDocumentService> mcpDocuments;
-    std::unique_ptr<mcp::McpMediaService> mcpMedia;
-    QHash<QString, std::shared_ptr<std::atomic_bool>> mcpSources;
-    QHash<QString, QTimer*> mcpSourceDelays;
-    quint64 mcpSourceCaptureOwner = 0;
-    QString mcpSourceCaptureRequest;
-    QThreadPool mcpSourceWorkers;
-    int mcpSourceWork = 0;
+    // Graph cancellation borrows direct capture even when construction unwinds before Impl's
+    // destructor can run its explicit shutdown sequence. Destroy both MCP owners first.
     std::unique_ptr<presentation::DirectCaptureController> directCaptureController;
-    std::unique_ptr<presentation::CollageWindowCoordinator> collageWindowCoordinator;
+    mcp::McpRuntimeGraph mcpGraph{&q};
+    std::unique_ptr<mcp::McpRuntimeLifecycle> mcpLifecycle;
+    std::unique_ptr<presentation::ImageStitchingWindowCoordinator> imageStitchingWindowCoordinator;
     std::unique_ptr<presentation::ImageSplitWindowCoordinator> imageSplitWindowCoordinator;
     std::unique_ptr<presentation::ImageEditingWindowCoordinator> imageEditingWindowCoordinator;
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -2282,15 +2062,13 @@ class ApplicationController::Impl {
     std::unique_ptr<platform::macos::ApplicationReopenHandler> reopenHandler;
 #endif
     bool started = false;
-    bool backgroundStartupScheduled = false;
+    bool shuttingDown = false;
+    DeferredStartup deferredStartup{q, [this] { return actionsAvailable(); }};
     std::unique_ptr<runtime::MemoryOptimizationController> memoryOptimization;
     std::unique_ptr<StoreUpdateLifecycle> storeLifecycle;
     update::UpdateService* updates = nullptr;
 #ifdef Q_OS_WIN
-    QStringList deferredShellFilePaths;
-    bool deferredShellForeground = false;
-    QStringList deferredStorageShellFilePaths;
-    bool deferredStorageShellForeground = false;
+    ShellLaunchCoordinator shellLaunches;
 #endif
 };
 
@@ -2308,47 +2086,57 @@ void ApplicationController::showMainWindow() {
     m_impl->showMainWindow();
 }
 
+bool ApplicationController::acceptsLaunchRequest(const QStringList& arguments) const {
+#ifdef Q_OS_WIN
+    if (m_impl->updates && m_impl->updates->handoffPending()) {
+        return m_impl->shellLaunches.acceptsUpdate(
+            ShellLaunchCoordinator::parse(arguments), m_impl->updates->acceptsRelaunchArguments({}),
+            [this](const auto& intent) {
+                return m_impl->updates->acceptsRelaunchArguments(
+                    update::startupUpdateRelaunchArguments(intent.foreground, intent.paths));
+            });
+    }
+#else
+    static_cast<void>(arguments);
+#endif
+    return true;
+}
+
 void ApplicationController::handleLaunchRequest(const QStringList& arguments,
                                                 std::function<void()> firstFileFinished) {
-    const auto finishUnhandled = qScopeGuard([&] {
-        if (firstFileFinished)
-            firstFileFinished();
-    });
+    ShellLaunchCoordinator::FirstFileCompletion completion(std::move(firstFileFinished));
+    if (!acceptsLaunchRequest(arguments)) {
+        m_impl->reportSelectedFilePinFailure(QCoreApplication::translate(
+            "UpdateErrors", "The selected files exceed the update restart limit"));
+        return;
+    }
 #ifdef Q_OS_WIN
-    const auto request = parseShellImageLaunchRequest(arguments);
-    if (request.requested) {
+    const auto request = ShellLaunchCoordinator::parse(arguments);
+    if (request.filesRequested) {
         if (!request.valid) {
             m_impl->reportSelectedFilePinFailure(tr("The selected file path is invalid"));
             return;
         }
-        QStringList supportedPaths;
-        const auto supported = supportedPinFileExtensions();
-        for (const QString& path : request.paths) {
-            if (supported.contains(QFileInfo(path).suffix().toLower()))
-                supportedPaths.append(path);
-            else
-                m_impl->reportSelectedFilePinFailure(
-                    tr("Could not open the selected file: %1").arg(path));
-        }
-        const bool foreground = arguments.contains(QStringLiteral("--show-main-window"));
-        if (storage::ApplicationStorage::instance().directoryChanging()) {
-            m_impl->deferredStorageShellFilePaths.append(supportedPaths);
-            m_impl->deferredStorageShellForeground =
-                m_impl->deferredStorageShellForeground || foreground;
+        for (const QString& path : request.unsupportedPaths)
+            m_impl->reportSelectedFilePinFailure(
+                tr("Could not open the selected file: %1").arg(path));
+        if (storage::ApplicationStorage::instance().directoryChanging() ||
+            (m_impl->migrationInput && m_impl->migrationInput->active)) {
+            m_impl->shellLaunches.retainStorage(request);
         } else if ((m_impl->updates && m_impl->updates->handoffPending()) ||
                    (m_impl->handoffInput && m_impl->handoffInput->active)) {
-            m_impl->preserveShellLaunchForUpdate(supportedPaths, foreground);
+            m_impl->preserveShellLaunchForUpdate(request);
         } else {
-            if (!supportedPaths.isEmpty())
-                m_impl->pinShellFiles(std::move(supportedPaths),
-                                      std::exchange(firstFileFinished, {}));
-            if (foreground)
+            if (!request.paths.isEmpty())
+                m_impl->pinShellFiles(request.paths, completion.take());
+            if (request.foreground)
                 m_impl->showMainWindow();
         }
         return;
     }
 #endif
-    if (storage::ApplicationStorage::instance().directoryChanging())
+    if (storage::ApplicationStorage::instance().directoryChanging() ||
+        (m_impl->migrationInput && m_impl->migrationInput->active))
         return;
     if (arguments.contains(QStringLiteral("--autostart"))) {
         return;
@@ -2356,7 +2144,7 @@ void ApplicationController::handleLaunchRequest(const QStringList& arguments,
 #ifdef Q_OS_WIN
     if ((m_impl->updates && m_impl->updates->handoffPending()) ||
         (m_impl->handoffInput && m_impl->handoffInput->active)) {
-        m_impl->preserveShellLaunchForUpdate({}, true);
+        m_impl->preserveShellLaunchForUpdate(request);
         return;
     }
 #endif

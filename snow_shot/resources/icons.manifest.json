@@ -1183,6 +1183,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ReplaceImage",
+      "name": "replace-image",
+      "source": "../src/presentation/components/icons/resources/replace-image.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Restart",
       "name": "restart",
       "source": "../src/presentation/components/icons/resources/restart.svg",
@@ -1194,6 +1202,14 @@
       "symbol": "RevealInFolder",
       "name": "reveal-in-folder",
       "source": "../src/presentation/components/icons/resources/reveal-in-folder.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ReverseOrder",
+      "name": "reverse-order",
+      "source": "../src/presentation/components/icons/resources/reverse-order.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -1623,6 +1639,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ToolStrikethrough",
+      "name": "tool-strikethrough",
+      "source": "../src/presentation/components/icons/resources/tool-strikethrough.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ToolText",
       "name": "tool-text",
       "source": "../src/presentation/components/icons/resources/tool-text.svg",
@@ -1631,9 +1655,25 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ToolUnderline",
+      "name": "tool-underline",
+      "source": "../src/presentation/components/icons/resources/tool-underline.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ToolWatermark",
       "name": "tool-watermark",
       "source": "../src/presentation/components/icons/resources/tool-watermark.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ToolWavyUnderline",
+      "name": "tool-wavy-underline",
+      "source": "../src/presentation/components/icons/resources/tool-wavy-underline.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

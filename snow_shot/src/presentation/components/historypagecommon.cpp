@@ -8,8 +8,12 @@
 #include "widgets/message.h"
 
 #include <QBoxLayout>
+#include <QClipboard>
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QFont>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QPalette>
 #include <QWidget>
@@ -19,13 +23,34 @@
 
 namespace snow_shot::presentation::components::history_page {
 
+int PreviewModel::rowCount(const QModelIndex& parent) const {
+    return parent.isValid() ? 0 : m_count;
+}
+
+QVariant PreviewModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_count || !m_itemAt)
+        return {};
+    if (role == adqt::widgets::AdImageItemRoles::SourceRole)
+        return m_itemAt(index.row()).source;
+    if (role == adqt::widgets::AdImageItemRoles::AltTextRole || role == Qt::DisplayRole)
+        return m_itemAt(index.row()).altText;
+    return {};
+}
+
+void PreviewModel::reset(int count, std::function<adqt::widgets::AdImageItem(int)> itemAt) {
+    beginResetModel();
+    m_count = count;
+    m_itemAt = std::move(itemAt);
+    endResetModel();
+}
+
 QString revealActionText() {
 #ifdef Q_OS_WIN
     return QCoreApplication::translate("HistoryFileLocation", "Open in Explorer");
 #elif defined(Q_OS_MACOS)
     return QCoreApplication::translate("HistoryFileLocation", "Reveal in Finder");
 #else
-    return QCoreApplication::translate("HistoryFileLocation", "Open Containing Folder");
+    return QCoreApplication::translate("HistoryFileLocation", "Open containing folder");
 #endif
 }
 
@@ -33,7 +58,24 @@ void showRevealFailure(QWidget* parent) {
     adqt::widgets::AdMessage::Request request;
     request.key = QStringLiteral("historyRevealFailure");
     request.content = QCoreApplication::translate("HistoryFileLocation",
-                                                  "Unable to open this entry's file location.");
+                                                  "Unable to open this entry's file location");
+    adqt::widgets::AdMessageService::error(std::move(request), parent->window());
+}
+
+QString copyImagePathActionText() {
+    return QCoreApplication::translate("HistoryFileLocation", "Copy image path");
+}
+
+void copyImagePath(const QString& path, QWidget* parent) {
+    const QFileInfo file(path);
+    if (!path.isEmpty() && file.isFile()) {
+        QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(file.absoluteFilePath()));
+        return;
+    }
+    adqt::widgets::AdMessage::Request request;
+    request.key = QStringLiteral("historyCopyImagePathFailure");
+    request.content = QCoreApplication::translate("HistoryFileLocation",
+                                                  "Unable to copy this entry's image path");
     adqt::widgets::AdMessageService::error(std::move(request), parent->window());
 }
 

@@ -8,6 +8,40 @@
 #include <cmath>
 #include <utility>
 
+bool paintScreenshotRecognitionOverlay(QPainter& painter,
+                                       const ScreenshotRecognitionImageSnapshot& snapshot,
+                                       const QTransform& canvasToPainter,
+                                       const std::function<bool()>& cancelled) {
+    const auto stopped = [&] { return cancelled && cancelled(); };
+    if (stopped())
+        return false;
+    if (!snapshot.filteredImage.isNull() && snapshot.filteredCanvasRect.isValid()) {
+        painter.save();
+        painter.setTransform(canvasToPainter, true);
+        painter.drawImage(snapshot.filteredCanvasRect, snapshot.filteredImage);
+        painter.restore();
+    }
+    ScreenshotOcrTextLayout layout;
+    for (const ScreenshotOcrLine& line : snapshot.lines) {
+        if (stopped())
+            return false;
+        if (!line.quad.boundingRect().intersects(snapshot.canvasRect))
+            continue;
+        QTransform textToPainter;
+        if (!configureScreenshotOcrTextLayout(layout, line, canvasToPainter, snapshot.font,
+                                              snapshot.textColor, {}, &textToPainter))
+            continue;
+        painter.save();
+        painter.setTransform(textToPainter, true);
+        layout.paint(&painter);
+        painter.restore();
+    }
+    if (stopped())
+        return false;
+    return paintScreenshotTextAnnotations(painter, snapshot.textAnnotations, canvasToPainter,
+                                          nullptr, cancelled);
+}
+
 QImage renderScreenshotRecognitionImage(const ScreenshotRecognitionImageSnapshot& snapshot,
                                         const std::function<bool()>& cancelled) {
     const auto releaseCaches = qScopeGuard([&] {
@@ -52,25 +86,8 @@ QImage renderScreenshotRecognitionImage(const ScreenshotRecognitionImageSnapshot
         image.width() / rect.width(), 0.0, 0.0, image.height() / rect.height(),
         -rect.x() * image.width() / rect.width(), -rect.y() * image.height() / rect.height());
     painter.setClipRect(image.rect());
-    if (!snapshot.filteredImage.isNull() && snapshot.filteredCanvasRect.isValid()) {
-        painter.drawImage(canvasToPixels.mapRect(snapshot.filteredCanvasRect),
-                          snapshot.filteredImage);
-    }
-    ScreenshotOcrTextLayout layout;
-    for (const ScreenshotOcrLine& line : snapshot.lines) {
-        if (stopped())
-            return {};
-        if (!line.quad.boundingRect().intersects(rect))
-            continue;
-        QTransform textToPixels;
-        if (!configureScreenshotOcrTextLayout(layout, line, canvasToPixels, snapshot.font,
-                                              snapshot.textColor, {}, &textToPixels))
-            continue;
-        painter.save();
-        painter.setTransform(textToPixels);
-        layout.paint(&painter);
-        painter.restore();
-    }
+    if (!paintScreenshotRecognitionOverlay(painter, snapshot, canvasToPixels, cancelled))
+        return {};
     painter.end();
     auto style =
         ScreenshotResultCompositor::scaledStyle(snapshot.resultStyle, image.width() / rect.width());

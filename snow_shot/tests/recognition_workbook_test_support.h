@@ -19,7 +19,10 @@ inline void check(bool condition) {
 
 inline QMap<QString, QByteArray> parts(const QString& path) {
     QFile file(path);
-    check(file.open(QIODevice::ReadOnly));
+    if (!file.open(QIODevice::ReadOnly))
+        throw std::runtime_error((QStringLiteral("Cannot read workbook: ") + path +
+                                  QStringLiteral(" ") + file.errorString())
+                                     .toStdString());
     const QByteArray bytes = file.readAll();
     void* reader = mz_zip_reader_create();
     check(reader != nullptr);

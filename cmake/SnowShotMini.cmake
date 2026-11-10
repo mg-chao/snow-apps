@@ -13,7 +13,7 @@ set(_snow_mini_libraries
     snow_shot_cloud_upload snow_shot_storage snow_shot_main_window_skin snow_shot_settings_catalog snow_shot_settings_search
     snow_shot_settings snow_shot_collage snow_shot_image_split snow_shot_global_mouse snow_shot_login_item
     snow_shot_administrator snow_shot_permissions snow_shot_updates
-    snow_shot_diagnostics snow_shot_crash_bridge snow_shot_print snow_shot_airdrop)
+    snow_shot_diagnostics snow_shot_crash_bridge snow_shot_print snow_shot_airdrop snow_shot_export_scheduling)
 
 if(NOT SNOW_APPS_BUILD_SNOW_SHOT_MINI)
     foreach(_original IN LISTS _snow_mini_libraries)
@@ -300,6 +300,11 @@ target_link_libraries(snow_shot PRIVATE snow_shot_edition_full)
 target_sources(snow_shot PRIVATE include/snow_shot/app/edition.h)
 
 if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-mini-ocr-proxy-startup-tests
+        COMMAND snow_shot_mini --ocr-proxy-startup-tests)
+    set_tests_properties(snow-shot-mini-ocr-proxy-startup-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     if(WIN32)
         find_program(_snow_launch_test_powershell NAMES pwsh powershell REQUIRED)
         add_test(NAME snow-shot-launcher-tests
@@ -392,7 +397,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             set(_branding_translation_target snow_shot_mini_release_translations)
         endif()
         add_executable(snow-shot-${_edition}-branding-tests ${_branding_sources}
-            tests/mini_branding_tests.cpp src/app/updateconfirmationdialog.cpp)
+            tests/mini_branding_tests.cpp)
         snow_shot_set_source_dependency_edition(snow-shot-${_edition}-branding-tests ${_edition})
         target_include_directories(snow-shot-${_edition}-branding-tests PRIVATE include)
         target_compile_definitions(snow-shot-${_edition}-branding-tests PRIVATE

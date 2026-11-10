@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" fill="none">
+  <title>Capture, annotate, pin, recognize, and record with Snow Shot</title>
+  <desc>Original feature illustration, not an application screenshot. A selected landscape, annotation tools, a pinned note, recognized text, and a recording timeline.</desc>
+  <defs>
+    <linearGradient id="sky" x1="75" y1="170" x2="610" y2="440" gradientUnits="userSpaceOnUse"><stop stop-color="#EEE7FA"/><stop offset="1" stop-color="#E2D2F5"/></linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FDF4CE"/><stop offset="1" stop-color="#F5E7B2"/></linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#E4DDED"/></pattern>
+    <filter id="shadow" x="-30%" y="-40%" width="170%" height="200%"><feDropShadow dy="8" stdDeviation="14" flood-color="#36264A" flood-opacity=".09"/></filter>
+    <clipPath id="scene"><rect x="72" y="174" width="518" height="280" rx="16"/></clipPath>
+  </defs>
+  <rect width="1200" height="600" rx="20" fill="#FAF9FD"/>
+  <rect x="24" y="24" width="1152" height="552" rx="16" fill="url(#dots)"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <!-- Annotation tools: an illustrative set, not a recreation of app chrome. -->
+    <g filter="url(#shadow)"><rect x="108" y="62" width="424" height="66" rx="18" fill="#FFFFFF" stroke="#EAE6F0"/></g>
+    <rect x="122" y="74" width="42" height="42" rx="11" fill="#F0E8FB"/>
+    <g stroke="#8A8095" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m137 85 15 11-7 2-4 8-4-21" fill="#9254DE" stroke="#9254DE"/>
+      <rect x="184" y="85" width="23" height="21" rx="3"/>
+      <circle cx="250" cy="95" r="12"/>
+      <path d="m290 106 22-22m-13 0h13v13M347 107l5-10 15-15 7 7-15 15-12 3Zm6-10 6 7M405 85h22m-11 0v23M411 108h10"/>
+      <path d="m463 103 8-19 11 5-8 20m-12 3h17"/>
+    </g>
+    <path d="M493 82v28" stroke="#EAE6F0"/>
+    <circle cx="514" cy="95" r="6" fill="#81D550"/>
+    <text x="63" y="153" fill="#8A8095" font-size="12" font-weight="600" letter-spacing="2">CAPTURE &amp; ANNOTATE</text>
+    <!-- A graphic landscape within a selection. -->
+    <g clip-path="url(#scene)">
+      <rect x="72" y="174" width="518" height="280" fill="url(#sky)"/>
+      <circle cx="482" cy="235" r="31" fill="#FFF7D4"/>
+      <path d="M72 359 202 236 341 401 410 327 590 445V454H72Z" fill="#CAB4E7"/>
+      <path d="m72 417 164-112 113 103 114-142 127 120v68H72Z" fill="#B699D8"/>
+      <path d="m72 435 155-57 100 35 118-45 145 68v18H72Z" fill="#9A77C5"/>
+      <path d="m166 270 36-34 43 51-40-18-16 10Z" fill="#F8F4FE"/>
+    </g>
+    <rect x="62" y="164" width="538" height="300" rx="7" stroke="#9254DE" stroke-width="2"/>
+    <g fill="#FFFFFF" stroke="#9254DE" stroke-width="2">
+      <rect x="57" y="159" width="10" height="10" rx="2"/><rect x="326" y="159" width="10" height="10" rx="2"/><rect x="595" y="159" width="10" height="10" rx="2"/>
+      <rect x="57" y="309" width="10" height="10" rx="2"/><rect x="595" y="309" width="10" height="10" rx="2"/>
+      <rect x="57" y="459" width="10" height="10" rx="2"/><rect x="326" y="459" width="10" height="10" rx="2"/><rect x="595" y="459" width="10" height="10" rx="2"/>
+    </g>
+    <g transform="translate(111 342) rotate(-4)">
+      <rect x="-10" y="-31" width="215" height="48" rx="5" fill="#FFFFFF" fill-opacity=".94"/>
+      <text fill="#30263D" font-size="26" font-weight="650">A closer look.</text>
+      <path d="M-1 9c66 5 125-2 186 0" stroke="#81D550" stroke-width="4" stroke-linecap="round"/>
+    </g>
+    <path d="M359 346c-9-57-31-73-71-83m0 0 13 23m-13-23 25-2" stroke="#9254DE" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Recognition: image selection becomes editable text. -->
+    <path d="M626 145c45-51 66-47 102-36m0 0-17-15m17 15-22 5" stroke="#BDB0D0" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 7"/>
+    <g filter="url(#shadow)"><rect x="763" y="61" width="370" height="230" rx="18" fill="#FFFFFF" stroke="#EAE6F0"/></g>
+    <g stroke="#9254DE" stroke-width="2" stroke-linecap="round"><path d="M791 102V87h15m17 0h15v15m0 17v15h-15m-17 0h-15v-15M805 121l10-24 10 24m-16-8h12"/></g>
+    <text x="858" y="107" fill="#30263D" font-size="17" font-weight="650">From pixels to text</text>
+    <text x="858" y="132" fill="#8A8095" font-size="12">LOCAL OCR</text>
+    <path d="M789 155h318" stroke="#EAE6F0"/>
+    <rect x="787" y="177" width="185" height="30" rx="4" fill="#F0E8FB"/>
+    <text x="795" y="199" fill="#30263D" font-size="20">Capture an idea.</text>
+    <text x="795" y="236" fill="#30263D" font-size="20">Make it yours.</text>
+    <path d="M930 217v24" stroke="#9254DE" stroke-width="2"/>
+    <rect x="1033" y="222" width="74" height="34" rx="9" fill="#F0F8E8"/>
+    <path d="m1050 239 5 5 10-11" stroke="#568C31" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1074" y="244" fill="#568C31" font-size="12" font-weight="600">Text</text>
+    <!-- A pinned note, intentionally overlapping the selection. -->
+    <g transform="translate(579 233) rotate(8 80 80)">
+      <g filter="url(#shadow)"><rect width="162" height="161" rx="12" fill="url(#paper)"/></g>
+      <path d="m79 18 11 5-7 16 6 9-26-11 11-2 5-17m-6 24-6 15" stroke="#B69236" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <text x="23" y="89" fill="#78632E" font-size="19" font-weight="650">Keep it</text>
+      <text x="23" y="115" fill="#78632E" font-size="19" font-weight="650">in view.</text>
+      <path d="M24 133c27-3 52-3 85-1" stroke="#B69236" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <!-- Recording, expressed as a timeline rather than a screenshot. -->
+    <text x="787" y="345" fill="#8A8095" font-size="12" font-weight="600" letter-spacing="2">SHOW HOW IT WORKS</text>
+    <g filter="url(#shadow)"><rect x="763" y="366" width="370" height="112" rx="18" fill="#FFFFFF" stroke="#EAE6F0"/></g>
+    <circle cx="797" cy="398" r="6" fill="#F16C7F"/>
+    <text x="814" y="403" fill="#30263D" font-size="14" font-weight="600">00:12</text>
+    <text x="1104" y="403" text-anchor="end" fill="#8A8095" font-size="12">SCREEN RECORDING</text>
+    <rect x="788" y="425" width="319" height="28" rx="7" fill="#F0E8FB"/>
+    <g stroke="#9254DE" stroke-width="3" stroke-linecap="round"><path d="M799 436v6m10-11v16m10-13v10m10-16v22m10-12v2m10-9v16m10-13v10m10-7v4m10-12v20m10-14v8m10-17v26m10-18v10m10-7v4m10-10v16m10-12v8m10-6v4m10-10v16m10-17v18m10-14v10m10-7v4m10-11v18m10-12v6m10-8v10m10-14v18m10-13v8m10-10v12m10-8v4m10-9v14m10-12v10m10-6v2"/></g>
+    <path d="M986 419v41" stroke="#30263D" stroke-width="2"/>
+    <!-- Small hand-drawn cue and quiet footer. -->
+    <path d="M230 505c36 25 91 24 133-4m0 0-20 2m20-2-9 19" stroke="#BDB0D0" stroke-width="2" stroke-linecap="round"/>
+    <text x="68" y="524" fill="#8A8095" font-size="17">Less explaining.</text>
+    <text x="383" y="524" fill="#30263D" font-size="17" font-weight="600">More showing.</text>
+    <text x="1131" y="548" text-anchor="end" fill="#8A8095" font-size="11" letter-spacing="2">A LITTLE SNOW SHOT MAGIC.</text>
+  </g>
+</svg>

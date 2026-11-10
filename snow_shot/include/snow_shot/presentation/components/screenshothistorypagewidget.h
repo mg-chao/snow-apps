@@ -38,6 +38,12 @@ class QResizeEvent;
 class QShowEvent;
 class QHideEvent;
 class QVBoxLayout;
+namespace snow_shot::presentation::components {
+class HistoryEntryViewport;
+namespace history_page {
+class PreviewModel;
+}
+} // namespace snow_shot::presentation::components
 namespace adqt::widgets {
 class AdButton;
 class AdImageViewer;
@@ -58,7 +64,6 @@ class ScreenshotHistoryPageDataSource : public QObject {
     ~ScreenshotHistoryPageDataSource() override = default;
 
     // Cancels page-facing work submitted by the current request generation.
-    // Cache-maintenance work is intentionally independent and is not canceled.
     virtual void cancelPending() {}
 
     [[nodiscard]] virtual QVector<snow_shot::storage::CaptureHistoryRecord> records() const = 0;
@@ -104,7 +109,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
   signals:
     void editRequested(const QString& recordId);
     void pinRequested(const QString& recordId);
-    void collageRequested(const QVector<snow_shot::storage::CaptureHistoryRecord>& records);
+    void stitchImagesRequested(const QVector<snow_shot::storage::CaptureHistoryRecord>& records);
     void splitRequested(const snow_shot::storage::CaptureHistoryRecord& record);
     void imageEditingRequested(const snow_shot::storage::CaptureHistoryRecord& record);
 
@@ -128,6 +133,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void handleEntrySelectionChanged(const QString& entryId, bool selected);
     void requestDeleteAll();
     void removeEntry(const QString& entryId);
+    void requestEntryDeletion(const QString& entryId, QWidget* anchor);
     void handleHistoryChanged();
     void handleDisplayAssetsReady(quint64 generation,
                                   const QVector<ScreenshotHistoryAssetResolution>& resolutions);
@@ -157,9 +163,12 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     QPointer<QAction> m_batchPinAction;
     adqt::widgets::AdButton* m_deselectAllButton = nullptr;
     adqt::widgets::AdPopconfirm* m_deleteSelectedConfirmation = nullptr;
+    adqt::widgets::AdPopconfirm* m_entryDeleteConfirmation = nullptr;
+    QString m_pendingEntryDeleteId;
     adqt::widgets::AdScrollArea* m_scrollArea = nullptr;
     QWidget* m_entriesHost = nullptr;
     QVBoxLayout* m_entriesLayout = nullptr;
+    snow_shot::presentation::components::HistoryEntryViewport* m_entryViewport = nullptr;
     QLabel* m_emptyIcon = nullptr;
     QLabel* m_emptyTitle = nullptr;
     QLabel* m_emptyDescription = nullptr;
@@ -169,6 +178,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     QPointer<ScreenshotHistoryPageDataSource> m_dataSource;
     QHash<QString, QWidget*> m_entryWidgetsById;
     QVector<QString> m_entryLayoutIds;
+    QVector<QString> m_pageRecordIds;
     QSet<QString> m_selectedRecordIds;
     QHash<QString, std::optional<snow_shot::storage::CaptureHistoryAssetSet>> m_resolvedAssets;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
@@ -177,8 +187,10 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     bool m_dirty = true;
     bool m_refreshQueued = false;
     adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
-    adqt::widgets::AdImageListModel* m_previewModel = nullptr;
+    snow_shot::presentation::components::history_page::PreviewModel* m_previewModel = nullptr;
     QHash<QString, int> m_previewRows;
+    QString m_previewResultText;
+    QString m_previewDisplayText;
     bool m_updatingPagination = false;
     quint64 m_assetGeneration = 0;
     quint64 m_resultGeneration = 0;
@@ -189,12 +201,6 @@ class ScreenshotHistoryPageWidget final : public QWidget {
 // Diagnostics for the dedicated history executor. These counters include both
 // running and queued work and are intentionally read-only to callers.
 [[nodiscard]] int screenshotHistoryPendingJobCount();
-[[nodiscard]] int screenshotHistoryPendingPersistenceJobCount();
-[[nodiscard]] int screenshotHistoryQueuedPersistenceJobCount();
-[[nodiscard]] quint64 screenshotHistorySubmittedPersistenceJobCount();
-[[nodiscard]] quint64 screenshotHistoryCompletedPersistenceJobCount();
-[[nodiscard]] quint64 screenshotHistorySkippedPersistenceJobCount();
-[[nodiscard]] qint64 screenshotHistoryRetainedPersistenceBytes();
 [[nodiscard]] adqt::widgets::AdImageLoader*
 createScreenshotHistoryImageLoader(const snow_shot::storage::CaptureHistoryRecord& record,
                                    ScreenshotHistoryPageDataSource* dataSource, QObject* parent);

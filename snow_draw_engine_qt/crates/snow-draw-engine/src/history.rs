@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::ErrorCode;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use snow_draw_engine_document::{
@@ -9,6 +10,8 @@ use snow_draw_engine_document::{
 };
 use snow_draw_engine_editor::DocumentSyncSnapshot;
 use snow_draw_engine_model::{ApplyResult, DocumentModel};
+
+static NEXT_HISTORY_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -83,6 +86,22 @@ impl HistoryStore {
         self.host_state
     }
 
+    pub(crate) fn host_history_states(&self, include_redo: bool) -> Vec<u64> {
+        let mut states = vec![self.host_state];
+        for entry in self
+            .undo_stack
+            .iter()
+            .chain(self.redo_stack.iter().filter(|_| include_redo))
+        {
+            if let Some((before, after)) = entry.host_transition {
+                states.extend([before, after]);
+            }
+        }
+        states.sort_unstable();
+        states.dedup();
+        states
+    }
+
     pub(crate) fn next_host_state(&self, redo: bool) -> u64 {
         let entry = if redo {
             self.redo_stack.last()
@@ -144,7 +163,7 @@ impl HistoryStore {
         }
         entry.undo = amended_undo;
         entry.redo_snapshot = redo_snapshot;
-        self.mutation_generation = self.mutation_generation.wrapping_add(1);
+        self.mutation_generation = NEXT_HISTORY_GENERATION.fetch_add(1, Ordering::Relaxed);
         true
     }
 
@@ -298,7 +317,7 @@ impl HistoryStore {
         undo_snapshot: DocumentSyncSnapshot,
         redo_snapshot: DocumentSyncSnapshot,
     ) {
-        self.mutation_generation = self.mutation_generation.wrapping_add(1);
+        self.mutation_generation = NEXT_HISTORY_GENERATION.fetch_add(1, Ordering::Relaxed);
         let label = label.into();
         let now = Instant::now();
         if label == "adjust angle"
@@ -492,7 +511,7 @@ impl HistoryStore {
             self.host_state = before;
         }
         self.redo_stack.push(entry);
-        self.mutation_generation = self.mutation_generation.wrapping_add(1);
+        self.mutation_generation = NEXT_HISTORY_GENERATION.fetch_add(1, Ordering::Relaxed);
         Ok(Some(HistoryApplyResult {
             restore_selection,
             apply_result,
@@ -534,7 +553,7 @@ impl HistoryStore {
             self.host_state = after;
         }
         self.undo_stack.push(entry);
-        self.mutation_generation = self.mutation_generation.wrapping_add(1);
+        self.mutation_generation = NEXT_HISTORY_GENERATION.fetch_add(1, Ordering::Relaxed);
         Ok(Some(HistoryApplyResult {
             restore_selection,
             apply_result,
@@ -1128,6 +1147,49 @@ mod tests {
 #[cfg(test)]
 mod host_history_tests {
     use super::*;
+
+    #[test]
+    fn host_history_states_include_only_reachable_branch_tokens() {
+        let mut history = HistoryStore::default();
+        let mut model = DocumentModel::default();
+        let snapshot =
+            snow_draw_engine_editor::Editor::new(snow_draw_engine_core::EngineConfig::default())
+                .unwrap()
+                .capture_document_sync_snapshot(&model);
+        assert_eq!(history.host_history_states(true), [0]);
+        history.push_host_state(40, snapshot.clone());
+        history.push_host_state(10, snapshot.clone());
+        assert_eq!(history.host_history_states(true), [0, 10, 40]);
+        history.undo(&mut model).unwrap();
+        assert_eq!(history.host_history_states(true), [0, 10, 40]);
+        assert_eq!(history.host_history_states(false), [0, 40]);
+        assert!(history.can_redo());
+        history.push_host_state(30, snapshot);
+        assert_eq!(history.host_history_states(true), [0, 30, 40]);
+        assert!(!history.can_redo());
+        history.undo(&mut model).unwrap();
+        history.undo(&mut model).unwrap();
+        assert_eq!(history.host_history_states(true), [0, 30, 40]);
+        assert_eq!(history.host_history_states(false), [0]);
+        let restored: HistoryStore =
+            serde_json::from_value(serde_json::to_value(&history).unwrap()).unwrap();
+        assert_eq!(restored.host_history_states(true), [0]);
+    }
+
+    #[test]
+    fn host_history_generations_do_not_repeat_after_replacing_history() {
+        let mut history = HistoryStore::default();
+        let model = DocumentModel::default();
+        let snapshot =
+            snow_draw_engine_editor::Editor::new(snow_draw_engine_core::EngineConfig::default())
+                .unwrap()
+                .capture_document_sync_snapshot(&model);
+        history.push_host_state(1, snapshot.clone());
+        let previous = history.mutation_generation();
+        history = HistoryStore::default();
+        history.push_host_state(1, snapshot);
+        assert_ne!(history.mutation_generation(), previous);
+    }
 
     #[test]
     fn host_history_is_ordered_reversible_and_runtime_only() {

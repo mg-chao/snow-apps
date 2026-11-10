@@ -72,6 +72,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QMouseEvent>
+#include <QMoveEvent>
 #include <QWheelEvent>
 #include <QWindow>
 #include <QScreen>
@@ -271,7 +272,7 @@ ScreenRecordingAreaWindow* recordingAreaWindow() {
 
 void requireModalCenteredOnArea(adqt::widgets::AdModal* modal, const QRect& areaGeometry,
                                 QScreen* screen) {
-    const auto* window = modal->contentWidget()->window();
+    const auto* window = modal->acceptButton()->window();
     const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
     QPoint expected(areaGeometry.center().x() - window->width() / 2,
                     areaGeometry.center().y() - window->height() / 2);
@@ -285,14 +286,30 @@ void requireModalCenteredOnArea(adqt::widgets::AdModal* modal, const QRect& area
 
 class ErrorObserver final : public QObject {
   public:
+    explicit ErrorObserver(ScreenRecordingController* controller = nullptr)
+        : controller(controller) {}
+    QPointer<ScreenRecordingController> controller;
+    bool autoDismiss = true;
     int shown = 0;
     QString lastText;
+    QPointer<adqt::widgets::AdModal> lastModal;
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (event->type() == QEvent::Show) {
             if (auto* dialog = qobject_cast<QMessageBox*>(watched)) {
                 ++shown;
                 lastText = dialog->text();
                 QTimer::singleShot(0, dialog, &QMessageBox::accept);
+            } else if (controller) {
+                for (auto* modal : controller->findChildren<adqt::widgets::AdModal*>(
+                         QStringLiteral("screenRecordingErrorModal"))) {
+                    if (modal->acceptButton() && modal->acceptButton()->window() == watched) {
+                        ++shown;
+                        lastText = modal->text();
+                        lastModal = modal;
+                        if (autoDismiss)
+                            QTimer::singleShot(0, modal, &adqt::widgets::AdModal::accept);
+                    }
+                }
             }
         }
         return false;
@@ -799,7 +816,7 @@ void recordingDeleteOnCloseTests(const QString& directory) {
             exportGate = release.get_future().share();
             exportEntered = &entered;
             if (action == 2)
-                recordingToolbarButton("Trim Video")->click();
+                recordingToolbarButton("Trim video")->click();
             else
                 require(controller.controlAutomation(action == 0 ? QStringLiteral("stop")
                                                                  : QStringLiteral("copy"),
@@ -1001,6 +1018,7 @@ void closeAndStopHaveIndependentUiLifetimes() {
     for (const bool close : {false, true}) {
         for (const bool failure : {false, true}) {
             ScreenRecordingController controller(testEffectsSource);
+            errors.controller = &controller;
             QVector<bool> captureActivity;
             QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
                              &controller, [&](bool active) { captureActivity.push_back(active); });
@@ -1367,6 +1385,27 @@ void recordingToolbarReconcilesFrameBeforeShowing() {
     require(toolbar.size() == expected &&
                 toolbar.rect().contains(toolbar.paletteHost()->geometry()),
             "restoring recording controls after area interaction must reconcile the frame");
+#ifndef Q_OS_MACOS
+    auto* dpi = toolbar.findChild<adqt::widgets::AdDpiStableWindowController*>();
+    require(dpi != nullptr, "recording toolbar must maintain its native physical extent");
+    bool staleFrameDelivered = false;
+    const auto connection = QObject::connect(
+        &toolbar, &ScreenshotFloatingToolPaletteWindow::dpiScaleCommitCompleted, &toolbar, [&] {
+            if (!staleFrameDelivered) {
+                staleFrameDelivered = true;
+                // Model Qt delivering the previous display's logical extent
+                // after the native controller has already committed its scale.
+                toolbar.resize(expected.width() / 2, expected.height());
+            }
+        });
+    dpi->requestScaleCommit();
+    for (int pass = 0; pass < 5; ++pass)
+        QCoreApplication::processEvents();
+    QObject::disconnect(connection);
+    require(staleFrameDelivered && toolbar.size() == expected &&
+                toolbar.rect().contains(toolbar.paletteHost()->geometry()),
+            "queued DPI geometry must not leave recording controls outside the native frame");
+#endif
 }
 
 void recordingToolbarPlacementAcrossDisplays() {
@@ -1393,6 +1432,18 @@ void recordingToolbarPlacementAcrossDisplays() {
                 toolbar.showAndActivate();
                 for (int pass = 0; pass < 5; ++pass) {
                     QCoreApplication::processEvents();
+                }
+                if (toolbar.size() != toolbar.windowSizeHint() ||
+                    !toolbar.rect().contains(toolbar.paletteHost()->geometry())) {
+                    qWarning() << "Cross-display recording toolbar" << "region" << region
+                               << "display" << screen->name() << bounds
+                               << screen->devicePixelRatio() << "toolbar display"
+                               << toolbar.screen()->name() << toolbar.devicePixelRatioF()
+                               << "geometry" << toolbar.geometry() << "expected size"
+                               << toolbar.windowSizeHint() << "host"
+                               << toolbar.paletteHost()->geometry() << "content"
+                               << toolbar.occupiedContentRect().translated(
+                                      toolbar.contentPosition());
                 }
                 require(toolbar.size() == toolbar.windowSizeHint() &&
                             toolbar.rect().contains(toolbar.paletteHost()->geometry()),
@@ -1498,6 +1549,134 @@ void recordingSecondaryPanelsStayOnScreen() {
     exportButton->click();
     requireAnchored();
 }
+
+void recordingEntryPlacementStaysVisible() {
+    ScreenRecordingController controller(testEffectsSource);
+    for (auto* screen : QGuiApplication::screens()) {
+#ifdef Q_OS_MACOS
+        const QRect bounds = screen->geometry();
+#else
+        const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+#endif
+        const QSize smallSize(bounds.width() / 4, bounds.height() / 4);
+        for (const QRect& region :
+             {bounds, QRect(bounds.topLeft(), smallSize),
+              QRect(bounds.topRight() - QPoint(smallSize.width() - 1, 0), smallSize),
+              QRect(bounds.bottomLeft() - QPoint(0, smallSize.height() - 1), smallSize),
+              QRect(bounds.bottomRight() - QPoint(smallSize.width() - 1, smallSize.height() - 1),
+                    smallSize)}) {
+            controller.open(region);
+            auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+            ScreenRecordingAreaWindow* area = nullptr;
+            for (auto* widget : QApplication::topLevelWidgets())
+                if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+                    candidate && candidate->isVisible())
+                    area = candidate;
+            require(area != nullptr, "entering recording must present the selected area");
+            const auto requireVisible = [&] {
+                require(toolbar && toolbar->isVisible() && toolbar->recordingUiPresented(),
+                        "entering recording must present the toolbar");
+                // The area can publish corrected desktop geometry after showing
+                // its native frame. The toolbar must follow that committed region.
+#ifdef Q_OS_MACOS
+                auto* target = QGuiApplication::screenAt(area->recordingRegion().center());
+#else
+                auto* target =
+                    ScreenshotGeometryMapper::screenForPhysicalRect(area->recordingRegion());
+#endif
+                require(target != nullptr, "the committed recording area must have a display");
+                const QRect logicalBounds = target->geometry();
+                const QRect occupied =
+                    toolbar->occupiedContentRect().translated(toolbar->contentPosition());
+                require(occupied.top() >= logicalBounds.top() &&
+                            occupied.bottom() <= logicalBounds.bottom(),
+                        "initial recording rows must stay vertically within the selected display");
+                if (occupied.width() <= logicalBounds.width()) {
+                    require(logicalBounds.contains(occupied),
+                            "initial recording rows must stay within the selected display");
+                }
+                require(toolbar->size() == toolbar->windowSizeHint() &&
+                            toolbar->rect().contains(occupied.translated(-toolbar->pos())),
+                        "initial recording rows must fit the native frame");
+            };
+            requireVisible();
+            for (int pass = 0; pass < 5; ++pass)
+                QCoreApplication::processEvents();
+            requireVisible();
+        }
+    }
+}
+
+class RecordingToolbarMoves final : public QObject {
+  public:
+    QList<QPoint> positions;
+
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Move)
+            positions.append(static_cast<QMoveEvent*>(event)->pos());
+        return false;
+    }
+};
+
+void recordingPanelSwitchesPublishOnlyFinalLayout() {
+    ScreenRecordingController controller(testEffectsSource);
+    auto* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "recording panel placement requires a display");
+#ifdef Q_OS_MACOS
+    const QRect region = screen->geometry();
+#else
+    const QRect region = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+#endif
+    controller.open(region);
+    auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+    auto* settings = toolbar->palette()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingExportSettings"));
+    require(settings != nullptr, "recording toolbar must expose export settings");
+    for (const auto tool : {ScreenshotToolPalette::Tool::Select, ScreenshotToolPalette::Tool::Shape,
+                            ScreenshotToolPalette::Tool::Text}) {
+        toolbar->palette()->setActiveTool(tool);
+        QCoreApplication::processEvents();
+        RecordingToolbarMoves moves;
+        toolbar->installEventFilter(&moves);
+        int changes = 0;
+        bool finalLayoutOnly = true;
+        const auto connection = QObject::connect(
+            toolbar->palette(), &ScreenshotToolPalette::visibleContentChanged, toolbar, [&] {
+                ++changes;
+                finalLayoutOnly &= toolbar->palette()->recordingExportSettingsVisible() &&
+                                   !toolbar->palette()->activeTool().has_value() &&
+                                   !toolbar->palette()->styleToolbarVisible() &&
+                                   !toolbar->palette()->actionToolbarVisible();
+            });
+        settings->click();
+        QObject::disconnect(connection);
+        require(finalLayoutOnly,
+                "opening export settings must never publish a collapsed intermediate row");
+        require(changes == 1, "opening export settings must publish one completed panel change");
+        QCoreApplication::processEvents();
+        for (const auto& position : std::as_const(moves.positions))
+            require(position == toolbar->pos(),
+                    "opening export settings must move directly to the final toolbar position");
+
+        changes = 0;
+        moves.positions.clear();
+        const auto drawingConnection = QObject::connect(
+            toolbar->palette(), &ScreenshotToolPalette::visibleContentChanged, toolbar, [&] {
+                ++changes;
+                finalLayoutOnly &= !toolbar->palette()->recordingExportSettingsVisible() &&
+                                   toolbar->palette()->activeTool() == tool;
+            });
+        toolbar->palette()->setActiveTool(tool);
+        QObject::disconnect(drawingConnection);
+        require(finalLayoutOnly,
+                "leaving export settings must publish the destination tool's layout");
+        require(changes == 1, "leaving export settings must publish one completed panel change");
+        QCoreApplication::processEvents();
+        for (const auto& position : std::as_const(moves.positions))
+            require(position == toolbar->pos(),
+                    "leaving export settings must move directly to the final toolbar position");
+    }
+}
 } // namespace
 
 namespace {
@@ -1558,7 +1737,7 @@ class PreviewTestTranslator final : public QTranslator {
     }
     QString translate(const char* context, const char* source, const char*, int) const override {
         if (QByteArray(context) == "CanvasStatusReadout" &&
-            QByteArray(source) == "Motion Preview in Progress") {
+            QByteArray(source) == "Motion preview in progress") {
             return QStringLiteral("Preview translated");
         }
         return {};
@@ -1801,7 +1980,7 @@ void effectsPreviewLifecycle() {
     require(readout && readout->message() == CanvasStatusReadout::Message::MotionPreview &&
                 !readout->dismissalTimer()->isActive(),
             "recording motion status must use the shared persistent hint component");
-    require(label->text() == QStringLiteral("Motion Preview in Progress"),
+    require(label->text() == QStringLiteral("Motion preview in progress"),
             "preview label must use requested text");
     require(label->testAttribute(Qt::WA_TransparentForMouseEvents),
             "readout must not intercept drawing");
@@ -1909,7 +2088,7 @@ void effectsPreviewLifecycle() {
     QCoreApplication::sendEvent(&area, &languageChange);
     pumpPreview();
     CanvasStatusReadout narrow(&area);
-    const QString complete = QStringLiteral("Motion Preview in Progress");
+    const QString complete = QStringLiteral("Motion preview in progress");
     narrow.setMessage(CanvasStatusReadout::Message::MotionPreview);
     narrow.layoutIn(QRect(0, 0, 80, 28));
     require(narrow.width() <= 64 && narrow.toolTip() == complete &&
@@ -2052,7 +2231,7 @@ void recordingStatusPrompts() {
     const RecordingSettings settings;
     const QString previousFormat = settings.outputFormat();
     const bool previousMicrophone = settings.microphoneEnabled();
-    const bool previousSpeaker = settings.systemAudioEnabled();
+    const bool previousSystemAudio = settings.systemAudioEnabled();
     const int previousDelay = settings.startDelaySeconds();
     require(settings.showStatusPrompts(), "status prompts are enabled by default");
     require(settings.setOutputFormat(QStringLiteral("mp4")) &&
@@ -2122,16 +2301,16 @@ void recordingStatusPrompts() {
     pumpPreview();
     const QImage microphone = renderPrompt();
     require(prompt->accessibleName() ==
-                    QStringLiteral("Format: MP4; Microphone enabled; Speaker disabled") &&
+                    QStringLiteral("Format: MP4; Microphone enabled; System audio disabled") &&
                 microphone != disabled,
             "microphone toggles must immediately update the prompt text alternative and icon");
     checkStatusColors(true, true);
     palette()->recordingSystemAudioToggled(true);
     pumpPreview();
     require(prompt->accessibleName() ==
-                    QStringLiteral("Format: MP4; Microphone enabled; Speaker enabled") &&
+                    QStringLiteral("Format: MP4; Microphone enabled; System audio enabled") &&
                 renderPrompt() != microphone,
-            "speaker toggles must immediately update the prompt text alternative and icon");
+            "system audio toggles must immediately update the prompt text alternative and icon");
     checkStatusColors(true, false);
     palette()->recordingMicrophoneToggled(false);
     pumpPreview();
@@ -2149,7 +2328,7 @@ void recordingStatusPrompts() {
         palette()->recordingOutputFormatChanged(format);
         pumpPreview();
         require(prompt->accessibleName() ==
-                    QStringLiteral("Format: %1; Microphone disabled; Speaker disabled")
+                    QStringLiteral("Format: %1; Microphone disabled; System audio disabled")
                         .arg(format == QStringLiteral("gif") ? QStringLiteral("GIF")
                                                              : QStringLiteral("WebP")),
                 "animated formats must show concise names and disabled audio icons");
@@ -2159,7 +2338,7 @@ void recordingStatusPrompts() {
     palette()->recordingOutputFormatChanged(QStringLiteral("mp4"));
     pumpPreview();
     require(prompt->accessibleName() ==
-                QStringLiteral("Format: MP4; Microphone enabled; Speaker enabled"),
+                QStringLiteral("Format: MP4; Microphone enabled; System audio enabled"),
             "switching back to video must restore the selected audio status");
     require(settings.setShowStatusPrompts(false), "disable status prompts in storage");
     pumpPreview();
@@ -2221,7 +2400,7 @@ void recordingStatusPrompts() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(settings.setOutputFormat(previousFormat) &&
                 settings.setMicrophoneEnabled(previousMicrophone) &&
-                settings.setSystemAudioEnabled(previousSpeaker) &&
+                settings.setSystemAudioEnabled(previousSystemAudio) &&
                 settings.setStartDelaySeconds(previousDelay),
             "restore recording prompt fixture preferences");
 }
@@ -2325,7 +2504,7 @@ void controllerPreviewTransitions() {
             "switching from export settings to drawing must retain hit-test coverage");
     exportButton->click();
     pumpPreview();
-    ErrorObserver errors;
+    ErrorObserver errors(&controller);
     qApp->installEventFilter(&errors);
     failStart = true;
     controller.startRecording();
@@ -2393,7 +2572,12 @@ std::vector<uint32_t> prepareExpectedRecordingExclusions(ScreenshotToolPalette* 
 void recordingApiModeWiring() {
     using snow_shot::storage::RecordingSettings;
     const RecordingSettings settings;
-    require(settings.apiMode() == QStringLiteral("dxgi"), "recording must prefer DXGI by default");
+    const QString defaultMode = settings.apiMode();
+#ifdef Q_OS_WIN
+    require(settings.apiMode() == QStringLiteral("wgc"), "recording must prefer WGC by default");
+#else
+    require(settings.apiMode() == QStringLiteral("dxgi"), "preserve the non-Windows default");
+#endif
     require(settings.setStartDelaySeconds(0), "disable countdown");
     for (bool deferred : {false, true}) {
         require(settings.setPostProcessingEnabled(deferred), "set recording pipeline");
@@ -2434,7 +2618,7 @@ void recordingApiModeWiring() {
             palette()->recordingCloseRequested();
         }
     }
-    require(settings.setApiMode(QStringLiteral("dxgi")) && settings.setPostProcessingEnabled(false),
+    require(settings.setApiMode(defaultMode) && settings.setPostProcessingEnabled(false),
             "restore recording defaults");
 }
 
@@ -2446,9 +2630,9 @@ void recordingStartupFailureAllowsRetry() {
         require(settings.setPostProcessingEnabled(deferred), "select recording pipeline");
         for (int failure : {1, 2}) {
             require(settings.setApiMode(QStringLiteral("wgc")), "set initial recording preference");
-            ErrorObserver observer;
-            qApp->installEventFilter(&observer);
             ScreenRecordingController controller(testEffectsSource);
+            ErrorObserver observer(&controller);
+            qApp->installEventFilter(&observer);
             controller.open(QRect(40, 40, 320, 240));
             auto* startButton = palette()->findChild<adqt::widgets::AdButton*>(
                 QStringLiteral("screenRecordingStart"));
@@ -2508,7 +2692,12 @@ void recordingToolbarAutoHideFollowsSession() {
     require(settings.setAutoHideToolbar(true) && settings.setStartDelaySeconds(0),
             "enable auto-hide for controller lifecycle coverage");
     ScreenRecordingController controller(testEffectsSource);
-    controller.open({80, 80, 320, 240});
+    auto* screen = QGuiApplication::primaryScreen();
+#ifdef Q_OS_MACOS
+    controller.open(screen->geometry());
+#else
+    controller.open(ScreenshotGeometryMapper::physicalRectForScreen(*screen));
+#endif
     auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
     require(toolbar != nullptr, "recording lifecycle has a toolbar");
     const QRect monitor = toolbar->screen()->geometry();
@@ -2541,7 +2730,24 @@ void recordingToolbarAutoHideFollowsSession() {
         toolbar->palette()->recordingResumeRequested();
         QCoreApplication::processEvents();
     }
-    toolbar->palette()->recordingCloseRequested();
+    outside();
+    retreat->stop();
+    require(QMetaObject::invokeMethod(retreat, "timeout", Qt::DirectConnection) &&
+                !toolbar->isVisible() && toolbar->autoHideControlWindow()->isVisible(),
+            "full-screen recording must retain its edge control while the toolbar is collapsed");
+    ScreenRecordingAreaWindow* area = nullptr;
+    for (auto* widget : QApplication::topLevelWidgets())
+        if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+            candidate && candidate->isVisible())
+            area = candidate;
+    require(area != nullptr, "full-screen recording must retain its shortcut input surface");
+    PhysicalKeyEvent closePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(area, &closePress);
+    PhysicalKeyEvent closeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(area, &closeRelease);
+    require(
+        !controller.isOpen() && recordingStopRequested,
+        "Escape with a collapsed toolbar must request backend stop before retiring recording UI");
     waitForIdle(controller);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
@@ -2562,9 +2768,9 @@ void recordingCaptureExclusionWiring() {
                 "set toolbar capture preference");
         for (int failure : {0, 1, 2}) {
             const bool fail = failure != 0;
-            ErrorObserver observer;
-            qApp->installEventFilter(&observer);
             ScreenRecordingController controller(testEffectsSource);
+            ErrorObserver observer(&controller);
+            qApp->installEventFilter(&observer);
             controller.open({40, 40, 320, 240});
             auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
             require(toolbar != nullptr, "recording capture has a toolbar window");
@@ -4180,7 +4386,7 @@ void recordingWebcamSettingsSurviveInterruptedStartup() {
                      {QStringLiteral("screen_recording/webcam_size"), 280},
                      {QStringLiteral("screen_recording/webcam_shape"), QStringLiteral("circle")}}),
                 "save webcam preferences before interrupted startup retires");
-        ErrorObserver errors;
+        ErrorObserver errors(&controller);
         if (cancelCountdown) {
             palette()->recordingCloseRequested();
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -4318,7 +4524,7 @@ void recordingSettingsDialog() {
     require(QCoreApplication::installTranslator(&translator),
             "install recording settings translations");
     QCoreApplication::processEvents();
-    require(modal->windowTitle() == QStringLiteral("Translated: Recording settings") &&
+    require(modal->windowTitle() == QStringLiteral("Translated: Screen recording settings") &&
                 form->field(QStringLiteral("screen-recording.auto-hide-toolbar"))->label() ==
                     QStringLiteral("Translated: Auto-hide toolbar") &&
                 form->field(QStringLiteral("screen-recording.auto-hide-toolbar"))->tooltipText() ==
@@ -4334,11 +4540,11 @@ void recordingSettingsDialog() {
                 form->findChild<AdSelect*>(QStringLiteral("screen-recording.encoder"))
                         ->options()
                         .first()
-                        .label == QStringLiteral("Translated: H.264 (Hardware)") &&
+                        .label == QStringLiteral("Translated: H.264 (hardware)") &&
                 form->findChild<AdSelect*>(QStringLiteral("screen-recording.encoder"))
                         ->options()
                         .at(1)
-                        .label == QStringLiteral("Translated: H.265 (Hardware)"),
+                        .label == QStringLiteral("Translated: H.265 (hardware)"),
             "open recording preferences must retranslate their title, labels and options");
     QCoreApplication::removeTranslator(&translator);
     QCoreApplication::processEvents();
@@ -4564,6 +4770,115 @@ void recordingActionToolbarPreferenceUpdatesOpenWindow() {
                     ->isVisible(),
             "resetting preferences restores the active phase's default controls immediately");
     require(toolbarSettings.setLayout(kind, original), "restore the recording action preferences");
+}
+
+void recordingErrorDialogs() {
+    using namespace adqt::widgets;
+    const snow_shot::storage::RecordingSettings settings;
+    const bool previousPostProcessing = settings.postProcessingEnabled();
+    const int previousDelay = settings.startDelaySeconds();
+    const auto restore = qScopeGuard([&] {
+        failStart = false;
+        failStartOperation = false;
+        failExport = false;
+        require(settings.setPostProcessingEnabled(previousPostProcessing) &&
+                    settings.setStartDelaySeconds(previousDelay),
+                "restore recording error dialog preferences");
+    });
+    require(settings.setStartDelaySeconds(0), "disable the error dialog fixture countdown");
+    enum class Failure { Create, Start, Export, DetachedExport };
+    for (bool deferred : {false, true}) {
+        require(settings.setPostProcessingEnabled(deferred), "select the error dialog pipeline");
+        for (Failure failure :
+             {Failure::Create, Failure::Start, Failure::Export, Failure::DetachedExport}) {
+            const bool exportFailure =
+                failure == Failure::Export || failure == Failure::DetachedExport;
+            if (deferred && exportFailure)
+                continue; // Deferred export failures use the existing render progress modal.
+            ScreenRecordingController controller(testEffectsSource);
+            ErrorObserver errors(&controller);
+            errors.autoDismiss = false;
+            qApp->installEventFilter(&errors);
+            controller.open({80, 80, 320, 240});
+            auto* controls = palette();
+            auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(controls->window());
+            QPointer<ScreenRecordingAreaWindow> area = recordingAreaWindow();
+            const QRect anchor = area->frameGeometry();
+            QScreen* screen = area->screen();
+            failStart = failure == Failure::Create;
+            failStartOperation = failure == Failure::Start;
+            controller.startRecording();
+            if (exportFailure) {
+                waitForRecording(controller);
+                failExport = true;
+                if (failure == Failure::DetachedExport) {
+                    controls->recordingCloseRequested();
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                    require(!area, "Close must retire the area before detached export fails");
+                } else {
+                    controls->recordingStopRequested();
+                }
+            }
+            waitForWebcam([&] { return errors.shown == 1; }, "recording failure opens one dialog");
+            QPointer<AdModal> modal = errors.lastModal;
+            require(modal && modal->isOpen() && modal->preset() == AdModal::Preset::Error &&
+                        modal->standardButtons() == AdModal::StandardButton::Ok &&
+                        modal->text() == errors.lastText && !modal->text().isEmpty(),
+                    "recording failures must use an AntDesignQt error dialog with one OK action");
+            auto* surface = modal->acceptButton()->window();
+            require(modal->mode() == AdModal::Mode::Window && modal->centered() &&
+                        modal->windowModality() == Qt::ApplicationModal &&
+                        QApplication::activeModalWidget() == surface,
+                    "recording error dialogs must block the recording controls");
+            require(
+                modal->ownerWindow() == area && modal->windowModeDetached() == !area &&
+                    surface->windowHandle()->transientParent() ==
+                        (area ? area->windowHandle() : nullptr),
+                "recording error dialogs must use the area as their native owner while it exists");
+            if (area) {
+                area->raise();
+                toolbar->raise();
+#ifdef Q_OS_MACOS
+                if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+                    waitForWebcam(
+                        [&] {
+                            QEventLoop loop;
+                            QObject::connect(QAbstractEventDispatcher::instance(),
+                                             &QAbstractEventDispatcher::aboutToBlock, &loop,
+                                             &QEventLoop::quit, Qt::QueuedConnection);
+                            loop.exec();
+                            return macosRecordingModalAboveControls(surface, area, toolbar);
+                        },
+                        "native recording errors must stay above the area and toolbar after "
+                        "raises");
+                }
+#endif
+                requireModalCenteredOnArea(modal, anchor, screen);
+            } else {
+                require(modal->windowAlwaysOnTop(), "detached export errors remain visible");
+            }
+            failStart = false;
+            failStartOperation = false;
+            failExport = false;
+            if (failure == Failure::Start) {
+                controls->recordingCloseRequested();
+            } else {
+                modal->acceptButton()->click();
+            }
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(!modal, "dismissal or recording area closure must destroy the error dialog");
+            if (failure == Failure::Create && !deferred) {
+                controller.startRecording();
+                waitForRecording(controller);
+                require(controller.isRecording(), "dismissing a startup error permits retry");
+            }
+            if (controller.isOpen())
+                controls->recordingCloseRequested();
+            waitForIdle(controller);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            qApp->removeEventFilter(&errors);
+        }
+    }
 }
 
 void recordingModalStacking() {
@@ -5577,7 +5892,7 @@ void recordingMagnifierUnavailableWithoutImageSources() {
     }
 }
 
-void recordingActiveToolsReturnToSelect() {
+void recordingActiveToolsReturnToExportSettings() {
     using Tool = ScreenshotToolPalette::Tool;
     using State = ScreenshotToolPalette::RecordingState;
     using InputMode = ScreenRecordingAreaWindow::InputMode;
@@ -5604,14 +5919,14 @@ void recordingActiveToolsReturnToSelect() {
         {"shape", "shape", Tool::Shape, SnowCanvasTool::Shape},
         {"arrow", "arrow", Tool::Arrow, SnowCanvasTool::Arrow},
         {"line", "line", Tool::Line, SnowCanvasTool::Line},
-        {"brush", "free-draw", Tool::FreeDraw, SnowCanvasTool::FreeDraw},
-        {"highlight", "highlighter", Tool::PenHighlight, SnowCanvasTool::PenHighlight},
+        {"brush", "free-draw", Tool::Brush, SnowCanvasTool::FreeDraw},
+        {"highlight", "highlighter", Tool::BrushHighlight, SnowCanvasTool::PenHighlight},
         {"spotlight", "spotlight", Tool::Spotlight, SnowCanvasTool::Spotlight},
-        {"filter", "filter", Tool::PenFilter, SnowCanvasTool::PenFilter},
+        {"filter", "filter", Tool::BrushFilter, SnowCanvasTool::PenFilter},
         {"eraser", "eraser", Tool::Eraser, SnowCanvasTool::Eraser},
         {"watermark", "watermark", Tool::Watermark, SnowCanvasTool::Watermark},
         {"text", "text", Tool::Text, SnowCanvasTool::Text},
-        {"serial_number", "serial-number", Tool::SerialNumber, SnowCanvasTool::SerialNumber},
+        {"serial_number", "serial-number", Tool::SequenceNumber, SnowCanvasTool::SerialNumber},
     };
     ScreenRecordingController controller(testEffectsSource);
     controller.open(QRect(10, 10, 640, 480));
@@ -5638,11 +5953,11 @@ void recordingActiveToolsReturnToSelect() {
     int selectRequests = 0;
     QObject::connect(tools, &ScreenshotToolPalette::selectRequested, tools,
                      [&] { ++selectRequests; });
-    const auto requireSelect = [&] {
-        require(
-            tools->activeTool() == Tool::Select && canvas->canvasTool() == SnowCanvasTool::Select &&
-                area->inputMode() == InputMode::Drawing && !tools->recordingExportSettingsVisible(),
-            "repeated recording tool activation selects canvas elements without export settings");
+    const auto requireExportSettings = [&] {
+        require(!tools->activeTool().has_value() && !canvas->interactionEnabled() &&
+                    area->inputMode() == InputMode::RegionEditing &&
+                    tools->recordingExportSettingsVisible(),
+                "repeated recording tool activation restores Export settings and region editing");
     };
     for (const auto state : {State::Idle, State::Recording, State::Paused}) {
         if (state == State::Recording) {
@@ -5671,18 +5986,24 @@ void recordingActiveToolsReturnToSelect() {
             require(trigger != nullptr, "active recording tool has a visible toolbar trigger");
             const int previousSelectRequests = selectRequests;
             trigger->click();
-            requireSelect();
+            requireExportSettings();
             require(selectRequests == previousSelectRequests + 1,
                     "repeated toolbar click issues exactly one selection command");
             trigger->click();
             require(tools->activeTool() == test.tool && canvas->canvasTool() == test.canvasTool,
                     "clicking the deactivated trigger restores its remembered tool");
             require(tools->activateDrawingShortcut(shortcut), "repeat the active tool shortcut");
-            requireSelect();
-            require(tools->activateToolShortcut(Tool::Select), "repeat the Select shortcut");
-            requireSelect();
+            requireExportSettings();
+            require(tools->activateToolShortcut(Tool::Select) &&
+                        tools->activeTool() == Tool::Select && canvas->interactionEnabled(),
+                    "Select must enable annotation interaction from Export settings");
+            require(tools->activateToolShortcut(Tool::Select), "repeat the active Select shortcut");
+            requireExportSettings();
             selectButton->click();
-            requireSelect();
+            require(tools->activeTool() == Tool::Select && canvas->interactionEnabled(),
+                    "Select click must enable annotation interaction from Export settings");
+            selectButton->click();
+            requireExportSettings();
             require(tools->recordingSession().state() == state &&
                         controller.isRecording() == (state != State::Idle),
                     "tool toggles preserve the active recording state");
@@ -5862,7 +6183,7 @@ void recordingExportNamingTests(const QString& directory) {
             popup.hide();
             popup.setParent(nullptr);
             desktopWindowNames = {QStringLiteral("Other App"), QStringLiteral("Changed title")};
-            recordingToolbarButton("Trim Video")->click();
+            recordingToolbarButton("Trim video")->click();
             auto* copy = recordingToolbarButton("Copy recording");
             {
                 QEventLoop ready;
@@ -5915,7 +6236,7 @@ void recordingExportNamingTests(const QString& directory) {
                 }
             });
             acceptSave.start(10);
-            exportAndWait([&] { recordingToolbarButton("Save to File")->click(); }, path(4),
+            exportAndWait([&] { recordingToolbarButton("Save to file")->click(); }, path(4),
                           "cached cropped Save");
             acceptSave.stop();
             requireNaming(copy->isEnabled(), "Save completion restores Copy");
@@ -6084,7 +6405,7 @@ void recordingTrimPlaybackTests(const QString& directory) {
                     &error),
                 "start play/pause fixture");
         waitForRecording(controller);
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         auto* copy = recordingToolbarButton("Copy recording");
         wait([&] { return copy->isEnabled(); });
         auto* panel = static_cast<RecordingTrimToolbar*>(palette()->recordingTrimPanel());
@@ -6602,7 +6923,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                                            &error),
                 "start variable-speed trim fixture");
         waitForRecording(controller);
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         auto* copy = recordingToolbarButton("Copy recording");
         auto* close = recordingToolbarButton("Close recording");
         wait([&] { return copy->isEnabled(); });
@@ -6784,8 +7105,8 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
             require(captureActivity == QVector<bool>{true},
                     "recording suppresses floating surfaces before entering trim");
             auto* close = recordingToolbarButton("Close recording");
-            auto* trim = recordingToolbarButton("Trim Video");
-            auto* save = recordingToolbarButton("Save to File");
+            auto* trim = recordingToolbarButton("Trim video");
+            auto* save = recordingToolbarButton("Save to file");
             auto* copy = recordingToolbarButton("Copy recording");
             require(close && trim && save && copy && close->x() < trim->x() &&
                         trim->x() < save->x() && save->x() < copy->x(),
@@ -7038,7 +7359,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                                                &error),
                     "start crop exit fixture");
             waitForRecording(controller);
-            auto* trim = recordingToolbarButton("Trim Video");
+            auto* trim = recordingToolbarButton("Trim video");
             trim->click();
             wait([&] { return trim->isEnabled(); });
             require(captureActivity == QVector<bool>({true, false}),
@@ -7083,7 +7404,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                                            {{QStringLiteral("post_processing"), deferred}}, &error),
                 "start detached trim export fixture");
         waitForRecording(controller);
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         wait([&] {
             return controller.automationState().value(QStringLiteral("state")) ==
                        QStringLiteral("trimming") &&
@@ -7132,7 +7453,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
         exportEntered = &entered;
         const int beforeRenders = renderStarts, beforeOpens = clipOpens,
                   beforeDiscards = sourceDiscards, beforeSessions = destroyedSessions;
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         require(reached.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
                 "trim finalization reaches its worker barrier");
         recordingToolbarButton("Close recording")->click();
@@ -7162,7 +7483,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                 dialog->reject();
     });
     dismiss.start(10);
-    recordingToolbarButton("Save to File")->click();
+    recordingToolbarButton("Save to file")->click();
     wait([&] {
         return controller.automationState().value(QStringLiteral("state")) ==
                QStringLiteral("trimming");
@@ -7382,7 +7703,7 @@ void recordingAreaHistoryTests() {
         key(area, Qt::Key_R);
         key(area, Qt::Key_R);
         require(area->recordingRegion() == first, "browse older history before a failed start");
-        ErrorObserver errors;
+        ErrorObserver errors(&controller);
         qApp->installEventFilter(&errors);
         for (int failure = 0; failure < 2; ++failure) {
             failStart = failure == 0;
@@ -7480,6 +7801,101 @@ void recordingAreaHistoryTests() {
         require(history.entries().size() == 1,
                 "queued and terminal startup completion cannot save the same start twice");
         sessionCreateGate = {};
+    }
+}
+
+void recordingKeyboardFiltersPropagate() {
+    using snow_shot::storage::ApplicationStorage;
+    using snow_shot::storage::RecordingSettings;
+    prepareWebcamSettings(false);
+    const RecordingSettings settings;
+    require(settings.recordNumberKeys() && settings.recordLettersAndSymbols() &&
+                settings.recordControlKeys() && settings.preserveKeyboardShortcuts(),
+            "all keyboard filter defaults must be enabled");
+    require(settings.setShowKeyboard(true) && settings.setDeleteFilesOnRecordingClose(true) &&
+                settings.setRecordNumberKeys(false) && settings.setRecordControlKeys(false),
+            "prepare persisted keyboard filters");
+    {
+        ScreenRecordingController controller(testEffectsSource);
+        controller.open({40, 40, 320, 240});
+        pumpPreview();
+        auto state = effectSources.back().lock();
+        require(state && state->active && !state->recordNumberKeys &&
+                    state->recordLettersAndSymbols && !state->recordControlKeys &&
+                    state->preserveKeyboardShortcuts && !palette()->recordingRecordNumberKeys() &&
+                    palette()->recordingRecordLettersAndSymbols() &&
+                    !palette()->recordingRecordControlKeys() &&
+                    palette()->recordingPreserveKeyboardShortcuts(),
+                "stored keyboard filters reach the palette and idle preview");
+        const auto generation = state->generation;
+        palette()->recordingRecordNumberKeysChanged(true);
+        palette()->recordingRecordLettersAndSymbolsChanged(false);
+        palette()->recordingRecordControlKeysChanged(true);
+        palette()->recordingPreserveKeyboardShortcutsChanged(false);
+        pumpPreview();
+        require(state->generation > generation && state->recordNumberKeys &&
+                    !state->recordLettersAndSymbols && state->recordControlKeys &&
+                    !state->preserveKeyboardShortcuts && settings.recordNumberKeys() &&
+                    !settings.recordLettersAndSymbols() && settings.recordControlKeys() &&
+                    !settings.preserveKeyboardShortcuts(),
+                "each keyboard filter edit persists and reconfigures preview");
+        controller.startRecording();
+        waitForRecording(controller);
+        require(lastDirectConfig.record_number_keys == 1 &&
+                    lastDirectConfig.record_letters_and_symbols == 0 &&
+                    lastDirectConfig.record_control_keys == 1 &&
+                    lastDirectConfig.preserve_keyboard_shortcuts == 0,
+                "manual startup snapshots all four keyboard filters");
+        palette()->recordingCloseRequested();
+        waitForIdle(controller);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    // Successful capture appends area history independently of recording preferences.
+    const auto preferences = [] {
+        auto snapshot = ApplicationStorage::instance().configuration().snapshot();
+        snapshot.remove(QStringLiteral("screen_recording/area_history"));
+        return snapshot;
+    };
+    const auto saved = preferences();
+    for (const bool deferred : {false, true}) {
+        ScreenRecordingController controller(testEffectsSource);
+        QString error;
+        const QJsonObject options{{QStringLiteral("post_processing"), deferred},
+                                  {QStringLiteral("show_keyboard"), true},
+                                  {QStringLiteral("record_number_keys"), false},
+                                  {QStringLiteral("record_letters_and_symbols"), true},
+                                  {QStringLiteral("record_control_keys"), false},
+                                  {QStringLiteral("preserve_keyboard_shortcuts"), true}};
+        require(controller.startAutomation({40, 40, 320, 240}, options, &error),
+                "automation accepts keyboard filter overrides");
+        waitForRecording(controller);
+        const auto actual =
+            controller.automationState().value(QStringLiteral("options")).toObject();
+        require(lastDirectConfig.record_number_keys == 0 &&
+                    lastDirectConfig.record_letters_and_symbols == 1 &&
+                    lastDirectConfig.record_control_keys == 0 &&
+                    lastDirectConfig.preserve_keyboard_shortcuts == 1,
+                "direct and deferred automation pass all keyboard overrides to capture");
+        require(!palette()->recordingRecordNumberKeys() &&
+                    palette()->recordingRecordLettersAndSymbols() &&
+                    !palette()->recordingRecordControlKeys() &&
+                    palette()->recordingPreserveKeyboardShortcuts(),
+                "automation synchronizes keyboard filter controls");
+        require(!actual.value(QStringLiteral("record_number_keys")).toBool() &&
+                    actual.value(QStringLiteral("record_letters_and_symbols")).toBool() &&
+                    !actual.value(QStringLiteral("record_control_keys")).toBool() &&
+                    actual.value(QStringLiteral("preserve_keyboard_shortcuts")).toBool(),
+                "automation reports all four keyboard filter overrides");
+        const auto current = preferences();
+        for (auto it = current.cbegin(); it != current.cend(); ++it) {
+            if (saved.value(it.key()) != it.value())
+                std::cerr << "Automation changed setting: " << qPrintable(it.key()) << '\n';
+        }
+        require(current == saved, "automation keyboard filters must not overwrite preferences");
+        require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                "close the keyboard filter automation fixture");
+        waitForIdle(controller);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 }
 
@@ -7776,6 +8192,15 @@ template <typename Application> int runRecordingControllerTests(Application& app
         recordingModalStacking();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--error-dialogs-only"))) {
+        recordingErrorDialogs();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--error-recovery-only"))) {
+        controllerPreviewTransitions();
+        recordingWebcamSettingsSurviveInterruptedStartup();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--post-processing-only"))) {
         recordingPostProcessingLifecycle();
         return 0;
@@ -7795,7 +8220,7 @@ template <typename Application> int runRecordingControllerTests(Application& app
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--tool-toggle-only"))) {
-        recordingActiveToolsReturnToSelect();
+        recordingActiveToolsReturnToExportSettings();
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--magnifier-availability-only"))) {
@@ -7896,6 +8321,26 @@ template <typename Application> int runRecordingControllerTests(Application& app
             checkOption(QStringLiteral("start_delay_seconds"), 7, [](const QJsonValue& value) {
                 palette()->recordingStartDelaySecondsChanged(value.toInt());
             });
+            checkOption(QStringLiteral("record_number_keys"),
+                        !options.value(QStringLiteral("record_number_keys")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingRecordNumberKeysChanged(value.toBool());
+                        });
+            checkOption(QStringLiteral("record_letters_and_symbols"),
+                        !options.value(QStringLiteral("record_letters_and_symbols")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingRecordLettersAndSymbolsChanged(value.toBool());
+                        });
+            checkOption(QStringLiteral("record_control_keys"),
+                        !options.value(QStringLiteral("record_control_keys")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingRecordControlKeysChanged(value.toBool());
+                        });
+            checkOption(QStringLiteral("preserve_keyboard_shortcuts"),
+                        !options.value(QStringLiteral("preserve_keyboard_shortcuts")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingPreserveKeyboardShortcutsChanged(value.toBool());
+                        });
             checkOption(QStringLiteral("keyboard_size"), 96, [](const QJsonValue& value) {
                 palette()->recordingKeyboardSizeChanged(value.toInt());
             });
@@ -7919,7 +8364,13 @@ template <typename Application> int runRecordingControllerTests(Application& app
                     "reopening an existing UI tracks region changes and restoration");
         }
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        const auto saved = ApplicationStorage::instance().configuration().snapshot();
+        const auto preferenceSnapshot = [] {
+            auto values = ApplicationStorage::instance().configuration().snapshot();
+            // Successful captures append session history without changing recording preferences.
+            values.remove(QStringLiteral("screen_recording/area_history"));
+            return values;
+        };
+        const auto saved = preferenceSnapshot();
         ScreenRecordingController controller(testEffectsSource);
         QString error;
         QTemporaryDir contractOutputDirectory;
@@ -8034,7 +8485,7 @@ template <typename Application> int runRecordingControllerTests(Application& app
         QCoreApplication::processEvents();
         require(!controller.isOpen() && starts == previousStarts,
                 "disconnect must cancel countdown without starting capture");
-        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+        require(preferenceSnapshot() == saved,
                 "automation options must not change persistent preferences");
         QTemporaryDir outputDirectory;
         require(outputDirectory.isValid(), "recording output directory must be isolated");
@@ -8057,9 +8508,10 @@ template <typename Application> int runRecordingControllerTests(Application& app
                 "automation HEVC hardware preference must reach capture without changing settings");
         require(lastDirectConfig.capture_fps == 24,
                 "automation frame rate must reach the native capture configuration");
-        require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE &&
-                    ApplicationStorage::instance().configuration().snapshot() == saved,
-                "separate audio override reaches capture without changing preferences");
+        require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE,
+                "separate audio override must reach capture");
+        require(preferenceSnapshot() == saved,
+                "separate audio override must preserve persistent preferences");
         require(lastDirectConfig.quality == 63,
                 "automation quality must reach the native capture configuration");
         const auto runningRevision =
@@ -8080,7 +8532,7 @@ template <typename Application> int runRecordingControllerTests(Application& app
         require(exports == previousExports + 1 &&
                     controller.automationState().value(QStringLiteral("finalized")).toBool(),
                 "disconnect must finalize exactly once and retain the output artifact");
-        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+        require(preferenceSnapshot() == saved,
                 "recording lifecycle must preserve persistent preferences");
         return 0;
     }
@@ -8092,6 +8544,10 @@ template <typename Application> int runRecordingControllerTests(Application& app
 #endif
     if (app.arguments().contains(QStringLiteral("--playback-preview-only"))) {
         playbackPreviewAtZero();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--keyboard-filter-only"))) {
+        recordingKeyboardFiltersPropagate();
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
@@ -8159,14 +8615,21 @@ template <typename Application> int runRecordingControllerTests(Application& app
         recordingStartupFailureAllowsRetry();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--entry-placement-only"))) {
+        recordingEntryPlacementStaysVisible();
+        recordingPanelSwitchesPublishOnlyFinalLayout();
+        return 0;
+    }
     recordingExpandsSmallSelectionsOnOpenAndReopen();
     recordingInputOwnerKeepsFocusAcrossPresentation();
     recordingToolbarReconcilesFrameBeforeShowing();
+    recordingEntryPlacementStaysVisible();
     recordingToolbarPlacementAcrossDisplays();
+    recordingSecondaryPanelsStayOnScreen();
+    recordingPanelSwitchesPublishOnlyFinalLayout();
     if (app.arguments().contains(QStringLiteral("--placement-only"))) {
         return 0;
     }
-    recordingSecondaryPanelsStayOnScreen();
     recordingMagnifierUnavailableWithoutImageSources();
     {
         ScreenRecordingController controller(testEffectsSource);
@@ -8220,24 +8683,25 @@ template <typename Application> int runRecordingControllerTests(Application& app
         int expectedHistoryEntries = 1;
         for (const auto& [tool, canvasTool] :
              {std::pair{Tool::RectangleHighlight, SnowCanvasTool::RectangleHighlight},
-              std::pair{Tool::PenHighlight, SnowCanvasTool::PenHighlight},
+              std::pair{Tool::BrushHighlight, SnowCanvasTool::PenHighlight},
               std::pair{Tool::RectangleFilter, SnowCanvasTool::RectangleFilter},
-              std::pair{Tool::PenFilter, SnowCanvasTool::PenFilter},
+              std::pair{Tool::BrushFilter, SnowCanvasTool::PenFilter},
               std::pair{Tool::AutoFilter, SnowCanvasTool::AutoFilter}}) {
             const snow_shot::storage::ScreenshotToolbarSettings settings;
-            if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
+            if (tool == Tool::RectangleHighlight || tool == Tool::BrushHighlight) {
                 settings.setLastHighlightTool(tool == Tool::RectangleHighlight
                                                   ? QStringLiteral("rectangle-highlight")
                                                   : QStringLiteral("pen-highlight"));
             } else {
                 settings.setLastFilterTool(
                     tool == Tool::RectangleFilter ? QStringLiteral("rectangle-filter")
-                    : tool == Tool::PenFilter     ? QStringLiteral("pen-filter")
+                    : tool == Tool::BrushFilter   ? QStringLiteral("pen-filter")
                                                   : QStringLiteral("auto-filter"));
             }
-            const QString shortcut = tool == Tool::RectangleHighlight || tool == Tool::PenHighlight
-                                         ? QStringLiteral("highlight")
-                                         : QStringLiteral("filter");
+            const QString shortcut =
+                tool == Tool::RectangleHighlight || tool == Tool::BrushHighlight
+                    ? QStringLiteral("highlight")
+                    : QStringLiteral("filter");
             auto* exportSettings = palette()->findChild<adqt::widgets::AdButton*>(
                 QStringLiteral("screenRecordingExportSettings"));
             require(exportSettings != nullptr, "recording export settings button must exist");

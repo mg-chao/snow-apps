@@ -426,6 +426,7 @@ fn build_msaa_window_cache(
 ) -> Result<(Vec<MsaaWindow>, WindowSpatialIndex)> {
     let hwnds = window::enumerate_top_windows()?;
     let monitors = MonitorCache::from_displays(displays);
+    let desktop_windows = window::DesktopWindows::new();
     let mut excluded_raw = excluded_hwnds
         .iter()
         .map(|hwnd| hwnd.0 as isize)
@@ -446,22 +447,20 @@ fn build_msaa_window_cache(
         let Some(rect) = window::visible_window_rect(hwnd) else {
             continue;
         };
-        let Some(bounds) = monitors.clip_rect_to_visible_area(rect) else {
-            continue;
-        };
-
-        let cache_index = windows.len();
-        windows.push(MsaaWindow {
-            hwnd,
-            bounds,
-            fallback_rects: None,
-            msaa_quarantined: false,
-        });
-        entries.push(IndexedWindow {
-            envelope: rect_to_aabb(bounds),
-            cache_index,
-            z_order,
-        });
+        for bounds in monitors.selection_rects(rect, || desktop_windows.contains(hwnd)) {
+            let cache_index = windows.len();
+            windows.push(MsaaWindow {
+                hwnd,
+                bounds,
+                fallback_rects: None,
+                msaa_quarantined: false,
+            });
+            entries.push(IndexedWindow {
+                envelope: rect_to_aabb(bounds),
+                cache_index,
+                z_order,
+            });
+        }
     }
 
     Ok((windows, WindowSpatialIndex::build(entries)))
@@ -661,6 +660,55 @@ fn variant_to_accessible(value: &VARIANT) -> Option<IAccessible> {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    #[test]
+    fn desktop_window_and_element_fallbacks_stay_on_the_hit_monitor() {
+        let monitors = [rect(-1920, 0, 0, 1080), rect(0, -200, 2560, 1440)];
+        let mut backend = MsaaBackend {
+            windows: monitors
+                .into_iter()
+                .map(|bounds| MsaaWindow {
+                    hwnd: HWND::default(),
+                    bounds,
+                    fallback_rects: Some(vec![
+                        intersect_rect(rect(-100, 20, 100, 120), bounds).unwrap(),
+                    ]),
+                    msaa_quarantined: true,
+                })
+                .collect(),
+            window_index: WindowSpatialIndex::build(
+                monitors
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, bounds)| IndexedWindow {
+                        envelope: rect_to_aabb(bounds),
+                        cache_index: i,
+                        z_order: 0,
+                    })
+                    .collect(),
+            ),
+            worker: MsaaWorkerSession::default(),
+        };
+        for (x, bounds) in [(-1, monitors[0]), (0, monitors[1])] {
+            let point = POINT { x, y: 50 };
+            assert_eq!(
+                backend
+                    .hit_test_point(point, crate::HitTestMode::Window)
+                    .unwrap()
+                    .unwrap(),
+                [ElementRect::new(bounds)]
+            );
+            let expected = intersect_rect(rect(-100, 20, 100, 120), bounds).unwrap();
+            assert_eq!(
+                backend
+                    .hit_test_point(point, crate::HitTestMode::UiElement)
+                    .unwrap()
+                    .unwrap(),
+                [ElementRect::new(expected), ElementRect::new(bounds)]
+            );
+        }
+        assert!(backend.worker.worker.is_none());
+    }
 
     fn wait_for_no_workers(admission: &MsaaWorkerAdmission) {
         let deadline = Instant::now() + Duration::from_secs(2);

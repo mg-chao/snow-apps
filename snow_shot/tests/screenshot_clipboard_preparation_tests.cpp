@@ -137,18 +137,19 @@ void opacitySurvivesSnapshotsAndEncoding() {
                 original.setColorSpace(QColorSpace::SRgb);
                 QImage caller = original;
                 auto source = snow_shot::image_codec::srgbRowSource(caller);
-                require(!source.isKnownOpaque && source.verifyOpaque,
+                require(!source.isKnownOpaque && source.classifyAlpha,
                         "alpha-capable snapshots defer pixel verification");
                 caller.fill(Qt::transparent);
-                std::array<bool, 4> verified{};
+                std::array<ScreenshotImageAlphaContent, 4> verified{};
                 std::vector<std::thread> threads;
                 for (size_t i = 0; i < verified.size(); ++i)
                     threads.emplace_back(
-                        [source, &verified, i] { verified[i] = source.hasVerifiedOpaquePixels(); });
+                        [source, &verified, i] { verified[i] = source.verifiedAlphaContent(); });
                 for (auto& thread : threads)
                     thread.join();
-                for (bool value : verified)
-                    require(value == opaque,
+                for (auto value : verified)
+                    require(value == (opaque ? ScreenshotImageAlphaContent::Opaque
+                                             : ScreenshotImageAlphaContent::NonOpaque),
                             "shared opacity verification must inspect the immutable source");
                 const auto payload = ScreenshotClipboardService::prepare(source);
                 require(payload.isValid() && payload.pngBytes().size() > 25,
@@ -168,9 +169,11 @@ void opacitySurvivesSnapshotsAndEncoding() {
             }
     QImage wide(7, 3, QImage::Format_RGBA64);
     wide.fill(Qt::transparent);
-    require(!snow_shot::image_codec::srgbRowSource(wide).hasVerifiedOpaquePixels(),
+    require(snow_shot::image_codec::srgbRowSource(wide).verifiedAlphaContent() ==
+                ScreenshotImageAlphaContent::Unknown,
             "unsupported alpha layouts must remain conservative");
-    require(!snow_shot::image_codec::srgbRowSource({}).hasVerifiedOpaquePixels(),
+    require(snow_shot::image_codec::srgbRowSource({}).verifiedAlphaContent() ==
+                ScreenshotImageAlphaContent::Unknown,
             "empty images cannot assert opacity");
 }
 
@@ -178,7 +181,7 @@ void unknownOpacityPreservesSinglePassRows() {
     QImage image(19, 7, QImage::Format_RGBA8888);
     image.fill(QColor(23, 117, 209));
     auto source = snow_shot::image_codec::srgbRowSource(image);
-    source.verifyOpaque = {};
+    source.classifyAlpha = {};
     source.backingImage = {};
     int rowsRead = 0;
     source.readRows = [read = source.readRows, &rowsRead](int first, int count, qsizetype stride,

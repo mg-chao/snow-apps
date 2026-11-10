@@ -1921,17 +1921,23 @@ impl Editor {
             snow_draw_engine_core::arrow::normalize_arrow_ratio(arrow_style.arrow_ratio);
         if self.state.default_rectangle_shape_style == rectangle_style
             && self.state.default_arrow_style == arrow_style
+            && self.state.creation_preview.is_none()
         {
             return;
         }
 
         self.state.default_rectangle_shape_style = rectangle_style;
         self.state.default_arrow_style = arrow_style;
+        let mut preview_rectangle_style = rectangle_style;
+        preview_rectangle_style.stroke = self.creation_stroke(preview_rectangle_style.stroke);
+        preview_rectangle_style.fill = self.creation_fill(preview_rectangle_style.fill);
+        let mut preview_arrow_style = arrow_style;
+        preview_arrow_style.stroke = self.creation_stroke(preview_arrow_style.stroke);
         let bindables = self.bindable_elements(document, &[]);
         let arrow_context = self.arrow_engine_context(Modifiers::default());
         let preview_changed = match self.state.creation_preview.as_mut() {
             Some(ElementCreationPreview::Rectangle(preview)) if !preview.is_spotlight() => {
-                let next = rectangle_with_style(preview, rectangle_style);
+                let next = rectangle_with_style(preview, preview_rectangle_style);
                 if *preview != next {
                     *preview = next;
                     true
@@ -1943,7 +1949,7 @@ impl Editor {
                 let next = arrow_with_style(
                     document.peek_next_element_id(),
                     preview,
-                    arrow_style,
+                    preview_arrow_style,
                     &bindables,
                     arrow_context,
                 );
@@ -2012,17 +2018,35 @@ impl Editor {
             return Ok(None);
         }
 
+        let tool = match patch.kind {
+            ShapeKind::Rectangle => ActiveTool::Shape,
+            ShapeKind::SpeechBubble => ActiveTool::SpeechBubble,
+            ShapeKind::Arrow => ActiveTool::Arrow,
+            ShapeKind::Line => ActiveTool::Line,
+            ShapeKind::FreeDraw => ActiveTool::FreeDraw,
+            ShapeKind::RectangleHighlight => ActiveTool::RectangleHighlight,
+            ShapeKind::PenHighlight => ActiveTool::PenHighlight,
+            ShapeKind::Spotlight => ActiveTool::Spotlight,
+        };
+        self.edit_creation_colors(
+            tool,
+            (patch.active_properties() & SHAPE_STYLE_PROPERTY_STROKE != 0)
+                .then_some(patch.style.stroke),
+            (patch.active_properties() & SHAPE_STYLE_PROPERTY_FILL != 0)
+                .then_some(patch.style.fill),
+        );
+
         match patch.kind {
             ShapeKind::SpeechBubble => {
                 self.state.default_speech_bubble_style =
                     patch.apply_to_rectangle_shape(self.state.default_speech_bubble_style);
+                let mut preview_style = self.state.default_speech_bubble_style;
+                preview_style.stroke = self.creation_stroke(preview_style.stroke);
+                preview_style.fill = self.creation_fill(preview_style.fill);
                 if let Some(ElementCreationPreview::SpeechBubble(bubble)) =
                     self.state.creation_preview.as_mut()
                 {
-                    bubble.body = speech_bubble_body_with_style(
-                        &bubble.body,
-                        self.state.default_speech_bubble_style,
-                    );
+                    bubble.body = speech_bubble_body_with_style(&bubble.body, preview_style);
                     self.bump_scene_state_revision();
                 }
             }
@@ -2259,6 +2283,7 @@ impl Editor {
         style: RectangleShapeStyle,
     ) -> Result<Option<EditorCommand>, ErrorCode> {
         validate_rectangle_shape_style(style)?;
+        self.edit_creation_colors(ActiveTool::Shape, Some(style.stroke), Some(style.fill));
         self.update_default_shape_styles(document, style, self.state.default_arrow_style);
 
         if !self.state.selection.is_empty() {

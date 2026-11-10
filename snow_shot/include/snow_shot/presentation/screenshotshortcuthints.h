@@ -48,13 +48,13 @@ struct ScreenshotShortcutHintRow {
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch color format"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch screenshot history"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Maintain aspect ratio"),
-    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Selection Aspect Ratio Snap"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Selection aspect ratio snap"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Fixed-angle rotation"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Scale from center"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Auto-align"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Delete selected elements"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Draw straight line"),
-    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "mouse wheel"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Mouse wheel"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "%1 + %2"),
 };
 
@@ -133,15 +133,15 @@ screenshotShortcutHintSelectionModeForContext(const ScreenshotShortcutHintContex
         return ScreenshotShortcutHintRow{screenshotShortcutHintText(label), shortcut, input, {}};
     };
     if (sourceText == QStringLiteral("Vertical scroll: mouse wheel")) {
-        return row("Vertical scroll", screenshotShortcutHintText("mouse wheel"));
+        return row("Vertical scroll", screenshotShortcutHintText("Mouse wheel"));
     }
     if (sourceText == QStringLiteral("Horizontal scroll: Shift + mouse wheel")) {
         return row("Horizontal scroll", screenshotShortcutHintText("%1 + %2").arg(
                                             display.modifierText(Qt::ShiftModifier),
-                                            screenshotShortcutHintText("mouse wheel")));
+                                            screenshotShortcutHintText("Mouse wheel")));
     }
     if (sourceText == QStringLiteral("Switch element level: mouse wheel")) {
-        return row("Switch element level", screenshotShortcutHintText("mouse wheel"));
+        return row("Switch element level", screenshotShortcutHintText("Mouse wheel"));
     }
     if (sourceText == QStringLiteral("Switch color format: Shift")) {
         return row("Switch color format", display.modifierText(Qt::ShiftModifier));
@@ -266,13 +266,13 @@ screenshotShortcutHintRowsForMode(ScreenshotShortcutHintMode mode,
             appendScreenshotConfiguredShortcutHintRow(
                 rows, configuredShortcuts,
                 QStringLiteral("keep_selection_width_and_height_consistent"),
-                "Keep selection width and height consistent");
+                "Maintain selection aspect ratio");
         }
     }
     if (!context.multiRegionEditing && !regionInputActive) {
         appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
                                                   QStringLiteral("selection_aspect_ratio_snap"),
-                                                  "Selection Aspect Ratio Snap");
+                                                  "Selection aspect ratio snap");
     }
     // Region operations block these configured commands in the shortcut controller.
     if (!regionInputActive) {
@@ -280,7 +280,7 @@ screenshotShortcutHintRowsForMode(ScreenshotShortcutHintMode mode,
                                                   QStringLiteral("copy_color"), "Copy color");
         appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
                                                   QStringLiteral("toggle_coordinate_mode"),
-                                                  "Toggle Global/Relative Coordinates");
+                                                  "Toggle global/relative coordinates");
         appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
                                                   QStringLiteral("toggle_cursor_visibility"),
                                                   "Toggle cursor visibility");
@@ -461,7 +461,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Auto-align: Ctrl");
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::Line));
         break;
-    case ScreenshotActiveTool::FreeDraw:
+    case ScreenshotActiveTool::Brush:
         append(rows, "Draw straight line: Shift");
         append(rows, "Maintain aspect ratio: Shift", !disabled(SnowCanvasTool::FreeDraw));
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::FreeDraw));
@@ -477,7 +477,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Delete selected elements: Delete",
                !disabled(SnowCanvasTool::RectangleHighlight));
         break;
-    case ScreenshotActiveTool::PenHighlight:
+    case ScreenshotActiveTool::BrushHighlight:
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::PenHighlight));
         break;
     case ScreenshotActiveTool::Text:
@@ -486,13 +486,13 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Auto-align: Ctrl", !disabled(SnowCanvasTool::Text));
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::Text));
         break;
-    case ScreenshotActiveTool::SerialNumber:
+    case ScreenshotActiveTool::SequenceNumber:
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Scale from center: Alt", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Auto-align: Ctrl", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::SerialNumber));
         break;
-    case ScreenshotActiveTool::PenFilter:
+    case ScreenshotActiveTool::BrushFilter:
         append(rows, "Draw straight line: Shift");
         append(rows, "Maintain aspect ratio: Shift", !disabled(SnowCanvasTool::PenFilter));
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::PenFilter));

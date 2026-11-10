@@ -157,7 +157,7 @@ QImage
 waitForPinnedResult(ScreenshotExportService& service,
                     const ScreenshotPinnedSelectionRequest& request,
                     std::optional<ScreenshotPinnedSelectionRequest>* deliveredRequest = nullptr,
-                    bool* deliveredSuccess = nullptr) {
+                    bool* deliveredSuccess = nullptr, std::function<void()> afterScheduled = {}) {
     QObject receiver;
     QEventLoop loop;
     QTimer timeout;
@@ -188,6 +188,8 @@ waitForPinnedResult(ScreenshotExportService& service,
             require(subscribed, "pinned result handle could not be subscribed");
         });
     require(scheduled, "pinned export was not scheduled");
+    if (afterScheduled)
+        afterScheduled();
     timeout.start();
     loop.exec();
     timeout.stop();
@@ -1077,8 +1079,93 @@ void compactionPreservesSamplingEffects() {
     }
 }
 
+void editablePinSnapshotsRetainCoordinatesAndHistory() {
+    for (const qreal scale : {1.0, 1.25, 2.0}) {
+        for (const QPoint origin : {QPoint(120, 75), QPoint(-90, -60)}) {
+            ScreenshotDisplaySession displays;
+            CapturedDisplayModel display;
+            display.active = true;
+            display.canvasUsesPoints = true;
+            display.backingScale = scale;
+            display.physicalRect = QRect(origin, QSize(80, 60));
+            display.capturedLogicalRect = display.physicalRect;
+            display.canvasRect = display.physicalRect;
+            display.imageSourceCanvasRect = display.physicalRect;
+            display.image = patternedImage(QSize(qRound(80 * scale), qRound(60 * scale)), 6);
+            display.screen = QGuiApplication::primaryScreen();
+            const auto image = display.image;
+            displays.appendDisplay(std::move(display));
+            ScreenshotGeometryMapper geometry;
+            geometry.rebuild(displays);
+            displays.displayAt(0).screen = QGuiApplication::primaryScreen();
+            SnowCanvasRuntime runtime;
+            const auto operation =
+                QStringLiteral(
+                    R"({"version":1,"operations":[{"type":"rectangle","bounds":[%1,%2,30,15],"style":{"fill":[255,0,0,255]}}]})")
+                    .arg(origin.x() + 12)
+                    .arg(origin.y() + 12)
+                    .toUtf8();
+            require(!runtime.applyAnnotationTransaction(operation).isEmpty() &&
+                        !runtime.applyAnnotationTransaction(operation).isEmpty() && runtime.undo(),
+                    "editable source has committed content and a redo branch");
+            ScreenshotExportService service({displays, runtime, geometry});
+            const QRect selection(origin + QPoint(10, 5), QSize(60, 45));
+            ScreenshotResultStyle style{3, 4, Qt::black};
+            style.region = ScreenshotRegionGeometry(QRegion(0, 0, 20, 45) + QRect(40, 0, 20, 45));
+            if (origin.x() > 0) {
+                style.borderType = ScreenshotSelectionBorderType::Border;
+                style.borderWidth = 3;
+                style.borderColor = Qt::cyan;
+                style.backgroundOpacityPercent = 25;
+            }
+            const auto annotated = waitForResult(
+                [&](QObject* receiver, auto callback) {
+                    return service.requestSelectionResult(selection, style, receiver,
+                                                          std::move(callback));
+                },
+                [](QImage result) { return result; });
+            SnowCanvasRuntime clean;
+            ScreenshotExportService cleanService({displays, clean, geometry});
+            const auto cleanRequest = cleanService.preparePinnedSelection(selection, style);
+            require(cleanRequest.has_value(), "prepare a styled background reference");
+            const auto expected = waitForPinnedResult(cleanService, *cleanRequest);
+            require(!hasSamePixels(expected, annotated),
+                    "the reference background excludes visible annotations");
+            const auto request = service.prepareEditablePinnedSelection(selection, style);
+            require(request && !request->canvasSession.isEmpty() &&
+                        !request->layoutCompaction.enabled &&
+                        request->contentCanvasRect == QRectF(selection) &&
+                        request->surfaceCanvasRect == cleanRequest->surfaceCanvasRect,
+                    "editable pin uses original coordinates and correct backing resolution");
+            SnowCanvasRuntime imported;
+            require(imported.restoreDocumentSession(request->canvasSession) &&
+                        imported.documentCheckpoint() == runtime.documentCheckpoint() &&
+                        imported.canUndo() && imported.canRedo(),
+                    "editable request contains full document history");
+            const auto actual = waitForPinnedResult(service, *request, nullptr, nullptr, [&] {
+                require(runtime.clearDocumentPreservingViewports(),
+                        "tear down the source document after scheduling the pin");
+                displays.displayAt(0).image = {};
+            });
+            require(hasSamePixels(actual, expected),
+                    "editable pins use the same styled background rendering without annotations");
+            require(image.isDetached(), "completed pin rendering releases the full capture");
+            require(imported.redo() && imported.undo() && imported.undo() &&
+                        !imported.hasDocumentContent(),
+                    "imported history supports redo and undo to an empty canvas");
+        }
+    }
+    ExportFixture fixture;
+    require(!fixture.service().prepareEditablePinnedSelection({}, {}).has_value(),
+            "invalid editable selections are rejected");
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--editable-pin-only"))) {
+        editablePinSnapshotsRetainCoordinatesAndHistory();
+        return EXIT_SUCCESS;
+    }
     if (app.arguments().contains(QStringLiteral("--gap-annotations-only"))) {
         compoundExportsPreserveAnnotationsInGaps();
         return EXIT_SUCCESS;

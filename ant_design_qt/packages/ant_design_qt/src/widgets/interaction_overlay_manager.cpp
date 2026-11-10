@@ -1,6 +1,7 @@
 #include "interaction_overlay_manager.h"
 #include "detail/timing_hub.h"
 
+#include <QAbstractScrollArea>
 #include <QHash>
 #include <QChildEvent>
 #include <QDynamicPropertyChangeEvent>
@@ -28,6 +29,7 @@ constexpr int kInteractionWaveThickenDurationMs = 180;
 constexpr qreal kInteractionWaveInitialOpacity = 0.16;
 constexpr qreal kInteractionWaveStrokeWidth = 1.6;
 constexpr char kWaveFrameKey[] = "SharedInteractionOverlay.WaveFrame";
+constexpr char kGeometryRefreshKey[] = "SharedInteractionOverlay.Geometry";
 
 qreal clampUnit(qreal value) { return std::clamp(value, 0.0, 1.0); }
 
@@ -37,13 +39,6 @@ qreal easeOutCirc(qreal t) {
 }
 
 qreal lerp(qreal a, qreal b, qreal t) { return a + (b - a) * clampUnit(t); }
-
-bool rectApproximatelyEqual(const QRectF& lhs, const QRectF& rhs) {
-  constexpr qreal kEpsilon = 0.25;
-  return std::abs(lhs.x() - rhs.x()) <= kEpsilon && std::abs(lhs.y() - rhs.y()) <= kEpsilon &&
-         std::abs(lhs.width() - rhs.width()) <= kEpsilon &&
-         std::abs(lhs.height() - rhs.height()) <= kEpsilon;
-}
 
 bool canMapWidgetToHostWindow(const QWidget* widget, const QWidget* hostWindow) {
   if (!widget || !hostWindow) {
@@ -263,9 +258,8 @@ QRectF mapRectFromHostToOverlay(const QRectF& hostRect, const QWidget* hostWindo
     return hostRect;
   }
 
-  const QPoint mappedTopLeft =
-      overlayParent->mapFrom(const_cast<QWidget*>(hostWindow), hostRect.topLeft().toPoint());
-  return QRectF(mappedTopLeft, hostRect.size());
+  const QPoint origin = overlayParent->mapTo(hostWindow, QPoint(0, 0));
+  return hostRect.translated(-origin.x(), -origin.y());
 }
 
 bool tryMapHostRectToOwnerRect(const QWidget* owner, const QWidget* hostWindow,
@@ -287,6 +281,7 @@ class SharedInteractionOverlay final : public QWidget {
   struct WaveTrack {
     QPointer<const QWidget> owner;
     InteractionWaveRequest request;
+    QRectF ownerBaseRect;
     qint64 startMs = 0;
   };
 
@@ -294,9 +289,6 @@ class SharedInteractionOverlay final : public QWidget {
     QPointer<const QWidget> owner;
     InteractionFocusRequest request;
     QRectF ownerBaseRect;
-    bool ownerBaseRectValid = false;
-    QRectF resolvedBaseRect;
-    bool resolvedBaseRectValid = false;
   };
 
   explicit SharedInteractionOverlay(QWidget* parent, QWidget* hostWindow, bool clipAgainstSurfaces)
@@ -306,13 +298,10 @@ class SharedInteractionOverlay final : public QWidget {
     setAttribute(Qt::WA_NoSystemBackground, true);
     setProperty(kInteractionOverlayMarkerProperty, true);
     hide();
-    if (clipAgainstSurfaces_ && hostWindow_) {
-      observeObjectTree(hostWindow_);
-      invalidateVisibleSurfaceCache();
-    }
+    observeObjectTree(parent);
   }
 
-  void triggerInteractionWave(const InteractionWaveRequest& request, const QRectF& localBaseRect) {
+  void triggerInteractionWave(const InteractionWaveRequest& request) {
     if (!isValidInteractionWaveRequest(request)) {
       return;
     }
@@ -323,15 +312,17 @@ class SharedInteractionOverlay final : public QWidget {
     WaveTrack track;
     track.owner = request.owner;
     track.request = request;
-    track.request.baseRectInWindow = localBaseRect;
+    if (!tryMapHostRectToOwnerRect(request.owner, hostWindow_, request.baseRectInWindow,
+                                   &track.ownerBaseRect)) {
+      return;
+    }
     track.startMs = detail::timingNowMs();
     waveTracks_.insert(request.owner, track);
 
     refreshOverlayState();
   }
 
-  void triggerInteractionFocus(const InteractionFocusRequest& request,
-                               const QRectF& localBaseRect) {
+  void triggerInteractionFocus(const InteractionFocusRequest& request) {
     if (!isValidInteractionFocusRequest(request)) {
       return;
     }
@@ -339,13 +330,9 @@ class SharedInteractionOverlay final : public QWidget {
     FocusTrack track;
     track.owner = request.owner;
     track.request = request;
-    track.request.baseRectInWindow = localBaseRect;
-    track.ownerBaseRectValid = tryMapHostRectToOwnerRect(
-        request.owner, hostWindow_, request.baseRectInWindow, &track.ownerBaseRect);
-    track.resolvedBaseRect = localBaseRect;
-    track.resolvedBaseRectValid = true;
-    if (track.ownerBaseRectValid && track.owner) {
-      track.resolvedBaseRect = resolveFocusTrackRect(track);
+    if (!tryMapHostRectToOwnerRect(request.owner, hostWindow_, request.baseRectInWindow,
+                                   &track.ownerBaseRect)) {
+      return;
     }
     focusTracks_.insert(request.owner, track);
 
@@ -372,8 +359,31 @@ class SharedInteractionOverlay final : public QWidget {
 
  protected:
   bool eventFilter(QObject* watched, QEvent* event) override {
-    if (!clipAgainstSurfaces_ || !hostWindow_ || !event) {
+    if (!hostWindow_ || !event) {
       return QWidget::eventFilter(watched, event);
+    }
+
+    // Scroll areas move their content widget, not each descendant control. Track the
+    // entire ancestor chain; focus geometry must not depend on animation frames.
+    if (geometryObservers_.contains(watched)) {
+      switch (event->type()) {
+        case QEvent::Move:
+        case QEvent::Resize:
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::EnabledChange:
+        case QEvent::ParentChange:
+          refreshOverlayState();
+          break;
+        case QEvent::DynamicPropertyChange:
+          if (static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() ==
+              QByteArray(kInteractionSurfaceProperty)) {
+            refreshOverlayState();
+          }
+          break;
+        default:
+          break;
+      }
     }
 
     switch (event->type()) {
@@ -390,11 +400,20 @@ class SharedInteractionOverlay final : public QWidget {
         break;
       case QEvent::Show:
       case QEvent::Hide:
-      case QEvent::ParentChange:
+      case QEvent::ParentChange: {
+        const QWidget* widget = qobject_cast<const QWidget*>(watched);
+        if (widget && !isOverlayWidget(widget)) {
+          markVisibleSurfaceCacheDirty();
+        }
+        break;
+      }
+      case QEvent::Move:
+      case QEvent::Resize:
       case QEvent::ZOrderChange: {
         const QWidget* widget = qobject_cast<const QWidget*>(watched);
-        if (widget && widget->property(kInteractionSurfaceProperty).toBool()) {
-          markVisibleSurfaceCacheDirty();
+        if (hasAnyTrack() && widget && !isOverlayWidget(widget)) {
+          // Surface bounds and sibling stacking can change without moving an owner.
+          scheduleGeometryRefresh();
         }
         break;
       }
@@ -429,37 +448,16 @@ class SharedInteractionOverlay final : public QWidget {
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    if (clipAgainstSurfaces_ && hostWindow_) {
-      refreshVisibleSurfaceCache();
-      QRegion clip(rect());
-      for (const QPointer<QWidget>& surfaceRef : visibleSurfaceCache_) {
-        QWidget* surface = surfaceRef.data();
-        if (!surface || surface == parentWidget()) {
-          continue;
-        }
-        if (surface->window() != hostWindow_) {
-          continue;
-        }
-        if (!surface->property(kInteractionSurfaceProperty).toBool()) {
-          continue;
-        }
-        if (!surface->isVisible() || isOverlayWidget(surface)) {
-          continue;
-        }
-        const QRect surfaceRectInHost = mapRectToHostWindow(surface, hostWindow_);
-        if (!surfaceRectInHost.isValid()) {
-          continue;
-        }
-        const QPoint topLeft = mapFrom(hostWindow_.data(), surfaceRectInHost.topLeft());
-        clip -= QRect(topLeft, surfaceRectInHost.size());
-      }
-      painter.setClipRegion(clip);
-    }
+    painter.setClipRegion(surfaceClipRegion());
 
     const qint64 nowMs = detail::timingNowMs();
     const int totalWaveDurationMs = std::max(0, detail::waveDurationMs());
     for (auto it = waveTracks_.cbegin(); it != waveTracks_.cend(); ++it) {
       const WaveTrack& track = it.value();
+      const QRegion clip = trackClipRegion(track.owner);
+      if (clip.isEmpty()) {
+        continue;
+      }
       const qint64 elapsedMs = std::max<qint64>(0, nowMs - track.startMs);
       const qreal spreadProgress =
           easeOutCirc(static_cast<qreal>(elapsedMs) / kInteractionWaveSpreadDurationMs);
@@ -481,8 +479,9 @@ class SharedInteractionOverlay final : public QWidget {
       const qreal strokeWidth = lerp(startStroke, endStroke, strokeProgress);
       const qreal outwardOffset = strokeWidth * 0.5;
 
-      const QRectF waveRect = track.request.baseRectInWindow.adjusted(
-          -outwardOffset, -outwardOffset, outwardOffset, outwardOffset);
+      const QRectF waveRect =
+          resolveTrackRect(track.owner, track.ownerBaseRect)
+              .adjusted(-outwardOffset, -outwardOffset, outwardOffset, outwardOffset);
       const QPainterPath wavePath =
           roundedRectPath(waveRect, expandedCornerRadius(track.request.topLeft, outwardOffset),
                           expandedCornerRadius(track.request.topRight, outwardOffset),
@@ -497,16 +496,23 @@ class SharedInteractionOverlay final : public QWidget {
       }
 
       QPen wavePen(waveColor, strokeWidth, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin);
+      painter.save();
+      painter.setClipRegion(clip, Qt::IntersectClip);
       painter.setPen(wavePen);
       painter.setBrush(Qt::NoBrush);
       painter.drawPath(wavePath);
+      painter.restore();
     }
 
     for (auto it = focusTracks_.cbegin(); it != focusTracks_.cend(); ++it) {
       const FocusTrack& track = it.value();
+      const QRegion clip = trackClipRegion(track.owner);
+      if (clip.isEmpty()) {
+        continue;
+      }
       const qreal strokeWidth = std::max<qreal>(1.0, track.request.strokeWidth);
       const qreal outwardOffset = std::max<qreal>(0.0, track.request.offset) + strokeWidth / 2.0;
-      const QRectF focusBaseRect = focusTrackBaseRect(track);
+      const QRectF focusBaseRect = resolveTrackRect(track.owner, track.ownerBaseRect);
       const QRectF focusRect =
           focusBaseRect.adjusted(-outwardOffset, -outwardOffset, outwardOffset, outwardOffset);
       const QPainterPath focusPath =
@@ -516,9 +522,12 @@ class SharedInteractionOverlay final : public QWidget {
                           expandedCornerRadius(track.request.bottomLeft, outwardOffset));
 
       QPen focusPen(track.request.color, strokeWidth, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin);
+      painter.save();
+      painter.setClipRegion(clip, Qt::IntersectClip);
       painter.setPen(focusPen);
       painter.setBrush(Qt::NoBrush);
       painter.drawPath(focusPath);
+      painter.restore();
     }
   }
 
@@ -551,8 +560,8 @@ class SharedInteractionOverlay final : public QWidget {
 
   void markVisibleSurfaceCacheDirty() {
     invalidateVisibleSurfaceCache();
-    if (hasAnyTrack() && isVisible()) {
-      update();
+    if (hasAnyTrack()) {
+      scheduleGeometryRefresh();
     }
   }
 
@@ -572,162 +581,166 @@ class SharedInteractionOverlay final : public QWidget {
     visibleSurfaceCacheDirty_ = false;
   }
 
-  QRectF focusTrackBaseRect(const FocusTrack& track) const {
-    if (track.resolvedBaseRectValid) {
-      return track.resolvedBaseRect;
+  QRegion surfaceClipRegion() {
+    QRegion clip(rect());
+    if (!clipAgainstSurfaces_ || !hostWindow_) {
+      return clip;
     }
-    return resolveFocusTrackRect(track);
+    refreshVisibleSurfaceCache();
+    for (const QPointer<QWidget>& surfaceRef : visibleSurfaceCache_) {
+      QWidget* surface = surfaceRef.data();
+      if (!surface || surface == parentWidget() || surface->window() != hostWindow_ ||
+          !surface->property(kInteractionSurfaceProperty).toBool() || !surface->isVisible() ||
+          isOverlayWidget(surface)) {
+        continue;
+      }
+      const QRect surfaceRectInHost = mapRectToHostWindow(surface, hostWindow_);
+      if (surfaceRectInHost.isValid()) {
+        clip -= QRect(mapFrom(hostWindow_.data(), surfaceRectInHost.topLeft()),
+                      surfaceRectInHost.size());
+      }
+    }
+    return clip;
   }
 
-  QRectF resolveFocusTrackRect(const FocusTrack& track) const {
-    if (!track.ownerBaseRectValid || !track.owner || !hostWindow_) {
-      return track.request.baseRectInWindow;
-    }
-    if (!canMapWidgetToHostWindow(track.owner, hostWindow_)) {
-      return QRectF();
-    }
-
-    QWidget* overlayParent = parentWidget();
-    if (!overlayParent) {
-      return track.request.baseRectInWindow;
-    }
-
-    const QPoint ownerOriginInHost = track.owner->mapTo(hostWindow_, QPoint(0, 0));
-    const QRectF rectInHost =
-        track.ownerBaseRect.translated(ownerOriginInHost.x(), ownerOriginInHost.y());
-    return mapRectFromHostToOverlay(rectInHost, hostWindow_, overlayParent);
-  }
-
-  bool refreshDynamicFocusTrackRects() {
-    if (!hostWindow_) {
+  bool acceptsOwner(const QWidget* owner) const {
+    if (!canMapWidgetToHostWindow(owner, hostWindow_)) {
       return false;
     }
+    const QWidget* surface = resolveInteractionSurfaceRoot(owner, hostWindow_);
+    return parentWidget() == (surface ? surface : hostWindow_.data());
+  }
 
-    bool changed = false;
-    for (auto it = focusTracks_.begin(); it != focusTracks_.end();) {
-      FocusTrack& track = it.value();
-      if (!track.ownerBaseRectValid || !track.owner) {
+  QRectF resolveTrackRect(const QWidget* owner, const QRectF& ownerBaseRect) const {
+    if (!acceptsOwner(owner)) {
+      return {};
+    }
+    const QPoint origin = owner->mapTo(hostWindow_, QPoint(0, 0));
+    return mapRectFromHostToOverlay(ownerBaseRect.translated(origin), hostWindow_, parentWidget());
+  }
+
+  QRegion trackClipRegion(const QWidget* owner) const {
+    if (!acceptsOwner(owner) || !owner->isVisible() || !owner->isEnabled()) {
+      return {};
+    }
+    QRegion clip(parentWidget()->rect());
+    // Rings deliberately extend beyond controls and compact layout containers, but
+    // must never escape a scroll viewport (including nested scroll areas/item views).
+    for (const QWidget* ancestor = owner == hostWindow_ ? nullptr : owner->parentWidget(); ancestor;
+         ancestor = ancestor->parentWidget()) {
+      const auto* area = qobject_cast<const QAbstractScrollArea*>(ancestor->parentWidget());
+      if (area && area->viewport() == ancestor) {
+        const QPoint origin = ancestor->mapTo(hostWindow_, QPoint(0, 0)) -
+                              parentWidget()->mapTo(hostWindow_, QPoint(0, 0));
+        QRegion viewport(ancestor->rect());
+        if (!ancestor->mask().isEmpty()) {
+          viewport &= ancestor->mask();
+        }
+        clip &= viewport.translated(origin);
+      }
+      if (ancestor == hostWindow_) {
+        break;
+      }
+    }
+    return clip;
+  }
+
+  void scheduleGeometryRefresh() {
+    detail::deferTimingTask(this, QString::fromLatin1(kGeometryRefreshKey),
+                            [this]() { refreshOverlayState(); });
+  }
+
+  void syncGeometryObservers() {
+    QSet<QObject*> ancestors;
+    const auto collect = [&](const QWidget* owner) {
+      for (auto* widget = const_cast<QWidget*>(owner); widget; widget = widget->parentWidget()) {
+        ancestors.insert(widget);
+        if (widget == hostWindow_) {
+          break;
+        }
+      }
+    };
+    for (const auto& track : focusTracks_) collect(track.owner);
+    for (const auto& track : waveTracks_) collect(track.owner);
+
+    for (auto it = geometryObservers_.begin(); it != geometryObservers_.end();) {
+      if (ancestors.contains(it.key())) {
         ++it;
-        continue;
+      } else {
+        if (!observedObjects_.contains(it.key())) {
+          it.key()->removeEventFilter(this);
+        }
+        disconnect(it.value());
+        it = geometryObservers_.erase(it);
       }
-      if (!canMapWidgetToHostWindow(track.owner, hostWindow_)) {
-        it = focusTracks_.erase(it);
-        changed = true;
-        continue;
-      }
-
-      const QRectF nextRect = resolveFocusTrackRect(track);
-      if (!nextRect.isValid() || nextRect.width() <= 0.0 || nextRect.height() <= 0.0) {
-        it = focusTracks_.erase(it);
-        changed = true;
-        continue;
-      }
-      if (!track.resolvedBaseRectValid ||
-          !rectApproximatelyEqual(track.resolvedBaseRect, nextRect)) {
-        track.resolvedBaseRect = nextRect;
-        track.resolvedBaseRectValid = true;
-        changed = true;
-      }
-      ++it;
     }
-    return changed;
+    for (QObject* ancestor : ancestors) {
+      if (geometryObservers_.contains(ancestor)) {
+        continue;
+      }
+      ancestor->installEventFilter(this);
+      geometryObservers_.insert(ancestor,
+                                connect(ancestor, &QObject::destroyed, this, [this, ancestor]() {
+                                  geometryObservers_.remove(ancestor);
+                                  observedObjects_.remove(ancestor);
+                                  // Wait until QWidget teardown has finished before traversing the
+                                  // surviving tree.
+                                  scheduleGeometryRefresh();
+                                }));
+    }
   }
 
-  bool hasDynamicFocusTracks() const {
-    if (!hostWindow_) {
-      return false;
-    }
-    for (auto it = focusTracks_.cbegin(); it != focusTracks_.cend(); ++it) {
-      const FocusTrack& track = it.value();
-      if (track.ownerBaseRectValid && track.owner) {
-        return true;
+  void pruneStaleTracks() {
+    for (auto it = waveTracks_.begin(); it != waveTracks_.end();) {
+      if (!acceptsOwner(it.value().owner)) {
+        it = waveTracks_.erase(it);
+      } else {
+        ++it;
       }
     }
-    return false;
+
+    for (auto it = focusTracks_.begin(); it != focusTracks_.end();) {
+      if (!acceptsOwner(it.value().owner)) {
+        it = focusTracks_.erase(it);
+      } else {
+        ++it;
+      }
+    }
   }
 
-  void advanceInteractionWaveFrame() {
-    const bool staleChanged = pruneStaleTracks();
-    const bool finishedChanged = pruneFinishedWaveTracks();
-    const bool changed = staleChanged || finishedChanged;
-    if (!hasAnyTrack()) {
-      refreshOverlayState();
+  void pruneFinishedWaveTracks() {
+    const int totalWaveDurationMs = std::max(0, detail::waveDurationMs());
+    if (totalWaveDurationMs <= 0) {
+      waveTracks_.clear();
       return;
     }
 
-    const bool focusMoved = refreshDynamicFocusTrackRects();
-    const bool needsRepaint = changed || !waveTracks_.isEmpty() || focusMoved ||
-                              (clipAgainstSurfaces_ && visibleSurfaceCacheDirty_);
-
-    syncGeometryToParent();
-    refreshZOrder();
-    if (needsRepaint) {
-      update();
-    }
-    refreshFrameSubscription();
-  }
-
-  bool pruneStaleTracks() {
-    bool changed = false;
-    for (auto it = waveTracks_.begin(); it != waveTracks_.end();) {
-      if (!it.value().owner) {
-        it = waveTracks_.erase(it);
-        changed = true;
-      } else {
-        ++it;
-      }
-    }
-
-    for (auto it = focusTracks_.begin(); it != focusTracks_.end();) {
-      if (!it.value().owner) {
-        it = focusTracks_.erase(it);
-        changed = true;
-      } else {
-        ++it;
-      }
-    }
-    return changed;
-  }
-
-  bool pruneFinishedWaveTracks() {
-    const int totalWaveDurationMs = std::max(0, detail::waveDurationMs());
-    if (totalWaveDurationMs <= 0) {
-      if (waveTracks_.isEmpty()) {
-        return false;
-      }
-      waveTracks_.clear();
-      return true;
-    }
-
-    bool changed = false;
     const qint64 nowMs = detail::timingNowMs();
     for (auto it = waveTracks_.begin(); it != waveTracks_.end();) {
       if (nowMs - it.value().startMs >= totalWaveDurationMs) {
         it = waveTracks_.erase(it);
-        changed = true;
       } else {
         ++it;
       }
     }
-    return changed;
   }
 
   bool hasAnyTrack() const { return !waveTracks_.isEmpty() || !focusTracks_.isEmpty(); }
 
   void refreshFrameSubscription() {
-    if (waveTracks_.isEmpty() && !hasDynamicFocusTracks()) {
+    if (waveTracks_.isEmpty()) {
       detail::clearFrameSubscription(this, QString::fromLatin1(kWaveFrameKey));
       return;
     }
 
     detail::setFrameSubscription(this, QString::fromLatin1(kWaveFrameKey), true,
-                                 [this](qint64, qint64) { advanceInteractionWaveFrame(); });
+                                 [this](qint64, qint64) { refreshOverlayState(); });
   }
 
-  void syncGeometryToParent() {
+  bool syncGeometryToParent() {
     QWidget* parent = parentWidget();
     if (!parent) {
-      return;
+      return false;
     }
     const QRect parentRect = parent->rect();
     if (geometry() != parentRect) {
@@ -740,18 +753,25 @@ class SharedInteractionOverlay final : public QWidget {
     for (auto it = waveTracks_.cbegin(); it != waveTracks_.cend(); ++it) {
       const qreal strokeScale = std::max<qreal>(0.1, it->request.strokeWidthScale);
       const qreal margin = std::max<qreal>(0.6, 6.0 * strokeScale) + 1.0;
-      footprint +=
-          it->request.baseRectInWindow.adjusted(-margin, -margin, margin, margin).toAlignedRect();
+      footprint += QRegion(resolveTrackRect(it->owner, it->ownerBaseRect)
+                               .adjusted(-margin, -margin, margin, margin)
+                               .toAlignedRect()) &
+                   trackClipRegion(it->owner);
     }
     for (auto it = focusTracks_.cbegin(); it != focusTracks_.cend(); ++it) {
       const qreal margin = std::max<qreal>(0.0, it->request.offset) +
                            std::max<qreal>(1.0, it->request.strokeWidth) + 1.0;
-      footprint +=
-          focusTrackBaseRect(it.value()).adjusted(-margin, -margin, margin, margin).toAlignedRect();
+      footprint += QRegion(resolveTrackRect(it->owner, it->ownerBaseRect)
+                               .adjusted(-margin, -margin, margin, margin)
+                               .toAlignedRect()) &
+                   trackClipRegion(it->owner);
     }
+    footprint &= surfaceClipRegion();
     if (mask() != footprint) {
       setMask(footprint);
     }
+    // An empty QWidget mask means "unmasked", so the caller must hide the overlay.
+    return !footprint.isEmpty();
   }
 
   void refreshZOrder() {
@@ -775,16 +795,17 @@ class SharedInteractionOverlay final : public QWidget {
   }
 
   void refreshOverlayState() {
+    detail::cancelTimingTask(this, QString::fromLatin1(kGeometryRefreshKey));
     pruneStaleTracks();
     pruneFinishedWaveTracks();
+    syncGeometryObservers();
     refreshFrameSubscription();
 
-    if (!hasAnyTrack()) {
+    if (!hasAnyTrack() || !syncGeometryToParent()) {
       hide();
       return;
     }
 
-    syncGeometryToParent();
     if (!isVisible()) {
       show();
     }
@@ -796,6 +817,7 @@ class SharedInteractionOverlay final : public QWidget {
   bool clipAgainstSurfaces_ = false;
   bool visibleSurfaceCacheDirty_ = true;
   QSet<const QObject*> observedObjects_;
+  QHash<QObject*, QMetaObject::Connection> geometryObservers_;
   QList<QPointer<QWidget>> visibleSurfaceCache_;
   QHash<const QWidget*, WaveTrack> waveTracks_;
   QHash<const QWidget*, FocusTrack> focusTracks_;
@@ -878,9 +900,7 @@ SharedInteractionOverlay* ensureSurfaceOverlay(QWidget* hostWindow, QWidget* sur
   return overlay;
 }
 
-SharedInteractionOverlay* resolveOverlayForOwner(const QWidget* owner,
-                                                 const QRectF& rectInHostWindow,
-                                                 QRectF* outRectInOverlay) {
+SharedInteractionOverlay* resolveOverlayForOwner(const QWidget* owner) {
   QWidget* hostWindow = resolveInteractionHostWindow(owner);
   if (!hostWindow) {
     return nullptr;
@@ -888,15 +908,9 @@ SharedInteractionOverlay* resolveOverlayForOwner(const QWidget* owner,
 
   const QWidget* surfaceRoot = resolveInteractionSurfaceRoot(owner, hostWindow);
   if (surfaceRoot && surfaceRoot != hostWindow) {
-    if (outRectInOverlay) {
-      *outRectInOverlay = mapRectFromHostToOverlay(rectInHostWindow, hostWindow, surfaceRoot);
-    }
     return ensureSurfaceOverlay(hostWindow, const_cast<QWidget*>(surfaceRoot));
   }
 
-  if (outRectInOverlay) {
-    *outRectInOverlay = rectInHostWindow;
-  }
   return ensureBaseOverlay(hostWindow);
 }
 
@@ -907,14 +921,12 @@ void triggerInteractionWave(const InteractionWaveRequest& request) {
     return;
   }
 
-  QRectF rectInOverlay;
-  SharedInteractionOverlay* overlay =
-      resolveOverlayForOwner(request.owner, request.baseRectInWindow, &rectInOverlay);
+  SharedInteractionOverlay* overlay = resolveOverlayForOwner(request.owner);
   if (!overlay) {
     return;
   }
 
-  overlay->triggerInteractionWave(request, rectInOverlay);
+  overlay->triggerInteractionWave(request);
 }
 
 void stopInteractionWaveForOwner(const QWidget* owner) {
@@ -942,14 +954,12 @@ void triggerInteractionFocus(const InteractionFocusRequest& request) {
     return;
   }
 
-  QRectF rectInOverlay;
-  SharedInteractionOverlay* overlay =
-      resolveOverlayForOwner(request.owner, request.baseRectInWindow, &rectInOverlay);
+  SharedInteractionOverlay* overlay = resolveOverlayForOwner(request.owner);
   if (!overlay) {
     return;
   }
 
-  overlay->triggerInteractionFocus(request, rectInOverlay);
+  overlay->triggerInteractionFocus(request);
 }
 
 void stopInteractionFocusForOwner(const QWidget* owner) {

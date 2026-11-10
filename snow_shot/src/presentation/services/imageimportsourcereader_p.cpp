@@ -30,36 +30,29 @@ ImageImportSource
 readImageImportPinnedRecord(const QString& recordId,
                             ScreenshotClipboardContentReader::CancellationCheck cancelled,
                             ScreenshotClipboardContentReader::AllocationCheck allocate,
-                            std::optional<PinnedColorSwatchStyle> swatchStyle) {
+                            const ScreenshotPinnedRenderPreparation& preparation) {
     ImageImportSource result;
     if (cancelled && cancelled())
         return result;
     qint64 allocatedBytes = 0;
-    const auto reserve = [&allocate, &allocatedBytes](qint64 bytes) {
+    const auto reserve = [&allocate, &allocatedBytes, &cancelled](qint64 bytes) {
+        if (cancelled && cancelled())
+            return false;
         // Pin restoration and original-text rendering can request different transient capacities.
         // Keep the largest reservation until preparation replaces it with retained image bytes.
         allocatedBytes = std::max(allocatedBytes, bytes);
         return !allocate || allocate(allocatedBytes);
     };
-    const auto record = storage::ApplicationStorage::instance().pinnedWindows().loadPreviewSource(
-        recordId, reserve, cancelled);
+    auto record =
+        storage::ApplicationStorage::instance().pinnedWindows().loadRecord(recordId, reserve);
     if (!record || (cancelled && cancelled()))
         return result;
     result.originalFileName = record->originalFileName;
     result.createdUtc = record->createdUtc;
-    if (record->sourceKind == storage::PinnedWindowSourceKind::ClipboardText) {
-        ScreenshotClipboardOriginalContent original;
-        original.html = record->originalHtml;
-        original.text = record->originalText;
-        original.textStyle = record->textStyle;
-        original.textFormat = record->textFormat;
-        auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
-            original, record->firstCreationTextDpi, {}, reserve, std::move(swatchStyle));
-        if (rendered)
-            result.image = std::move(rendered->image);
-    } else {
-        result.image = record->image;
-    }
+    auto rendered =
+        renderScreenshotPinnedImageRecord(std::move(*record), preparation, cancelled, reserve);
+    result.image = std::move(rendered.image);
+    result.error = std::move(rendered.error);
     return result;
 }
 

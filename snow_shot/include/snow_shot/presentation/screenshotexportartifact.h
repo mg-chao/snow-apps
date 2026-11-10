@@ -8,6 +8,8 @@
 #include "snow_shot/presentation/screenshotimagerowsource.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshottextannotationrenderer.h"
+#include "snow_shot/presentation/screenshotrecognitionimage.h"
 #include "snow_shot/storage/preparedpngimage.h"
 
 #include <QImage>
@@ -19,6 +21,7 @@
 #include <variant>
 
 class ScreenshotScrollingSnapshot;
+class ScreenshotExportArtifact;
 struct ScreenshotRecognitionImageSnapshot;
 
 struct ScreenshotPinnedViewportExportSource final {
@@ -35,7 +38,36 @@ struct ScreenshotPinnedViewportExportSource final {
     QList<SnowCanvasBaseImageSource> samplingSources = {};
     // Optional output clip in the unchanged document coordinate system.
     std::optional<QRectF> visibleCanvasRect = std::nullopt;
+    ScreenshotTextAnnotationRenderSnapshot textAnnotations = {};
+    std::optional<ScreenshotRecognitionImageSnapshot> recognitionOverlay = std::nullopt;
+    QImage presentationImage = {};
+    QRectF presentationCanvasRect = {};
 };
+
+// A styled crop retains the full composition domain and its original pixel phase.
+// Admission and rendering must use this same plan, including intermediate rasters.
+struct ScreenshotPinnedViewportRenderPlan final {
+    QRectF renderCanvasRect;
+    QSize renderPixelSize;
+    ScreenshotResultLayout resultLayout;
+    QRect outputPixelRect;
+    bool cropAfterRender = false;
+    bool composeVisibleOnly = false;
+    std::optional<QRect> contentPixelRect;
+    qint64 workingBytes = 0;
+
+    [[nodiscard]] QSize outputSize() const {
+        return outputPixelRect.size();
+    }
+};
+
+[[nodiscard]] std::optional<ScreenshotPinnedViewportRenderPlan>
+screenshotPinnedViewportRenderPlan(const ScreenshotPinnedViewportExportSource& source);
+
+// Render the immutable source on the calling export worker, without scheduling or retaining it.
+[[nodiscard]] QImage
+renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
+                               const std::function<bool()>& cancelled = {});
 
 struct ScreenshotExportImageResult final {
     QImage image;
@@ -66,8 +98,16 @@ struct ScreenshotExportClipboardResult final {
 
 class ScreenshotExportSource final {
   public:
+    // Called on the artifact's GUI thread. False rejects without a completion; true accepts
+    // and permits an inline completion. An accepted, live, uncancelled request must complete
+    // once on that same thread; receiver destruction may retire its callback. Freeze mutable
+    // UI state before construction; the loader must not hand live widgets to a worker.
     using ImageLoader = std::function<bool(QObject*, std::function<void(QImage)>)>;
+    // These synchronous callbacks run on export workers. Captured sources/row readers must
+    // own their immutable inputs and remain valid until execution actually retires, including
+    // after cancellation. They must not access GUI objects or artifact/cache request APIs.
     using ImageProducer = std::function<QImage(const ScreenshotExportCancellation& cancellation)>;
+    using ImagePreparation = std::function<QImage(QImage, const ScreenshotExportCancellation&)>;
     using RowSourceFactory =
         std::function<ScreenshotImageRowSource(std::function<bool()> cancellationRequested)>;
 
@@ -76,6 +116,10 @@ class ScreenshotExportSource final {
     [[nodiscard]] static ScreenshotExportSource
     fromImage(QImage image, std::optional<ScreenshotClipboardPlacement> placement = {},
               std::optional<ScreenshotClipboardAppearance> appearance = {});
+    // Derive an independent output from shared prepared rows, retaining the original artifact.
+    // Cancelling the derived output does not cancel the original pin or its history subscribers.
+    [[nodiscard]] static ScreenshotExportSource
+    fromArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact);
     [[nodiscard]] static ScreenshotExportSource
     fromRecognitionImage(ScreenshotRecognitionImageSnapshot snapshot);
     [[nodiscard]] static ScreenshotExportSource
@@ -85,23 +129,63 @@ class ScreenshotExportSource final {
     [[nodiscard]] static ScreenshotExportSource
     fromImageLoader(ImageLoader loader, std::optional<ScreenshotClipboardPlacement> placement = {},
                     std::optional<ScreenshotClipboardAppearance> appearance = {});
+    // Acquire asynchronously without a worker, then admit and prepare the delivered pixels.
+    [[nodiscard]] static ScreenshotExportSource
+    fromDeferredImage(ImageLoader loader, ImagePreparation preparation,
+                      std::function<qint64(QSize)> workingBytes,
+                      std::optional<ScreenshotClipboardPlacement> placement = {},
+                      std::optional<ScreenshotClipboardAppearance> appearance = {});
     [[nodiscard]] static ScreenshotExportSource
     fromProducer(ImageProducer producer, RowSourceFactory rowSourceFactory = {},
                  std::optional<ScreenshotClipboardPlacement> placement = {},
                  std::optional<ScreenshotClipboardAppearance> appearance = {});
+
+    // GUI-thread pinned snapshots only. The key identifies immutable pixels across commands;
+    // it excludes placement/publication metadata. Change it whenever any exported pixel changes.
+    void setEncodingCacheKey(QByteArray key) {
+        m_encodingCacheKey = std::move(key);
+    }
+
+    // Freeze on the source before constructing an artifact. Capture pixels stay unchanged.
+    void setOutputScale(qreal scale) {
+        m_outputScale = scale;
+    }
+
+    [[nodiscard]] ScreenshotExportSource withOutputScale(qreal scale) && {
+        setOutputScale(scale);
+        return std::move(*this);
+    }
 
     [[nodiscard]] bool isValid() const;
 
   private:
     ImageLoader m_imageLoader;
     ImageProducer m_imageProducer;
+    ImagePreparation m_loadedImagePreparation;
+    std::function<qint64(QSize)> m_loadedImageWorkingBytes;
     RowSourceFactory m_rowSourceFactory;
+    std::function<bool(QObject*, std::function<void(ScreenshotImageRowSource, QString)>)>
+        m_rowSourceLoader;
     std::optional<ScreenshotClipboardPlacement> m_clipboardPlacement;
     std::optional<ScreenshotClipboardAppearance> m_clipboardAppearance;
+    qint64 m_renderingBytes = 0;
+    QByteArray m_encodingCacheKey;
+    qreal m_outputScale = 1.0;
+
+    void prepareOutputScale();
 
     friend class ScreenshotExportArtifact;
 };
 
+// Construct, request, inspect cached products, cancel and destroy on the GUI thread. Internal
+// mutexes protect worker/delivery handoffs, not arbitrary-thread access to the shared brokers
+// and completed-output caches. Keep the artifact's QObject affinity on that thread.
+//
+// A false request result rejects without invoking its callback. Accepted results may arrive
+// inline on the receiver's thread, otherwise delivery is queued there. Destroying the receiver
+// or cancelling the artifact suppresses undelivered callbacks; it does not join active workers
+// or release their source/resource leases early. Consumer-owned completed results survive
+// artifact destruction and application idle-cache trimming independently.
 class ScreenshotExportArtifact final : public QObject {
   public:
     struct PngCachePolicy {
@@ -191,6 +275,10 @@ class ScreenshotExportArtifact final : public QObject {
 
   private:
     struct FileSource;
+    struct SharedEncodings;
+    static SharedEncodings& sharedEncodings();
+    std::shared_ptr<ScreenshotExportArtifact> encodingBroker(const ScreenshotImageRowSource& rows);
+
     using FileSourceCallback = std::function<void(std::shared_ptr<FileSource>, QString)>;
     [[nodiscard]] bool requestFileSource(ScreenshotImageFileFormat format,
                                          ScreenshotImageEncodingOptions encoding,
@@ -213,10 +301,13 @@ class ScreenshotExportArtifact final : public QObject {
                          QDateTime requestedAt, ScreenshotExportCoordinator::Priority priority);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+    void assertOwnerThread() const;
 
     void startImage();
+    void prepareLoadedImage(QImage image);
     void completeImage(ScreenshotExportImageResult result);
     void startRowSource();
+    void prepareScaledRowSource(ScreenshotImageRowSource source);
     void startRowSourceFromImage(QImage image);
     void completeRowSource(ScreenshotImageRowSource source, QString error);
     void startPng(int compressionLevel);

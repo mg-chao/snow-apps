@@ -29,6 +29,8 @@
 #include <QUuid>
 
 #include <memory>
+#include <atomic>
+#include <utility>
 
 #include <cstring>
 #include <cstdlib>
@@ -802,6 +804,49 @@ void translationPromptPreservesEditorContract() {
             messages.at(1).toObject().value(QStringLiteral("content")).toString() == input.text,
             "OCR text, embedded instructions, whitespace, and placeholders must be sent verbatim");
     }
+}
+
+void manualProxyRoutesHttpAndHttpsRequests() {
+    QTcpServer proxy;
+    require(proxy.listen(QHostAddress::LocalHost), "manual proxy fixture listens");
+    SnowShotApiClient client(QStringLiteral("http://proxy-target.invalid"));
+    client.setProxyConfiguration(QStringLiteral("manual"),
+                                 QStringLiteral("http://127.0.0.1:%1").arg(proxy.serverPort()));
+    bool completed = false;
+    QEventLoop completionLoop;
+    const auto token =
+        client.fetchChatModels(QStringLiteral("en-US"), &client, [&](SnowShotChatModelsResult) {
+            completed = true;
+            completionLoop.quit();
+        });
+    require(token != 0, "manual HTTP proxy request starts");
+    const auto request = waitForHttpRequest(
+        proxy,
+        QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                          "11\r\nConnection: close\r\n\r\n{\"data\":[]}"));
+    require(request.startsWith("GET http://proxy-target.invalid/api/v2/chat/models HTTP/1.1"),
+            "HTTP requests reach the configured proxy with an absolute target URL");
+    if (!completed) {
+        QTimer::singleShot(5000, &completionLoop, &QEventLoop::quit);
+        completionLoop.exec();
+    }
+    require(completed, "proxied HTTP response is processed");
+    require(client.setBaseUrl(QStringLiteral("https://proxy-target.invalid")),
+            "select HTTPS server");
+    const auto secureToken =
+        client.fetchChatModels(QStringLiteral("en-US"), &client, [](SnowShotChatModelsResult) {});
+    require(secureToken != 0, "manual HTTPS proxy request starts");
+    const auto tunnel = waitForHttpRequest(
+        proxy, QByteArrayLiteral(
+                   "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+    require(tunnel.startsWith("CONNECT proxy-target.invalid:443 HTTP/1.1"),
+            "HTTPS requests establish a CONNECT tunnel through the configured HTTP proxy");
+    client.cancel(secureToken);
+    client.setProxyConfiguration(QStringLiteral("none"), {});
+    auto* manager = client.findChild<QNetworkAccessManager*>();
+    require(manager && manager->proxy().type() == QNetworkProxy::NoProxy &&
+                manager->proxyFactory() == nullptr,
+            "direct mode removes the manual proxy");
 }
 
 void apiClientUsesModelCatalogAndStreamingChatContracts() {
@@ -2164,6 +2209,103 @@ QByteArray contentFrame(const QString& text, bool crlf = false) {
     return frame;
 }
 
+void latexVisionProgressPreservesFinalContract() {
+    for (const bool custom : {false, true}) {
+        translation_tests::Server server;
+        SnowShotApiClient client(server.url());
+        QString model = QStringLiteral("vision");
+        if (custom) {
+            snow_shot::CustomAiModelConfiguration configuration{
+                QStringLiteral("11111111-2222-4333-8444-555555555555"),
+                QStringLiteral("Streaming formula fixture"),
+                server.url(),
+                {},
+                QStringLiteral("vision"),
+                true};
+            client.setCustomModels({configuration});
+            model = configuration.selectionId();
+            server.streamPath = "/chat/completions";
+        }
+        QImage image(40, 24, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QStringList chunks;
+        SnowShotLatexResult output;
+        int completions = 0;
+        require(client.extractLatexVision(
+                    image, model, &client,
+                    [&](SnowShotLatexResult result) {
+                        output = std::move(result);
+                        ++completions;
+                    },
+                    [&](const QString& chunk) { chunks.append(chunk); }) != 0,
+                "formula extraction accepts an optional progress callback");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "streaming formula request arrives");
+        server.send(0, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hidden\"}}]}\n\n");
+        server.delta(0, QStringLiteral("```la"));
+        translation_tests::waitUntil([&] { return chunks.size() == 1; },
+                                     "formula chunks are delivered before completion");
+        const QString unicodeChunk = QStringLiteral("tex\n\\frac{α");
+        const QByteArray frame = contentFrame(unicodeChunk);
+        const qsizetype split = frame.indexOf(QStringLiteral("α").toUtf8()) + 1;
+        auto* reply = client.findChild<QNetworkAccessManager*>()->findChild<QNetworkReply*>();
+        require(reply != nullptr && split > 0, "fragmented formula fixture has a live reply");
+        int reads = 0;
+        QObject::connect(reply, &QIODevice::readyRead, &client, [&] { ++reads; });
+        server.send(0, frame.left(split));
+        translation_tests::waitUntil([&] { return reads > 0; },
+                                     "the first UTF-8 fragment reaches the parser");
+        require(chunks.size() == 1 && completions == 0,
+                "incomplete SSE events do not publish broken UTF-8 or final output");
+        server.send(0, frame.mid(split));
+        translation_tests::waitUntil([&] { return chunks.size() == 2; },
+                                     "the completed UTF-8 event publishes once");
+        server.delta(0, QStringLiteral("}{β}\n```"));
+        translation_tests::waitUntil([&] { return chunks.size() == 3; },
+                                     "subsequent formula chunks remain ordered");
+        require(completions == 0 && chunks == QStringList{QStringLiteral("```la"), unicodeChunk,
+                                                          QStringLiteral("}{β}\n```")},
+                "progress contains only ordered raw content while completion remains pending");
+        server.finish(0);
+        translation_tests::waitUntil([&] { return completions == 1; },
+                                     "streamed formula completes exactly once");
+        require(output.succeeded() && output.latex == QStringLiteral("\\frac{α}{β}"),
+                "progress does not change final fence normalization or formula validation");
+    }
+
+    for (int variant = 0; variant < 3; ++variant) {
+        translation_tests::Server server;
+        QPointer<SnowShotApiClient> client(new SnowShotApiClient(server.url()));
+        auto receiver = std::make_unique<QObject>();
+        QImage image(40, 24, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        SnowShotApiClient::RequestToken token = 0;
+        int chunks = 0;
+        int completions = 0;
+        token = client->extractLatexVision(
+            image, QStringLiteral("vision"), receiver.get(), [&](auto) { ++completions; },
+            [&](const QString&) {
+                ++chunks;
+                if (variant == 0)
+                    client->cancel(token);
+                else if (variant == 1)
+                    receiver.reset();
+                else
+                    delete client.data();
+            });
+        require(token != 0, "formula callback lifetime fixture starts");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "formula callback lifetime fixture connects");
+        server.send(0, contentFrame(QStringLiteral("x")) + contentFrame(QStringLiteral("+1")) +
+                           "data: [DONE]\n\n");
+        translation_tests::waitUntil([&] { return chunks == 1; },
+                                     "formula progress may retire its own request or consumer");
+        translation_tests::flushEvents();
+        require(completions == 0, "retired formula progress never receives a stale completion");
+        delete client.data();
+    }
+}
+
 // Finish HTTP before queued parser batches run, independently of local socket timing.
 class FinishedChatBurstReply final : public QNetworkReply {
   public:
@@ -2532,9 +2674,89 @@ void visionExtractionRejectsIncompleteAndInvalidResponses() {
         else if (!server.disconnected(0))
             server.finish(0);
         translation_tests::waitUntil([&] { return completed; }, "invalid vision stream completes");
-        require(
-            !result.succeeded() && result.html.isEmpty() && !result.error.isEmpty(),
-            "invalid fragments, incomplete streams, and empty output never become usable tables");
+        if (scenario == 0 || scenario == 1)
+            require(result.succeeded(),
+                    "the table importer decides renderability after transport completion");
+        else if (scenario == 3)
+            require(!result.succeeded() && result.html.isEmpty() &&
+                        result.code == QStringLiteral("length"),
+                    "token-limited output must fail even when its HTML is renderable");
+        else if (scenario == 5)
+            require(result.html.isEmpty() && result.error.isEmpty(),
+                    "empty completed table output represents no recognizable table");
+        else
+            require(!result.succeeded() && result.html.isEmpty() && !result.error.isEmpty(),
+                    "invalid or incomplete transports are never format-correction candidates");
+    }
+}
+
+void tableVisionCorrectionsReusePreparedConversation() {
+    for (const bool custom : {false, true}) {
+        translation_tests::Server server;
+        SnowShotApiClient client(server.url());
+        QString model = QStringLiteral("vision");
+        if (custom) {
+            snow_shot::CustomAiModelConfiguration config{
+                QStringLiteral("11111111-1111-4111-8111-111111111111"),
+                QStringLiteral("Fixture"),
+                server.url() + QStringLiteral("/v1"),
+                {},
+                QStringLiteral("fixture-model"),
+                true};
+            client.setCustomModels({config});
+            model = config.selectionId();
+            server.streamPath = "/v1/chat/completions";
+        }
+        std::atomic_int encodes{0};
+        SnowShotApiClientTestAccess::prepare(client, [&](const QImage&) {
+            ++encodes;
+            return QByteArray("identical-encoded-image");
+        });
+        auto conversation = std::make_shared<SnowShotTableVisionConversation>();
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QString source;
+        int completions = 0;
+        const auto delta = [&](const QString& text) { source += text; };
+        const auto completion = [&](SnowShotTranslationResult result) {
+            require(result.succeeded(), "table transport does not validate syntax");
+            ++completions;
+        };
+        require(client.streamTableVision(image, model, conversation, &client, delta, completion) !=
+                    0,
+                "prepare a streaming table conversation");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "initial table request");
+        server.delta(0, QStringLiteral("Unusable response"));
+        translation_tests::waitUntil([&] { return !source.isEmpty(); },
+                                     "raw delta arrives before completion");
+        require(completions == 0, "progress does not require a terminal event");
+        server.finish(0);
+        translation_tests::waitUntil([&] { return completions == 1; }, "initial completion");
+        const QString failed = std::exchange(source, {});
+        require(client.correctTableVision(conversation, failed, &client, delta, completion) != 0,
+                "correct using the prepared conversation");
+        translation_tests::waitUntil([&] { return server.streams.size() == 2; },
+                                     "correction request");
+        const auto first = server.streams[0].body.value(QStringLiteral("messages")).toArray();
+        const auto second = server.streams[1].body.value(QStringLiteral("messages")).toArray();
+        require(encodes == 1 && first.size() == 2 && second.size() == 4 && first[0] == second[0] &&
+                    first[1] == second[1] &&
+                    second[2].toObject().value(QStringLiteral("content")).toString() == failed,
+                "correction preserves the prefix and image and appends two turns");
+        const auto requestId = [](const QByteArray& headers) {
+            for (const auto& line : headers.split('\n'))
+                if (line.toLower().startsWith("x-request-id:"))
+                    return line.trimmed();
+            return QByteArray{};
+        };
+        require(!requestId(server.streams[0].headers).isEmpty() &&
+                    requestId(server.streams[0].headers) != requestId(server.streams[1].headers),
+                "correction has an independent operation identity");
+        server.delta(1, QStringLiteral("<table><tr><td>Fixed"));
+        server.finish(1);
+        translation_tests::waitUntil([&] { return completions == 2; }, "correction completion");
+        require(source == QStringLiteral("<table><tr><td>Fixed"), "repair replaces its source");
     }
 }
 
@@ -2755,6 +2977,12 @@ void visionLatexResponsesMustContainCompleteSource() {
         {QStringLiteral("\\text{literal \\{ braces \\} and <table>markup</table>}"), true},
         {QStringLiteral("\\unsupportedcommand[optional]{x}"), true},
         {QStringLiteral("\\begin{aligned}a&=b\\\\c&=d\\end{aligned}"), true},
+        {QStringLiteral("\\begin{gathered}x^2\\\\y_1\\end{gathered}"), true},
+        {QStringLiteral("f(x)=\\begin{cases}x&\\text{if }x>0\\\\0&\\text{otherwise}"
+                        "\\end{cases}\\quad\\text{(1)}"),
+         true},
+        {QStringLiteral("\\left(x+1\\right."), true},
+        {QStringLiteral("\\text{50\\% of A\\&B}"), true},
         {QStringLiteral("\\begin{matrix}\\begin{aligned}a&=b\\end{aligned}\\end{matrix}"), true},
         {QStringLiteral("\\verb|{| + x"), true},
         {QStringLiteral("\\begin{verbatim}{literal\\end{verbatim}"), true},
@@ -2917,11 +3145,25 @@ int main(int argc, char** argv) {
     }
 
     if (application.arguments().contains(QStringLiteral("--stream-lifetime-only"))) {
+        latexVisionProgressPreservesFinalContract();
         finishedChatStreamFailuresReleaseRepliesAndActivity();
         chatStreamsYieldBetweenBatchesAndCancelSafely();
         imageConversionUsesVisionAndRejectsIncompleteStreams();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--table-vision-only"))) {
+        tableVisionCorrectionsReusePreparedConversation();
+        visionExtractionPreservesTypedOutputAndImageDetails();
+        visionExtractionRejectsIncompleteAndInvalidResponses();
+        visionLatexResponsesMustContainCompleteSource();
+        visionQueuedDrainsCheckElapsedDeadlineBeforeTimerDelivery();
+        typedVisionStreamsCompleteAfterEveryQueuedFrame();
+        visionPreparationRetainsMemoryActivity();
+        visionExtractionDeadlinesCoverPreparationAndCustomQueues();
+        visionExtractionCannotOutrunAnExpiredTimerEvent();
+        return 0;
+    }
+    tableVisionCorrectionsReusePreparedConversation();
     modelNotificationsAllowClientDestruction();
     abortObserversMayDestroyApiClient();
     if (application.arguments().contains(QStringLiteral("--lifetime-only")))
@@ -2964,6 +3206,7 @@ int main(int argc, char** argv) {
     ensuredCatalogsAndFingerprintsFollowTheServer();
     obsoleteLocalesCannotReplaceTheCurrentCatalog();
     visionExtractionPreservesTypedOutputAndImageDetails();
+    latexVisionProgressPreservesFinalContract();
     finishedChatStreamFailuresReleaseRepliesAndActivity();
     chatStreamsYieldBetweenBatchesAndCancelSafely();
     largeFragmentedStreamEventsPublishExactlyOnce();
@@ -2983,6 +3226,7 @@ int main(int argc, char** argv) {
     customModelsUseIndependentOpenAiConnections();
     customProvidersControlReasoningAcrossWorkflows();
     providerChangesCancelActiveQueuedAndPreparingRequests();
+    manualProxyRoutesHttpAndHttpsRequests();
     apiClientUsesModelCatalogAndStreamingChatContracts();
     translationPromptPreservesEditorContract();
     failedRequestsIdentifyTheirKindWithoutContent();

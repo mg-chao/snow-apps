@@ -681,6 +681,18 @@ impl EditorSession {
         self.editor.serial_number_style(document)
     }
 
+    pub fn serial_number_cursor_preview(
+        &self,
+        document: &DocumentModel,
+        view: &EditorViewportState,
+        position: Point<f64>,
+        modifiers: snow_draw_engine_interaction::Modifiers,
+    ) -> Result<snow_draw_engine_document::SerialNumberData, ErrorCode> {
+        self.editor.with_view(view, |editor| {
+            editor.serial_number_cursor_preview(document, position, modifiers)
+        })
+    }
+
     pub fn serial_number_style_mixed(&self, document: &DocumentModel) -> u32 {
         self.editor.serial_number_style_mixed(document)
     }
@@ -802,6 +814,10 @@ impl EditorSession {
         properties: u32,
     ) -> Result<(), ErrorCode> {
         self.editor.set_text_creation_style(style, properties)
+    }
+
+    pub fn set_creation_color(&mut self, color: snow_draw_engine_core::ColorRgba8) {
+        self.editor.set_creation_color(color);
     }
 
     pub fn set_text_style(

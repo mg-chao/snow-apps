@@ -20,6 +20,7 @@ class PinnedWindowRepository;
 }
 
 namespace snow_shot::presentation {
+class PinnedWindowStackingCoordinator;
 struct GroupWindowCounts final {
     int nonIgnored = 0;
     int total = 0;
@@ -53,6 +54,9 @@ class PinnedWindowGroupManager final : public QObject {
         return m_automationRevision;
     }
     void onPinnedRecordsChanged();
+    [[nodiscard]] PinnedWindowStackingCoordinator* stackingCoordinator() const {
+        return m_stacking;
+    }
 
     bool setActiveGroup(const QString& groupId);
     [[nodiscard]] std::optional<QString>
@@ -99,6 +103,7 @@ class PinnedWindowGroupManager final : public QObject {
     void refreshPersistedCounts() const;
 
     storage::PinnedWindowRepository* m_repository = nullptr;
+    PinnedWindowStackingCoordinator* m_stacking = nullptr;
     QVector<storage::PinnedWindowGroup> m_groups;
     QString m_activeGroupId;
     QHash<QString, QPointer<::ScreenshotPinnedWindow>> m_windows;

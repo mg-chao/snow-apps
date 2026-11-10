@@ -2,709 +2,14 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
     <context>
-        <name>CollageDocument</name>
+        <name>CaptureHistoryRepository</name>
         <message>
-            <source>Enter a nonnegative page margin.</source>
-            <translation>請輸入非負的頁面邊界。</translation>
+            <source>Unable to create the screenshot history entry folder</source>
+            <translation>無法建立截圖歷史記錄資料夾</translation>
         </message>
         <message>
-            <source>Enter a positive paper dimension.</source>
-            <translation>請輸入正數的紙張尺寸。</translation>
-        </message>
-        <message>
-            <source>Select a paper orientation.</source>
-            <translation>請選擇紙張方向。</translation>
-        </message>
-        <message>
-            <source>Select a paper size.</source>
-            <translation>請選擇紙張大小。</translation>
-        </message>
-        <message>
-            <source>Select an export mode.</source>
-            <translation>請選擇匯出模式。</translation>
-        </message>
-        <message>
-            <source>The PDF page settings are invalid.</source>
-            <translation>PDF 頁面設定無效。</translation>
-        </message>
-        <message>
-            <source>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings.</source>
-            <translation>圖片拼接超過了 8 GiB 影像限制。請減少影像數量或調小版面設定。</translation>
-        </message>
-        <message>
-            <source>The collage export was cancelled.</source>
-            <translation>圖片拼接匯出已取消。</translation>
-        </message>
-        <message>
-            <source>The collage images could not be prepared for export.</source>
-            <translation>無法準備圖片拼接影像以供匯出。</translation>
-        </message>
-        <message>
-            <source>The collage is too large for the clipboard. Save it to a file instead.</source>
-            <translation>圖片拼接過大，無法複製到剪貼簿。請儲存為檔案。</translation>
-        </message>
-        <message>
-            <source>The collage layout settings are invalid.</source>
-            <translation>圖片拼接版面設定無效。</translation>
-        </message>
-        <message>
-            <source>The margins must leave a usable content area.</source>
-            <translation>頁面邊界必須保留可用的內容區域。</translation>
-        </message>
-        <message>
-            <source>The paper dimension exceeds the PDF size limit.</source>
-            <translation>紙張尺寸超過了 PDF 大小限制。</translation>
-        </message>
-        <message>
-            <source>There is not enough available memory for this collage operation. Try fewer images or close other collage windows.</source>
-            <translation>可用記憶體不足，無法執行此圖片拼接操作。請減少影像數量或關閉其他圖片拼接視窗。</translation>
-        </message>
-        <message>
-            <source>This collage requires too much temporary memory. Try fewer images or smaller image sizes.</source>
-            <translation>此圖片拼接需要過多暫存記憶體。請減少影像數量或使用較小的影像。</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollageEditorWidget</name>
-        <message>
-            <source> px</source>
-            <translation> 像素</translation>
-        </message>
-        <message>
-            <source>%1 × %2 mm</source>
-            <translation>%1 × %2 公釐</translation>
-        </message>
-        <message>
-            <source>%1 × %2 px</source>
-            <translation>%1 × %2 像素</translation>
-        </message>
-        <message>
-            <source>Add images</source>
-            <translation>新增影像</translation>
-        </message>
-        <message>
-            <source>Add images to create a collage</source>
-            <translation>新增影像以建立圖片拼接</translation>
-        </message>
-        <message>
-            <source>Add multiple image files at once</source>
-            <translation>可一次加入多張圖片</translation>
-        </message>
-        <message>
-            <source>Background color</source>
-            <translation>背景顏色</translation>
-        </message>
-        <message>
-            <source>Black</source>
-            <translation>黑色</translation>
-        </message>
-        <message>
-            <source>Blue</source>
-            <translation>藍色</translation>
-        </message>
-        <message>
-            <source>Choose a background color, including transparency</source>
-            <translation>選擇背景顏色，可設定透明度</translation>
-        </message>
-        <message>
-            <source>Clear all</source>
-            <translation>全部清空</translation>
-        </message>
-        <message>
-            <source>Collage preview</source>
-            <translation>圖片拼接預覽</translation>
-        </message>
-        <message>
-            <source>Columns</source>
-            <translation>欄</translation>
-        </message>
-        <message>
-            <source>Custom</source>
-            <translation>自訂</translation>
-        </message>
-        <message>
-            <source>Delete image</source>
-            <translation>刪除影像</translation>
-        </message>
-        <message>
-            <source>Drag image files here, or choose Add images</source>
-            <translation>將圖片檔案拖曳至此處，或點選「加入圖片」</translation>
-        </message>
-        <message>
-            <source>Drag with the middle mouse button to pan; scroll to zoom</source>
-            <translation>按住滑鼠中鍵拖曳以平移；捲動滾輪以縮放</translation>
-        </message>
-        <message>
-            <source>Drop images to add to collage</source>
-            <translation>放開滑鼠，將圖片加入圖片拼接</translation>
-        </message>
-        <message>
-            <source>Fit to canvas</source>
-            <translation>符合畫布</translation>
-        </message>
-        <message>
-            <source>Flip horizontally</source>
-            <translation>水平翻轉</translation>
-        </message>
-        <message>
-            <source>Flip vertically</source>
-            <translation>垂直翻轉</translation>
-        </message>
-        <message>
-            <source>Gray</source>
-            <translation>灰色</translation>
-        </message>
-        <message>
-            <source>Green</source>
-            <translation>綠色</translation>
-        </message>
-        <message>
-            <source>Horizontal</source>
-            <translation>水平</translation>
-        </message>
-        <message>
-            <source>Image %1: %2</source>
-            <translation>影像 %1：%2</translation>
-        </message>
-        <message>
-            <source>Image sizing</source>
-            <translation>影像尺寸</translation>
-        </message>
-        <message>
-            <source>Image spacing</source>
-            <translation>影像間距</translation>
-        </message>
-        <message>
-            <source>Image spacing in output pixels</source>
-            <translation>影像間距（輸出像素）</translation>
-        </message>
-        <message>
-            <source>Image spacing in percentage</source>
-            <translation>影像間距（百分比）</translation>
-        </message>
-        <message>
-            <source>Image spacing unit</source>
-            <translation>影像間距單位</translation>
-        </message>
-        <message>
-            <source>Image type</source>
-            <translation>影像類型</translation>
-        </message>
-        <message>
-            <source>Layout direction</source>
-            <translation>版面方向</translation>
-        </message>
-        <message>
-            <source>Original size</source>
-            <translation>原始尺寸</translation>
-        </message>
-        <message>
-            <source>Outer border</source>
-            <translation>外框</translation>
-        </message>
-        <message>
-            <source>Outer border in output pixels</source>
-            <translation>外框（輸出像素）</translation>
-        </message>
-        <message>
-            <source>Outer border in percentage</source>
-            <translation>外邊框（百分比）</translation>
-        </message>
-        <message>
-            <source>Outer border unit</source>
-            <translation>外邊框單位</translation>
-        </message>
-        <message>
-            <source>PDF document</source>
-            <translation>PDF 文件</translation>
-        </message>
-        <message>
-            <source>Percentage</source>
-            <translation>百分比</translation>
-        </message>
-        <message>
-            <source>Percentage of the grid cell width</source>
-            <translation>網格儲存格寬度的百分比</translation>
-        </message>
-        <message>
-            <source>Percentage of the tallest image after sizing</source>
-            <translation>調整尺寸後最高影像高度的百分比</translation>
-        </message>
-        <message>
-            <source>Percentage of the widest image after sizing</source>
-            <translation>調整尺寸後最寬影像寬度的百分比</translation>
-        </message>
-        <message>
-            <source>Pixel</source>
-            <translation>像素</translation>
-        </message>
-        <message>
-            <source>Purple</source>
-            <translation>紫色</translation>
-        </message>
-        <message>
-            <source>Red</source>
-            <translation>紅色</translation>
-        </message>
-        <message>
-            <source>Replace image</source>
-            <translation>取代影像</translation>
-        </message>
-        <message>
-            <source>Reset transform</source>
-            <translation>重設變換</translation>
-        </message>
-        <message>
-            <source>Rotate clockwise by 90°</source>
-            <translation>順時針旋轉 90°</translation>
-        </message>
-        <message>
-            <source>Rotate counterclockwise by 90°</source>
-            <translation>逆時針旋轉 90°</translation>
-        </message>
-        <message>
-            <source>Rows</source>
-            <translation>列</translation>
-        </message>
-        <message>
-            <source>Select to center this image; drag onto another image to swap</source>
-            <translation>選取以將此影像置中；拖到另一影像上以交換位置</translation>
-        </message>
-        <message>
-            <source>Static image</source>
-            <translation>靜態影像</translation>
-        </message>
-        <message>
-            <source>Total: %1 images</source>
-            <translation>總計：%1 張影像</translation>
-        </message>
-        <message>
-            <source>Total: %1 pages</source>
-            <translation>總計：%1 頁</translation>
-        </message>
-        <message>
-            <source>Uniform size</source>
-            <translation>統一尺寸</translation>
-        </message>
-        <message>
-            <source>Vertical</source>
-            <translation>垂直</translation>
-        </message>
-        <message>
-            <source>White</source>
-            <translation>白色</translation>
-        </message>
-        <message>
-            <source>Yellow</source>
-            <translation>黃色</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollagePdfExport</name>
-        <message>
-            <source>Export was canceled.</source>
-            <translation>匯出已取消。</translation>
-        </message>
-        <message>
-            <source>No output destination was selected.</source>
-            <translation>未選擇輸出位置。</translation>
-        </message>
-        <message>
-            <source>Page %1 could not be exported: %2</source>
-            <translation>無法匯出第 %1 頁：%2</translation>
-        </message>
-        <message>
-            <source>The PDF could not be saved: %1</source>
-            <translation>無法儲存 PDF：%1</translation>
-        </message>
-        <message>
-            <source>The PDF settings or images are invalid.</source>
-            <translation>PDF 設定或影像無效。</translation>
-        </message>
-        <message>
-            <source>The image could not be prepared for PDF export.</source>
-            <translation>無法準備影像以供匯出為 PDF。</translation>
-        </message>
-        <message>
-            <source>The output folder could not be created.</source>
-            <translation>無法建立輸出資料夾。</translation>
-        </message>
-        <message>
-            <source>The selected PDF already exists. Choose another filename.</source>
-            <translation>所選 PDF 已存在，請選擇其他檔案名稱。</translation>
-        </message>
-        <message>
-            <source>There is not enough memory to export the PDF.</source>
-            <translation>記憶體不足，無法匯出 PDF。</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollagePdfPageGrid</name>
-        <message>
-            <source>Add images</source>
-            <translation>新增影像</translation>
-        </message>
-        <message>
-            <source>Add images to create a PDF document</source>
-            <translation>新增影像以建立 PDF 文件</translation>
-        </message>
-        <message>
-            <source>Add multiple image files at once</source>
-            <translation>可一次加入多張圖片</translation>
-        </message>
-        <message>
-            <source>Clear</source>
-            <translation>清空</translation>
-        </message>
-        <message>
-            <source>Delete image</source>
-            <translation>刪除影像</translation>
-        </message>
-        <message>
-            <source>Drag image files here, or choose Add images</source>
-            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
-        </message>
-        <message>
-            <source>Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the original image.</source>
-            <translation>拖曳頁面以調整順序。使用方向鍵選取頁面，按 Enter 鍵預覽原始影像。</translation>
-        </message>
-        <message>
-            <source>Drop images to add pages</source>
-            <translation>放開滑鼠以新增頁面</translation>
-        </message>
-        <message>
-            <source>Flip horizontally</source>
-            <translation>水平翻轉</translation>
-        </message>
-        <message>
-            <source>Flip vertically</source>
-            <translation>垂直翻轉</translation>
-        </message>
-        <message>
-            <source>Image preview was cancelled.</source>
-            <translation>影像預覽已取消。</translation>
-        </message>
-        <message>
-            <source>PDF document pages</source>
-            <translation>PDF 文件頁面</translation>
-        </message>
-        <message>
-            <source>Page %1</source>
-            <translation>第 %1 頁</translation>
-        </message>
-        <message>
-            <source>Page %1: %2</source>
-            <translation>第 %1 頁：%2</translation>
-        </message>
-        <message>
-            <source>Preview original image</source>
-            <translation>預覽原始影像</translation>
-        </message>
-        <message>
-            <source>Replace image</source>
-            <translation>取代影像</translation>
-        </message>
-        <message>
-            <source>Reset transform</source>
-            <translation>重設變換</translation>
-        </message>
-        <message>
-            <source>Rotate clockwise by 90°</source>
-            <translation>順時針旋轉 90°</translation>
-        </message>
-        <message>
-            <source>Rotate counterclockwise by 90°</source>
-            <translation>逆時針旋轉 90°</translation>
-        </message>
-        <message>
-            <source>The original image is unavailable.</source>
-            <translation>原始影像無法使用。</translation>
-        </message>
-        <message>
-            <source>The page preview shows the last valid settings.</source>
-            <translation>頁面預覽使用上一次有效的設定。</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollagePdfSettingsWidget</name>
-        <message>
-            <source>A3</source>
-            <translation>A3</translation>
-        </message>
-        <message>
-            <source>A4</source>
-            <translation>A4</translation>
-        </message>
-        <message>
-            <source>A5</source>
-            <translation>A5</translation>
-        </message>
-        <message>
-            <source>B5</source>
-            <translation>B5</translation>
-        </message>
-        <message>
-            <source>Combined export</source>
-            <translation>合併匯出</translation>
-        </message>
-        <message>
-            <source>Custom</source>
-            <translation>自訂</translation>
-        </message>
-        <message>
-            <source>Custom paper</source>
-            <translation>自訂紙張</translation>
-        </message>
-        <message>
-            <source>Custom paper height</source>
-            <translation>自訂紙張高度</translation>
-        </message>
-        <message>
-            <source>Custom paper width</source>
-            <translation>自訂紙張寬度</translation>
-        </message>
-        <message>
-            <source>Export mode</source>
-            <translation>匯出模式</translation>
-        </message>
-        <message>
-            <source>Height</source>
-            <translation>高度</translation>
-        </message>
-        <message>
-            <source>Image Size</source>
-            <translation>圖像大小</translation>
-        </message>
-        <message>
-            <source>Landscape</source>
-            <translation>橫向</translation>
-        </message>
-        <message>
-            <source>Legal</source>
-            <translation>Legal</translation>
-        </message>
-        <message>
-            <source>Letter</source>
-            <translation>Letter</translation>
-        </message>
-        <message>
-            <source>Page margin</source>
-            <translation>頁邊距</translation>
-        </message>
-        <message>
-            <source>Paper orientation</source>
-            <translation>紙張方向</translation>
-        </message>
-        <message>
-            <source>Paper size</source>
-            <translation>紙張大小</translation>
-        </message>
-        <message>
-            <source>Per-page export</source>
-            <translation>逐頁匯出</translation>
-        </message>
-        <message>
-            <source>Portrait</source>
-            <translation>直向</translation>
-        </message>
-        <message>
-            <source>Width</source>
-            <translation>寬度</translation>
-        </message>
-        <message>
-            <source>mm</source>
-            <translation>公釐</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollageWindow</name>
-        <message>
-            <source>%1: %2</source>
-            <translation>%1：%2</translation>
-        </message>
-        <message>
-            <source>Add images</source>
-            <translation>新增影像</translation>
-        </message>
-        <message>
-            <source>All images will be removed from this collage.</source>
-            <translation>將從此圖片拼接中移除全部影像。</translation>
-        </message>
-        <message>
-            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
-            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次。</translation>
-        </message>
-        <message>
-            <source>Cancel</source>
-            <translation>取消</translation>
-        </message>
-        <message>
-            <source>Canceling PDF export…</source>
-            <translation>正在取消 PDF 匯出…</translation>
-        </message>
-        <message>
-            <source>Clear all</source>
-            <translation>全部清空</translation>
-        </message>
-        <message>
-            <source>Clear all images?</source>
-            <translation>清空全部影像？</translation>
-        </message>
-        <message>
-            <source>Clipboard image</source>
-            <translation>剪貼簿影像</translation>
-        </message>
-        <message>
-            <source>Collage</source>
-            <translation>圖片拼接</translation>
-        </message>
-        <message>
-            <source>Copy</source>
-            <translation>複製</translation>
-        </message>
-        <message>
-            <source>Copying collage…</source>
-            <translation>正在複製圖片拼接…</translation>
-        </message>
-        <message>
-            <source>Copying could not be started. Try again.</source>
-            <translation>無法開始複製，請重試。</translation>
-        </message>
-        <message>
-            <source>Could not read the selected image files. Please try again.</source>
-            <translation>無法讀取選取的圖片檔案，請再試一次。</translation>
-        </message>
-        <message>
-            <source>Discard</source>
-            <translation>捨棄</translation>
-        </message>
-        <message>
-            <source>Discard this collage?</source>
-            <translation>捨棄此圖片拼接？</translation>
-        </message>
-        <message>
-            <source>Export could not be started. Try again.</source>
-            <translation>無法開始匯出，請重試。</translation>
-        </message>
-        <message>
-            <source>Exporting PDF page %1 of %2: %3%</source>
-            <translation>正在匯出 PDF 第 %1 頁，共 %2 頁：%3%</translation>
-        </message>
-        <message>
-            <source>Image loading could not be started. Try again.</source>
-            <translation>無法開始載入影像，請重試。</translation>
-        </message>
-        <message>
-            <source>Images</source>
-            <translation>影像</translation>
-        </message>
-        <message>
-            <source>Loading images: %1 of %2</source>
-            <translation>正在載入影像：%1 / %2</translation>
-        </message>
-        <message>
-            <source>PDF documents</source>
-            <translation>PDF 文件</translation>
-        </message>
-        <message>
-            <source>PDF export was canceled. Your images and edits are preserved.</source>
-            <translation>PDF 匯出已取消。您的影像與編輯已保留。</translation>
-        </message>
-        <message>
-            <source>Page %1 was not saved.</source>
-            <translation>第 %1 頁未儲存。</translation>
-        </message>
-        <message>
-            <source>Pages %1–%2 were not saved.</source>
-            <translation>第 %1–%2 頁未儲存。</translation>
-        </message>
-        <message>
-            <source>Pinned window %1</source>
-            <translation>固定到螢幕視窗 %1</translation>
-        </message>
-        <message>
-            <source>Preparing collage…</source>
-            <translation>正在準備圖片拼接…</translation>
-        </message>
-        <message>
-            <source>Reading selected image files…</source>
-            <translation>正在讀取選取的圖片檔案…</translation>
-        </message>
-        <message>
-            <source>Replace image</source>
-            <translation>取代影像</translation>
-        </message>
-        <message>
-            <source>Save</source>
-            <translation>儲存</translation>
-        </message>
-        <message>
-            <source>Save PDF document</source>
-            <translation>儲存 PDF 文件</translation>
-        </message>
-        <message>
-            <source>Save as file</source>
-            <translation>儲存為檔案</translation>
-        </message>
-        <message>
-            <source>Saved pages: %1
-Files:
-%2
-%3</source>
-            <translation>已儲存頁面：%1
-檔案：
-%2
-%3</translation>
-        </message>
-        <message>
-            <source>Saving collage…</source>
-            <translation>正在儲存圖片拼接…</translation>
-        </message>
-        <message>
-            <source>Saving could not be started. Try again.</source>
-            <translation>無法開始儲存，請重試。</translation>
-        </message>
-        <message>
-            <source>Screenshot %1</source>
-            <translation>截圖 %1</translation>
-        </message>
-        <message>
-            <source>Select destination folder</source>
-            <translation>選擇目的地資料夾</translation>
-        </message>
-        <message>
-            <source>Some images could not be loaded:
-%1</source>
-            <translation>部分影像無法載入：
-%1</translation>
-        </message>
-        <message>
-            <source>The PDFs could not be exported. Try again.</source>
-            <translation>無法匯出 PDF，請重試。</translation>
-        </message>
-        <message>
-            <source>The file manager is unavailable. Open it and try again.</source>
-            <translation>檔案管理員無法使用，請開啟後再試一次。</translation>
-        </message>
-        <message>
-            <source>The file manager took too long to return the selected files. Please try again.</source>
-            <translation>檔案管理員傳回選取檔案的時間過長，請再試一次。</translation>
-        </message>
-        <message>
-            <source>The final screenshot is unavailable</source>
-            <translation>最終截圖無法使用</translation>
-        </message>
-        <message>
-            <source>The image could not be decoded or is no longer available</source>
-            <translation>無法解碼影像，或影像已無法使用</translation>
-        </message>
-        <message>
-            <source>The images and edits in this collage will be discarded.</source>
-            <translation>將捨棄此圖片拼接中的影像與編輯。</translation>
-        </message>
-        <message>
-            <source>The layout settings could not be remembered: %1</source>
-            <translation>無法記住版面設定：%1</translation>
+            <source>Unable to write screenshot history file %1: %2</source>
+            <translation>無法寫入截圖歷史檔案 %1：%2</translation>
         </message>
     </context>
     <context>
@@ -758,7 +63,7 @@ Files:
             <translation>焦點視窗</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>影像編輯</translation>
         </message>
         <message>
@@ -791,7 +96,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Screenshot display</source>
@@ -802,8 +107,8 @@ Files:
             <translation>截圖結果</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
-            <translation>圖片拼接</translation>
+            <source>Stitch images</source>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -817,7 +122,11 @@ Files:
     <context>
         <name>HistoryFileLocation</name>
         <message>
-            <source>Open Containing Folder</source>
+            <source>Copy image path</source>
+            <translation>複製影像路徑</translation>
+        </message>
+        <message>
+            <source>Open containing folder</source>
             <translation>開啟所在資料夾</translation>
         </message>
         <message>
@@ -829,8 +138,12 @@ Files:
             <translation>在 Finder 中顯示</translation>
         </message>
         <message>
-            <source>Unable to open this entry's file location.</source>
-            <translation>無法開啟此項目的檔案位置。</translation>
+            <source>Unable to copy this entry's image path</source>
+            <translation>無法複製此記錄的影像路徑</translation>
+        </message>
+        <message>
+            <source>Unable to open this entry's file location</source>
+            <translation>無法開啟此項目的檔案位置</translation>
         </message>
     </context>
     <context>
@@ -840,59 +153,83 @@ Files:
             <translation>%1 像素</translation>
         </message>
         <message>
-            <source>No available output filename was found.</source>
-            <translation>找不到可用的輸出檔名。</translation>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次</translation>
         </message>
         <message>
-            <source>The editing content could not be prepared for export.</source>
-            <translation>無法準備要匯出的編輯內容。</translation>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>無法讀取選取的影像檔案，請重試</translation>
         </message>
         <message>
-            <source>The image could not be loaded.</source>
-            <translation>無法載入影像。</translation>
+            <source>No available output filename was found</source>
+            <translation>找不到可用的輸出檔名</translation>
         </message>
         <message>
-            <source>The save directory is not available.</source>
-            <translation>儲存目錄無法使用。</translation>
+            <source>The editing content could not be prepared for export</source>
+            <translation>無法準備要匯出的編輯內容</translation>
+        </message>
+        <message>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>檔案管理員無法使用，請開啟後再試一次</translation>
+        </message>
+        <message>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>檔案管理員傳回選取檔案的時間過長，請重試</translation>
+        </message>
+        <message>
+            <source>The image could not be loaded</source>
+            <translation>無法載入影像</translation>
+        </message>
+        <message>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>影像過大，或記憶體不足，無法載入</translation>
+        </message>
+        <message>
+            <source>The save directory is not available</source>
+            <translation>儲存目錄無法使用</translation>
         </message>
     </context>
     <context>
         <name>ImageSplitDocument</name>
         <message>
-            <source>Choose a split direction.</source>
-            <translation>請選擇分割方向。</translation>
+            <source>Choose a split direction</source>
+            <translation>請選擇分割方向</translation>
         </message>
         <message>
-            <source>Choose a split type.</source>
-            <translation>請選擇分割類型。</translation>
+            <source>Choose a split type</source>
+            <translation>請選擇分割類型</translation>
         </message>
         <message>
-            <source>Choose pixels or percentage.</source>
-            <translation>請選擇像素或百分比。</translation>
+            <source>Choose pixels or percentage</source>
+            <translation>請選擇像素或百分比</translation>
         </message>
         <message>
-            <source>Each image must be at least one pixel wide or high.</source>
-            <translation>每張圖像的寬度和高度必須至少為 1 像素。</translation>
+            <source>Each image must be at least one pixel wide and high</source>
+            <translation>每張影像的寬度和高度必須至少為 1 像素</translation>
         </message>
         <message>
-            <source>Enter a percentage from 5% to 100%.</source>
-            <translation>請輸入 5% 到 100% 的百分比。</translation>
+            <source>Enter a non-negative integer</source>
+            <translation>請輸入非負整數</translation>
         </message>
         <message>
-            <source>Enter a positive whole number.</source>
-            <translation>請輸入正整數。</translation>
+            <source>Enter a percentage from 5% to 100%</source>
+            <translation>請輸入 5% 到 100% 的百分比</translation>
         </message>
         <message>
-            <source>Enter at least 16 pixels.</source>
-            <translation>請輸入至少 16 像素。</translation>
+            <source>Enter a positive whole number</source>
+            <translation>請輸入正整數</translation>
         </message>
         <message>
-            <source>The image is unavailable.</source>
-            <translation>圖像無法使用。</translation>
+            <source>Enter at least 16 pixels</source>
+            <translation>請輸入至少 16 像素</translation>
         </message>
         <message>
-            <source>The split lines require too much memory.</source>
-            <translation>分割線所需的記憶體過多。</translation>
+            <source>The image is unavailable</source>
+            <translation>影像無法使用</translation>
+        </message>
+        <message>
+            <source>The split lines require too much memory</source>
+            <translation>分割線所需的記憶體過多</translation>
         </message>
     </context>
     <context>
@@ -910,35 +247,43 @@ Files:
             <translation>欄數</translation>
         </message>
         <message>
-            <source>Drag an image file here, or choose Select Image</source>
-            <translation>將圖像檔案拖曳至此處，或點選「選擇圖像」</translation>
+            <source>Drag an image file here, or choose select image</source>
+            <translation>將影像檔案拖曳至此處，或點選「選擇影像」</translation>
         </message>
         <message>
-            <source>Drop one image file at a time.</source>
-            <translation>請一次拖入一個圖像檔案。</translation>
+            <source>Drop one image file at a time</source>
+            <translation>請一次拖入一個影像檔案</translation>
         </message>
         <message>
             <source>Drop one image to replace the current image</source>
-            <translation>拖入一張圖像以取代目前圖像</translation>
+            <translation>拖入一張影像以取代目前影像</translation>
         </message>
         <message>
             <source>Drop one image to split</source>
-            <translation>拖入一張圖像進行分割</translation>
+            <translation>拖入一張影像進行分割</translation>
         </message>
         <message>
-            <source>Enter a positive integer.</source>
-            <translation>請輸入正整數。</translation>
+            <source>Each image extends this many pixels past each split line</source>
+            <translation>每張影像在每條分割線外額外保留指定像素寬度的區域</translation>
         </message>
         <message>
-            <source>Enter an integer of at least 16 pixels.</source>
-            <translation>請輸入至少為 16 像素的整數。</translation>
+            <source>Enter a non-negative integer</source>
+            <translation>請輸入非負整數</translation>
         </message>
         <message>
-            <source>Equal Split</source>
+            <source>Enter a positive integer</source>
+            <translation>請輸入正整數</translation>
+        </message>
+        <message>
+            <source>Enter an integer of at least 16 pixels</source>
+            <translation>請輸入至少為 16 像素的整數</translation>
+        </message>
+        <message>
+            <source>Equal split</source>
             <translation>均等分割</translation>
         </message>
         <message>
-            <source>Fit to Canvas</source>
+            <source>Fit to canvas</source>
             <translation>符合畫布</translation>
         </message>
         <message>
@@ -946,16 +291,20 @@ Files:
             <translation>網格</translation>
         </message>
         <message>
-            <source>Height per Image</source>
-            <translation>每張圖像的高度</translation>
+            <source>Height per image</source>
+            <translation>每張影像的高度</translation>
         </message>
         <message>
             <source>Horizontal</source>
             <translation>水平</translation>
         </message>
         <message>
-            <source>Number of Images</source>
-            <translation>圖像數量</translation>
+            <source>Number of images</source>
+            <translation>影像數量</translation>
+        </message>
+        <message>
+            <source>Overlap width</source>
+            <translation>重疊寬度</translation>
         </message>
         <message>
             <source>Percentage</source>
@@ -966,7 +315,7 @@ Files:
             <translation>像素</translation>
         </message>
         <message>
-            <source>Precise Split</source>
+            <source>Precise split</source>
             <translation>精確分割</translation>
         </message>
         <message>
@@ -982,12 +331,16 @@ Files:
             <translation>列數</translation>
         </message>
         <message>
-            <source>Select Image</source>
-            <translation>選擇圖像</translation>
+            <source>Select an image to split</source>
+            <translation>選擇要分割的影像</translation>
         </message>
         <message>
-            <source>Select an image to split</source>
-            <translation>選擇要分割的圖像</translation>
+            <source>Select image</source>
+            <translation>選擇影像</translation>
+        </message>
+        <message>
+            <source>Smart split</source>
+            <translation>智慧分割</translation>
         </message>
         <message>
             <source>Split direction</source>
@@ -1003,7 +356,7 @@ Files:
         </message>
         <message>
             <source>Total: %1 images</source>
-            <translation>共 %1 張圖像</translation>
+            <translation>共 %1 張影像</translation>
         </message>
         <message>
             <source>Undo</source>
@@ -1014,46 +367,46 @@ Files:
             <translation>垂直</translation>
         </message>
         <message>
-            <source>Width per Image</source>
-            <translation>每張圖像的寬度</translation>
+            <source>Width per image</source>
+            <translation>每張影像的寬度</translation>
         </message>
     </context>
     <context>
         <name>ImageSplitExport</name>
         <message>
-            <source>Export was canceled.</source>
-            <translation>匯出已取消。</translation>
+            <source>Export was canceled</source>
+            <translation>匯出已取消</translation>
         </message>
         <message>
             <source>Image %1 could not be saved: %2</source>
-            <translation>無法儲存第 %1 張圖像：%2</translation>
+            <translation>無法儲存第 %1 張影像：%2</translation>
         </message>
         <message>
-            <source>The image could not be prepared for export.</source>
-            <translation>無法準備要匯出的圖像。</translation>
+            <source>The image could not be prepared for export</source>
+            <translation>無法準備要匯出的影像</translation>
         </message>
         <message>
-            <source>The image or split configuration is invalid.</source>
-            <translation>圖像或分割設定無效。</translation>
+            <source>The image or split configuration is invalid</source>
+            <translation>影像或分割設定無效</translation>
         </message>
         <message>
-            <source>The output folder could not be created.</source>
-            <translation>無法建立輸出資料夾。</translation>
+            <source>The output folder could not be created</source>
+            <translation>無法建立輸出資料夾</translation>
         </message>
         <message>
-            <source>There is not enough memory to export the image.</source>
-            <translation>記憶體不足，無法匯出圖像。</translation>
+            <source>There is not enough memory to export the image</source>
+            <translation>記憶體不足，無法匯出影像</translation>
         </message>
     </context>
     <context>
         <name>ImageSplitPreviewCanvas</name>
         <message>
-            <source>Click a ruler to add a split line; drag a line to move it. Select a line and press Delete to remove it. Drag with the middle mouse button to pan; scroll to zoom.</source>
-            <translation>點擊尺規新增分割線，拖曳分割線可移動位置。選取分割線後按 Delete 刪除。按住滑鼠中鍵拖曳可平移，捲動滾輪可縮放。</translation>
+            <source>Click a ruler to add a split line; drag a line to move it. Select a line and press Delete to remove it. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>點擊尺規新增分割線，拖曳分割線可移動位置。選取分割線後按 Delete 刪除。按住滑鼠中鍵拖曳可平移，捲動滾輪可縮放</translation>
         </message>
         <message>
             <source>Image splitting preview</source>
-            <translation>圖片分割預覽</translation>
+            <translation>影像分割預覽</translation>
         </message>
         <message>
             <source>X: %1 px</source>
@@ -1067,16 +420,16 @@ Files:
     <context>
         <name>ImageSplitWindow</name>
         <message>
-            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
-            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次。</translation>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次</translation>
         </message>
         <message>
             <source>Cancel</source>
             <translation>取消</translation>
         </message>
         <message>
-            <source>Could not read the selected image files. Please try again.</source>
-            <translation>無法讀取選取的圖片檔案，請再試一次。</translation>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>無法讀取選取的影像檔案，請重試</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -1084,142 +437,1051 @@ Files:
         </message>
         <message>
             <source>Discard these image splits?</source>
-            <translation>捨棄目前的圖片分割？</translation>
+            <translation>捨棄目前的影像分割？</translation>
         </message>
         <message>
-            <source>Drop one image file at a time.</source>
-            <translation>請一次拖入一個圖像檔案。</translation>
+            <source>Drop one image file at a time</source>
+            <translation>請一次拖入一個影像檔案</translation>
         </message>
         <message>
-            <source>Export could not be started. Try again.</source>
-            <translation>無法開始匯出，請再試一次。</translation>
+            <source>Export could not be started. Try again</source>
+            <translation>無法開始匯出，請重試</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>圖片分割</translation>
+            <source>Finding split lines…</source>
+            <translation>正在尋找分割線…</translation>
         </message>
         <message>
-            <source>Image Stitching is busy. Try again when it finishes.</source>
-            <translation>圖片拼接忙碌中。請等待完成後重試。</translation>
+            <source>Image loading could not be started. Try again</source>
+            <translation>無法開始載入影像，請重試</translation>
         </message>
         <message>
-            <source>Image loading could not be started. Try again.</source>
-            <translation>無法開始載入圖像，請再試一次。</translation>
+            <source>Image processing failed. Try again</source>
+            <translation>影像處理失敗，請重試</translation>
         </message>
         <message>
-            <source>Image processing failed. Try again.</source>
-            <translation>圖像處理失敗，請再試一次。</translation>
+            <source>Image splitting</source>
+            <translation>影像分割</translation>
+        </message>
+        <message>
+            <source>Image stitching is busy. Try again when it finishes</source>
+            <translation>影像拼接忙碌中。請等待完成後重試</translation>
         </message>
         <message>
             <source>Images</source>
-            <translation>圖像</translation>
+            <translation>影像</translation>
         </message>
         <message>
             <source>Loading image…</source>
-            <translation>正在載入圖像…</translation>
+            <translation>正在載入影像…</translation>
         </message>
         <message>
-            <source>Replace Image</source>
-            <translation>取代圖像</translation>
+            <source>Replace image</source>
+            <translation>取代影像</translation>
         </message>
         <message>
             <source>Replacing the image will discard the current edits</source>
-            <translation>取代圖像將捨棄目前的編輯</translation>
+            <translation>取代影像將捨棄目前的編輯</translation>
         </message>
         <message>
-            <source>Save All</source>
+            <source>Save all</source>
             <translation>全部儲存</translation>
         </message>
         <message>
             <source>Saved %1 images to %2</source>
-            <translation>已將 %1 張圖像儲存至 %2</translation>
+            <translation>已將 %1 張影像儲存至 %2</translation>
         </message>
         <message>
             <source>Saved %1 of %2 images to %3. %4</source>
-            <translation>已將 %2 張圖像中的 %1 張儲存至 %3。%4</translation>
+            <translation>已將 %2 張影像中的 %1 張儲存至 %3。%4</translation>
         </message>
         <message>
             <source>Saving images: %1 of %2</source>
-            <translation>正在儲存圖像：%1 / %2</translation>
+            <translation>正在儲存影像：%1 / %2</translation>
         </message>
         <message>
-            <source>Select Destination Folder</source>
-            <translation>選擇目的資料夾</translation>
+            <source>Select destination folder</source>
+            <translation>選擇目的地資料夾</translation>
         </message>
         <message>
-            <source>Select Image</source>
-            <translation>選擇圖像</translation>
+            <source>Select image</source>
+            <translation>選擇影像</translation>
         </message>
         <message>
             <source>Stitch to PDF</source>
             <translation>拼接為 PDF</translation>
         </message>
         <message>
-            <source>The file manager is unavailable. Open it and try again.</source>
-            <translation>檔案管理員無法使用，請開啟後再試一次。</translation>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>檔案管理員無法使用，請開啟後再試一次</translation>
         </message>
         <message>
-            <source>The file manager took too long to return the selected files. Please try again.</source>
-            <translation>檔案管理員傳回選取檔案的時間過長，請再試一次。</translation>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>檔案管理員傳回選取檔案的時間過長，請重試</translation>
         </message>
         <message>
-            <source>The image and current split edits will be discarded.</source>
-            <translation>圖像與目前的分割編輯將被捨棄。</translation>
+            <source>The image and current split edits will be discarded</source>
+            <translation>影像與目前的分割編輯將被捨棄</translation>
         </message>
         <message>
-            <source>The image could not be read or is no longer available.</source>
-            <translation>無法讀取圖像，或圖像已無法使用。</translation>
+            <source>The image could not be read or is no longer available</source>
+            <translation>無法讀取影像，或影像已無法使用</translation>
         </message>
         <message>
-            <source>The image is too large or there is not enough memory to load it.</source>
-            <translation>圖像過大，或記憶體不足，無法載入。</translation>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>影像過大，或記憶體不足，無法載入</translation>
         </message>
         <message>
-            <source>The images could not be exported. Try again.</source>
-            <translation>無法匯出圖像，請再試一次。</translation>
+            <source>The images could not be exported. Try again</source>
+            <translation>無法匯出影像，請重試</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingDocument</name>
+        <message>
+            <source>Enter a nonnegative image spacing</source>
+            <translation>請輸入非負的影像間距</translation>
+        </message>
+        <message>
+            <source>Enter a nonnegative page margin</source>
+            <translation>請輸入非負的頁邊距</translation>
+        </message>
+        <message>
+            <source>Enter a positive paper dimension</source>
+            <translation>請輸入正數的紙張尺寸</translation>
+        </message>
+        <message>
+            <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
+            <translation>此影像拼接需要過多暫存記憶體。請減少影像數量或使用較小的影像</translation>
+        </message>
+        <message>
+            <source>Select a paper orientation</source>
+            <translation>請選擇紙張方向</translation>
+        </message>
+        <message>
+            <source>Select a paper size</source>
+            <translation>請選擇紙張大小</translation>
+        </message>
+        <message>
+            <source>Select a stitching method</source>
+            <translation>請選擇拼接方式</translation>
+        </message>
+        <message>
+            <source>Select a template</source>
+            <translation>請選擇範本</translation>
+        </message>
+        <message>
+            <source>Select an export mode</source>
+            <translation>請選擇匯出模式</translation>
+        </message>
+        <message>
+            <source>The PDF page settings are invalid</source>
+            <translation>PDF 頁面設定無效</translation>
+        </message>
+        <message>
+            <source>The image spacing must leave usable template cells</source>
+            <translation>影像間距必須為範本區域留出可用空間</translation>
+        </message>
+        <message>
+            <source>The image stitching export was canceled</source>
+            <translation>影像拼接匯出已取消</translation>
+        </message>
+        <message>
+            <source>The image stitching layout settings are invalid</source>
+            <translation>影像拼接版面設定無效</translation>
+        </message>
+        <message>
+            <source>The margins must leave a usable content area</source>
+            <translation>頁邊距必須保留可用的內容區域</translation>
+        </message>
+        <message>
+            <source>The paper dimension exceeds the PDF size limit</source>
+            <translation>紙張尺寸超過了 PDF 大小限制</translation>
+        </message>
+        <message>
+            <source>The stitched image could not be prepared for export</source>
+            <translation>無法準備影像拼接影像以供匯出</translation>
+        </message>
+        <message>
+            <source>The stitched image exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
+            <translation>影像拼接超過了 8 GiB 影像限制。請減少影像數量或調小版面設定</translation>
+        </message>
+        <message>
+            <source>The stitched image is too large for the clipboard. Save it to a file instead</source>
+            <translation>影像拼接過大，無法複製到剪貼簿。請儲存為檔案</translation>
+        </message>
+        <message>
+            <source>There is not enough available memory for image stitching. Try fewer images or close other image stitching windows</source>
+            <translation>可用記憶體不足，無法執行此影像拼接操作。請減少影像數量或關閉其他影像拼接視窗</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingEditorWidget</name>
+        <message>
+            <source> px</source>
+            <translation> 像素</translation>
+        </message>
+        <message>
+            <source>%1 × %2 mm</source>
+            <translation>%1 × %2 公釐</translation>
+        </message>
+        <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 像素</translation>
+        </message>
+        <message>
+            <source>Add images</source>
+            <translation>新增影像</translation>
+        </message>
+        <message>
+            <source>Add images to start image stitching</source>
+            <translation>新增影像以建立影像拼接</translation>
+        </message>
+        <message>
+            <source>Add multiple image files at once</source>
+            <translation>可一次加入多張影像</translation>
+        </message>
+        <message>
+            <source>Background color</source>
+            <translation>背景顏色</translation>
+        </message>
+        <message>
+            <source>Black</source>
+            <translation>黑色</translation>
+        </message>
+        <message>
+            <source>Blue</source>
+            <translation>藍色</translation>
+        </message>
+        <message>
+            <source>Choose a background color, including transparency</source>
+            <translation>選擇背景顏色，可設定透明度</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>全部清空</translation>
+        </message>
+        <message>
+            <source>Columns</source>
+            <translation>欄數</translation>
+        </message>
+        <message>
+            <source>Custom</source>
+            <translation>自訂</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>刪除影像</translation>
+        </message>
+        <message>
+            <source>Drag an image to move or swap it; drag selection handles to scale around its center. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>拖曳影像以移動或交換；拖曳選取框控制點以圍繞中心縮放。按住滑鼠中鍵拖曳以平移，捲動以縮放</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
+        </message>
+        <message>
+            <source>Drop images to stitch</source>
+            <translation>放開滑鼠，將影像加入影像拼接</translation>
+        </message>
+        <message>
+            <source>Fit to canvas</source>
+            <translation>符合畫布</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻轉</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻轉</translation>
+        </message>
+        <message>
+            <source>Gray</source>
+            <translation>灰色</translation>
+        </message>
+        <message>
+            <source>Green</source>
+            <translation>綠色</translation>
+        </message>
+        <message>
+            <source>Horizontal</source>
+            <translation>水平</translation>
+        </message>
+        <message>
+            <source>Image %1: %2</source>
+            <translation>影像 %1：%2</translation>
+        </message>
+        <message>
+            <source>Image preview was cancelled</source>
+            <translation>影像預覽已取消</translation>
+        </message>
+        <message>
+            <source>Image sizing</source>
+            <translation>影像尺寸</translation>
+        </message>
+        <message>
+            <source>Image spacing</source>
+            <translation>影像間距</translation>
+        </message>
+        <message>
+            <source>Image spacing in output pixels</source>
+            <translation>影像間距（輸出像素）</translation>
+        </message>
+        <message>
+            <source>Image spacing in percentage</source>
+            <translation>影像間距（百分比）</translation>
+        </message>
+        <message>
+            <source>Image spacing unit</source>
+            <translation>影像間距單位</translation>
+        </message>
+        <message>
+            <source>Image stitching preview</source>
+            <translation>影像拼接預覽</translation>
+        </message>
+        <message>
+            <source>Image type</source>
+            <translation>影像類型</translation>
+        </message>
+        <message>
+            <source>Layout direction</source>
+            <translation>版面方向</translation>
+        </message>
+        <message>
+            <source>Original size</source>
+            <translation>原始尺寸</translation>
+        </message>
+        <message>
+            <source>Outer border</source>
+            <translation>外框</translation>
+        </message>
+        <message>
+            <source>Outer border in output pixels</source>
+            <translation>外框（輸出像素）</translation>
+        </message>
+        <message>
+            <source>Outer border in percentage</source>
+            <translation>外框（百分比）</translation>
+        </message>
+        <message>
+            <source>Outer border unit</source>
+            <translation>外框單位</translation>
+        </message>
+        <message>
+            <source>PDF document</source>
+            <translation>PDF 文件</translation>
+        </message>
+        <message>
+            <source>Percentage</source>
+            <translation>百分比</translation>
+        </message>
+        <message>
+            <source>Percentage of the grid cell width</source>
+            <translation>網格儲存格寬度的百分比</translation>
+        </message>
+        <message>
+            <source>Percentage of the tallest image after sizing</source>
+            <translation>調整尺寸後最高影像高度的百分比</translation>
+        </message>
+        <message>
+            <source>Percentage of the widest image after sizing</source>
+            <translation>調整尺寸後最寬影像寬度的百分比</translation>
+        </message>
+        <message>
+            <source>Pixels</source>
+            <translation>像素</translation>
+        </message>
+        <message>
+            <source>Preview original image</source>
+            <translation>預覽原始影像</translation>
+        </message>
+        <message>
+            <source>Purple</source>
+            <translation>紫色</translation>
+        </message>
+        <message>
+            <source>Red</source>
+            <translation>紅色</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>取代影像</translation>
+        </message>
+        <message>
+            <source>Reset transform</source>
+            <translation>重設變換</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>反轉影像順序</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>順時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>逆時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>Rows</source>
+            <translation>列數</translation>
+        </message>
+        <message>
+            <source>Select to center this image; drag onto another image to swap</source>
+            <translation>選取以將此影像置中；拖到另一影像上以交換位置</translation>
+        </message>
+        <message>
+            <source>Static image</source>
+            <translation>靜態影像</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable</source>
+            <translation>原始影像無法使用</translation>
+        </message>
+        <message>
+            <source>Total: %1 images</source>
+            <translation>總計：%1 張影像</translation>
+        </message>
+        <message>
+            <source>Total: %1 pages</source>
+            <translation>總計：%1 頁</translation>
+        </message>
+        <message>
+            <source>Uniform size</source>
+            <translation>統一尺寸</translation>
+        </message>
+        <message>
+            <source>Vertical</source>
+            <translation>垂直</translation>
+        </message>
+        <message>
+            <source>White</source>
+            <translation>白色</translation>
+        </message>
+        <message>
+            <source>Yellow</source>
+            <translation>黃色</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfExport</name>
+        <message>
+            <source>Export was canceled</source>
+            <translation>匯出已取消</translation>
+        </message>
+        <message>
+            <source>No output destination was selected</source>
+            <translation>未選擇輸出位置</translation>
+        </message>
+        <message>
+            <source>Page %1 could not be exported: %2</source>
+            <translation>無法匯出第 %1 頁：%2</translation>
+        </message>
+        <message>
+            <source>The PDF could not be saved: %1</source>
+            <translation>無法儲存 PDF：%1</translation>
+        </message>
+        <message>
+            <source>The PDF settings or images are invalid</source>
+            <translation>PDF 設定或影像無效</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for PDF export</source>
+            <translation>無法準備影像以供匯出為 PDF</translation>
+        </message>
+        <message>
+            <source>The output folder could not be created</source>
+            <translation>無法建立輸出資料夾</translation>
+        </message>
+        <message>
+            <source>The selected PDF already exists. Choose another filename</source>
+            <translation>所選 PDF 已存在，請選擇其他檔案名稱</translation>
+        </message>
+        <message>
+            <source>There is not enough memory to export the PDF</source>
+            <translation>記憶體不足，無法匯出 PDF</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfPageGrid</name>
+        <message>
+            <source>Add images</source>
+            <translation>新增影像</translation>
+        </message>
+        <message>
+            <source>Add images to create a PDF document</source>
+            <translation>新增影像以建立 PDF 文件</translation>
+        </message>
+        <message>
+            <source>Add multiple image files at once</source>
+            <translation>可一次加入多張影像</translation>
+        </message>
+        <message>
+            <source>Clear</source>
+            <translation>清空</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>刪除影像</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
+        </message>
+        <message>
+            <source>Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the original image</source>
+            <translation>拖曳頁面以調整順序。使用方向鍵選取頁面，按 Enter 鍵預覽原始影像</translation>
+        </message>
+        <message>
+            <source>Drop images to add pages</source>
+            <translation>放開滑鼠以新增頁面</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻轉</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻轉</translation>
+        </message>
+        <message>
+            <source>Image preview was cancelled</source>
+            <translation>影像預覽已取消</translation>
+        </message>
+        <message>
+            <source>PDF document pages</source>
+            <translation>PDF 文件頁面</translation>
+        </message>
+        <message>
+            <source>Page %1</source>
+            <translation>第 %1 頁</translation>
+        </message>
+        <message>
+            <source>Page %1: %2</source>
+            <translation>第 %1 頁：%2</translation>
+        </message>
+        <message>
+            <source>Preview original image</source>
+            <translation>預覽原始影像</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>取代影像</translation>
+        </message>
+        <message>
+            <source>Reset transform</source>
+            <translation>重設變換</translation>
+        </message>
+        <message>
+            <source>Reverse page order</source>
+            <translation>反轉頁面順序</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>順時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>逆時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable</source>
+            <translation>原始影像無法使用</translation>
+        </message>
+        <message>
+            <source>The page preview shows the last valid settings</source>
+            <translation>頁面預覽使用上一次有效的設定</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfSettingsWidget</name>
+        <message>
+            <source>A3</source>
+            <translation>A3</translation>
+        </message>
+        <message>
+            <source>A4</source>
+            <translation>A4</translation>
+        </message>
+        <message>
+            <source>A5</source>
+            <translation>A5</translation>
+        </message>
+        <message>
+            <source>B5</source>
+            <translation>B5</translation>
+        </message>
+        <message>
+            <source>Combined export</source>
+            <translation>合併匯出</translation>
+        </message>
+        <message>
+            <source>Custom</source>
+            <translation>自訂</translation>
+        </message>
+        <message>
+            <source>Custom paper</source>
+            <translation>自訂紙張</translation>
+        </message>
+        <message>
+            <source>Custom paper height</source>
+            <translation>自訂紙張高度</translation>
+        </message>
+        <message>
+            <source>Custom paper width</source>
+            <translation>自訂紙張寬度</translation>
+        </message>
+        <message>
+            <source>Eight images</source>
+            <translation>八張影像</translation>
+        </message>
+        <message>
+            <source>Export mode</source>
+            <translation>匯出模式</translation>
+        </message>
+        <message>
+            <source>Five images</source>
+            <translation>五張影像</translation>
+        </message>
+        <message>
+            <source>Four images</source>
+            <translation>四張影像</translation>
+        </message>
+        <message>
+            <source>Height</source>
+            <translation>高度</translation>
+        </message>
+        <message>
+            <source>ID card</source>
+            <translation>身分證</translation>
+        </message>
+        <message>
+            <source>Image size</source>
+            <translation>影像大小</translation>
+        </message>
+        <message>
+            <source>Image spacing</source>
+            <translation>影像間距</translation>
+        </message>
+        <message>
+            <source>Landscape</source>
+            <translation>橫向</translation>
+        </message>
+        <message>
+            <source>Legal</source>
+            <translation>Legal</translation>
+        </message>
+        <message>
+            <source>Letter</source>
+            <translation>Letter</translation>
+        </message>
+        <message>
+            <source>Nine images</source>
+            <translation>九張影像</translation>
+        </message>
+        <message>
+            <source>Page margin</source>
+            <translation>頁邊距</translation>
+        </message>
+        <message>
+            <source>Page-based stitching</source>
+            <translation>分頁拼接</translation>
+        </message>
+        <message>
+            <source>Paper orientation</source>
+            <translation>紙張方向</translation>
+        </message>
+        <message>
+            <source>Paper size</source>
+            <translation>紙張大小</translation>
+        </message>
+        <message>
+            <source>Per-page export</source>
+            <translation>逐頁匯出</translation>
+        </message>
+        <message>
+            <source>Portrait</source>
+            <translation>直向</translation>
+        </message>
+        <message>
+            <source>Seven images</source>
+            <translation>七張影像</translation>
+        </message>
+        <message>
+            <source>Six images</source>
+            <translation>六張影像</translation>
+        </message>
+        <message>
+            <source>Stitching method</source>
+            <translation>拼接方式</translation>
+        </message>
+        <message>
+            <source>Template</source>
+            <translation>範本</translation>
+        </message>
+        <message>
+            <source>Template-based stitching</source>
+            <translation>範本拼接</translation>
+        </message>
+        <message>
+            <source>Three images</source>
+            <translation>三張影像</translation>
+        </message>
+        <message>
+            <source>Two images</source>
+            <translation>兩張影像</translation>
+        </message>
+        <message>
+            <source>Width</source>
+            <translation>寬度</translation>
+        </message>
+        <message>
+            <source>mm</source>
+            <translation>公釐</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfTemplateWidget</name>
+        <message>
+            <source>Add images</source>
+            <translation>新增影像</translation>
+        </message>
+        <message>
+            <source>Add images to create a PDF document</source>
+            <translation>新增影像以建立 PDF 文件</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>全部清空</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>刪除影像</translation>
+        </message>
+        <message>
+            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>拖曳影像可移動或交換位置；拖曳選取框控制點可圍繞中心等比例縮放。按住滑鼠中鍵拖曳可平移；捲動滑鼠滾輪可縮放</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
+        </message>
+        <message>
+            <source>Fit to canvas</source>
+            <translation>符合畫布</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻轉</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻轉</translation>
+        </message>
+        <message>
+            <source>Image %1: %2</source>
+            <translation>影像 %1：%2</translation>
+        </message>
+        <message>
+            <source>Image preview was cancelled</source>
+            <translation>影像預覽已取消</translation>
+        </message>
+        <message>
+            <source>Input images</source>
+            <translation>輸入影像</translation>
+        </message>
+        <message>
+            <source>Next page</source>
+            <translation>下一頁</translation>
+        </message>
+        <message>
+            <source>No pages</source>
+            <translation>尚無頁面</translation>
+        </message>
+        <message>
+            <source>Page %1 of %2</source>
+            <translation>第 %1 頁，共 %2 頁</translation>
+        </message>
+        <message>
+            <source>Preview original image</source>
+            <translation>預覽原始影像</translation>
+        </message>
+        <message>
+            <source>Previous page</source>
+            <translation>上一頁</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>取代影像</translation>
+        </message>
+        <message>
+            <source>Reset image</source>
+            <translation>重設影像</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>反轉影像順序</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>順時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>逆時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>Select to show this image's page; drag onto another image to swap</source>
+            <translation>按一下以顯示此影像所在頁面；拖曳至另一張影像可交換位置</translation>
+        </message>
+        <message>
+            <source>Template stitching preview</source>
+            <translation>範本拼接預覽</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable</source>
+            <translation>原始影像無法使用</translation>
+        </message>
+        <message>
+            <source>The page preview shows the last valid settings</source>
+            <translation>頁面預覽使用上一次有效的設定</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingWindow</name>
+        <message>
+            <source>%1: %2</source>
+            <translation>%1：%2</translation>
+        </message>
+        <message>
+            <source>Add images</source>
+            <translation>新增影像</translation>
+        </message>
+        <message>
+            <source>All images will be removed from this stitching session</source>
+            <translation>將從此影像拼接中移除全部影像</translation>
+        </message>
+        <message>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Canceling PDF export…</source>
+            <translation>正在取消 PDF 匯出…</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>全部清空</translation>
+        </message>
+        <message>
+            <source>Clear all images?</source>
+            <translation>清空全部影像？</translation>
+        </message>
+        <message>
+            <source>Clipboard image</source>
+            <translation>剪貼簿影像</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>複製</translation>
+        </message>
+        <message>
+            <source>Copying could not be started. Try again</source>
+            <translation>無法開始複製，請重試</translation>
+        </message>
+        <message>
+            <source>Copying stitched image…</source>
+            <translation>正在複製影像拼接…</translation>
+        </message>
+        <message>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>無法讀取選取的影像檔案，請重試</translation>
+        </message>
+        <message>
+            <source>Discard</source>
+            <translation>捨棄</translation>
+        </message>
+        <message>
+            <source>Discard this stitching session?</source>
+            <translation>捨棄此影像拼接？</translation>
+        </message>
+        <message>
+            <source>Export could not be started. Try again</source>
+            <translation>無法開始匯出，請重試</translation>
+        </message>
+        <message>
+            <source>Exporting PDF page %1 of %2: %3%</source>
+            <translation>正在匯出 PDF 第 %1 頁，共 %2 頁：%3%</translation>
+        </message>
+        <message>
+            <source>Image loading could not be started. Try again</source>
+            <translation>無法開始載入影像，請重試</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>影像拼接</translation>
+        </message>
+        <message>
+            <source>Images</source>
+            <translation>影像</translation>
+        </message>
+        <message>
+            <source>Loading images: %1 of %2</source>
+            <translation>正在載入影像：%1 / %2</translation>
+        </message>
+        <message>
+            <source>PDF documents</source>
+            <translation>PDF 文件</translation>
+        </message>
+        <message>
+            <source>PDF export was canceled. Your images and edits are preserved</source>
+            <translation>PDF 匯出已取消。您的影像與編輯已保留</translation>
+        </message>
+        <message>
+            <source>Page %1 was not saved</source>
+            <translation>第 %1 頁未儲存</translation>
+        </message>
+        <message>
+            <source>Pages %1–%2 were not saved</source>
+            <translation>第 %1–%2 頁未儲存</translation>
+        </message>
+        <message>
+            <source>Pinned window %1</source>
+            <translation>固定到螢幕視窗 %1</translation>
+        </message>
+        <message>
+            <source>Preparing stitched image…</source>
+            <translation>正在準備影像拼接…</translation>
+        </message>
+        <message>
+            <source>Reading selected image files…</source>
+            <translation>正在讀取選取的影像檔案…</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>取代影像</translation>
+        </message>
+        <message>
+            <source>Save</source>
+            <translation>儲存</translation>
+        </message>
+        <message>
+            <source>Save PDF document</source>
+            <translation>儲存 PDF 文件</translation>
+        </message>
+        <message>
+            <source>Save as file</source>
+            <translation>儲存為檔案</translation>
+        </message>
+        <message>
+            <source>Saved pages: %1
+Files:
+%2
+%3</source>
+            <translation>已儲存頁面：%1
+檔案：
+%2
+%3</translation>
+        </message>
+        <message>
+            <source>Saving could not be started. Try again</source>
+            <translation>無法開始儲存，請重試</translation>
+        </message>
+        <message>
+            <source>Saving stitched image…</source>
+            <translation>正在儲存影像拼接…</translation>
+        </message>
+        <message>
+            <source>Screenshot %1</source>
+            <translation>截圖 %1</translation>
+        </message>
+        <message>
+            <source>Select destination folder</source>
+            <translation>選擇目的地資料夾</translation>
+        </message>
+        <message>
+            <source>Some images could not be loaded:
+%1</source>
+            <translation>部分影像無法載入：
+%1</translation>
+        </message>
+        <message>
+            <source>The PDFs could not be exported. Try again</source>
+            <translation>無法匯出 PDF，請重試</translation>
+        </message>
+        <message>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>檔案管理員無法使用，請開啟後再試一次</translation>
+        </message>
+        <message>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>檔案管理員傳回選取檔案的時間過長，請重試</translation>
+        </message>
+        <message>
+            <source>The final screenshot is unavailable</source>
+            <translation>最終截圖無法使用</translation>
+        </message>
+        <message>
+            <source>The image could not be decoded or is no longer available</source>
+            <translation>無法解碼影像，或影像已無法使用</translation>
+        </message>
+        <message>
+            <source>The images and edits in this stitching session will be discarded</source>
+            <translation>將捨棄此影像拼接中的影像與編輯</translation>
+        </message>
+        <message>
+            <source>The layout settings could not be remembered: %1</source>
+            <translation>無法記住版面設定：%1</translation>
         </message>
     </context>
     <context>
         <name>LiveWindowSource</name>
         <message>
-            <source>Allow Accessibility in System Settings to monitor the live window's state.</source>
-            <translation>請在系統設定中允許輔助使用權限，以監測即時視窗的狀態。</translation>
+            <source>Allow Accessibility in System Settings to monitor the live window's state</source>
+            <translation>請在系統設定中允許輔助使用權限，以監測即時視窗的狀態</translation>
         </message>
         <message>
-            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window.</source>
-            <translation>請在系統設定中允許螢幕與系統音訊錄製權限，以固定即時視窗。</translation>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window to the screen</source>
+            <translation>請在系統設定中允許螢幕與系統音訊錄製權限，以將即時視窗固定到螢幕</translation>
         </message>
         <message>
-            <source>The live window display could not be initialized.</source>
-            <translation>無法初始化視窗即時顯示。</translation>
+            <source>The live window display could not be initialized</source>
+            <translation>無法初始化視窗即時顯示</translation>
         </message>
         <message>
-            <source>The live window was closed.</source>
-            <translation>即時視窗已關閉。</translation>
+            <source>The live window was closed</source>
+            <translation>即時視窗已關閉</translation>
         </message>
         <message>
-            <source>The selected window is no longer available.</source>
-            <translation>所選視窗已無法使用。</translation>
+            <source>The selected window is no longer available</source>
+            <translation>所選視窗已無法使用</translation>
         </message>
         <message>
-            <source>The selected window's identity and state could not be verified.</source>
-            <translation>無法驗證所選視窗的識別資訊與狀態。</translation>
+            <source>The selected window's identity and state could not be verified</source>
+            <translation>無法驗證所選視窗的識別資訊與狀態</translation>
         </message>
         <message>
-            <source>The selection does not intersect the selected window.</source>
-            <translation>選取範圍與所選視窗沒有交集。</translation>
+            <source>The selection does not intersect the selected window</source>
+            <translation>選取範圍與所選視窗沒有交集</translation>
         </message>
         <message>
             <source>The window content is temporarily unavailable. Retrying…</source>
             <translation>視窗內容暫時無法使用，正在重試…</translation>
         </message>
         <message>
-            <source>The window is closed. The latest content cannot be displayed.</source>
-            <translation>視窗已關閉，無法顯示最新內容。</translation>
+            <source>The window is closed. The latest content cannot be displayed</source>
+            <translation>視窗已關閉，無法顯示最新內容</translation>
         </message>
         <message>
-            <source>The window is minimized. The latest content cannot be displayed.</source>
-            <translation>視窗已最小化，無法顯示最新內容。</translation>
+            <source>The window is minimized. The latest content cannot be displayed</source>
+            <translation>視窗已最小化，無法顯示最新內容</translation>
         </message>
         <message>
             <source>The window state is temporarily unavailable. Retrying…</source>
@@ -1234,15 +1496,15 @@ Files:
         </message>
         <message>
             <source>Copy HEX color</source>
-            <translation>複製 HEX 色彩值</translation>
+            <translation>複製 HEX 顏色值</translation>
         </message>
         <message>
             <source>Copy HSL color</source>
-            <translation>複製 HSL 色彩值</translation>
+            <translation>複製 HSL 顏色值</translation>
         </message>
         <message>
             <source>Copy RGB color</source>
-            <translation>複製 RGB 色彩值</translation>
+            <translation>複製 RGB 顏色值</translation>
         </message>
         <message>
             <source>HEX:</source>
@@ -1282,7 +1544,7 @@ Files:
             <translation>所有來源</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
+            <source>Batch actions</source>
             <translation>批次操作</translation>
         </message>
         <message>
@@ -1360,12 +1622,12 @@ Files:
             <translation>已隱藏</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>影像編輯</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>圖片分割</translation>
+            <source>Image splitting</source>
+            <translation>影像分割</translation>
         </message>
         <message>
             <source>More</source>
@@ -1384,7 +1646,7 @@ Files:
             <translation>尚無固定到螢幕視窗</translation>
         </message>
         <message>
-            <source>Not Closed</source>
+            <source>Not closed</source>
             <translation>未關閉</translation>
         </message>
         <message>
@@ -1392,20 +1654,20 @@ Files:
             <translation>其他 / 舊記錄</translation>
         </message>
         <message>
-            <source>Pin to Screen Management</source>
-            <translation>固定到螢幕管理</translation>
-        </message>
-        <message>
             <source>Pin to screen</source>
             <translation>固定到螢幕</translation>
         </message>
         <message>
+            <source>Pin to screen management</source>
+            <translation>固定到螢幕管理</translation>
+        </message>
+        <message>
             <source>Pinned images and text will appear here</source>
-            <translation>固定到螢幕的圖片與文字會顯示在這裡</translation>
+            <translation>固定到螢幕的影像與文字會顯示在這裡</translation>
         </message>
         <message>
             <source>Pinned window image</source>
-            <translation>固定到螢幕視窗的圖片</translation>
+            <translation>固定到螢幕視窗的影像</translation>
         </message>
         <message>
             <source>Refresh pinned windows</source>
@@ -1436,8 +1698,8 @@ Files:
             <translation>選取此頁的所有項目</translation>
         </message>
         <message>
-            <source>Select pinned windows from the same group to pin them to the screen.</source>
-            <translation>請選取同一群組中的固定視窗，以將它們固定到螢幕。</translation>
+            <source>Select pinned windows from the same group to pin them to the screen</source>
+            <translation>請選取同一群組中的固定到螢幕視窗，以將它們固定到螢幕</translation>
         </message>
         <message>
             <source>Select record</source>
@@ -1466,8 +1728,8 @@ Files:
             <translation>開始日期</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
-            <translation>圖片拼接</translation>
+            <source>Stitch images</source>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>The saved record and its open window will be removed</source>
@@ -1503,7 +1765,7 @@ Files:
             <translation>所有來源</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
+            <source>Batch actions</source>
             <translation>批次操作</translation>
         </message>
         <message>
@@ -1519,7 +1781,7 @@ Files:
             <translation>變更來源或日期範圍以查看更多歷史記錄</translation>
         </message>
         <message>
-            <source>Copied and pinned screenshots will appear here</source>
+            <source>Copied or pinned screenshots will appear here</source>
             <translation>已複製或固定到螢幕的截圖會顯示在這裡</translation>
         </message>
         <message>
@@ -1590,7 +1852,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Screenshot history</source>
@@ -1615,8 +1877,8 @@ Files:
             <translation>開始日期</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
-            <translation>圖片拼接</translation>
+            <source>Stitch images</source>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -1640,15 +1902,15 @@ Files:
         </translation>
         </message>
         <message>
-            <source>A pinned window is no longer available to save.</source>
-            <translation>一個貼圖視窗已無法儲存。</translation>
+            <source>A pinned window is no longer available to save</source>
+            <translation>一個固定到螢幕視窗已無法儲存</translation>
         </message>
         <message>
             <source>AirDrop</source>
             <translation>AirDrop</translation>
         </message>
         <message>
-            <source>Always on Top</source>
+            <source>Always on top</source>
             <translation>永遠置於最上層</translation>
         </message>
         <message>
@@ -1656,11 +1918,11 @@ Files:
             <translation>標註模式</translation>
         </message>
         <message>
-            <source>Apply Crop</source>
+            <source>Apply crop</source>
             <translation>套用裁剪</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
+            <source>Batch actions</source>
             <translation>批次操作</translation>
         </message>
         <message>
@@ -1700,8 +1962,22 @@ Files:
             <translation>已關閉</translation>
         </message>
         <message>
-            <source>Convert to Image</source>
-            <translation>轉換為圖片</translation>
+            <source>Convert to image</source>
+            <translation>轉換為影像</translation>
+        </message>
+        <message numerus="yes">
+            <source>Copied %n file(s)</source>
+            <translation>
+            <numerusform>已複製 %n 個檔案</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Copied: %1; failed: %2</source>
+            <translation>已複製：%1；失敗：%2</translation>
+        </message>
+        <message>
+            <source>Copy files to clipboard</source>
+            <translation>複製檔案到剪貼簿</translation>
         </message>
         <message>
             <source>Copy original content</source>
@@ -1728,11 +2004,11 @@ Files:
             <translation>預設</translation>
         </message>
         <message>
-            <source>Delete Empty Groups</source>
+            <source>Delete empty groups</source>
             <translation>刪除空群組</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
+            <source>Delete specified group</source>
             <translation>刪除指定群組</translation>
         </message>
         <message>
@@ -1748,36 +2024,36 @@ Files:
             <translation>銷毀固定到螢幕視窗</translation>
         </message>
         <message>
-            <source>Destroy this pinned window? This action cannot be undone.</source>
-            <translation>確定要銷毀此固定到螢幕視窗嗎？此操作無法復原。</translation>
+            <source>Destroy this pinned window? This action cannot be undone</source>
+            <translation>確定要銷毀此固定到螢幕視窗嗎？此操作無法復原</translation>
         </message>
         <message>
-            <source>Disable Hide to Top</source>
+            <source>Disable hide at top</source>
             <translation>停用頂部隱藏</translation>
         </message>
         <message>
-            <source>Disable Lock Mode</source>
+            <source>Disable lock mode</source>
             <translation>停用鎖定模式</translation>
         </message>
         <message>
-            <source>Disable Thumbnail Mode</source>
+            <source>Disable thumbnail mode</source>
             <translation>停用縮圖模式</translation>
-        </message>
-        <message>
-            <source>Enable Hide to Top</source>
-            <translation>啟用頂部隱藏</translation>
-        </message>
-        <message>
-            <source>Enable Lock Mode</source>
-            <translation>啟用鎖定模式</translation>
-        </message>
-        <message>
-            <source>Enable Thumbnail Mode</source>
-            <translation>啟用縮圖模式</translation>
         </message>
         <message>
             <source>Enable annotation mode</source>
             <translation>啟用標註模式</translation>
+        </message>
+        <message>
+            <source>Enable hide at top</source>
+            <translation>啟用頂部隱藏</translation>
+        </message>
+        <message>
+            <source>Enable lock mode</source>
+            <translation>啟用鎖定模式</translation>
+        </message>
+        <message>
+            <source>Enable thumbnail mode</source>
+            <translation>啟用縮圖模式</translation>
         </message>
         <message>
             <source>Exit click-through mode</source>
@@ -1796,28 +2072,32 @@ Files:
             <translation>群組：%1</translation>
         </message>
         <message>
-            <source>Group: Default</source>
+            <source>Group: default</source>
             <translation>群組：預設</translation>
+        </message>
+        <message>
+            <source>Hide at top</source>
+            <translation>頂部隱藏</translation>
         </message>
         <message>
             <source>Hide other windows</source>
             <translation>隱藏其他視窗</translation>
         </message>
         <message>
-            <source>Hide to Top</source>
-            <translation>頂部隱藏</translation>
-        </message>
-        <message>
-            <source>Image Editing</source>
-            <translation>圖片編輯</translation>
+            <source>Image editing</source>
+            <translation>影像編輯</translation>
         </message>
         <message>
             <source>Image file</source>
             <translation>影像檔案</translation>
         </message>
         <message>
-            <source>Image size is too large.</source>
-            <translation>影像尺寸過大。</translation>
+            <source>Image size is too large</source>
+            <translation>影像尺寸過大</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>Increase 10%</source>
@@ -1848,7 +2128,7 @@ Files:
             <translation>移動視窗</translation>
         </message>
         <message>
-            <source>New Group</source>
+            <source>New group</source>
             <translation>新增群組</translation>
         </message>
         <message>
@@ -1857,23 +2137,35 @@ Files:
         </message>
         <message>
             <source>No available output filename was found</source>
-            <translation>找不到可用的輸出檔案名稱</translation>
+            <translation>找不到可用的輸出檔名</translation>
         </message>
         <message>
             <source>Opacity</source>
             <translation>不透明度</translation>
         </message>
         <message>
-            <source>Other windows could not be hidden.</source>
-            <translation>無法隱藏其他視窗。</translation>
+            <source>Other windows could not be hidden</source>
+            <translation>無法隱藏其他視窗</translation>
         </message>
         <message>
-            <source>Other windows hidden.</source>
-            <translation>其他視窗已隱藏。</translation>
+            <source>Other windows hidden</source>
+            <translation>其他視窗已隱藏</translation>
+        </message>
+        <message>
+            <source>Other windows shown</source>
+            <translation>其他視窗已顯示</translation>
         </message>
         <message>
             <source>Pause</source>
             <translation>暫停</translation>
+        </message>
+        <message>
+            <source>Pin to screen management</source>
+            <translation>固定到螢幕管理</translation>
+        </message>
+        <message>
+            <source>Pinned content</source>
+            <translation>固定到螢幕的內容</translation>
         </message>
         <message>
             <source>Play</source>
@@ -1920,33 +2212,33 @@ Files:
             <translation>逆時針旋轉</translation>
         </message>
         <message>
-            <source>Save as File</source>
-            <translation>儲存為檔案</translation>
-        </message>
-        <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Save displayed windows</source>
             <translation>儲存已顯示的視窗</translation>
         </message>
+        <message>
+            <source>Save selected windows</source>
+            <translation>儲存選取的視窗</translation>
+        </message>
         <message numerus="yes">
-            <source>Saved %n window(s).</source>
+            <source>Saved %n window(s)</source>
             <translation>
-            <numerusform>已儲存 %n 個視窗。</numerusform>
+            <numerusform>已儲存 %n 個視窗</numerusform>
         </translation>
         </message>
         <message>
-            <source>Saved: %1; failed: %2.</source>
-            <translation>已儲存：%1；失敗：%2。</translation>
+            <source>Saved: %1; failed: %2</source>
+            <translation>已儲存：%1；失敗：%2</translation>
         </message>
         <message>
             <source>Scale</source>
             <translation>縮放</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全選</translation>
         </message>
         <message>
@@ -1982,16 +2274,12 @@ Files:
             <translation>無法播放動畫</translation>
         </message>
         <message>
-            <source>The current window content cannot be captured.</source>
-            <translation>無法擷取視窗的目前內容。</translation>
+            <source>The current window content cannot be captured</source>
+            <translation>無法擷取視窗的目前內容</translation>
         </message>
         <message>
             <source>The image could not be saved automatically: %1</source>
             <translation>無法自動儲存影像：%1</translation>
-        </message>
-        <message>
-            <source>The live window requires a current frame snapshot.</source>
-            <translation>即時視窗需要取得目前影格快照。</translation>
         </message>
         <message>
             <source>The new content could not be loaded</source>
@@ -2018,16 +2306,16 @@ Files:
             <translation>無法開始儲存已固定到螢幕的影像</translation>
         </message>
         <message>
-            <source>The window changed while preparing the image. Please try again.</source>
-            <translation>準備圖片時視窗發生變更，請再試一次。</translation>
+            <source>The window changed while preparing the image. Please try again</source>
+            <translation>準備影像時視窗發生變更，請重試</translation>
         </message>
         <message>
-            <source>The window is closed. The latest content cannot be displayed.</source>
-            <translation>視窗已關閉，無法顯示最新內容。</translation>
+            <source>The window is closed. The latest content cannot be displayed</source>
+            <translation>視窗已關閉，無法顯示最新內容</translation>
         </message>
         <message>
-            <source>The window is minimized. The latest content cannot be displayed.</source>
-            <translation>視窗已最小化，無法顯示最新內容。</translation>
+            <source>The window is minimized. The latest content cannot be displayed</source>
+            <translation>視窗已最小化，無法顯示最新內容</translation>
         </message>
         <message>
             <source>Thumbnail mode</source>
@@ -2046,16 +2334,12 @@ Files:
             <translation>無標題視窗</translation>
         </message>
         <message>
-            <source>Uploaded to cloud. Link copied to clipboard.</source>
-            <translation>已上傳至雲端，連結已複製到剪貼簿。</translation>
+            <source>Uploaded to cloud. Link copied to clipboard</source>
+            <translation>已上傳至雲端，連結已複製到剪貼簿</translation>
         </message>
         <message>
             <source>Uploading to cloud... %1%</source>
             <translation>正在上傳至雲端… %1%</translation>
-        </message>
-        <message>
-            <source>Window Management</source>
-            <translation>視窗管理</translation>
         </message>
     </context>
     <context>
@@ -2065,19 +2349,19 @@ Files:
             <translation>%1，%2 個未關閉視窗，共 %3 個</translation>
         </message>
         <message>
-            <source>Click a group to switch. Esc to cancel.</source>
-            <translation>點擊群組以切換，按 Esc 取消。</translation>
+            <source>Click a group to switch. Esc to cancel</source>
+            <translation>點擊群組以切換，按 Esc 取消</translation>
         </message>
         <message>
             <source>Current</source>
             <translation>目前</translation>
         </message>
         <message>
-            <source>Release shortcut keys or click a group to switch. Esc to cancel.</source>
-            <translation>放開所有快捷鍵或點擊群組以切換，按 Esc 取消。</translation>
+            <source>Release shortcut keys or click a group to switch. Esc to cancel</source>
+            <translation>放開所有快速鍵或點擊群組以切換，按 Esc 取消</translation>
         </message>
         <message>
-            <source>Switch Window Group</source>
+            <source>Switch window group</source>
             <translation>切換視窗群組</translation>
         </message>
         <message>
@@ -2088,28 +2372,44 @@ Files:
     <context>
         <name>snow_shot::presentation::ImageEditingWindow</name>
         <message>
-            <source>Configure cloud upload before uploading an image.</source>
-            <translation>上傳影像前請先設定雲端上傳。</translation>
+            <source>Add images</source>
+            <translation>新增影像</translation>
         </message>
         <message>
-            <source>Continue Editing</source>
+            <source>Add images to start image editing</source>
+            <translation>新增影像以開始影像編輯</translation>
+        </message>
+        <message>
+            <source>Configure cloud upload before uploading an image</source>
+            <translation>上傳影像前請先設定雲端上傳</translation>
+        </message>
+        <message>
+            <source>Continue editing</source>
             <translation>繼續編輯</translation>
         </message>
         <message>
-            <source>Discard Changes</source>
+            <source>Discard changes</source>
             <translation>捨棄變更</translation>
         </message>
         <message>
-            <source>Discard Changes?</source>
+            <source>Discard changes?</source>
             <translation>捨棄變更？</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
+        </message>
+        <message>
+            <source>Drop images to edit</source>
+            <translation>放開影像以進行編輯</translation>
         </message>
         <message>
             <source>Export completed</source>
             <translation>匯出完成</translation>
         </message>
         <message>
-            <source>Export could not be started.</source>
-            <translation>無法開始匯出。</translation>
+            <source>Export could not be started</source>
+            <translation>無法開始匯出</translation>
         </message>
         <message>
             <source>Exporting…</source>
@@ -2120,36 +2420,48 @@ Files:
             <translation>符合視窗大小</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>影像編輯</translation>
         </message>
         <message>
+            <source>Images</source>
+            <translation>影像</translation>
+        </message>
+        <message>
             <source>Loading image…</source>
-            <translation>正在載入圖像…</translation>
+            <translation>正在載入影像…</translation>
         </message>
         <message>
-            <source>No recognition result is available to export.</source>
-            <translation>沒有可匯出的辨識結果。</translation>
+            <source>No recognition result is available to export</source>
+            <translation>沒有可匯出的辨識結果</translation>
         </message>
         <message>
-            <source>Printing is unavailable.</source>
-            <translation>列印功能無法使用。</translation>
+            <source>Open each image in its own window</source>
+            <translation>在獨立視窗中開啟每張影像</translation>
+        </message>
+        <message>
+            <source>Printing is unavailable</source>
+            <translation>列印功能無法使用</translation>
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Text files (*.txt)</source>
             <translation>文字檔案 (*.txt)</translation>
         </message>
         <message>
-            <source>The image could not be loaded.</source>
-            <translation>無法載入影像。</translation>
+            <source>The image could not be loaded</source>
+            <translation>無法載入影像</translation>
         </message>
         <message>
-            <source>This editing window has unsaved changes.</source>
-            <translation>此編輯視窗有尚未儲存的變更。</translation>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>影像過大，或記憶體不足，無法載入</translation>
+        </message>
+        <message>
+            <source>This editing window has unsaved changes</source>
+            <translation>此編輯視窗有尚未儲存的變更</translation>
         </message>
         <message>
             <source>View at actual size (100%)</source>
@@ -2167,7 +2479,7 @@ Files:
             <translation>取消</translation>
         </message>
         <message>
-            <source>Clear Default group</source>
+            <source>Clear default group</source>
             <translation>清空預設群組</translation>
         </message>
         <message>
@@ -2179,20 +2491,20 @@ Files:
             <translation>預設</translation>
         </message>
         <message>
-            <source>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone.</source>
-            <translation>刪除「%1」及其中所有固定到螢幕視窗（包括已關閉的視窗）？此操作無法復原。</translation>
+            <source>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone</source>
+            <translation>刪除「%1」及其中所有固定到螢幕視窗（包括已關閉的視窗）？此操作無法復原</translation>
         </message>
         <message>
-            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone.</source>
-            <translation>刪除「%1」中的所有固定到螢幕視窗（包括已關閉的視窗）？預設群組將保留。此操作無法復原。</translation>
+            <source>Delete all pinned windows in "%1", including closed windows? The default group will remain. This action cannot be undone</source>
+            <translation>刪除「%1」中的所有固定到螢幕視窗（包括已關閉的視窗）？預設群組將保留。此操作無法復原</translation>
         </message>
         <message>
             <source>Delete empty groups</source>
             <translation>刪除空群組</translation>
         </message>
         <message>
-            <source>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
-            <translation>刪除所有僅包含已關閉的固定到螢幕視窗或沒有固定到螢幕視窗的群組？儲存在這些群組中的已關閉固定到螢幕視窗也將被永久刪除。此操作無法復原。</translation>
+            <source>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone</source>
+            <translation>刪除所有僅包含已關閉的固定到螢幕視窗或沒有固定到螢幕視窗的群組？儲存在這些群組中的已關閉固定到螢幕視窗也將被永久刪除。此操作無法復原</translation>
         </message>
         <message>
             <source>Delete group</source>
@@ -2211,7 +2523,7 @@ Files:
             <translation>群組名稱</translation>
         </message>
         <message>
-            <source>New Group</source>
+            <source>New group</source>
             <translation>新增群組</translation>
         </message>
         <message>
@@ -2223,8 +2535,8 @@ Files:
             <translation>此群組名稱已被使用</translation>
         </message>
         <message>
-            <source>Unable to create the group or move the selected windows. Try again.</source>
-            <translation>無法建立群組或移動所選視窗。請重試。</translation>
+            <source>Unable to create the group or move the selected windows. Try again</source>
+            <translation>無法建立群組或移動所選視窗。請重試</translation>
         </message>
     </context>
     <context>
@@ -2236,16 +2548,16 @@ Files:
         </translation>
         </message>
         <message>
-            <source>Align Position</source>
-            <translation>對齊位置</translation>
-        </message>
-        <message>
             <source>Align bottom</source>
             <translation>靠下對齊</translation>
         </message>
         <message>
             <source>Align left</source>
             <translation>靠左對齊</translation>
+        </message>
+        <message>
+            <source>Align position</source>
+            <translation>對齊位置</translation>
         </message>
         <message>
             <source>Align right</source>
@@ -2272,15 +2584,19 @@ Files:
             <translation>關閉</translation>
         </message>
         <message>
-            <source>Close Other Windows</source>
+            <source>Close other windows</source>
             <translation>關閉其他視窗</translation>
         </message>
         <message>
-            <source>Delete Empty Groups</source>
+            <source>Copy files to clipboard</source>
+            <translation>複製檔案到剪貼簿</translation>
+        </message>
+        <message>
+            <source>Delete empty groups</source>
             <translation>刪除空群組</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
+            <source>Delete specified group</source>
             <translation>刪除指定群組</translation>
         </message>
         <message>
@@ -2288,15 +2604,15 @@ Files:
             <translation>銷毀</translation>
         </message>
         <message numerus="yes">
-            <source>Destroy %n displayed window(s)? This action cannot be undone.</source>
+            <source>Destroy %n displayed window(s)? This action cannot be undone</source>
             <translation>
-            <numerusform>要銷毀已顯示的 %n 個視窗嗎？此操作無法復原。</numerusform>
+            <numerusform>要銷毀已顯示的 %n 個視窗嗎？此操作無法復原</numerusform>
         </translation>
         </message>
         <message numerus="yes">
-            <source>Destroy %n selected window(s)? This action cannot be undone.</source>
+            <source>Destroy %n selected window(s)? This action cannot be undone</source>
             <translation>
-            <numerusform>銷毀所選的 %n 個視窗？此操作無法復原。</numerusform>
+            <numerusform>銷毀所選的 %n 個視窗？此操作無法復原</numerusform>
         </translation>
         </message>
         <message>
@@ -2309,7 +2625,7 @@ Files:
         </message>
         <message>
             <source>Distribute horizontally</source>
-            <translation>水平分布</translation>
+            <translation>水平分佈</translation>
         </message>
         <message>
             <source>Distribute vertically</source>
@@ -2320,35 +2636,39 @@ Files:
             <translation>群組</translation>
         </message>
         <message>
-            <source>Image Stitching</source>
-            <translation>圖片拼接</translation>
+            <source>Image stitching</source>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>Lock</source>
             <translation>鎖定</translation>
         </message>
         <message>
-            <source>New Group</source>
+            <source>New group</source>
             <translation>新增群組</translation>
         </message>
         <message>
-            <source>The displayed windows could not be destroyed.</source>
-            <translation>無法銷毀已顯示的視窗。</translation>
+            <source>Save as file</source>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
-            <source>The selected windows could not be destroyed.</source>
-            <translation>無法銷毀所選視窗。</translation>
+            <source>The displayed windows could not be destroyed</source>
+            <translation>無法銷毀已顯示的視窗</translation>
         </message>
         <message>
-            <source>The selected windows could not be moved to the group.</source>
-            <translation>無法將所選視窗移至該群組。</translation>
+            <source>The selected windows could not be destroyed</source>
+            <translation>無法銷毀所選視窗</translation>
+        </message>
+        <message>
+            <source>The selected windows could not be moved to the group</source>
+            <translation>無法將所選視窗移至該群組</translation>
         </message>
     </context>
     <context>
         <name>snow_shot::presentation::WindowGroupSwitcherController</name>
         <message>
-            <source>Could not switch window group. Please try again.</source>
-            <translation>無法切換視窗群組，請重試。</translation>
+            <source>Could not switch window group. Please try again</source>
+            <translation>無法切換視窗群組，請重試</translation>
         </message>
     </context>
 </TS>

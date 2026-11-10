@@ -1,8 +1,8 @@
 //! Owned C ABI for live effects. Frame leases are independent of the observing session.
 #![allow(clippy::missing_safety_doc)]
-use snow_recording_effects::KeyboardOverlayConfig;
 use snow_recording_effects::preview::{PreviewConfig, PreviewFrame, PreviewSession};
 use snow_recording_effects::surface::TILE_SIZE;
+use snow_recording_effects::{KeyboardFilterConfig, KeyboardOverlayConfig};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::sync::Arc;
@@ -59,7 +59,13 @@ pub struct SnowRecordingEffectsConfig {
     pub webcam_offset_bottom: u32,
     pub record_mouse_scrolling: u32,
     pub webcam_orientation: u32,
+    pub record_number_keys: u32,
+    pub record_letters_and_symbols: u32,
+    pub record_control_keys: u32,
+    pub preserve_keyboard_shortcuts: u32,
 }
+const EFFECTS_CONFIG_V11_SIZE: usize =
+    std::mem::offset_of!(SnowRecordingEffectsConfig, record_number_keys);
 const EFFECTS_CONFIG_V10_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowRecordingEffectsConfig, webcam_orientation);
 const EFFECTS_CONFIG_V10_SIZE: usize = EFFECTS_CONFIG_V10_FIELDS_SIZE
@@ -131,7 +137,8 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
         9 => std::mem::offset_of!(SnowRecordingEffectsConfig, record_mouse_scrolling),
         // v11 occupies v10 tail padding; its original sizeof is still required.
         10 => EFFECTS_CONFIG_V10_SIZE,
-        11 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
+        11 => EFFECTS_CONFIG_V11_SIZE,
+        12 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
         _ => return Err("unsupported effects configuration version".into()),
     };
     if unsafe { *header.add(1) } != size as u32 {
@@ -162,6 +169,15 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
     if raw.show_keyboard > 1
         || (raw.version >= 4 && raw.record_mouse_clicks > 1)
         || (raw.version >= 10 && raw.record_mouse_scrolling > 1)
+        || (raw.version >= 12
+            && [
+                raw.record_number_keys,
+                raw.record_letters_and_symbols,
+                raw.record_control_keys,
+                raw.preserve_keyboard_shortcuts,
+            ]
+            .into_iter()
+            .any(|value| value > 1))
         || (raw.version == 1 && raw.trail_duration_ms != 0)
         || (raw.version >= 3 && !(32..=128).contains(&raw.keyboard_size))
         || raw.label_count > 256
@@ -224,6 +240,16 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
         record_mouse_clicks: raw.version >= 4 && raw.record_mouse_clicks != 0,
         record_mouse_scrolling: raw.version >= 10 && raw.record_mouse_scrolling != 0,
         show_keyboard: raw.show_keyboard != 0,
+        keyboard_filter: if raw.version >= 12 {
+            KeyboardFilterConfig {
+                record_number_keys: raw.record_number_keys != 0,
+                record_letters_and_symbols: raw.record_letters_and_symbols != 0,
+                record_control_keys: raw.record_control_keys != 0,
+                preserve_keyboard_shortcuts: raw.preserve_keyboard_shortcuts != 0,
+            }
+        } else {
+            Default::default()
+        },
         generation: raw.generation,
         keyboard: (raw.show_keyboard != 0
             || (raw.version >= 4 && raw.record_mouse_clicks != 0)
@@ -538,6 +564,100 @@ mod tests {
     use super::*;
 
     #[test]
+    fn keyboard_filter_flags_round_trip_and_validate() {
+        for mask in 0..16 {
+            let mut raw = valid();
+            raw.record_number_keys = mask & 1;
+            raw.record_letters_and_symbols = (mask >> 1) & 1;
+            raw.record_control_keys = (mask >> 2) & 1;
+            raw.preserve_keyboard_shortcuts = (mask >> 3) & 1;
+            let filter = unsafe { config(&raw) }.unwrap().keyboard_filter;
+            assert_eq!(filter.record_number_keys, mask & 1 != 0);
+            assert_eq!(filter.record_letters_and_symbols, mask & 2 != 0);
+            assert_eq!(filter.record_control_keys, mask & 4 != 0);
+            assert_eq!(filter.preserve_keyboard_shortcuts, mask & 8 != 0);
+        }
+        for index in 0..4 {
+            let mut raw = valid();
+            let fields = [
+                &mut raw.record_number_keys,
+                &mut raw.record_letters_and_symbols,
+                &mut raw.record_control_keys,
+                &mut raw.preserve_keyboard_shortcuts,
+            ];
+            *fields.into_iter().nth(index).unwrap() = 2;
+            assert!(unsafe { config(&raw) }.is_err());
+        }
+    }
+
+    #[test]
+    fn keyboard_filter_legacy_prefixes_enable_every_option() {
+        for (version, size) in [
+            (
+                1,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
+            ),
+            (
+                2,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
+            ),
+            (
+                3,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, highlight_rgba),
+            ),
+            (
+                4,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_font_family_utf8),
+            ),
+            (
+                5,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, canvas_scale),
+            ),
+            (
+                6,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, highlight_radius),
+            ),
+            (
+                7,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, webcam_source),
+            ),
+            (
+                8,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, webcam_offset_left),
+            ),
+            (
+                9,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, record_mouse_scrolling),
+            ),
+            (10, EFFECTS_CONFIG_V10_SIZE),
+            (11, EFFECTS_CONFIG_V11_SIZE),
+        ] {
+            let mut raw = valid();
+            raw.version = version;
+            raw.struct_size = size as u32;
+            if version == 1 {
+                raw.trail_duration_ms = 0;
+            }
+            raw.record_number_keys = u32::MAX;
+            raw.record_letters_and_symbols = u32::MAX;
+            raw.record_control_keys = u32::MAX;
+            raw.preserve_keyboard_shortcuts = u32::MAX;
+            let prefix =
+                unsafe { std::slice::from_raw_parts((&raw const raw).cast::<u8>(), size) }.to_vec();
+            assert_eq!(
+                unsafe { config(prefix.as_ptr().cast()) }
+                    .unwrap()
+                    .keyboard_filter,
+                KeyboardFilterConfig::default(),
+                "legacy version {version}"
+            );
+        }
+        let mut raw = valid();
+        raw.struct_size -= 1;
+        assert!(unsafe { config(&raw) }.is_err());
+    }
+
+    #[test]
     fn scrolling_only_and_previous_abi_layout() {
         let mut raw = valid();
         raw.record_mouse_scrolling = 1;
@@ -773,7 +893,11 @@ mod tests {
             webcam_offset_left: 48,
             webcam_offset_bottom: 48,
             webcam_orientation: 0,
-            version: 11,
+            record_number_keys: 1,
+            record_letters_and_symbols: 1,
+            record_control_keys: 1,
+            preserve_keyboard_shortcuts: 1,
+            version: 12,
             struct_size: std::mem::size_of::<SnowRecordingEffectsConfig>() as u32,
             x: -1920,
             y: -100,
@@ -828,6 +952,7 @@ mod tests {
         raw.webcam_orientation = 8;
         assert!(unsafe { config(&raw) }.is_err());
         raw.version = 10;
+        raw.struct_size = EFFECTS_CONFIG_V10_SIZE as u32;
         assert_eq!(raw.struct_size as usize, EFFECTS_CONFIG_V10_SIZE);
         assert_eq!(
             unsafe { config(&raw) }
@@ -840,6 +965,7 @@ mod tests {
         );
         raw.version = 11;
         raw.webcam_orientation = 5;
+        raw.struct_size = EFFECTS_CONFIG_V11_SIZE as u32;
         raw.struct_size -= 1;
         assert!(unsafe { config(&raw) }.is_err());
         raw.version = 8;

@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QImage>
 #include <QPainter>
+#include <QPainterPath>
 
 #include <algorithm>
 #include <cmath>
@@ -314,6 +315,150 @@ void physicalCoordinatesRemainExactAtFractionalDpi() {
                 "fractional DPI did not preserve the 16-pixel finite width");
     }
 }
+
+void decorationsStayOutsideSquareContentAtEveryDpi() {
+    const QRect outline(16, 16, 93, 67);
+    const QColor content(42, 84, 126, 137);
+    const QColor border(210, 50, 80, 160);
+    for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+        for (const bool showBorder : {false, true}) {
+            for (const bool showShadow : {false, true}) {
+                QImage actual(125, 99, QImage::Format_ARGB32_Premultiplied);
+                actual.fill(Qt::transparent);
+                {
+                    QPainter painter(&actual);
+                    painter.fillRect(outline, content);
+                }
+                QImage expected = actual.copy();
+                const int width = showBorder ? qCeil(dpr) : 0;
+                {
+                    QPainter painter(&expected);
+                    if (showShadow)
+                        ScreenshotSelectionShadowRenderer::renderResultShadow(painter, outline, 0,
+                                                                              16, Qt::black, 1.0);
+                    // Four disjoint rectangles independently specify the exterior square rim.
+                    painter.fillRect(outline.x() - width, outline.y() - width,
+                                     outline.width() + 2 * width, width, border);
+                    painter.fillRect(outline.x() - width, outline.y() + outline.height(),
+                                     outline.width() + 2 * width, width, border);
+                    painter.fillRect(outline.x() - width, outline.y(), width, outline.height(),
+                                     border);
+                    painter.fillRect(outline.x() + outline.width(), outline.y(), width,
+                                     outline.height(), border);
+                }
+                actual.setDevicePixelRatio(dpr);
+                ScreenshotPinnedShadowCache cache;
+                ScreenshotPinnedDecorationStyle style;
+                style.borderWidth = width;
+                style.borderColor = border;
+                style.shadowWidth = showShadow ? 16 : 0;
+                style.shadowColor = Qt::black;
+                {
+                    QPainter painter(&actual);
+                    painter.scale(1.0 / dpr, 1.0 / dpr);
+                    ScreenshotPinnedDecorationRenderer::render(painter, outline, {}, style,
+                                                               actual.rect(), cache);
+                }
+                actual.setDevicePixelRatio(1.0);
+                require(actual == expected,
+                        "combined decoration must composite entirely outside square content");
+                for (int y = outline.top(); y <= outline.bottom(); ++y)
+                    for (int x = outline.left(); x <= outline.right(); ++x)
+                        require(actual.pixel(x, y) == qPremultiply(content.rgba()),
+                                "decoration changed a content pixel including its alpha");
+            }
+        }
+    }
+}
+
+void roundedDecorationsShareOutlineClipAndDamage() {
+    const QRect outline(20, 20, 110, 80);
+    for (const QSizeF radii : {QSizeF(12, 12), QSizeF(40.25, 18.75), QSizeF(999, 999)}) {
+        ScreenshotPinnedShadowCache cache;
+        ScreenshotPinnedDecorationStyle style;
+        style.borderWidth = 3;
+        style.borderColor = QColor(180, 70, 30, 128);
+        style.cropMarkerExtent = 30;
+        style.cropMarkerColor = QColor(30, 80, 180, 128);
+        for (const int shadowWidth : {0, 16}) {
+            style.shadowWidth = shadowWidth;
+            style.shadowColor = Qt::black;
+            QImage image(150, 120, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            const QRect deviceOuter(4, 4, 135, 112);
+            const QRect callerClip(10, 0, 140, 120);
+            {
+                QPainter painter(&image);
+                painter.setClipRect(callerClip);
+                painter.setOpacity(0.7);
+                painter.setPen(Qt::green);
+                const auto hints = painter.renderHints();
+                const auto clip = painter.clipRegion();
+                ScreenshotPinnedDecorationRenderer::render(painter, outline, radii, style,
+                                                           deviceOuter, cache);
+                require(painter.clipRegion() == clip && painter.opacity() == 0.7 &&
+                            painter.pen().color() == Qt::green && painter.renderHints() == hints,
+                        "combined renderer leaked painter state");
+            }
+            const QRegion damage = ScreenshotPinnedDecorationRenderer::damageRegion(
+                outline, radii, style.borderWidth, style.shadowWidth, deviceOuter);
+            require(!damage.contains(outline.center()),
+                    "decoration changes invalidate the untouched content center");
+            QPainterPath content;
+            content.addRoundedRect(outline, std::min(radii.width(), outline.width() / 2.0),
+                                   std::min(radii.height(), outline.height() / 2.0));
+            bool painted = false;
+            for (int y = 0; y < image.height(); ++y) {
+                for (int x = 0; x < image.width(); ++x) {
+                    const QPoint point(x, y);
+                    if (image.pixelColor(point).alpha() == 0)
+                        continue;
+                    painted = true;
+                    if (!damage.contains(point))
+                        throw std::runtime_error("exterior decoration escapes repaint damage at " +
+                                                 std::to_string(x) + "," + std::to_string(y) +
+                                                 "; radius=" + std::to_string(radii.width()) + "," +
+                                                 std::to_string(radii.height()) +
+                                                 "; shadow=" + std::to_string(shadowWidth));
+                    require(deviceOuter.contains(point) && callerClip.contains(point),
+                            "decoration replaced the caller or native client clip");
+                    require(!content.contains(QRectF(x - 0.5, y - 0.5, 2, 2)),
+                            "rounded decoration painted inside the content interior");
+                }
+            }
+            require(painted, "rounded exterior decoration was clipped away");
+        }
+    }
+}
+
+void borderOnlyDamageIncludesItsFullWidth() {
+    const QRect outline(16, 16, 1, 1);
+    ScreenshotPinnedShadowCache cache;
+    ScreenshotPinnedDecorationStyle style;
+    style.borderWidth = 4;
+    style.borderColor = Qt::red;
+    QImage image(33, 33, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        ScreenshotPinnedDecorationRenderer::render(painter, outline, {}, style, image.rect(),
+                                                   cache);
+    }
+    const QRegion damage = ScreenshotPinnedDecorationRenderer::damageRegion(
+        outline, {}, style.borderWidth, 0, image.rect());
+    require(image.pixelColor(outline.topLeft()).alpha() == 0,
+            "a thick border must preserve even one-pixel content");
+    for (int y = 12; y <= 20; ++y)
+        for (int x = 12; x <= 20; ++x)
+            if (!outline.contains(x, y))
+                require(image.pixelColor(x, y) == QColor(Qt::red) && damage.contains(QPoint(x, y)),
+                        "border-only damage missed the exterior rim of a tiny pin");
+    require(cache.diagnostics().nineSliceDraws == 0 && cache.diagnostics().geometryBuilds == 0,
+            "border-only rendering prepared a shadow cache");
+    require(
+        ScreenshotPinnedDecorationRenderer::damageRegion(outline, {}, 0, 0, image.rect()).isEmpty(),
+        "disabled decorations retain repaint damage");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -328,6 +473,9 @@ int main(int argc, char** argv) {
         largeEqualRadiusUsesBoundedVectorGeometry();
         transparentAndClippedShadowsPreservePainterState();
         physicalCoordinatesRemainExactAtFractionalDpi();
+        decorationsStayOutsideSquareContentAtEveryDpi();
+        roundedDecorationsShareOutlineClipAndDamage();
+        borderOnlyDamageIncludesItsFullWidth();
         std::cout << "Pinned shadow renderer tests passed\n";
         return 0;
     } catch (const std::exception& error) {

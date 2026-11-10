@@ -196,6 +196,9 @@ int main(int argc, char** argv) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(storage.initialize({directory.path(), directory.path(), 60000}).success,
             "initialize streaming test storage");
+    require(storage.configuration().setValue(QStringLiteral("screenshot_translation/model"),
+                                             QStringLiteral("general")),
+            "select the server fixture for translation UI tests");
     snow_shot::presentation::styles::ThemeManager::instance().initialize(app);
     continuousStreamMakesProgress();
     streamingUpdatesAreBatched();

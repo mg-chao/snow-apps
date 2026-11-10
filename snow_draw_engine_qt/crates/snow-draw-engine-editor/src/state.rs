@@ -53,8 +53,7 @@ pub(crate) enum ToolEmptyCanvasAction {
 }
 
 impl ToolEmptyCanvasAction {
-    /// A press on blank canvas spends itself on deselecting an existing
-    /// selection before any creation workflow may begin.
+    /// Creation actions clear an idle selection and start from the same press.
     pub(crate) fn starts_creation(self) -> bool {
         match self {
             Self::Configure | Self::MarqueeSelect => false,
@@ -94,6 +93,7 @@ pub(crate) struct UiState {
     pub(crate) marquee: Option<RectangleData>,
     pub(crate) snap_guides: Vec<SnapGuide>,
     pub(crate) hovered_element: Option<ElementId>,
+    pub(crate) hovered_arrow_handle: Option<ArrowHitTarget>,
     pub(crate) free_draw_hover_position: Option<Point<f64>>,
 }
 
@@ -518,6 +518,7 @@ pub(crate) struct EditorState {
     pub(crate) active_tool: ActiveTool,
     pub(crate) selection: SelectionState,
     pub(crate) creation_preview: Option<ElementCreationPreview>,
+    pub(crate) creation_colors: Option<crate::creation_colors::CreationColors>,
     pub(crate) ui: UiState,
     pub(crate) interaction: InteractionState,
     pub(crate) active_text_draft: Option<ActiveTextDraftPresentation>,
@@ -646,6 +647,7 @@ impl EditorState {
             active_tool: ActiveTool::default(),
             selection: SelectionState::default(),
             creation_preview: None,
+            creation_colors: None,
             ui: UiState::default(),
             interaction: InteractionState::default(),
             active_text_draft: None,

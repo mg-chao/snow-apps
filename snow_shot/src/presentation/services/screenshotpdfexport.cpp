@@ -378,25 +378,29 @@ bool writeDocument(qsizetype pageCount, const PageProducer& produce, QIODevice* 
         Page prepared;
         if (!produce(index, &prepared, error))
             return false;
-        if (!prepared.payload || prepared.payload->size.isEmpty() ||
-            prepared.payload->tiles.isEmpty())
-            return fail(error);
-        const auto& payload = *prepared.payload;
         const auto& geometry = prepared.geometry;
         const auto positive = [](qreal value) { return std::isfinite(value) && value > 0; };
-        if (!positive(geometry.pagePoints.width()) || !positive(geometry.pagePoints.height()) ||
-            !positive(geometry.imagePoints.width()) || !positive(geometry.imagePoints.height()) ||
-            !std::isfinite(geometry.imagePoints.left()) ||
-            !std::isfinite(geometry.imagePoints.top()) || geometry.imagePoints.left() < -1e-7 ||
-            geometry.imagePoints.top() < -1e-7 ||
-            geometry.imagePoints.right() > geometry.pagePoints.width() + 1e-7 ||
-            geometry.imagePoints.bottom() > geometry.pagePoints.height() + 1e-7)
+        const auto validRect = [&positive](const QRectF& rect) {
+            return positive(rect.width()) && positive(rect.height()) &&
+                   std::isfinite(rect.left()) && std::isfinite(rect.top()) &&
+                   std::isfinite(rect.right()) && std::isfinite(rect.bottom());
+        };
+        if (!positive(geometry.pagePoints.width()) || !positive(geometry.pagePoints.height()))
             return fail(error);
-        QFile input(payload.path());
-        if (!input.open(QIODevice::ReadOnly)) {
-            if (error)
-                *error = input.errorString();
-            return false;
+        if (prepared.layers.isEmpty() && prepared.payload)
+            prepared.layers.append({prepared.payload, geometry.imagePoints, std::nullopt});
+        if (prepared.layers.isEmpty())
+            return fail(error);
+        qsizetype totalTiles = 0;
+        for (const auto& layer : prepared.layers) {
+            const QRectF bounds = layer.clipPoints.value_or(layer.imagePoints);
+            if (!layer.payload || layer.payload->size.isEmpty() || layer.payload->tiles.isEmpty() ||
+                !validRect(layer.imagePoints) || !validRect(bounds) || bounds.left() < -1e-7 ||
+                bounds.top() < -1e-7 || bounds.right() > geometry.pagePoints.width() + 1e-7 ||
+                bounds.bottom() > geometry.pagePoints.height() + 1e-7 ||
+                layer.payload->tiles.size() > std::numeric_limits<qsizetype>::max() - totalTiles)
+                return fail(error);
+            totalTiles += layer.payload->tiles.size();
         }
         WrittenPage page;
         page.unit =
@@ -405,49 +409,80 @@ bool writeDocument(qsizetype pageCount, const PageProducer& produce, QIODevice* 
         if (page.unit > 75000)
             return fail(error);
         page.size = geometry.pagePoints / page.unit;
-        const double scale = geometry.imagePoints.width() / payload.size.width() / page.unit;
         QByteArray content = "1 1 1 rg\n0 0 " + number(page.size.width()) + ' ' +
                              number(page.size.height()) + " re f\n";
         qsizetype tileIndex = 0;
         if (progress)
             progress(index, 0);
-        for (const Tile& tile : payload.tiles) {
+        for (const auto& layer : prepared.layers) {
             if (isCancelled(cancelled, error))
                 return false;
-            if (!input.seek(tile.offset))
-                return fail(error);
-            const QByteArray color = input.read(tile.colorBytes);
-            const QByteArray alpha = input.read(tile.alphaBytes);
-            if (color.size() != tile.colorBytes || alpha.size() != tile.alphaBytes)
-                return fail(error);
-            const QByteArray dimensions = " /Width " + QByteArray::number(tile.rect.width()) +
-                                          " /Height " + QByteArray::number(tile.rect.height()) +
-                                          " /BitsPerComponent 8";
-            int mask = 0;
-            if (!alpha.isEmpty())
-                mask = writer.stream(
-                    "/Type /XObject /Subtype /Image /ColorSpace /DeviceGray /Filter /FlateDecode" +
-                        dimensions,
-                    alpha);
-            const int id = writer.stream(
-                "/Type /XObject /Subtype /Image /ColorSpace /DeviceRGB /Interpolate false "
-                "/Filter " +
-                    QByteArray(payload.quality == 100 ? "/FlateDecode" : "/DCTDecode") +
-                    dimensions +
-                    (mask ? " /SMask " + QByteArray::number(mask) + " 0 R" : QByteArray{}),
-                color);
-            const QByteArray name = "/Im" + QByteArray::number(id);
-            page.resources += name + ' ' + QByteArray::number(id) + " 0 R ";
-            const double left = geometry.imagePoints.left() / page.unit + tile.rect.x() * scale;
-            const double bottom = page.size.height() - geometry.imagePoints.top() / page.unit -
-                                  (tile.rect.y() + tile.rect.height()) * scale;
-            content += "q\n" + number(tile.rect.width() * scale) + " 0 0 " +
-                       number(tile.rect.height() * scale) + ' ' + number(left) + ' ' +
-                       number(bottom) + " cm\n" + name + " Do\nQ\n";
-            if (!writer.isOk())
-                return fail(error);
-            if (progress)
-                progress(index, qreal(++tileIndex) / qreal(payload.tiles.size()));
+            const auto& payload = *layer.payload;
+            QFile input(payload.path());
+            if (!input.open(QIODevice::ReadOnly)) {
+                if (error)
+                    *error = input.errorString();
+                return false;
+            }
+            const double scaleX = layer.imagePoints.width() / payload.size.width() / page.unit;
+            const double scaleY = layer.imagePoints.height() / payload.size.height() / page.unit;
+            content += "q\n";
+            if (layer.clipPoints) {
+                const auto& clip = *layer.clipPoints;
+                content += number(clip.left() / page.unit) + ' ' +
+                           number(page.size.height() - clip.bottom() / page.unit) + ' ' +
+                           number(clip.width() / page.unit) + ' ' +
+                           number(clip.height() / page.unit) + " re W n\n";
+            }
+            for (const Tile& tile : payload.tiles) {
+                if (isCancelled(cancelled, error))
+                    return false;
+                const double left = layer.imagePoints.left() / page.unit + tile.rect.x() * scaleX;
+                const double top = layer.imagePoints.top() / page.unit + tile.rect.y() * scaleY;
+                const QSizeF tileSize(tile.rect.width() * scaleX, tile.rect.height() * scaleY);
+                // Fully clipped tiles need no PDF objects or disk reads. Advance progress even
+                // when an image has been moved entirely outside its cell.
+                if (layer.clipPoints &&
+                    !QRectF(QPointF(left, top), tileSize)
+                         .intersects(QRectF(layer.clipPoints->topLeft() / page.unit,
+                                            layer.clipPoints->size() / page.unit))) {
+                    if (progress)
+                        progress(index, qreal(++tileIndex) / qreal(totalTiles));
+                    continue;
+                }
+                if (!input.seek(tile.offset))
+                    return fail(error);
+                const QByteArray color = input.read(tile.colorBytes);
+                const QByteArray alpha = input.read(tile.alphaBytes);
+                if (color.size() != tile.colorBytes || alpha.size() != tile.alphaBytes)
+                    return fail(error);
+                const QByteArray dimensions = " /Width " + QByteArray::number(tile.rect.width()) +
+                                              " /Height " + QByteArray::number(tile.rect.height()) +
+                                              " /BitsPerComponent 8";
+                int mask = 0;
+                if (!alpha.isEmpty())
+                    mask = writer.stream("/Type /XObject /Subtype /Image /ColorSpace /DeviceGray "
+                                         "/Filter /FlateDecode" +
+                                             dimensions,
+                                         alpha);
+                const int id = writer.stream(
+                    "/Type /XObject /Subtype /Image /ColorSpace /DeviceRGB /Interpolate false "
+                    "/Filter " +
+                        QByteArray(payload.quality == 100 ? "/FlateDecode" : "/DCTDecode") +
+                        dimensions +
+                        (mask ? " /SMask " + QByteArray::number(mask) + " 0 R" : QByteArray{}),
+                    color);
+                const QByteArray name = "/Im" + QByteArray::number(id);
+                page.resources += name + ' ' + QByteArray::number(id) + " 0 R ";
+                const double bottom = page.size.height() - top - tileSize.height();
+                content += "q\n" + number(tileSize.width()) + " 0 0 " + number(tileSize.height()) +
+                           ' ' + number(left) + ' ' + number(bottom) + " cm\n" + name + " Do\nQ\n";
+                if (!writer.isOk())
+                    return fail(error);
+                if (progress)
+                    progress(index, qreal(++tileIndex) / qreal(totalTiles));
+            }
+            content += "Q\n";
         }
         page.contents = writer.stream({}, content);
         written.append(std::move(page));

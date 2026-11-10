@@ -5,6 +5,50 @@ Edit the Qt Linguist `.ts` catalogs in the feature directories. Each feature has
 translations are identity strings, except for the native language name and
 language-specific plural forms.
 
+Use sentence case for all English UI text: capitalize the first word of each
+sentence and lowercase other ordinary words. Preserve acronyms, proper names,
+official system setting names, keyboard key names, and unit symbols (for example,
+`API`, `Snow Shot`, `macOS`, `System Settings`, `Ctrl`, `px`, and `mm`).
+
+User-visible messages do not end with a sentence-ending period (`.` or `。`). Keep
+punctuation between sentences and ellipses that indicate an ongoing operation.
+
+## UI terminology
+
+Use the Simplified Chinese feature names as the semantic reference. Check the
+action and its implementation before changing a translation; for example, system
+audio capture does not enable or disable a speaker device. Use these names across
+menus, settings, tooltips, accessibility text, and status messages:
+
+| 简体中文 | English | 繁體中文 |
+| --- | --- | --- |
+| 图像 | Image | 影像 |
+| 截图 | Screenshot | 截圖 |
+| 滚动截图 | Scrolling screenshot | 捲動截圖 |
+| 固定到屏幕 | Pin to screen | 固定到螢幕 |
+| 固定到屏幕管理 | Pin to screen management | 固定到螢幕管理 |
+| 图像编辑 | Image editing | 影像編輯 |
+| 图像拼接 | Image stitching | 影像拼接 |
+| 图像分割 | Image splitting | 影像分割 |
+| 文本识别 | Text recognition | 文字辨識 |
+| 原图翻译 | Original image translation | 原圖翻譯 |
+| 屏幕录制 | Screen recording | 螢幕錄製 |
+| 系统音频 | System audio | 系統音訊 |
+| 全局快捷键 | Global shortcuts | 全域快速鍵 |
+| 悬浮工具栏 | Floating toolbar | 浮動工具列 |
+| 序号 | Sequence number | 序號 |
+| 画笔 | Brush | 畫筆 |
+| 保存为文件 | Save as file | 儲存為檔案 |
+| 历史记录 | History | 歷史記錄 |
+| 选区 | Selection | 選取範圍 |
+| 字体大小 | Font size | 字型大小 |
+| 渲染 | Rendering | 算繪 |
+
+Use `Stitch images` for the stitching action and `Image stitching` for the feature
+or window title. Keep official operating-system setting names and keyboard key
+names as published by the platform. Stable IDs, configuration keys, and protocol
+values are independent of UI wording and must not be renamed with these labels.
+
 `modules.json` assigns each Qt translation context to exactly one feature. Keep
 the same context and source text when moving messages between files: catalog
 paths are not part of Qt's translation lookup key. New contexts must be assigned

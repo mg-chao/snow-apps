@@ -3,6 +3,8 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshottabledocument.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
+#include "snow_shot/presentation/screenshottableconversioncontroller.h"
+#include "translation_test_support.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -16,6 +18,7 @@
 #include <QItemSelectionModel>
 #include <QMimeData>
 #include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QPlainTextEdit>
 #include <QRunnable>
 #include <QScrollBar>
@@ -311,24 +314,48 @@ void defaultLatexUsesDedicatedRecognitionWhileCatalogIsLoading() {
 }
 
 void visionTablesRequireActualMarkupAndRetainMergedEmptyCells() {
-    for (const auto& malformed :
+    for (const auto& oversized :
+         {"<table><tr><td rowspan=\"99999999\">Oversized</td></tr></table>",
+          "<table><tr><td colspan=\"256\">A</td><td colspan=\"256\">B</td></tr></table>"}) {
+        require(ScreenshotTableDocument::fromHtml(QString::fromUtf8(oversized), true).empty(),
+                "vision table parsing bounds allocation before rich-text import");
+    }
+    for (const auto& repairable :
          {"<table><tr><td>Incomplete</tr></table>",
-          "<table><tr><td rowspan=\"99999999\">Oversized</td></tr></table>",
-          "<table><tr><td><img src=\"file:///private.png\"></td></tr></table>",
-          "<table><tr><td colspan=\"256\">A</td><td colspan=\"256\">B</td></tr></table>",
+          "Commentary <html><body><table><tr><td>A</table></body></html>",
+          "<table><tr><td><img src=\"file:///private.png\">Text</td></tr></table>",
           "<table><tr><td colspan=\"2\" colspan=\"2\">Duplicate span</td></tr></table>",
           "<table>Commentary<tr><td>A</td></tr></table>",
           "<table><tr><td><table><tr><td>Nested</td></tr></table></td></tr></table>"}) {
-        require(ScreenshotTableDocument::fromHtml(QString::fromUtf8(malformed), true).empty(),
-                "vision table parsing rejects incomplete, resource-bearing, nested, or oversized "
-                "markup");
+        require(!ScreenshotTableDocument::fromHtml(QString::fromUtf8(repairable), true).empty(),
+                "renderable HTML does not require strict tag validation");
     }
+    const auto markdown = ScreenshotTableDocument::fromModelOutput(
+        QStringLiteral("```markdown\n| Name | Value |\n| --- | --- |\n| A | 0012 |\n```"));
+    require(markdown.rowCount() == 2 && markdown.columnCount() == 2 &&
+                markdown.cellText(1, 1) == QStringLiteral("0012") && markdown.cellAt(0, 0)->header,
+            "fenced Markdown tables retain textual cell values");
+    require(ScreenshotTableDocument::fromModelOutput(QStringLiteral("Only prose")).empty(),
+            "prose is never coerced into a one-cell table");
+    const auto first = ScreenshotTableDocument::fromModelOutput(
+        QStringLiteral("<table></table><table><tr><td>First</table><table><td>Second</table>"));
+    require(first.cellText(0, 0) == QStringLiteral("First"), "select the first renderable table");
+    const auto overlap = ScreenshotTableDocument::fromModelOutput(QStringLiteral(
+        "<table><tr><td>A</td><td rowspan=2>B</td></tr><tr><th colspan=2>C</th></tr></table>"));
+    require(!overlap.empty() && overlap.cellText(1, 2) == QStringLiteral("C") &&
+                overlap.cellAt(1, 2)->header,
+            "overlapping source spans are repaired without losing header coordinates");
     QString expanded = QStringLiteral("<table>");
     for (int row = 0; row < 256; ++row)
         expanded += QStringLiteral("<tr><td colspan=\"256\">Expanded</td></tr>");
     expanded += QStringLiteral("</table>");
     require(ScreenshotTableDocument::fromHtml(expanded, true).empty(),
             "vision tables reject excessive expanded grid slots before rich-text allocation");
+    const QString raggedMarkdown = QStringLiteral("| H").repeated(200) + QStringLiteral("|\n") +
+                                   QStringLiteral("| ---").repeated(200) + QStringLiteral("|\n") +
+                                   QStringLiteral("| X |\n").repeated(100);
+    require(ScreenshotTableDocument::fromModelOutput(raggedMarkdown).empty(),
+            "ragged Markdown bounds the padded grid before rich-text allocation");
     const auto rowHeaders = ScreenshotTableDocument::fromHtml(
         QStringLiteral("<table><tr><th>Heading</th><td>Value</td></tr>"
                        "<tr><th>Row label</th><td>0012</td></tr></table>"),
@@ -350,8 +377,63 @@ void visionTablesRequireActualMarkupAndRetainMergedEmptyCells() {
     require(!document.empty() && document.rowCount() == 2 && document.columnCount() == 2 &&
                 document.cellAt(0, 0)->columnSpan == 2 && document.cellAt(0, 0)->header &&
                 document.cellText(1, 0).isEmpty() && document.cellText(1, 1) == QStringLiteral("&"),
-            "strict vision table parsing preserves actual tables with spans, headers, empty cells, "
+            "vision table parsing preserves actual tables with spans, headers, empty cells, "
             "and entities");
+    const auto transcription = ScreenshotTableDocument::fromModelOutput(QStringLiteral(
+        "<table><tr><th rowspan=\"2\">Group<br>名称</th><th colspan=\"2\">Values</th></tr>"
+        "<tr><th>Code</th><th>Amount</th></tr>"
+        "<tr><td rowspan=\"2\">A</td><td>0012</td><td>-1,234.00%</td></tr>"
+        "<tr><td></td><td>USD [illegible].50 &amp; tax</td></tr></table>"));
+    require(
+        transcription.rowCount() == 4 && transcription.columnCount() == 3 &&
+            transcription.cellText(0, 0) == QStringLiteral("Group\n名称") &&
+            transcription.cellAt(0, 0)->rowSpan == 2 &&
+            transcription.cellAt(0, 1)->columnSpan == 2 &&
+            transcription.cellText(1, 1) == QStringLiteral("Code") &&
+            transcription.cellText(2, 1) == QStringLiteral("0012") &&
+            transcription.cellText(2, 2) == QStringLiteral("-1,234.00%") &&
+            transcription.cellAt(2, 0)->rowSpan == 2 && transcription.cellText(3, 1).isEmpty() &&
+            transcription.cellText(3, 2) == QStringLiteral("USD [illegible].50 & tax"),
+        "transcribed spans, cell lines, literal numbers and partial uncertainty survive import");
+    const auto roundTrip = ScreenshotTableDocument::fromModelOutput(transcription.toHtml());
+    require(roundTrip.toHtml() == transcription.toHtml(),
+            "saving a transcribed table preserves its text and grid");
+}
+
+void visionTableCellBlocksPreserveLineBreaks() {
+    struct Scenario {
+        QString markup;
+        QString text;
+    };
+    const Scenario scenarios[] = {
+        {QStringLiteral("<p>A</p><p>B</p>"), QStringLiteral("A\nB")},
+        // Qt retains collapsed source whitespace between blocks as a trailing space.
+        {QStringLiteral("<p>A</p>\n  <p>B</p>"), QStringLiteral("A \nB")},
+        {QStringLiteral("<div>A</div><div>B</div>"), QStringLiteral("A\nB")},
+        {QStringLiteral("<div><p>A</p><p>B</p></div>"), QStringLiteral("A\nB")},
+        {QStringLiteral("<p>A</p><div>B</div><p>C</p>"), QStringLiteral("A\nB\nC")},
+        {QStringLiteral("<p><b>A</b></p><!-- separator --><p>B</p>"), QStringLiteral("A\nB")},
+        {QStringLiteral("A<br><br>B"), QStringLiteral("A\n\nB")},
+        {QStringLiteral("<p>A<br><br>B</p><p>C</p>"), QStringLiteral("A\n\nB\nC")},
+    };
+    for (const auto& scenario : scenarios) {
+        const QString source =
+            QStringLiteral("<table><tr><th>%1</th><td>Adjacent</td></tr></table>")
+                .arg(scenario.markup);
+        for (const auto& document : {ScreenshotTableDocument::fromHtml(source, true),
+                                     ScreenshotTableDocument::fromModelOutput(source)}) {
+            require(document.rowCount() == 1 && document.columnCount() == 2 &&
+                        document.cellText(0, 0) == scenario.text &&
+                        document.cellText(0, 1) == QStringLiteral("Adjacent") &&
+                        document.cellAt(0, 0)->header,
+                    "cell blocks preserve paragraph boundaries and explicit consecutive breaks");
+            const auto mime = document.toClipboardMimeData();
+            require(mime && mime->text() == scenario.text + QStringLiteral("\tAdjacent"),
+                    "copied table text preserves the cell's paragraph and explicit line breaks");
+            require(ScreenshotTableDocument::fromModelOutput(document.toHtml()) == document,
+                    "cell line breaks survive table serialization and restoration");
+        }
+    }
 }
 
 void visionTableHeadersFollowGridCoordinates() {
@@ -1684,9 +1766,261 @@ void currentLocaleDiscoveryGatesBuiltinsWhileCachedCustomResultsRemainUsable() {
             api.cachedChatModelsLocale() == QStringLiteral("zh_CN"),
         "locale refresh performs one lazy catalog request and reuses completed extraction results");
 }
+void streamedTablesCorrectAtMostOnce() {
+    for (int scenario = 0; scenario < 5; ++scenario) {
+        translation_tests::Server server;
+        SnowShotApiClient api(server.url());
+        ScreenshotTableConversionController controller;
+        int completions = 0;
+        ScreenshotTableDocument result;
+        QString error;
+        QObject::connect(&controller, &ScreenshotTableConversionController::completed, &controller,
+                         [&](ScreenshotTableDocument document, const QString& failure) {
+                             ++completions;
+                             result = std::move(document);
+                             error = failure;
+                         });
+        controller.start(&api, target(QStringLiteral("stream")).image, QStringLiteral("vision"));
+        until([&] { return server.streams.size() == 1; }, "initial table stream arrives");
+        if (scenario == 0 || scenario == 3 || scenario == 4) {
+            server.delta(0, QStringLiteral("<table><tr><td>First"));
+            until([&] { return !controller.preview().empty(); },
+                  "table cells appear before completion");
+            require(controller.busy() && completions == 0, "preview remains provisional");
+        } else if (scenario == 1) {
+            server.delta(0, QStringLiteral("not a table"));
+        }
+        if (scenario == 3) {
+            server.fail(0);
+        } else if (scenario == 4) {
+            controller.cancel();
+            until([&] { return server.disconnected(0); }, "cancel aborts the active stream");
+            require(completions == 0 && !controller.busy(), "cancel does not publish a result");
+            continue;
+        } else {
+            server.finish(0);
+        }
+        if (scenario == 1) {
+            until([&] { return server.streams.size() == 2; },
+                  "unusable output receives one correction");
+            require(controller.correcting() && controller.busy() && controller.preview().empty(),
+                    "correction starts a separate preview");
+            server.delta(1, QStringLiteral("<table><tr><th>Fixed</th><td>2"));
+            until([&] { return !controller.preview().empty(); }, "correction streams its cells");
+            server.finish(1);
+        }
+        until([&] { return completions == 1; }, "table workflow completes once");
+        require(!controller.busy() && server.streams.size() == (scenario == 1 ? 2 : 1),
+                "empty results and transport failures never trigger format correction");
+        require((scenario == 0 || scenario == 1) == (error.isEmpty() && !result.empty()),
+                "only a successful transport with a renderable table is accepted");
+        if (scenario == 2) {
+            controller.start(&api, target(QStringLiteral("retry")).image, QStringLiteral("vision"));
+            until([&] { return server.streams.size() == 2; }, "manual retry starts a new workflow");
+            server.delta(1, QStringLiteral("<table><td>Retried"));
+            server.finish(1);
+            until([&] { return completions == 2; }, "manual retry can succeed");
+        }
+    }
+    translation_tests::Server server;
+    SnowShotApiClient api(server.url());
+    QPointer<ScreenshotTableConversionController> destroyed(
+        new ScreenshotTableConversionController);
+    QObject::connect(destroyed, &ScreenshotTableConversionController::changed, &api,
+                     [&] { delete destroyed.data(); });
+    destroyed->start(&api, target(QStringLiteral("deleted")).image, QStringLiteral("vision"));
+    require(!destroyed && server.streams.isEmpty(), "a progress callback can destroy its owner");
+}
+
+void emptyAndTruncatedTablesNeverBecomeFinalResults() {
+    struct Scenario {
+        QString source;
+        bool correction;
+        bool truncated;
+    };
+    const Scenario scenarios[] = {
+        {QStringLiteral(" \n\t"), false, false},
+        {QStringLiteral("<table><tr><td>Partial"), false, true},
+        {QStringLiteral("<table><tr><td>First row</td></tr></table>"), false, true},
+        {{}, true, false},
+        {QStringLiteral(" \n\t"), true, false},
+        {QStringLiteral("Still not a table"), true, false},
+        {QStringLiteral("<table><tr><td>Partial correction"), true, true},
+    };
+    for (const auto& scenario : scenarios) {
+        translation_tests::Server server;
+        SnowShotApiClient api(server.url());
+        ScreenshotTableConversionController controller;
+        int completions = 0;
+        ScreenshotTableDocument result;
+        QString error;
+        QObject::connect(&controller, &ScreenshotTableConversionController::completed, &controller,
+                         [&](ScreenshotTableDocument document, const QString& failure) {
+                             ++completions;
+                             result = std::move(document);
+                             error = failure;
+                         });
+        controller.start(&api, target(QStringLiteral("terminal-result")).image,
+                         QStringLiteral("vision"));
+        until([&] { return server.streams.size() == 1; }, "terminal-result request arrives");
+        const int index = scenario.correction ? 1 : 0;
+        if (scenario.correction) {
+            server.delta(0, QStringLiteral("Not a table"));
+            server.finish(0);
+            until([&] { return server.streams.size() == 2; }, "one format correction is allowed");
+        }
+        server.delta(index, scenario.source);
+        if (scenario.truncated) {
+            until([&] { return !controller.preview().empty(); },
+                  "token-limited fixture first exposes a provisional table");
+            server.send(index,
+                        "data: {\"choices\":[{\"finish_reason\":\"length\",\"delta\":{}}]}\n\n");
+        }
+        server.finish(index);
+        until([&] { return completions == 1; },
+              "unusable table terminates without another attempt");
+        translation_tests::flushEvents();
+        require(completions == 1 && !controller.busy() && result.empty() && !error.isEmpty() &&
+                    server.streams.size() == index + 1,
+                "empty, invalid corrections and token-limited tables never publish a final table "
+                "or trigger an extra request");
+    }
+}
+
+void tableStreamCancellationRejectsQueuedParses() {
+    translation_tests::Server server;
+    SnowShotApiClient api(server.url());
+    ScreenshotTableConversionController controller;
+    int completions = 0;
+    QString result;
+    QObject::connect(&controller, &ScreenshotTableConversionController::completed, &controller,
+                     [&](ScreenshotTableDocument document, const QString&) {
+                         ++completions;
+                         result = document.cellText(0, 0);
+                     });
+    controller.start(&api, target(QStringLiteral("old")).image, QStringLiteral("vision"));
+    until([&] { return server.streams.size() == 1; }, "queued parse fixture request");
+    auto* pool = QThreadPool::globalInstance();
+    const int previousLimit = pool->maxThreadCount();
+    pool->setMaxThreadCount(1);
+    QSemaphore entered, release;
+    pool->start([&] {
+        entered.release();
+        release.acquire();
+    });
+    require(entered.tryAcquire(1, 5000), "hold the parser worker before completion");
+    server.delta(0, QStringLiteral("<table><td>Old</table>"));
+    server.finish(0);
+    until([&] { return api.findChildren<QNetworkReply*>().isEmpty(); },
+          "transport ends while parsing is queued");
+    controller.cancel();
+    controller.start(&api, target(QStringLiteral("new")).image, QStringLiteral("vision"));
+    release.release();
+    pool->setMaxThreadCount(previousLimit);
+    until([&] { return server.streams.size() == 2; }, "replacement request arrives");
+    server.delta(1, QStringLiteral("<table><td>New</table>"));
+    server.finish(1);
+    until([&] { return completions == 1; }, "only the replacement parse completes");
+    require(result == QStringLiteral("New"),
+            "a stale worker cannot publish a result for the new request");
+
+    auto provider = std::make_unique<SnowShotApiClient>(server.url());
+    controller.start(provider.get(), target(QStringLiteral("provider")).image,
+                     QStringLiteral("vision"));
+    until([&] { return server.streams.size() == 3; }, "provider lifetime fixture request");
+    provider.reset();
+    until([&] { return completions == 2; }, "provider destruction publishes one failure");
+    require(!controller.busy() && result.isEmpty(), "provider destruction cannot start correction");
+}
+
+void tablePreviewIsReadOnlyUntilFinalAcceptance() {
+    ModelSettingsGuard settings;
+    require(Settings().setTableModel(QStringLiteral("vision")), "select streaming vision model");
+    translation_tests::Server server;
+    SnowShotApiClient api(server.url());
+    loadCatalog(api);
+    ScreenshotRecognitionWindow window({});
+    auto actions = headlessActions();
+    actions.ensureContent = [&] { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &api, actions);
+    session.setTarget(target(QStringLiteral("live-table")));
+    session.activate(Mode::Table);
+    window.resize(440, 180);
+    window.show();
+    until([&] { return server.streams.size() == 1; }, "live table request");
+    server.delta(0, QStringLiteral("<table><tr><td>Live</td><td>2"));
+    until(
+        [&] {
+            const auto* editor = window.findChild<ScreenshotTableEditor*>();
+            return editor && editor->model()->rowCount() == 1;
+        },
+        "live table is visible without a DONE frame");
+    auto* editor = window.findChild<ScreenshotTableEditor*>();
+    const QModelIndex first = editor->model()->index(0, 0);
+    require(editor->previewOnly() && !(editor->model()->flags(first) & Qt::ItemIsEditable) &&
+                !editor->model()->setData(first, QStringLiteral("Wrong"), Qt::EditRole) &&
+                !editor->clipboardMimeData() && !window.copyVisibleContentToClipboard() &&
+                session.recognitionResultsSnapshot().tableEntries.isEmpty() &&
+                !window.findChild<QWidget*>(QStringLiteral("screenshotTableRecognitionProgress")),
+            "streamed cells remain read-only without a status footer");
+    editor->setColumnWidth(0, 173);
+    server.delta(0, QStringLiteral("</td></tr><tr><td>Next</td><td>3"));
+    until([&] { return editor->model()->rowCount() == 2; }, "additional rows arrive");
+    require(editor->columnWidth(0) == 173, "stream updates preserve user column widths");
+    server.finish(0);
+    until(
+        [&] {
+            return !session.busy() && !session.recognitionResultsSnapshot().tableEntries.isEmpty();
+        },
+        "final acceptance enables the table session");
+    const auto snapshot = session.fileExportSnapshot();
+    require(!editor->previewOnly() && editor->clipboardMimeData() && snapshot &&
+                snapshot->hasContent() &&
+                snapshot->table->cellText(0, 0) == QStringLiteral("Live") &&
+                server.streams.size() == 1,
+            "a renderable incomplete HTML fragment completes without a correction");
+    session.deactivate();
+    session.setTarget(target(QStringLiteral("failed-live-table")));
+    session.activate(Mode::Table);
+    until([&] { return server.streams.size() == 2; }, "failure preview request");
+    server.delta(1, QStringLiteral("<table><td>Partial"));
+    until(
+        [&] {
+            const auto* current = window.findChild<ScreenshotTableEditor*>();
+            return current && current->model()->rowCount() == 1;
+        },
+        "failure fixture has a visible preview");
+    server.send(1, "data: {\"choices\":[{\"finish_reason\":\"length\",\"delta\":{}}]}\n\n");
+    server.finish(1);
+    until([&] { return !session.busy(); }, "token-limited stream clears busy state");
+    auto* retry =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRecognitionRetry"));
+    require(retry && !retry->isHidden() && !window.copyVisibleContentToClipboard() &&
+                session.recognitionResultsSnapshot().tableEntries.isEmpty() &&
+                !window.findChild<QWidget*>(QStringLiteral("screenshotTableRecognitionRetry")),
+            "token-limited recognition uses the standard retry page without a preview footer");
+    retry->click();
+    until([&] { return server.streams.size() == 3; }, "preview Retry starts recognition again");
+    const auto* retryPreview = window.findChild<ScreenshotTableEditor*>();
+    require(retryPreview && retryPreview->isVisible() && retryPreview->previewOnly(),
+            "manual retry restores the read-only preview from the standard error page");
+    server.delta(2, QStringLiteral("<table><td>Recovered"));
+    server.finish(2);
+    until(
+        [&] {
+            return !session.busy() && !session.recognitionResultsSnapshot().tableEntries.isEmpty();
+        },
+        "manual retry recovers the table");
+}
+
 } // namespace
 
 void runRecognitionModelTests() {
+    visionTableCellBlocksPreserveLineBreaks();
+    streamedTablesCorrectAtMostOnce();
+    emptyAndTruncatedTablesNeverBecomeFinalResults();
+    tableStreamCancellationRejectsQueuedParses();
+    tablePreviewIsReadOnlyUntilFinalAcceptance();
     defaultsAndInactiveToolsDoNotFetchModels();
     defaultLatexUsesDedicatedRecognitionWhileCatalogIsLoading();
     visionTablesRequireActualMarkupAndRetainMergedEmptyCells();

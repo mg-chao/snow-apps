@@ -85,8 +85,8 @@ completed Smart Erase results and cancellation token. Poll on the owner thread,
 yielding to the event loop while Pending. The worker encodes pixels and never calls
 the GPU service. Path exports publish through atomic replacement.
 
-Plain SVG keeps original image layers and portable outlined text/paths. Effects,
-color-font rendering or custom presentation embed a GPU-composited PNG. Missing Smart Erase results
+Plain SVG keeps original image layers and portable outlined text/paths. Visible arrow outlines,
+effects, color-font rendering or custom presentation embed a GPU-composited PNG. Missing Smart Erase results
 fail strict export. Selection controls are excluded.
 
 `GpuSavePreparation` asynchronously freezes layered visual and donor composites

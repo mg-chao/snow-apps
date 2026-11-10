@@ -1280,9 +1280,166 @@ class TstModalWindow : public QObject {
     modal.close();
   }
 
+  void headerActionsStayAtRightEdge_data() {
+    QTest::addColumn<AdModal::Mode>("mode");
+    QTest::addColumn<AdModal::Preset>("preset");
+    for (const auto mode : {AdModal::Mode::Overlay, AdModal::Mode::Window}) {
+      for (const auto preset :
+           {AdModal::Preset::Plain, AdModal::Preset::Info, AdModal::Preset::Success,
+            AdModal::Preset::Error, AdModal::Preset::Warning, AdModal::Preset::Confirm}) {
+        QTest::addRow("mode-%d-preset-%d", static_cast<int>(mode), static_cast<int>(preset))
+            << mode << preset;
+      }
+    }
+  }
+
+  void presetCloseButtonVisibility_data() { headerActionsStayAtRightEdge_data(); }
+
+  void presetCloseButtonVisibility() {
+    QFETCH(AdModal::Mode, mode);
+    QFETCH(AdModal::Preset, preset);
+    QWidget owner;
+    owner.resize(800, 600);
+    owner.show();
+
+    AdModal modal(&owner);
+    modal.setOwnerWindow(&owner);
+    modal.setMode(mode);
+    QSignalSpy visibilityChanges(&modal, &AdModal::closeButtonVisibleChanged);
+    modal.setPreset(preset);
+    const bool defaultVisible = preset == AdModal::Preset::Plain;
+    QCOMPARE(modal.closeButtonVisible(), defaultVisible);
+    QCOMPARE(visibilityChanges.size(), defaultVisible ? 0 : 1);
+    modal.setWindowTitle(QStringLiteral("Preset visibility"));
+    modal.setText(QStringLiteral("Dialog body"));
+    bool styledCloseVisible = !defaultVisible;
+    modal.setSemanticStyleResolver([&](const AdModal::StyleContext& context) {
+      styledCloseVisible = context.closeButtonVisible;
+      return AdModal::SemanticStyles{};
+    });
+    modal.open();
+    auto* close = modal.closeButton();
+    QVERIFY(close);
+    qApp->processEvents();
+    QCOMPARE(close->isVisible(), defaultVisible);
+    QCOMPARE(close->parentWidget()->isVisible(), defaultVisible);
+    QCOMPARE(styledCloseVisible, defaultVisible);
+
+    // Defaults follow the preset until the caller explicitly chooses a value.
+    modal.setPreset(AdModal::Preset::Plain);
+    QVERIFY(modal.closeButtonVisible());
+    QVERIFY(close->isVisible());
+    modal.setPreset(preset);
+    QCOMPARE(close->isVisible(), defaultVisible);
+    modal.setCloseButtonVisible(true);
+    modal.setPreset(AdModal::Preset::Confirm);
+    QVERIFY(modal.closeButtonVisible());
+    QVERIFY(close->isVisible());
+    QVERIFY(styledCloseVisible);
+    modal.setCloseButtonVisible(false);
+    modal.setPreset(AdModal::Preset::Plain);
+    QVERIFY(!modal.closeButtonVisible());
+    QVERIFY(!close->isVisible());
+    QVERIFY(!styledCloseVisible);
+    modal.close();
+
+    // Setting the current default is still an explicit choice, even before open.
+    AdModal explicitlyVisible;
+    explicitlyVisible.setCloseButtonVisible(true);
+    explicitlyVisible.setPreset(preset);
+    QVERIFY(explicitlyVisible.closeButtonVisible());
+    AdModal explicitlyHidden;
+    explicitlyHidden.setPreset(AdModal::Preset::Error);
+    explicitlyHidden.setCloseButtonVisible(false);
+    explicitlyHidden.setPreset(AdModal::Preset::Plain);
+    QVERIFY(!explicitlyHidden.closeButtonVisible());
+  }
+
+  void servicePresetCloseButtonVisibility_data() {
+    QTest::addColumn<AdModal::Mode>("mode");
+    QTest::newRow("overlay") << AdModal::Mode::Overlay;
+    QTest::newRow("window") << AdModal::Mode::Window;
+  }
+
+  void servicePresetCloseButtonVisibility() {
+    QFETCH(AdModal::Mode, mode);
+    QWidget owner;
+    owner.resize(800, 600);
+    owner.show();
+    using adqt::widgets::AdModalService;
+    for (const auto factory :
+         {AdModalService::showInfo, AdModalService::showSuccess, AdModalService::showError,
+          AdModalService::showWarning, AdModalService::showConfirm}) {
+      for (const auto visible :
+           {std::optional<bool>{}, std::optional<bool>{false}, std::optional<bool>{true}}) {
+        AdModalService::Request request;
+        request.mode = mode;
+        request.closeButtonVisible = visible;
+        QPointer<AdModal> modal = factory(request, &owner);
+        QVERIFY(modal && modal->isOpen());
+        QCOMPARE(modal->closeButtonVisible(), visible.value_or(false));
+        qApp->processEvents();
+        QVERIFY(modal->closeButton());
+        QCOMPARE(modal->closeButton()->isVisible(), visible.value_or(false));
+        modal->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(modal.isNull());
+      }
+    }
+  }
+
+  void headerActionsStayAtRightEdge() {
+    QFETCH(AdModal::Mode, mode);
+    QFETCH(AdModal::Preset, preset);
+    QWidget owner;
+    owner.resize(800, 600);
+    owner.show();
+
+    AdModal modal(&owner);
+    modal.setOwnerWindow(&owner);
+    modal.setMode(mode);
+    modal.setPreset(preset);
+    modal.setCloseButtonVisible(true);
+    modal.setWindowTitle(QStringLiteral("Screen recording"));
+    modal.setText(QStringLiteral("Unable to export recording: encode error"));
+    modal.setStandardButtons(AdModal::StandardButton::Ok);
+    modal.open();
+    auto* close = modal.closeButton();
+    QVERIFY(close);
+    auto* header = close->parentWidget();
+    QVERIFY(header && header->layout());
+    qApp->processEvents();
+    QVERIFY(close->isVisible());
+    QCOMPARE(close->geometry().right(), header->layout()->contentsRect().right());
+
+    // Both a hidden preset title and an empty plain title must leave the
+    // actions anchored, including when title visibility changes while open.
+    for (const auto& title : {QString(), QStringLiteral("Restored title")}) {
+      modal.setWindowTitle(title);
+      qApp->processEvents();
+      QCOMPARE(close->geometry().right(), header->layout()->contentsRect().right());
+    }
+
+    if (mode == AdModal::Mode::Window) {
+      modal.setWindowMinimizeButtonVisible(true);
+      modal.setWindowMaximizeButtonVisible(true);
+      modal.setWindowAlwaysOnTopButtonVisible(true);
+      qApp->processEvents();
+      int nextLeft = close->geometry().left();
+      for (const auto* name :
+           {"ad-modal-always-on-top", "ad-modal-maximize", "ad-modal-minimize"}) {
+        auto* action = header->findChild<QToolButton*>(QString::fromLatin1(name));
+        QVERIFY(action && action->isVisible());
+        QCOMPARE(action->geometry().right() + 1, nextLeft);
+        nextLeft = action->geometry().left();
+      }
+      QCOMPARE(close->geometry().right(), header->layout()->contentsRect().right());
+    }
+    modal.close();
+  }
+
   // The panel's outer vertical inset lives on the header top and footer
-  // bottom. Confirm dialogs hide that header (window-mode Confirm, or any
-  // confirm-like preset with the close button off), so the body must inherit
+  // bottom. Message/confirmation presets hide that header by default, so the body must inherit
   // the same inset instead of sitting flush against the panel edge.
   void hiddenEdgeSectionsInheritOuterVerticalInset() {
     AdModal reference;

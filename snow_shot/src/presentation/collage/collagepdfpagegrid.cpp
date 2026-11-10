@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
+#include "collageimageediting_p.h"
+#include "collagethumbnailactions_p.h"
 
 #include "snow_shot/presentation/components/canvasactiontoolbar.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -60,7 +62,7 @@ constexpr int cardHeight = 332;
 constexpr int edgeScrollZone = 48;
 
 QString gridText(const char* source) {
-    return QCoreApplication::translate("CollagePdfPageGrid", source);
+    return QCoreApplication::translate("ImageStitchingPdfPageGrid", source);
 }
 
 QString imageName(const QString& label) {
@@ -69,32 +71,34 @@ QString imageName(const QString& label) {
 }
 
 [[maybe_unused]] constexpr std::array translations{
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "PDF document pages"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid",
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "PDF document pages"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid",
                       "Drag pages to reorder. Use the arrow keys to select a page and Enter to "
-                      "preview the original image."),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Page %1: %2"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Page %1"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Replace image"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Delete image"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Rotate clockwise by 90°"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Rotate counterclockwise by 90°"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Flip horizontally"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Flip vertically"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Reset transform"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Preview original image"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Clear"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add images"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add images to create a PDF document"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Drag image files here, or choose Add images"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Drop images to add pages"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add multiple image files at once"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "The original image is unavailable."),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Image preview was cancelled."),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "The page preview shows the last valid settings."),
+                      "preview the original image"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Page %1: %2"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Page %1"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Replace image"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Delete image"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Rotate clockwise by 90°"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Rotate counterclockwise by 90°"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Flip horizontally"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Flip vertically"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Reset transform"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Preview original image"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Reverse page order"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Clear"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Add images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Add images to create a PDF document"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Drag image files here, or choose add images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Drop images to add pages"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Add multiple image files at once"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "The original image is unavailable"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid", "Image preview was cancelled"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfPageGrid",
+                      "The page preview shows the last valid settings"),
 };
 
-quint64 draggedId(const QMimeData* mime, const CollageDocument* document) {
+quint64 draggedId(const QMimeData* mime, const ImageStitchingDocument* document) {
     if (!mime || !mime->hasFormat(QString::fromLatin1(dragType)))
         return 0;
     const auto parts = mime->data(QString::fromLatin1(dragType)).split(':');
@@ -127,7 +131,7 @@ class MemoryImageReply final : public adqt::widgets::AdImageReply {
             if (isFinished())
                 return;
             if (m_image.isNull())
-                fail(gridText("The original image is unavailable."));
+                fail(gridText("The original image is unavailable"));
             else
                 succeed(m_image);
         });
@@ -135,7 +139,7 @@ class MemoryImageReply final : public adqt::widgets::AdImageReply {
 
     void abort() override {
         if (!isFinished())
-            fail(gridText("Image preview was cancelled."));
+            fail(gridText("Image preview was cancelled"));
     }
 
   private:
@@ -149,7 +153,7 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
 
     std::function<void()> thumbnailCacheChanged;
 
-    void setSettings(const CollagePdfSettings& settings, quint64 revision) {
+    void setSettings(const ImageStitchingPdfSettings& settings, quint64 revision) {
         m_settings = settings;
         m_settingsRevision = revision;
     }
@@ -192,7 +196,7 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
         return bytes;
     }
 
-    void setItems(const QVector<CollageItem>& items) {
+    void setItems(const QVector<ImageStitchingItem>& items) {
         // A completed reply retires immediately. This snapshot keeps original resource
         // reservations alive for as long as the viewer and card images retain their QImages.
         QSet<quint64> retained;
@@ -223,7 +227,7 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
         const auto& item = entry.value();
         if (source.scheme() != QStringLiteral("collage-pdf-thumbnail"))
             return new MemoryImageReply(item.image, item.resourceOwner, parent);
-        const auto layout = calculateCollagePdfPageLayout(transformedSize(item), m_settings);
+        const auto layout = calculateImageStitchingPdfPageLayout(transformedSize(item), m_settings);
         if (!layout.isValid())
             return new MemoryImageReply({}, {}, parent);
         QSize requested =
@@ -242,7 +246,7 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
         if (cached != m_thumbnails.cend() && cached->size == size &&
             cached->itemRevision == item.revision && cached->settingsRevision == m_settingsRevision)
             return new MemoryImageReply(cached->image, cached->owner, parent);
-        auto reservation = reserveCollagePreview(qint64(size.width()) * size.height() * 8);
+        auto reservation = reserveImageStitchingPreview(qint64(size.width()) * size.height() * 8);
         if (!reservation)
             return new MemoryImageReply({}, {}, parent);
         QImage page(size, QImage::Format_RGB32);
@@ -271,9 +275,6 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
             painter.drawImage(QPointF{}, item.preview);
             painter.restore();
         }
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(180, 180, 180), 1, Qt::DashLine));
-        painter.drawRect(mapped(layout.contentMillimeters));
         painter.end();
         m_thumbnails.insert(id, {size, item.revision, m_settingsRevision, page, reservation});
         if (thumbnailCacheChanged)
@@ -282,7 +283,7 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
     }
 
   private:
-    QHash<quint64, CollageItem> m_items;
+    QHash<quint64, ImageStitchingItem> m_items;
     struct Thumbnail {
         QSize size;
         quint64 itemRevision = 0;
@@ -291,7 +292,7 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
         std::shared_ptr<void> owner;
     };
     QHash<quint64, Thumbnail> m_thumbnails;
-    CollagePdfSettings m_settings;
+    ImageStitchingPdfSettings m_settings;
     quint64 m_settingsRevision = 0;
     qint64 m_maximumThumbnailPixels = 256 * 256;
 };
@@ -319,9 +320,31 @@ class InsertionMarker final : public QWidget {
     }
 };
 
+class PdfPageContentBorder final : public QWidget {
+  public:
+    explicit PdfPageContentBorder(QWidget* parent) : QWidget(parent) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+    }
+
+    void setContentRect(const QRectF& bounds) {
+        m_bounds = bounds;
+        update();
+    }
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        image_stitching_detail::paintPreviewBorder(painter, m_bounds, QColor(0xf0, 0xf0, 0xf0));
+    }
+
+  private:
+    QRectF m_bounds;
+};
+
 class PdfPageCard final : public QWidget {
   public:
-    PdfPageCard(CollageDocument* document, AdImageViewer* viewer, MemoryImageLoader* loader,
+    PdfPageCard(ImageStitchingDocument* document, AdImageViewer* viewer, MemoryImageLoader* loader,
                 QWidget* parent)
         : QWidget(parent), m_document(document) {
         setFocusPolicy(Qt::StrongFocus);
@@ -339,15 +362,27 @@ class PdfPageCard final : public QWidget {
         m_image->setSemanticStyles(imageStyle);
         m_image->setFocusPolicy(Qt::NoFocus);
         m_image->installEventFilter(this);
+        m_contentBorder = new PdfPageContentBorder(this);
         m_number = new QLabel(this);
         m_number->setObjectName(QStringLiteral("collagePdfPageNumber"));
         m_number->setAlignment(Qt::AlignCenter);
         m_number->setAttribute(Qt::WA_TransparentForMouseEvents);
         m_number->setStyleSheet(SequenceNumberBadgeStyle::styleSheet());
+        m_actions = new image_stitching_detail::ThumbnailActions(
+            this, "collagePdfReplaceThumbnailImage", "collagePdfDeleteThumbnailImage");
+        connect(m_actions->replace, &AdButton::clicked, this, [this] {
+            if (replaceRequested)
+                replaceRequested(m_id);
+        });
+        connect(m_actions->remove, &AdButton::clicked, this, [this] {
+            if (removeRequested)
+                removeRequested(m_id);
+        });
     }
 
     std::function<void(quint64)> selected;
     std::function<void(quint64)> removeRequested;
+    std::function<void(quint64)> replaceRequested;
     std::function<void(quint64)> previewRequested;
     std::function<void(quint64)> dragRequested;
     std::function<void(quint64, int)> navigateRequested;
@@ -367,11 +402,12 @@ class PdfPageCard final : public QWidget {
         m_image->setSource({});
     }
 
-    void setEditingEnabled(bool editing) {
+    void setEditingEnabled(bool editing, bool replacementAllowed) {
         m_editing = editing;
+        m_actions->setEditingEnabled(editing, replacementAllowed);
     }
 
-    void setItem(const CollageItem& item, int row, const CollagePdfSettings& settings,
+    void setItem(const ImageStitchingItem& item, int row, const ImageStitchingPdfSettings& settings,
                  quint64 pageRevision) {
         const bool sourceChanged = m_id != item.id || m_revision != item.revision ||
                                    m_pageRevision != pageRevision || m_image->source().isEmpty();
@@ -380,7 +416,7 @@ class PdfPageCard final : public QWidget {
         m_pageRevision = pageRevision;
         m_ordinal = row + 1;
         m_label = imageName(item.label);
-        m_pageLayout = calculateCollagePdfPageLayout(transformedSize(item), settings);
+        m_pageLayout = calculateImageStitchingPdfPageLayout(transformedSize(item), settings);
         setObjectName(QStringLiteral("collagePdfPage_%1").arg(m_id));
         setProperty("collageItemId", QVariant::fromValue(m_id));
         setProperty("pageNumber", m_ordinal);
@@ -400,12 +436,13 @@ class PdfPageCard final : public QWidget {
     }
 
     void retranslate() {
+        m_actions->retranslate(gridText("Replace image"), gridText("Delete image"));
         setToolTip(m_label);
         setAccessibleName(gridText("Page %1: %2").arg(m_ordinal).arg(m_label));
         m_number->setAccessibleName(gridText("Page %1").arg(m_ordinal));
         setAccessibleDescription(gridText(
             "Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the "
-            "original image."));
+            "original image"));
     }
 
   protected:
@@ -422,9 +459,6 @@ class PdfPageCard final : public QWidget {
         painter.setPen(QPen(theme.colorBorderSecondary, 1));
         painter.setBrush(Qt::white);
         painter.drawRect(m_paper);
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(180, 180, 180), 1, Qt::DashLine));
-        painter.drawRect(m_content);
         painter.setPen(theme.colorText);
         const QRect labelRect(10, height() - 29, width() - 20, 20);
         painter.drawText(labelRect, Qt::AlignHCenter | Qt::AlignVCenter,
@@ -546,6 +580,9 @@ class PdfPageCard final : public QWidget {
         // for AdImage's final border pixel while keeping its border transparent.
         m_image->setGeometry(m_paper.toAlignedRect().adjusted(0, 0, 1, 1));
         m_image->show();
+        m_contentBorder->setGeometry(rect());
+        m_contentBorder->setContentRect(m_content);
+        m_contentBorder->raise();
         m_number->setGeometry(
             QRect(QPoint(qRound(m_paper.left()), qRound(m_paper.top())) +
                       QPoint(SequenceNumberBadgeStyle::inset, SequenceNumberBadgeStyle::inset),
@@ -553,31 +590,34 @@ class PdfPageCard final : public QWidget {
         m_number->raise();
     }
 
-    CollageDocument* m_document;
+    ImageStitchingDocument* m_document;
     quint64 m_id = 0;
     quint64 m_revision = 0;
     quint64 m_pageRevision = 0;
     int m_ordinal = 1;
     QString m_label;
-    CollagePdfPageLayout m_pageLayout;
+    ImageStitchingPdfPageLayout m_pageLayout;
     QRectF m_paper;
     QRectF m_content;
     QPointF m_press;
     bool m_pressed = false;
     bool m_editing = true;
     AdImage* m_image = nullptr;
+    PdfPageContentBorder* m_contentBorder = nullptr;
     QLabel* m_number = nullptr;
+    image_stitching_detail::ThumbnailActions* m_actions = nullptr;
 };
 } // namespace
 
-struct CollagePdfPageGrid::Impl {
-    CollagePdfPageGrid* owner = nullptr;
-    QPointer<CollageDocument> document;
+struct ImageStitchingPdfPageGrid::Impl {
+    ImageStitchingPdfPageGrid* owner = nullptr;
+    QPointer<ImageStitchingDocument> document;
     AdScrollArea* scroll = nullptr;
     QWidget* content = nullptr;
     CanvasActionToolbar* toolbar = nullptr;
     CanvasActionToolbar* selectionToolbar = nullptr;
     std::array<AdButton*, 8> selectionActions{};
+    AdButton* reverse = nullptr;
     AdButton* add = nullptr;
     AdButton* clear = nullptr;
     ImageDropSurface* empty = nullptr;
@@ -595,7 +635,7 @@ struct CollagePdfPageGrid::Impl {
     AdImageItems previewItems;
     QVector<qint64> originalKeys;
     quint64 contentRevision = std::numeric_limits<quint64>::max();
-    CollagePdfSettings settings;
+    ImageStitchingPdfSettings settings;
     quint64 pageRevision = 0;
     int columns = 1;
     int width = preferredCardWidth;
@@ -656,11 +696,12 @@ struct CollagePdfPageGrid::Impl {
     }
 
     void enabled() {
+        reverse->setEnabled(!loading && !exporting && document->items().size() > 1);
         add->setEnabled(!loading && !exporting);
         add->setBusy(loading);
         clear->setEnabled(!exporting && !document->items().isEmpty());
         for (auto* card : cards)
-            card->setEditingEnabled(!exporting);
+            card->setEditingEnabled(!exporting, !loading);
         positionSelectionToolbar();
         if (loading || exporting) {
             dropHint->hide();
@@ -711,8 +752,8 @@ struct CollagePdfPageGrid::Impl {
         const int anchorOffset = previousTop - cardRect(anchorIndex).top();
         const auto nextSettings = document->lastValidPdfSettings();
         if (settings != nextSettings) {
-            const auto previousPage = calculateCollagePdfPageLayout(QSize(1, 1), settings);
-            const auto nextPage = calculateCollagePdfPageLayout(QSize(1, 1), nextSettings);
+            const auto previousPage = calculateImageStitchingPdfPageLayout(QSize(1, 1), settings);
+            const auto nextPage = calculateImageStitchingPdfPageLayout(QSize(1, 1), nextSettings);
             if (previousPage.pageMillimeters != nextPage.pageMillimeters ||
                 previousPage.contentMillimeters != nextPage.contentMillimeters)
                 ++pageRevision;
@@ -720,7 +761,7 @@ struct CollagePdfPageGrid::Impl {
         }
         loader->setSettings(settings, pageRevision);
         validationNotice->setVisible(
-            !validateCollagePdfSettings(document->pdfSettings()).isEmpty());
+            !validateImageStitchingPdfSettings(document->pdfSettings()).isEmpty());
         owner->layout()->activate();
         if (contentRevision != document->contentRevision()) {
             order.clear();
@@ -806,6 +847,9 @@ struct CollagePdfPageGrid::Impl {
                 card = new PdfPageCard(document, viewer, loader, content);
                 card->selected = [this](quint64 itemId) { document->select(itemId); };
                 card->removeRequested = [this](quint64 itemId) { deleteItem(itemId); };
+                card->replaceRequested = [this](quint64 itemId) {
+                    emit owner->replaceImageRequested(itemId);
+                };
                 card->previewRequested = [this](quint64 itemId) { openPreview(itemId); };
                 card->navigateRequested = [this](quint64 itemId, int key) {
                     navigate(itemId, key);
@@ -820,7 +864,7 @@ struct CollagePdfPageGrid::Impl {
                 continue;
             it.value()->setGeometry(cardRect(index));
             it.value()->setItem(document->items()[index], index, settings, pageRevision);
-            it.value()->setEditingEnabled(!exporting);
+            it.value()->setEditingEnabled(!exporting, !loading);
             it.value()->show();
         }
         owner->setProperty("materializedPageCount", cards.size());
@@ -896,7 +940,7 @@ struct CollagePdfPageGrid::Impl {
             return;
         activeDragId = id;
         const auto lifetime = alive;
-        const QPointer<CollagePdfPageGrid> guardedOwner(owner);
+        const QPointer<ImageStitchingPdfPageGrid> guardedOwner(owner);
         const QPointer<QDrag> drag(new QDrag(card));
         auto* mime = new QMimeData;
         mime->setData(QString::fromLatin1(dragType),
@@ -1051,7 +1095,8 @@ struct CollagePdfPageGrid::Impl {
     }
 };
 
-CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* parent)
+ImageStitchingPdfPageGrid::ImageStitchingPdfPageGrid(ImageStitchingDocument* document,
+                                                     QWidget* parent)
     : QWidget(parent), m_impl(std::make_unique<Impl>()) {
     auto& d = *m_impl;
     d.owner = this;
@@ -1083,10 +1128,13 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
     layout->addWidget(d.scroll);
     d.toolbar = new CanvasActionToolbar(this);
     d.toolbar->setObjectName(QStringLiteral("collagePdfCanvasToolbar"));
+    d.reverse =
+        d.toolbar->addAction(snow_shot::presentation::icons::custom::outlined::ReverseOrder(),
+                             "collagePdfReversePageOrder");
+    d.add = d.toolbar->addAction(icons::Plus(), "collagePdfAddImages");
+    d.toolbar->addSeparator();
     d.clear = d.toolbar->addAction(icons::IconDelete(), "collagePdfClear");
     d.clear->setAccentRole(AdButton::AccentRole::Danger);
-    d.toolbar->addSeparator();
-    d.add = d.toolbar->addAction(icons::Plus(), "collagePdfAddImages");
     d.selectionToolbar = new CanvasActionToolbar(this);
     d.selectionToolbar->setObjectName(QStringLiteral("collagePdfImageToolbar"));
     d.selectionToolbar->hide();
@@ -1096,7 +1144,7 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
         snow_shot::presentation::icons::custom::outlined::FlipHorizontal(),
         snow_shot::presentation::icons::custom::outlined::FlipVertical(),
         icons::Reload(),
-        icons::Edit(),
+        snow_shot::presentation::icons::custom::outlined::ReplaceImage(),
         icons::Eye(),
         icons::IconDelete()};
     constexpr std::array<const char*, 8> names{
@@ -1132,8 +1180,12 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
         });
     }
     d.selectionActions.back()->setAccentRole(AdButton::AccentRole::Danger);
-    connect(d.clear, &AdButton::clicked, this, &CollagePdfPageGrid::clearRequested);
-    connect(d.add, &AdButton::clicked, this, &CollagePdfPageGrid::addImagesRequested);
+    connect(d.reverse, &AdButton::clicked, this, [this] {
+        if (!m_impl->loading && !m_impl->exporting)
+            m_impl->document->reverseItems();
+    });
+    connect(d.clear, &AdButton::clicked, this, &ImageStitchingPdfPageGrid::clearRequested);
+    connect(d.add, &AdButton::clicked, this, &ImageStitchingPdfPageGrid::addImagesRequested);
     d.empty = new ImageDropSurface(false, this);
     d.empty->setObjectName(QStringLiteral("collagePdfEmptyState"));
     auto* emptyLayout = static_cast<QVBoxLayout*>(d.empty->layout());
@@ -1145,7 +1197,7 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
     emptyAdd->setFocusPolicy(Qt::StrongFocus);
     emptyLayout->insertSpacing(emptyLayout->count() - 1, 8);
     emptyLayout->insertWidget(emptyLayout->count() - 1, emptyAdd, 0, Qt::AlignHCenter);
-    connect(emptyAdd, &AdButton::clicked, this, &CollagePdfPageGrid::addImagesRequested);
+    connect(emptyAdd, &AdButton::clicked, this, &ImageStitchingPdfPageGrid::addImagesRequested);
     d.dropHint = new ImageDropSurface(true, this);
     d.dropHint->setObjectName(QStringLiteral("collagePdfDropHint"));
     d.dropHint->hide();
@@ -1168,11 +1220,11 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
     d.scrollTimer = new QTimer(this);
     d.scrollTimer->setInterval(16);
     connect(d.scrollTimer, &QTimer::timeout, this, [this] { m_impl->scrollDrag(); });
-    connect(document, &CollageDocument::changed, this, [this] {
+    connect(document, &ImageStitchingDocument::changed, this, [this] {
         if (isVisible())
             m_impl->refreshTimer->start();
     });
-    connect(document, &CollageDocument::selectionChanged, this, [this] {
+    connect(document, &ImageStitchingDocument::selectionChanged, this, [this] {
         for (auto* card : m_impl->cards)
             card->update();
         m_impl->positionSelectionToolbar();
@@ -1198,7 +1250,7 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
     d.refresh();
 }
 
-CollagePdfPageGrid::~CollagePdfPageGrid() {
+ImageStitchingPdfPageGrid::~ImageStitchingPdfPageGrid() {
     auto& d = *m_impl;
     *d.alive = false;
     d.refreshTimer->stop();
@@ -1214,6 +1266,7 @@ CollagePdfPageGrid::~CollagePdfPageGrid() {
     for (auto* card : d.cards) {
         card->selected = {};
         card->removeRequested = {};
+        card->replaceRequested = {};
         card->previewRequested = {};
         card->dragRequested = {};
         card->navigateRequested = {};
@@ -1225,7 +1278,7 @@ CollagePdfPageGrid::~CollagePdfPageGrid() {
     d.loader->setItems({});
 }
 
-void CollagePdfPageGrid::setLoading(bool loading) {
+void ImageStitchingPdfPageGrid::setLoading(bool loading) {
     m_impl->loading = loading;
     m_impl->enabled();
     if (auto* add = findChild<AdButton*>(QStringLiteral("collagePdfEmptyAddImages"))) {
@@ -1234,23 +1287,24 @@ void CollagePdfPageGrid::setLoading(bool loading) {
     }
 }
 
-void CollagePdfPageGrid::setExportBusy(bool busy) {
+void ImageStitchingPdfPageGrid::setExportBusy(bool busy) {
     m_impl->exporting = busy;
     m_impl->enabled();
     if (auto* add = findChild<AdButton*>(QStringLiteral("collagePdfEmptyAddImages")))
         add->setEnabled(!busy && !m_impl->loading);
 }
 
-void CollagePdfPageGrid::retranslateUi() {
+void ImageStitchingPdfPageGrid::retranslateUi() {
     auto& d = *m_impl;
     setAccessibleName(gridText("PDF document pages"));
-    d.validationNotice->setText(gridText("The page preview shows the last valid settings."));
+    d.validationNotice->setText(gridText("The page preview shows the last valid settings"));
     setAccessibleDescription(gridText(
         "Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the "
-        "original image."));
-    d.clear->setToolTip(gridText("Clear"));
+        "original image"));
+    d.reverse->setToolTip(gridText("Reverse page order"));
     d.add->setToolTip(gridText("Add images"));
-    for (auto* action : {d.clear, d.add})
+    d.clear->setToolTip(gridText("Clear"));
+    for (auto* action : {d.reverse, d.add, d.clear})
         action->setAccessibleName(action->toolTip());
     constexpr std::array<const char*, 8> actions{
         "Rotate clockwise by 90°", "Rotate counterclockwise by 90°",
@@ -1262,7 +1316,7 @@ void CollagePdfPageGrid::retranslateUi() {
         d.selectionActions[index]->setAccessibleName(d.selectionActions[index]->toolTip());
     }
     d.empty->title->setText(gridText("Add images to create a PDF document"));
-    d.empty->description->setText(gridText("Drag image files here, or choose Add images"));
+    d.empty->description->setText(gridText("Drag image files here, or choose add images"));
     if (auto* add = findChild<AdButton*>(QStringLiteral("collagePdfEmptyAddImages"))) {
         add->setText(gridText("Add images"));
         add->setAccessibleName(add->text());
@@ -1275,7 +1329,7 @@ void CollagePdfPageGrid::retranslateUi() {
         card->retranslate();
 }
 
-bool CollagePdfPageGrid::eventFilter(QObject* watched, QEvent* event) {
+bool ImageStitchingPdfPageGrid::eventFilter(QObject* watched, QEvent* event) {
     auto& d = *m_impl;
     if (watched == d.scroll->viewport()) {
         if (event->type() == QEvent::DragEnter) {
@@ -1305,18 +1359,18 @@ bool CollagePdfPageGrid::eventFilter(QObject* watched, QEvent* event) {
     return QWidget::eventFilter(watched, event);
 }
 
-void CollagePdfPageGrid::resizeEvent(QResizeEvent* event) {
+void ImageStitchingPdfPageGrid::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     layout()->activate();
     m_impl->refresh();
 }
 
-void CollagePdfPageGrid::showEvent(QShowEvent* event) {
+void ImageStitchingPdfPageGrid::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     m_impl->refresh();
 }
 
-void CollagePdfPageGrid::hideEvent(QHideEvent* event) {
+void ImageStitchingPdfPageGrid::hideEvent(QHideEvent* event) {
     m_impl->cancelDrag();
     m_impl->refreshTimer->stop();
     m_impl->dropHint->hide();
@@ -1342,29 +1396,29 @@ void CollagePdfPageGrid::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
 }
 
-void CollagePdfPageGrid::changeEvent(QEvent* event) {
+void ImageStitchingPdfPageGrid::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange)
         retranslateUi();
     QWidget::changeEvent(event);
 }
 
-void CollagePdfPageGrid::dragEnterEvent(QDragEnterEvent* event) {
+void ImageStitchingPdfPageGrid::dragEnterEvent(QDragEnterEvent* event) {
     const auto viewport = m_impl->scroll->viewport()->mapTo(this, QPoint{});
     m_impl->dragEnter(event, event->position() - viewport);
 }
 
-void CollagePdfPageGrid::dragMoveEvent(QDragMoveEvent* event) {
+void ImageStitchingPdfPageGrid::dragMoveEvent(QDragMoveEvent* event) {
     const auto viewport = m_impl->scroll->viewport()->mapTo(this, QPoint{});
     m_impl->dragMove(event, event->position() - viewport);
 }
 
-void CollagePdfPageGrid::dragLeaveEvent(QDragLeaveEvent* event) {
+void ImageStitchingPdfPageGrid::dragLeaveEvent(QDragLeaveEvent* event) {
     m_impl->cancelDrag();
     m_impl->dropHint->hide();
     event->accept();
 }
 
-void CollagePdfPageGrid::dropEvent(QDropEvent* event) {
+void ImageStitchingPdfPageGrid::dropEvent(QDropEvent* event) {
     const auto viewport = m_impl->scroll->viewport()->mapTo(this, QPoint{});
     m_impl->drop(event, event->position() - viewport);
 }

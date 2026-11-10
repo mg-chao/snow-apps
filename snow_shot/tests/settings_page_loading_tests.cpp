@@ -646,7 +646,7 @@ void variableDescriptionLinks(const settings::SettingsRegistry& registry,
         auto* description =
             field->viewWidget()->findChild<QLabel*>(QStringLiteral("formFieldDescription"));
         require(description && description->wordWrap() &&
-                    description->text().endsWith(QStringLiteral("Variable Description</a>")) &&
+                    description->text().endsWith(QStringLiteral("Variable description</a>")) &&
                     description->textInteractionFlags().testFlag(Qt::LinksAccessibleByKeyboard) &&
                     !field->editor()->accessibleDescription().contains(QStringLiteral("<a")),
                 "help must follow the description and remain accessible without exposing markup");
@@ -670,9 +670,9 @@ void variableDescriptionLinks(const settings::SettingsRegistry& registry,
         require(QCoreApplication::installTranslator(&translator), "help translator must install");
         drainEvents();
         require(
-            modal->windowTitle() == QStringLiteral("Translated: Variable Description") &&
+            modal->windowTitle() == QStringLiteral("Translated: Variable description") &&
                 modal->text().startsWith(QStringLiteral("Translated: {YYYY}: Current time")) &&
-                description->text().contains(QStringLiteral("Translated: Variable Description")),
+                description->text().contains(QStringLiteral("Translated: Variable description")),
             "open modal and inline link must follow language changes");
         QCoreApplication::removeTranslator(&translator);
         drainEvents();
@@ -1250,21 +1250,32 @@ void reorganizedSettingsPreserveIndependentState(const settings::SettingsRegistr
                 session.reset(settings::SettingsSectionReset::GeneralSettings),
             "restore language and appearance for subsequent checks");
 
-    SettingsPageWidget hotkeys(registry, QStringLiteral("global-hotkeys"), session);
-    hotkeys.resize(880, 760);
-    hotkeys.show();
-    hotkeys.reveal({QStringLiteral("global-hotkeys"), QStringLiteral("global-hotkeys"),
-                    QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window")});
+    SettingsPageWidget shortcuts(registry, QStringLiteral("global-hotkeys"), session);
+    shortcuts.resize(880, 760);
+    shortcuts.show();
+    shortcuts.reveal({QStringLiteral("global-hotkeys"), QStringLiteral("global-hotkeys"),
+                      QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window")});
     drainEvents();
-    require(hotkeys.findChild<adqt::widgets::AdSwitch*>(QStringLiteral(
+    require(shortcuts.findChild<adqt::widgets::AdSwitch*>(QStringLiteral(
                 "settings-control-global-hotkeys-disable-on-focused-fullscreen-window")) != nullptr,
             "Global Hotkeys materializes the relocated full-screen switch");
+    auto* filter = shortcuts.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("settings-control-global-hotkeys-window-filter-type"));
+    require(filter && filter->isEnabled() &&
+                filter->currentValue() == QStringLiteral("game_windows") &&
+                session.selectValue(settings::SettingsSelectBinding::FullscreenWindowFilter) ==
+                    QStringLiteral("game_windows"),
+            "the game filter selector materializes and remains editable while suppression is off");
     const auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
     const auto screenshotShortcut =
         configuration.value(QStringLiteral("global_shortcuts/screenshot"));
     require(session.applySwitchValue(
-                settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen, true) &&
-                session.reset(settings::SettingsSectionReset::GlobalHotkeys) &&
+                settings::SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen, true) &&
+                session.applySelectValue(settings::SettingsSelectBinding::FullscreenWindowFilter,
+                                         QStringLiteral("all_windows")) &&
+                session.reset(settings::SettingsSectionReset::GlobalShortcuts) &&
+                configuration.value(QStringLiteral("global_shortcuts/fullscreen_window_filter")) ==
+                    QJsonValue(QStringLiteral("game_windows")) &&
                 configuration.value(
                     QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window")) ==
                     snow_shot::storage::ConfigurationSchema::defaultValue(
@@ -1272,6 +1283,31 @@ void reorganizedSettingsPreserveIndependentState(const settings::SettingsRegistr
                 configuration.value(QStringLiteral("global_shortcuts/screenshot")) ==
                     screenshotShortcut,
             "full-screen reset preserves global shortcut bindings");
+    drainEvents();
+    require(filter->currentValue() == QStringLiteral("game_windows") && filter->isEnabled(),
+            "reset refreshes the selected game filter while leaving it editable");
+    auto& filterLanguage = snow_shot::presentation::LanguageManager::instance();
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(filterLanguage.setLanguage(locale), "switch fullscreen filter settings language");
+        drainEvents();
+        const auto options = filter->options();
+        const QString title = QCoreApplication::translate("SettingsCatalog", "Window filter type");
+        bool hasTitle = false;
+        for (const auto* label : shortcuts.findChildren<QLabel*>())
+            hasTitle = hasTitle || label->text() == title;
+        require(
+            hasTitle && options.size() == 2 &&
+                options.at(0).label ==
+                    QCoreApplication::translate("SettingsCatalog", "All windows") &&
+                options.at(1).label ==
+                    QCoreApplication::translate("SettingsCatalog", "Game windows") &&
+                filter->currentValue() == QStringLiteral("game_windows"),
+            "language changes retranslate filter titles and options without changing its value");
+    }
+    require(filterLanguage.setLanguage(QStringLiteral("en_US")),
+            "restore English fullscreen filter settings");
+    drainEvents();
 }
 
 void unchangedPresentation(const settings::SettingsRegistry& registry,
@@ -1328,8 +1364,12 @@ void selectedImagesSettings(const settings::SettingsRegistry& registry) {
         page.findChild<ShortcutKeyRow*>(QStringLiteral("settings-item-quick-global-canvas"));
     auto* split = page.findChild<ShortcutKeyRow*>(
         QStringLiteral("settings-item-quick-split-selected-images"));
+    auto* edit =
+        page.findChild<ShortcutKeyRow*>(QStringLiteral("settings-item-quick-edit-selected-images"));
     require(
-        stitch && canvas && split &&
+        stitch && canvas && split && edit &&
+            edit->mapTo(&page, QPoint()).y() > split->mapTo(&page, QPoint()).y() &&
+            session.shortcutState(GlobalShortcutAction::EditSelectedImages).shortcuts.isEmpty() &&
             stitch->mapTo(&page, QPoint()).y() > canvas->mapTo(&page, QPoint()).y() &&
             split->mapTo(&page, QPoint()).y() > stitch->mapTo(&page, QPoint()).y() &&
             session.shortcutState(action).shortcuts.isEmpty() &&
@@ -1350,18 +1390,24 @@ void selectedImagesSettings(const settings::SettingsRegistry& registry) {
     expectedAction = GlobalShortcutAction::SplitSelectedImages;
     require(QMetaObject::invokeMethod(split, "clicked", Qt::DirectConnection) && commands == 2,
             "the splitting row runs without an assigned key");
+    expectedAction = GlobalShortcutAction::EditSelectedImages;
+    require(QMetaObject::invokeMethod(edit, "clicked", Qt::DirectConnection) && commands == 3,
+            "the editing row runs without an assigned key");
     const snow_shot::shortcuts::ShortcutBindingList bindings{QStringLiteral("Ctrl+Alt+F8"),
                                                              QStringLiteral("Ctrl+Alt+F9")};
     const snow_shot::storage::ShortcutSettings stored;
     const auto screenshot = stored.screenshot();
     const snow_shot::shortcuts::ShortcutBindingList splitBindings{QStringLiteral("Ctrl+Alt+F10"),
                                                                   QStringLiteral("Ctrl+Alt+F11")};
+    const snow_shot::shortcuts::ShortcutBindingList editBindings{QStringLiteral("Ctrl+Alt+F12")};
     require(session.applyShortcuts(action, bindings) && stored.stitchSelectedImages() == bindings &&
                 session.applyShortcuts(GlobalShortcutAction::SplitSelectedImages, splitBindings) &&
                 stored.splitSelectedImages() == splitBindings &&
+                session.applyShortcuts(GlobalShortcutAction::EditSelectedImages, editBindings) &&
+                stored.editSelectedImages() == editBindings &&
                 session.reset(settings::SettingsSectionReset::OtherShortcuts) &&
-                stored.stitchSelectedImages().isEmpty() && stored.splitSelectedImages().isEmpty() &&
-                stored.screenshot() == screenshot,
+                stored.editSelectedImages().isEmpty() && stored.stitchSelectedImages().isEmpty() &&
+                stored.splitSelectedImages().isEmpty() && stored.screenshot() == screenshot,
             "Other reset clears stitching and splitting keys and preserves screenshot keys");
     auto& languages = LanguageManager::instance();
     for (const auto* locale : {"zh_CN", "zh_TW"}) {
@@ -1370,11 +1416,14 @@ void selectedImagesSettings(const settings::SettingsRegistry& registry) {
         page.retranslateUi();
         drainEvents();
         require(stitch->accessibleName() ==
-                        QCoreApplication::translate("SettingsCatalog", "Stitch Selected Images") &&
-                    stitch->accessibleName() != QStringLiteral("Stitch Selected Images") &&
+                        QCoreApplication::translate("SettingsCatalog", "Stitch selected images") &&
+                    stitch->accessibleName() != QStringLiteral("Stitch selected images") &&
                     split->accessibleName() ==
-                        QCoreApplication::translate("SettingsCatalog", "Split Selected Images") &&
-                    split->accessibleName() != QStringLiteral("Split Selected Images"),
+                        QCoreApplication::translate("SettingsCatalog", "Split selected images") &&
+                    split->accessibleName() != QStringLiteral("Split selected images") &&
+                    edit->accessibleName() ==
+                        QCoreApplication::translate("SettingsCatalog", "Edit selected images") &&
+                    edit->accessibleName() != QStringLiteral("Edit selected images"),
                 "both selected-image actions retranslate in both Chinese catalogs");
     }
     require(languages.setLanguage(QStringLiteral("en_US")), "restore settings test language");
@@ -1460,14 +1509,14 @@ void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry
     drainEvents();
     require(
         path->lineEdit()->accessibleName() ==
-                QStringLiteral("Translated: Main Interface Skin Path") &&
-            mode->accessibleName() == QStringLiteral("Translated: Skin Display Mode") &&
+                QStringLiteral("Translated: Main interface skin path") &&
+            mode->accessibleName() == QStringLiteral("Translated: Skin display mode") &&
             path->browseButtonText() == QStringLiteral("Translated: Browse") &&
             path->lineEdit()->accessibleDescription().startsWith(QStringLiteral("Translated: ")),
         "skin controls and descriptions must retranslate after LanguageChange");
     QCoreApplication::removeTranslator(&translator);
     drainEvents();
-    require(path->lineEdit()->accessibleName() == QStringLiteral("Main Interface Skin Path") &&
+    require(path->lineEdit()->accessibleName() == QStringLiteral("Main interface skin path") &&
                 session.reset(settings::SettingsSectionReset::Skin),
             "skin controls must restore English and the independent Skin defaults");
 }
@@ -1601,7 +1650,7 @@ void screenshotActionToolbarSettings(const settings::SettingsRegistry& registry,
          {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
         require(language.setLanguage(locale), "switch screenshot toolbar settings language");
         drainEvents();
-        const QString title = locale == u"en_US"   ? QStringLiteral("Action Toolbar")
+        const QString title = locale == u"en_US"   ? QStringLiteral("Action toolbar")
                               : locale == u"zh_CN" ? QString::fromUtf8("操作工具栏")
                                                    : QString::fromUtf8("操作工具列");
         bool hasTitle = false;
@@ -1640,7 +1689,7 @@ void recordingActionToolbarSettings(const settings::SettingsRegistry& registry,
          {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
         require(language.setLanguage(locale), "switch recording toolbar settings language");
         drainEvents();
-        const QString title = locale == u"en_US"   ? QStringLiteral("Action Toolbar")
+        const QString title = locale == u"en_US"   ? QStringLiteral("Action toolbar")
                               : locale == u"zh_CN" ? QString::fromUtf8("操作工具栏")
                                                    : QString::fromUtf8("操作工具列");
         bool hasTitle = false;
@@ -1674,7 +1723,7 @@ void pinnedSettingsGroups(const settings::SettingsRegistry& registry,
         const QStringList titles =
             locale == u"en_US"
                 ? QStringList{QStringLiteral("Interaction"), QStringLiteral("Window interface"),
-                              QStringLiteral("Text Style"), QStringLiteral("Action Toolbar")}
+                              QStringLiteral("Text style"), QStringLiteral("Action toolbar")}
             : locale == u"zh_CN"
                 ? QStringList{QString::fromUtf8("操作方式"), QString::fromUtf8("窗口界面"),
                               QString::fromUtf8("文本样式"), QString::fromUtf8("操作工具栏")}

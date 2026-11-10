@@ -1,6 +1,7 @@
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include <QThread>
 #include "snow_shot/app/distribution.h"
 #include "snow_shot/app/edition.h"
 #include <QTimer>
@@ -21,8 +22,11 @@
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QSet>
+#include <QScopeGuard>
 
 #include <chrono>
+#include <optional>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -103,7 +107,50 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
     return QDir::cleanPath(QDir(executableDirectory).absoluteFilePath(value));
 }
 
+// Progress is a UI snapshot, not a transaction event log. Retain the latest snapshot while
+// the owner thread is busy, with at most one queued delivery for this operation.
+class DirectoryChangeProgressMailbox {
+  public:
+    bool publish(const StorageDirectoryProgress& progress) {
+        const std::lock_guard lock(m_mutex);
+        if (m_closed)
+            return false;
+        m_latest = progress;
+        return !std::exchange(m_queued, true);
+    }
+
+    std::optional<StorageDirectoryProgress> take() {
+        const std::lock_guard lock(m_mutex);
+        m_queued = false;
+        return m_closed ? std::nullopt : std::exchange(m_latest, std::nullopt);
+    }
+
+    std::optional<StorageDirectoryProgress> close() {
+        const std::lock_guard lock(m_mutex);
+        m_closed = true;
+        return std::exchange(m_latest, std::nullopt);
+    }
+
+  private:
+    std::mutex m_mutex;
+    std::optional<StorageDirectoryProgress> m_latest;
+    bool m_queued = false;
+    bool m_closed = false;
+};
+
 } // namespace
+
+struct ApplicationStorage::DirectoryChange {
+    StorageStatus before;
+    QString destination;
+    // Published before the executor's future becomes ready. This retains the transaction's
+    // authoritative outcome even if transferring its result through the future throws.
+    std::optional<StorageDirectoryChangeResult> outcome;
+    std::future<StorageDirectoryChangeResult> worker;
+    std::unique_ptr<QTimer> poll;
+    std::shared_ptr<DirectoryChangeProgressMailbox> progress =
+        std::make_shared<DirectoryChangeProgressMailbox>();
+};
 
 ApplicationStorage::ApplicationStorage(QObject* parent) : QObject(parent) {
     m_pinnedPreviewPool.setMaxThreadCount(2);
@@ -234,6 +281,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     if (m_initialized) {
         shutdown();
     }
+    ++m_storageGeneration;
     m_usageTracker.reset();
     m_captureHistory.reset();
     m_pinnedWindows.reset();
@@ -245,6 +293,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     }
     m_lastPinnedNotifiedRevision = 0;
     m_configuration.reset();
+    m_isolateAuxiliaryStorage = options.isolateAuxiliaryStorage;
     const auto selection = resolveDirectory(options);
     m_executableDirectory = selection.executableDirectory;
     m_bootstrapDirectory =
@@ -400,6 +449,14 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                        << "write available:" << m_status.writeAvailable;
     emitStatusChanged();
     requestPinnedWindowRetentionCleanup();
+    // These pages now generate thumbnails only in memory. Reclaim files left by
+    // older versions on the usage worker without delaying application startup.
+    const QString legacyThumbnails = m_isolateAuxiliaryStorage
+                                         ? QString()
+                                         : StorageUsageTracker::defaultThumbnailCacheDirectory();
+    if (!legacyThumbnails.isEmpty() && QFileInfo::exists(legacyThumbnails)) {
+        static_cast<void>(requestThumbnailCacheClearAsync());
+    }
     if (effectiveDirectory.isEmpty()) {
         return StorageResult::failure(m_status.fallbackReason);
     }
@@ -410,9 +467,13 @@ void ApplicationStorage::createUsageTracker() {
     const auto generation = ++m_usageGeneration;
     StorageUsageTrackerOptions usageOptions;
     usageOptions.appDataDirectory = m_status.effectiveDirectory;
-    usageOptions.thumbnailCacheDirectory = StorageUsageTracker::defaultThumbnailCacheDirectory();
-    usageOptions.recordingTempDirectory = StorageUsageTracker::defaultRecordingTempDirectory();
-    usageOptions.diagnosticsDirectories = diagnostics::DiagnosticsService::instance().directories();
+    if (!m_isolateAuxiliaryStorage) {
+        usageOptions.thumbnailCacheDirectory =
+            StorageUsageTracker::defaultThumbnailCacheDirectory();
+        usageOptions.recordingTempDirectory = StorageUsageTracker::defaultRecordingTempDirectory();
+        usageOptions.diagnosticsDirectories =
+            diagnostics::DiagnosticsService::instance().directories();
+    }
     usageOptions.activeFileCutoff = QDateTime::currentDateTime();
     usageOptions.historyBytesProvider = [this]() {
         return m_captureHistory != nullptr ? m_captureHistory->usage().totalBytes : 0;
@@ -425,12 +486,14 @@ void ApplicationStorage::createUsageTracker() {
                                   }),
                                   Qt::QueuedConnection);
     };
-    usageOptions.callbacks.clearFinished = [this](StorageCacheKind kind,
-                                                  const StorageResult& result) {
-        QMetaObject::invokeMethod(this,
-                                  snow_shot::runtime::trackRuntimeWork(
-                                      [this, kind, result]() { finishCacheClear(kind, result); }),
-                                  Qt::QueuedConnection);
+    usageOptions.callbacks.clearFinished = [this, generation](StorageCacheKind kind,
+                                                              const StorageResult& result) {
+        QMetaObject::invokeMethod(
+            this, snow_shot::runtime::trackRuntimeWork([this, generation, kind, result]() {
+                if (generation == m_usageGeneration)
+                    finishCacheClear(kind, result);
+            }),
+            Qt::QueuedConnection);
     };
     m_usageTracker = std::make_unique<StorageUsageTracker>(std::move(usageOptions));
     m_status.appUsage = m_usageTracker->usage();
@@ -440,27 +503,58 @@ bool ApplicationStorage::isInitialized() const {
     return m_initialized;
 }
 
-StorageResult ApplicationStorage::flushNow() {
-    if (m_status.directoryChanging || !m_initialized || m_configuration == nullptr) {
-        return StorageResult::failure(QStringLiteral("Application storage is not initialized"));
+StorageCheckpointResult ApplicationStorage::checkpoint() {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (directoryChangeBlocksWork() || m_checkpointInProgress || !m_initialized ||
+        m_configuration == nullptr) {
+        const auto unavailable =
+            StorageResult::failure(QStringLiteral("Application storage is not initialized"));
+        return {unavailable, unavailable, {}};
     }
+    m_checkpointInProgress = true;
+    auto clearCheckpoint = qScopeGuard([this] { m_checkpointInProgress = false; });
+    const auto storageGeneration = m_storageGeneration;
+    const auto snapshotRoot = m_status.effectiveDirectory;
+    emit checkpointRequested();
+    if (!m_initialized || m_configuration == nullptr || m_storageGeneration != storageGeneration ||
+        m_status.effectiveDirectory != snapshotRoot) {
+        const auto unavailable =
+            StorageResult::failure(QStringLiteral("Application storage is not initialized"));
+        return {unavailable, unavailable, {}};
+    }
+    StorageCheckpointResult checkpoint{StorageResult::ok(), StorageResult::ok(), {}};
     if (m_captureHistory != nullptr) {
         m_captureHistory->drain();
-        updateHistoryError(m_captureHistory->lastError());
+        checkpoint.historyError = m_captureHistory->lastError();
+        updateHistoryError(checkpoint.historyError);
         updateHistoryUsage(m_captureHistory->usage());
     }
     if (m_pinnedWindows != nullptr) {
-        const auto pinnedResult = m_pinnedWindows->flush();
-        if (!pinnedResult.success)
-            return pinnedResult;
+        checkpoint.pinnedWindows = m_pinnedWindows->flush();
+        const auto error = checkpoint.pinnedWindows.success ? m_pinnedWindows->lastError()
+                                                            : checkpoint.pinnedWindows.error;
+        if (m_status.lastPinnedError != error) {
+            m_status.lastPinnedError = error;
+            emitStatusChanged();
+        }
     }
     if (m_usageTracker != nullptr) {
         m_usageTracker->drain();
         m_status.appUsage = m_usageTracker->usage();
     }
-    const StorageResult result = m_configuration->flushNow();
+    checkpoint.configuration = m_configuration->flushNow();
     updateConfigurationError(m_configuration->lastError());
-    return result;
+    return checkpoint;
+}
+
+StorageResult ApplicationStorage::flushNow() {
+    return checkpoint().result();
+}
+
+bool ApplicationStorage::directoryChangeBlocksWork() const {
+    // Preparation closes storage admission before application suspension can reenter.
+    // Restoration keeps it closed until all participants and usage state are consistent.
+    return m_preparingDirectoryChange || m_status.directoryChanging || m_finishingDirectoryChange;
 }
 
 void ApplicationStorage::shutdown() {
@@ -481,8 +575,7 @@ void ApplicationStorage::drainRuntimeWork() {
     // Periodic admission ends with storage, while repositories remain available to consumers.
     // An active timer must not survive until this singleton's post-application destruction.
     m_pinnedCleanupTimer.reset();
-    if (m_directoryWorker.valid())
-        m_directoryWorker.wait();
+    waitForDirectoryChange();
     if (!m_initialized) {
         return;
     }
@@ -576,7 +669,7 @@ bool ApplicationStorage::requestCaptureHistoryPolicy(const CaptureHistoryPolicy&
 
 std::shared_future<StorageResult>
 ApplicationStorage::requestCaptureHistoryPolicyAsync(const CaptureHistoryPolicy& policy) {
-    if (m_status.directoryChanging || !m_initialized || m_configuration == nullptr ||
+    if (directoryChangeBlocksWork() || !m_initialized || m_configuration == nullptr ||
         m_captureHistory == nullptr || !policy.isValid()) {
         updateHistoryError(QStringLiteral("The capture-history policy is invalid"));
         return readyFuture(
@@ -604,7 +697,7 @@ bool ApplicationStorage::requestSmartSelectionMode(SmartSelectionMode mode) {
 
 std::shared_future<StorageResult>
 ApplicationStorage::requestSmartSelectionModeAsync(SmartSelectionMode mode) {
-    if (m_status.directoryChanging || !m_initialized || m_configuration == nullptr ||
+    if (directoryChangeBlocksWork() || !m_initialized || m_configuration == nullptr ||
         !m_status.writeAvailable) {
         return readyFuture(
             StorageResult::failure(QStringLiteral("Configuration storage is not writable")));
@@ -629,7 +722,7 @@ PinnedWindowPolicy ApplicationStorage::pinnedWindowPolicy() const {
 }
 
 bool ApplicationStorage::requestPinnedWindowPolicy(const PinnedWindowPolicy& policy) {
-    if (m_status.directoryChanging || !m_initialized || !m_status.writeAvailable ||
+    if (directoryChangeBlocksWork() || !m_initialized || !m_status.writeAvailable ||
         !policy.isValid())
         return false;
     m_status.pinnedPolicyUpdating = true;
@@ -647,7 +740,7 @@ bool ApplicationStorage::requestPinnedWindowPolicy(const PinnedWindowPolicy& pol
 }
 
 bool ApplicationStorage::requestPinnedWindowClear() {
-    if (m_status.directoryChanging || !m_initialized || !m_status.writeAvailable)
+    if (directoryChangeBlocksWork() || !m_initialized || !m_status.writeAvailable)
         return false;
     m_status.pinnedClearing = true;
     emitStatusChanged();
@@ -659,7 +752,7 @@ bool ApplicationStorage::requestPinnedWindowClear() {
 }
 
 void ApplicationStorage::requestPinnedWindowRetentionCleanup(bool restartsQuiet) {
-    if (m_status.directoryChanging || !m_initialized || !m_pinnedWindows)
+    if (directoryChangeBlocksWork() || !m_initialized || !m_pinnedWindows)
         return;
     // Preserve requests that arrive during a sweep, including late source commits.
     {
@@ -699,7 +792,7 @@ bool ApplicationStorage::requestCaptureHistoryClear() {
 }
 
 std::shared_future<StorageResult> ApplicationStorage::requestCaptureHistoryClearAsync() {
-    if (m_status.directoryChanging || !m_initialized || m_captureHistory == nullptr ||
+    if (directoryChangeBlocksWork() || !m_initialized || m_captureHistory == nullptr ||
         m_status.historyClearing || !m_status.writeAvailable) {
         return readyFuture(
             StorageResult::failure(QStringLiteral("Capture-history storage is not writable")));
@@ -716,16 +809,21 @@ std::shared_future<StorageResult> ApplicationStorage::requestCaptureHistoryClear
 }
 
 void ApplicationStorage::requestStorageUsageRefresh() {
-    if (m_status.directoryChanging)
+    if (directoryChangeBlocksWork())
         return;
-    diagnostics::DiagnosticsService::instance().requestMaintenance();
+    refreshStorageUsage();
+}
+
+void ApplicationStorage::refreshStorageUsage() {
+    if (!m_isolateAuxiliaryStorage)
+        diagnostics::DiagnosticsService::instance().requestMaintenance();
     if (m_usageTracker != nullptr) {
         m_usageTracker->requestRefresh();
     }
 }
 
 void ApplicationStorage::requestStorageUsageRefreshIfStale() {
-    if (m_status.directoryChanging)
+    if (directoryChangeBlocksWork())
         return;
     if (m_usageTracker != nullptr) {
         m_usageTracker->requestRefreshIfStale(kUsageRefreshStaleAfter);
@@ -738,7 +836,7 @@ bool ApplicationStorage::requestThumbnailCacheClear() {
 }
 
 std::shared_future<StorageResult> ApplicationStorage::requestThumbnailCacheClearAsync() {
-    if (m_status.directoryChanging || !m_initialized || m_usageTracker == nullptr ||
+    if (directoryChangeBlocksWork() || !m_initialized || m_usageTracker == nullptr ||
         m_status.cacheClearing) {
         return readyFuture(StorageResult::failure(
             QStringLiteral("A cache cleanup is already running or storage is unavailable")));
@@ -760,7 +858,7 @@ bool ApplicationStorage::requestRecordingTempClear() {
 }
 
 std::shared_future<StorageResult> ApplicationStorage::requestRecordingTempClearAsync() {
-    if (m_status.directoryChanging || !m_initialized || m_usageTracker == nullptr ||
+    if (directoryChangeBlocksWork() || !m_initialized || m_usageTracker == nullptr ||
         m_status.cacheClearing) {
         return readyFuture(StorageResult::failure(
             QStringLiteral("A cache cleanup is already running or storage is unavailable")));
@@ -825,6 +923,9 @@ void ApplicationStorage::finishHistoryClear(bool success, const QString& error) 
 void ApplicationStorage::finishCacheClear(StorageCacheKind kind, const StorageResult& result) {
     qCInfo(storageLog) << "Cache clear finished, kind:" << static_cast<int>(kind)
                        << "success:" << result.success;
+    if (!result.success) {
+        qCWarning(storageLog) << "Cache cleanup failed:" << result.error;
+    }
     m_status.cacheClearing = false;
     if (m_usageTracker != nullptr) {
         m_status.appUsage = m_usageTracker->usage();
@@ -846,43 +947,97 @@ void ApplicationStorage::emitStatusChanged() {
 }
 void ApplicationStorage::setDirectoryChangeHooks(std::function<StorageResult()> suspend,
                                                  std::function<void(const QString&)> resume,
-                                                 std::function<void()> drain) {
+                                                 std::function<void()> drain,
+                                                 DirectoryChangeExecutor executor) {
+    Q_ASSERT(!m_directoryChange && !m_preparingDirectoryChange && !m_finishingDirectoryChange);
     m_suspendForDirectoryChange = std::move(suspend);
     m_drainForDirectoryChange = std::move(drain);
     m_resumeAfterDirectoryChange = std::move(resume);
+    m_directoryChangeExecutor = std::move(executor);
 }
 
 StorageResult ApplicationStorage::requestDirectoryChange(const QString& directory, bool migrate) {
 #ifndef Q_OS_WIN
     Q_UNUSED(directory);
     Q_UNUSED(migrate);
-    return StorageResult::failure(tr("Custom storage directories are only supported on Windows."));
+    return StorageResult::failure(tr("Custom storage directories are only supported on Windows"));
 #else
-    if (!m_initialized || !m_status.writeAvailable || m_status.directoryChanging ||
-        m_status.historyClearing || m_status.cacheClearing || m_status.pinnedClearing ||
-        m_status.historyPolicyUpdating || m_status.pinnedPolicyUpdating)
+    const auto storageAvailable = [this] {
+        return m_initialized && m_status.writeAvailable && !m_status.directoryChanging &&
+               !m_status.historyClearing && !m_status.cacheClearing && !m_status.pinnedClearing &&
+               !m_status.historyPolicyUpdating && !m_status.pinnedPolicyUpdating;
+    };
+    if (m_preparingDirectoryChange || m_finishingDirectoryChange || m_checkpointInProgress ||
+        !storageAvailable())
         return StorageResult::failure(
-            tr("Storage is busy or unavailable. Try again when current operations finish."));
+            tr("Storage is busy or unavailable. Try again when current operations finish"));
     const QString destination = QDir::cleanPath(QDir::fromNativeSeparators(directory.trimmed()));
     const auto validation = validateStorageDirectory(m_status.effectiveDirectory, destination);
     if (!validation.success)
         return validation;
-    const StorageStatus before = status();
+    // Reserve this admission before external suspension callbacks can reenter. Keep public
+    // directoryChanging false until application admission has inspected its own policy.
+    m_preparingDirectoryChange = true;
+    auto clearPreparing = qScopeGuard([this] { m_preparingDirectoryChange = false; });
+    auto operation = std::make_unique<DirectoryChange>();
+    operation->before = status();
+    operation->destination = destination;
+    operation->poll = std::make_unique<QTimer>(this);
+    operation->poll->setInterval(25);
+    connect(operation->poll.get(), &QTimer::timeout, this, [this] {
+        if (m_directoryChange->worker.wait_for(std::chrono::milliseconds(0)) ==
+            std::future_status::ready)
+            finishDirectoryChange();
+    });
+    const StorageStatus before = operation->before;
+    const auto diagnosticOptions = m_isolateAuxiliaryStorage
+                                       ? diagnostics::DiagnosticsOptions{}
+                                       : diagnostics::DiagnosticsService::instance().options();
+    const auto storageGeneration = m_storageGeneration;
     if (m_suspendForDirectoryChange) {
         const auto suspended = m_suspendForDirectoryChange();
         if (!suspended.success)
             return suspended;
+    }
+    // External suspension may run nested lifecycle code. Revalidate the live state before
+    // committing to these repositories; never overwrite a changed root with the old snapshot.
+    if (!storageAvailable() || m_storageGeneration != storageGeneration ||
+        m_status.effectiveDirectory != before.effectiveDirectory) {
+        if (m_suspendForDirectoryChange && m_resumeAfterDirectoryChange)
+            m_resumeAfterDirectoryChange(m_status.effectiveDirectory);
+        return StorageResult::failure(
+            tr("Storage is busy or unavailable. Try again when current operations finish"));
     }
     m_status = before;
     m_status.directoryChanging = true;
     m_status.writeAvailable = false;
     m_configuration->suspendWrites(true);
     m_captureHistory->suspendWrites(true);
-    emitStatusChanged();
-    const auto diagnosticOptions = diagnostics::DiagnosticsService::instance().options();
-    m_directoryWorker = std::async(
-        std::launch::async, snow_shot::runtime::trackRuntimeWork([this, before, destination,
-                                                                  migrate, diagnosticOptions] {
+    auto* active = operation.get();
+    m_directoryChange = std::move(operation);
+    auto work = [this, before, destination, migrate, diagnosticOptions, active] {
+        bool loggingPaused = false;
+        auto resumeLogging = [&] {
+            if (!loggingPaused)
+                return;
+            loggingPaused = false;
+            auto next = diagnosticOptions;
+            if (active->outcome && active->outcome->success) {
+                const QString oldRoot = QDir::cleanPath(before.effectiveDirectory) + u'/';
+                for (auto& path : next.directories) {
+                    if (QDir::cleanPath(path).startsWith(oldRoot, Qt::CaseInsensitive))
+                        path =
+                            QDir(destination)
+                                .filePath(QDir(before.effectiveDirectory).relativeFilePath(path));
+                }
+            }
+            if (!diagnostics::DiagnosticsService::instance().initialize(next)) {
+                if (!active->outcome)
+                    active->outcome = StorageDirectoryChangeResult{};
+                active->outcome->warning += tr("File logging could not be restarted");
+            }
+        };
+        try {
             snow_shot::platform::applyApplicationQoSToCurrentThread();
             StorageDirectoryChangeResult outcome;
             if (m_drainForDirectoryChange)
@@ -901,9 +1056,14 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                 return StorageDirectoryChangeResult{false, flush.error, {}};
             auto& diagnostics = diagnostics::DiagnosticsService::instance();
             const bool hadDiagnostics = !diagnosticOptions.directories.isEmpty();
+            // Standalone logs stay with the startup-selected crash database for this process.
+            // The next startup resolves the newly selected data directory for both kinds of log.
+            const bool fixedDiagnostics = !app::distribution::isStoreManaged();
             const QString captureDatabase = diagnostics.crashCaptureDirectory();
-            if (hadDiagnostics)
+            if (hadDiagnostics && !fixedDiagnostics) {
                 diagnostics.shutdown();
+                loggingPaused = true;
+            }
             std::unique_ptr<PinnedWindowRepository> prepared;
             bool exchanged = false;
             StorageDirectoryChangeOptions options;
@@ -920,7 +1080,9 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
             // The native handler keeps writing to its process-lifetime database even
             // while the log writer is stopped. Never copy or remove that live database.
             options.includePath = [expectedPins, migrate, source = before.effectiveDirectory,
-                                   captureDatabase](const QString& path) {
+                                   captureDatabase, fixedDiagnostics](const QString& path) {
+                if (fixedDiagnostics && (path == u"logs" || path.startsWith(u"logs/")))
+                    return false;
                 const QString absolute = QDir::cleanPath(QDir(source).filePath(path));
                 if (!captureDatabase.isEmpty() &&
                     (absolute.compare(captureDatabase, Qt::CaseInsensitive) == 0 ||
@@ -931,10 +1093,13 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                        expectedPins.contains(path.mid(prefix.size()).section(u'/', 0, 0));
             };
             options.preparedFiles = {QStringLiteral("pinned_windows_v2/index.json")};
-            options.progress = [this](const StorageDirectoryProgress& progress) {
+            options.progress = [this, mailbox = active->progress](const auto& progress) {
+                if (!mailbox->publish(progress))
+                    return;
                 QMetaObject::invokeMethod(this,
-                                          snow_shot::runtime::trackRuntimeWork([this, progress] {
-                                              emit directoryChangeProgress(progress);
+                                          snow_shot::runtime::trackRuntimeWork([this, mailbox] {
+                                              if (const auto latest = mailbox->take())
+                                                  emit directoryChangeProgress(*latest);
                                           }),
                                           Qt::QueuedConnection);
             };
@@ -952,7 +1117,7 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                     actualPins.insert(pin.id);
                 if (actualPins != expectedPins)
                     return StorageResult::failure(
-                        tr("Some pinned windows could not be prepared in the new directory."));
+                        tr("Some pinned windows could not be prepared in the new directory"));
                 return prepared->flush();
             };
             options.activate = [&](const QString& root) {
@@ -974,54 +1139,111 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                 prepared.reset();
             };
             outcome = changeStorageDirectory(options);
+            active->outcome = outcome;
             prepared.reset();
-            if (hadDiagnostics) {
-                auto next = diagnosticOptions;
-                if (outcome.success) {
-                    const QString oldRoot = QDir::cleanPath(before.effectiveDirectory) + u'/';
-                    for (auto& path : next.directories) {
-                        if (QDir::cleanPath(path).startsWith(oldRoot, Qt::CaseInsensitive))
-                            path = QDir(destination)
-                                       .filePath(
-                                           QDir(before.effectiveDirectory).relativeFilePath(path));
-                    }
-                }
-                if (!diagnostics.initialize(next))
-                    outcome.warning += tr("File logging could not be restarted.");
+            resumeLogging();
+            return *active->outcome;
+        } catch (...) {
+            try {
+                resumeLogging();
+            } catch (...) {
+                // Logging is best effort; storage outcome and producer restoration remain valid.
             }
+            const auto error = QCoreApplication::translate(
+                "StorageDirectoryChange", "Could not change the storage directory");
+            auto outcome = active->outcome.value_or(StorageDirectoryChangeResult{});
+            if (outcome.success)
+                outcome.warning +=
+                    (outcome.warning.isEmpty() ? QString() : QStringLiteral("\n")) + error;
+            else
+                outcome.error = error;
+            active->outcome = outcome;
             return outcome;
-        }));
-    auto* poll = new QTimer(this);
-    poll->setInterval(25);
-    connect(poll, &QTimer::timeout, this, [this, poll, before, destination] {
-        if (m_directoryWorker.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
-            return;
-        poll->stop();
-        poll->deleteLater();
-        const auto result = m_directoryWorker.get();
-        m_status = before;
-        if (result.success) {
-            m_status.requestedDirectory = destination;
-            m_status.effectiveDirectory = destination;
-            m_status.effectiveMode = StorageMode::Custom;
-            m_status.fallbackReason.clear();
         }
-        m_usageTracker.reset();
-        createUsageTracker();
-        m_configuration->suspendWrites(false);
-        m_captureHistory->suspendWrites(false);
-        m_pinnedWindows->suspendWrites(false);
-        if (m_resumeAfterDirectoryChange)
-            m_resumeAfterDirectoryChange(m_status.effectiveDirectory);
-        emit captureHistoryChanged();
-        emit pinnedWindowsChanged();
-        emitStatusChanged();
-        requestStorageUsageRefresh();
-        emit directoryChangeFinished(result);
-    });
-    poll->start();
+    };
+    try {
+        auto trackedWork = snow_shot::runtime::trackRuntimeWork(std::move(work));
+        active->worker = m_directoryChangeExecutor
+                             ? m_directoryChangeExecutor(std::move(trackedWork))
+                             : std::async(std::launch::async, std::move(trackedWork));
+        if (!active->worker.valid())
+            throw std::future_error(std::future_errc::no_state);
+    } catch (...) {
+        m_preparingDirectoryChange = false;
+        clearPreparing.dismiss();
+        finishDirectoryChange();
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Could not change the storage directory"));
+    }
+    m_preparingDirectoryChange = false;
+    clearPreparing.dismiss();
+    active->poll->start();
+    // A listener may synchronously shut storage down or replace its repositories. Publish
+    // the busy snapshot only after teardown can join this operation's valid worker. Nothing
+    // below this callback may use the operation or the repositories it originally borrowed.
+    emitStatusChanged();
     return StorageResult::ok();
 #endif
+}
+
+void ApplicationStorage::finishDirectoryChange() {
+    Q_ASSERT(QThread::currentThread() == thread());
+    m_finishingDirectoryChange = true;
+    auto clearFinishing = qScopeGuard([this] { m_finishingDirectoryChange = false; });
+    auto operation = std::move(m_directoryChange);
+    operation->poll->stop();
+    operation->poll.release()->deleteLater();
+    auto result = operation->outcome.value_or(StorageDirectoryChangeResult{});
+    try {
+        if (operation->worker.valid())
+            result = operation->worker.get();
+        else
+            throw std::future_error(std::future_errc::no_state);
+    } catch (...) {
+        const auto error = QCoreApplication::translate("StorageDirectoryChange",
+                                                       "Could not change the storage directory");
+        if (result.success)
+            result.warning += (result.warning.isEmpty() ? QString() : QStringLiteral("\n")) + error;
+        else
+            result.error = error;
+    }
+    // The executor is finished. Retire its pending callback before restoration can start
+    // a new operation, and publish its last snapshot before the completion notification.
+    const auto finalProgress = operation->progress->close();
+    m_status = operation->before;
+    if (result.success) {
+        m_status.requestedDirectory = operation->destination;
+        m_status.effectiveDirectory = operation->destination;
+        m_status.effectiveMode = StorageMode::Custom;
+        m_status.fallbackReason.clear();
+    }
+    m_configuration->suspendWrites(false);
+    m_captureHistory->suspendWrites(false);
+    m_pinnedWindows->suspendWrites(false);
+    if (m_resumeAfterDirectoryChange)
+        m_resumeAfterDirectoryChange(m_status.effectiveDirectory);
+    m_usageTracker.reset();
+    createUsageTracker();
+    emit captureHistoryChanged();
+    emit pinnedWindowsChanged();
+    emitStatusChanged();
+    refreshStorageUsage();
+    if (finalProgress)
+        emit directoryChangeProgress(*finalProgress);
+    // Resume/status callbacks may run nested application code while the old operation still
+    // updates shared state. Only the final notification is safe for chaining another move.
+    m_finishingDirectoryChange = false;
+    clearFinishing.dismiss();
+    emit directoryChangeFinished(result);
+}
+
+void ApplicationStorage::waitForDirectoryChange() {
+    if (m_directoryChange) {
+        // Idle singleton teardown may run after QApplication has destroyed its QThread.
+        Q_ASSERT(QThread::currentThread() == thread());
+        m_directoryChange->worker.wait();
+        finishDirectoryChange();
+    }
 }
 
 } // namespace snow_shot::storage

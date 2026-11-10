@@ -32,6 +32,13 @@ struct ScreenshotSelectionParams;
 enum class ScreenshotActiveTool;
 enum class ScreenshotIntelligentSelectionTarget;
 
+// Only a border resize retains the recognition window that owns the pointer gesture.
+enum class ScreenshotToolActivationReason { Command, SelectionResize, Reselection };
+
+// Region replacements complete the action that opened this capture. An explicit toolbar
+// command takes over that action and allows its own editing UI before dispatch.
+enum class ScreenshotSelectionIntent { PreserveLaunchAction, SupersedeWithCommand };
+
 struct ScreenshotOverlayInputActions {
     std::function<bool(const QPoint& physicalPoint)> returnToIntelligentSelection =
         [](const QPoint&) { return false; };
@@ -50,7 +57,7 @@ struct ScreenshotOverlayInputActions {
     std::function<bool(int delta)> stepSelectionOpacity = [](int) { return false; };
     std::function<bool(int delta)> stepSpotlightOpacity = [](int) { return false; };
     std::function<bool(int delta)> stepFilterIntensity = [](int) { return false; };
-    std::function<bool(int delta)> stepPenFilterStrokeWidth = [](int) { return false; };
+    std::function<bool(int delta)> stepBrushFilterStrokeWidth = [](int) { return false; };
     std::function<bool(int delta)> stepWatermarkFontSize = [](int) { return false; };
     std::function<void()> copySelectionToClipboard = []() {};
     std::function<bool()> localShortcutInputAllowed = []() { return true; };
@@ -78,18 +85,17 @@ struct ScreenshotOverlayInputActions {
         return false;
     };
 
-    // Called after a valid selection transitions the interaction into editing.
-    // This is intentionally separate from showToolbar so callers can schedule
-    // a post-selection command (for example, OCR or pinning) without coupling
-    // the input handler to a concrete controller.
+    // Called after committing a selection and applying any explicit or restored tool,
+    // before the handler presents editing UI. Activate pending capture actions or
+    // the remembered tool here; commands may retire the session.
     std::function<void()> selectionConfirmed = []() {};
 
     // Applies the next older screenshot history selection to the current image.
     std::function<bool()> selectPreviousSelection = []() { return false; };
 
-    // Performs the same lasting tool activation as a direct toolbar command.
-    std::function<bool(ScreenshotActiveTool tool)> activateToolForSelectionResize =
-        [](ScreenshotActiveTool) { return false; };
+    // The reason determines whether an existing recognition input surface may survive.
+    std::function<bool(ScreenshotActiveTool tool, ScreenshotToolActivationReason reason)>
+        activateTool = [](ScreenshotActiveTool, ScreenshotToolActivationReason) { return false; };
 
     // Canvas color sampler callbacks.
     std::function<void()> cancelCanvasColorSampling = []() {};
@@ -122,9 +128,10 @@ struct ScreenshotOverlayInputActions {
     std::function<bool(const QString&)> canActivateDrawingShortcut = [](const QString&) {
         return true;
     };
-    // Suppress automatic tool restoration and pending quick actions before an
-    // explicit command confirms the selection and shows the toolbar.
-    std::function<void()> prepareExplicitSelectionCommand = []() {};
+    // Apply intent before changing the region or dispatching the command. This callback
+    // owns launch-action and toolbar policy; the handler owns synchronous confirmation.
+    std::function<void(ScreenshotSelectionIntent)> prepareSelection =
+        [](ScreenshotSelectionIntent) {};
     std::function<bool()> toggleGuidesForCurrentSession = []() { return false; };
     std::function<bool()> cursorVisibilityAvailable = [] { return false; };
     std::function<bool()> toggleCursorVisibility = [] { return false; };
@@ -158,6 +165,9 @@ class ScreenshotOverlayInputHandler final {
   public:
     explicit ScreenshotOverlayInputHandler(ScreenshotOverlayInputHandlerContext context);
     ~ScreenshotOverlayInputHandler();
+    // Selection replacement must wait for the current input owner, including the gaps
+    // between draft clicks and an external gesture whose first frame has not arrived yet.
+    [[nodiscard]] bool selectionTransactionActive() const;
     bool effectDragActive() const;
     bool cancelEffectDrag();
     void leaveEffectEditors();
@@ -265,6 +275,7 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] bool canPrepareSelectionForToolbarShortcut() const;
     // Commit the region, activate the command, then present its resulting tool.
     [[nodiscard]] bool activateToolbarShortcutForSelection(const std::function<bool()>& activate);
+    void discardReselectionTool();
     void beginRegionOperation(bool subtract);
     bool cancelRegionOperation();
     [[nodiscard]] bool regionOperationActive() const;
@@ -276,7 +287,8 @@ class ScreenshotOverlayInputHandler final {
   private:
     enum class AspectRatioSnapShortcutState { Released, Snapping, Unlocking };
 
-    void confirmSelection(const std::function<void()>& beforePresentation);
+    bool confirmSelection(const std::function<void()>& beforePresentation);
+    [[nodiscard]] bool canPresentSelection(quint64 sessionId) const;
     [[nodiscard]] QPointF virtualPositionForOverlay(const ScreenshotOverlayWindow* overlay,
                                                     const QPointF& localPosition) const;
     [[nodiscard]] QPoint physicalPositionForCanvasPoint(const QPointF& point) const;
@@ -289,6 +301,7 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] QRectF selectionRectForDrag(ScreenshotSelectionDragMode dragMode,
                                               const QPointF& position);
     void restoreToolAfterSelectionResize();
+    void restoreToolAfterReselection();
     void restoreScrollingCaptureAfterFailedResize();
     void finishTransientDrag();
 
@@ -311,6 +324,8 @@ class ScreenshotOverlayInputHandler final {
     QMetaObject::Connection m_angleTargetConnection;
     bool m_externalDragActive = false;
     std::optional<ScreenshotActiveTool> m_toolBeforeSelectionResize;
+    // Retained across selection gestures until confirmation or an explicit tool command.
+    std::optional<ScreenshotActiveTool> m_toolBeforeReselection;
     bool m_scrollingCaptureSelectionResize = false;
     bool m_moveEntireSelectionShortcut = false;
     bool m_keepSelectionAspectRatioShortcut = false;

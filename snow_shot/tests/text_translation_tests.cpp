@@ -471,10 +471,13 @@ void queueAndJobs(const QString& provider) {
         value.concurrency = limit;
         require(settings.setValue(key, textTranslationConfigurationsToJson({value})),
                 "configure jobs");
+        require(
+            settings.setValue(QStringLiteral("screenshot_translation/model"), value.selectionId()),
+            "select configured translation fixture");
         SnowShotApiClient client(QString{});
         auto& service =
             translation::TranslationService::forClient(client, settings, QLocale(QLocale::English));
-        require(service.models().size() == 1 &&
+        require(service.models().size() == 2 &&
                     service.preferences().modelId == value.selectionId(),
                 "local provider selected without server catalog");
         require(client.fallbackModel(true).isEmpty(), "excluded from vision");
@@ -563,12 +566,14 @@ void unavailableCatalog(const QString& provider) {
     const auto value = config(custom.url(), provider);
     require(settings.setValue(key, textTranslationConfigurationsToJson({value})),
             "custom settings before catalog");
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"), value.selectionId()),
+            "select configured translation fixture");
     SnowShotApiClient client(builtIn.url());
     auto& service =
         translation::TranslationService::forClient(client, settings, QLocale(QLocale::English));
     service.refreshModels();
     waitUntil([&] { return !service.loadingModels(); }, "failed built-in catalog returns");
-    require(service.models().size() == 1 && service.preferences().modelId == value.selectionId() &&
+    require(service.models().size() == 2 && service.preferences().modelId == value.selectionId() &&
                 service.errorText().isEmpty(),
             "custom service survives unavailable built-in catalog");
 }
@@ -672,6 +677,8 @@ void errorsAndInvalidation(const QString& provider) {
                                          true, 8000);
     require(settings.setValue(key, textTranslationConfigurationsToJson({value})),
             "service settings");
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"), value.selectionId()),
+            "select configured translation fixture");
     auto& service =
         translation::TranslationService::forClient(client, settings, QLocale(QLocale::English));
     std::unique_ptr<translation::TranslationJob> job(
@@ -684,11 +691,14 @@ void errorsAndInvalidation(const QString& provider) {
     require(job->state() == translation::TranslationJob::State::Invalidated,
             "connection edit invalidates job");
     require(settings.setValue(key, QJsonArray{}), "delete configuration");
-    require(service.models().isEmpty() && service.preferences().modelId.isEmpty(),
-            "delete clears stale selection");
+    require(service.models().size() == 1 &&
+                service.preferences().modelId == QStringLiteral("free-translation"),
+            "delete replaces stale selection with Free Translation");
     value.concurrency = 1;
     require(settings.setValue(key, textTranslationConfigurationsToJson({value})),
             "restore provider");
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"), value.selectionId()),
+            "select configured translation fixture");
     std::unique_ptr<translation::TranslationJob> throttled(
         service.createJob({QStringLiteral("one"), QStringLiteral("two"), QStringLiteral("one"),
                            QStringLiteral("three"), QStringLiteral("two")},

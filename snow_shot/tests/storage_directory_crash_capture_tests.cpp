@@ -73,6 +73,8 @@ int fixture(const QString& root, bool stableDatabase) {
             "native crash capture starts");
     const QString pipe = logger.crashPipeName();
     const QString database = logger.crashCaptureDirectory();
+    const QString logDirectory = logger.status().directory;
+    const QString initialSession = logger.status().sessionId;
     require(!pipe.isEmpty(), "capture endpoint is available");
 
     migrate(QDir(root).filePath(QStringLiteral("first")), true);
@@ -88,6 +90,11 @@ int fixture(const QString& root, bool stableDatabase) {
                 "migrated legacy crash reports remain exportable");
     }
     migrate(QDir(root).filePath(QStringLiteral("second")), false);
+    require(logger.status().directory == logDirectory &&
+                logger.status().sessionId == initialSession &&
+                !QFileInfo::exists(QDir(root).filePath(QStringLiteral("first/logs"))) &&
+                !QFileInfo::exists(QDir(root).filePath(QStringLiteral("second/logs"))),
+            "data migration leaves logs in place and keeps the diagnostic session running");
     require(logger.status().crashCaptureAvailable && logger.crashPipeName() == pipe,
             "repeated directory changes preserve crash capture");
     require(logger.crashCaptureDirectory() == database && logger.directories().contains(database),

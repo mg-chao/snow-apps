@@ -225,6 +225,7 @@ fn run(
 fn compare_sparse(size: (u32, u32)) -> Result<(), String> {
     let style = style();
     let preview_config = PreviewConfig {
+        keyboard_filter: Default::default(),
         webcam: None,
         region: (0, 0, size.0, size.1),
         canvas: size,

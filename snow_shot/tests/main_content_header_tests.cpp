@@ -42,7 +42,7 @@ const snow_shot::presentation::settings::SettingsCatalog& catalog() {
     return registry().catalog();
 }
 
-QVector<snow_shot::presentation::settings::SettingsSectionSummary> globalHotkeySections() {
+QVector<snow_shot::presentation::settings::SettingsSectionSummary> globalShortcutSections() {
     return catalog().sectionSummaries(QStringLiteral("global-hotkeys"));
 }
 
@@ -71,7 +71,7 @@ void sidebarPlacesSearchAboveNavigation() {
     sidebar.setCollapsed(false);
     layout->addWidget(&sidebar);
     layout->addWidget(&header, 1, Qt::AlignTop);
-    header.setSections(globalHotkeySections());
+    header.setSections(globalShortcutSections());
     host.resize(900, 540);
     host.show();
     flushEvents();
@@ -99,17 +99,17 @@ void sidebarPlacesSearchAboveNavigation() {
                 search->mapTo(&sidebar, QPoint()).x() == metric.paddingSM &&
                 search->mapTo(&sidebar, QPoint()).y() == metric.paddingXS,
             "sidebar search should have compact top spacing and balanced side spacing");
-    require(select->placeholder() == QStringLiteral("Search Function") &&
-                select->accessibleName() == QStringLiteral("Search Function"),
+    require(select->placeholder() == QStringLiteral("Search function") &&
+                select->accessibleName() == QStringLiteral("Search function"),
             "the search placeholder and accessible name should use the requested copy");
     require(header.findChild<ApplicationSearchWidget*>() == nullptr,
             "the page header should only contain page tabs");
-    const auto globalHotkeySectionsForPage = globalHotkeySections();
-    require(tabs->count() == globalHotkeySectionsForPage.size(),
+    const auto globalShortcutSectionsForPage = globalShortcutSections();
+    require(tabs->count() == globalShortcutSectionsForPage.size(),
             "tabs should cover every category on the current global-hotkeys page");
-    for (int index = 0; index < globalHotkeySectionsForPage.size(); ++index) {
-        require(tabs->tabKey(index) == globalHotkeySectionsForPage.at(index).id &&
-                    tabs->tabText(index) == globalHotkeySectionsForPage.at(index).label,
+    for (int index = 0; index < globalShortcutSectionsForPage.size(); ++index) {
+        require(tabs->tabKey(index) == globalShortcutSectionsForPage.at(index).id &&
+                    tabs->tabText(index) == globalShortcutSectionsForPage.at(index).label,
                 "tabs should preserve registry section IDs, order, and labels");
     }
     const qsizetype pageCount = registry().pages().size();
@@ -121,7 +121,7 @@ void sidebarPlacesSearchAboveNavigation() {
     const QString descriptionRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 101);
     const QString categoryRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 102);
     require(searchOptions.constFirst().metadata.value(descriptionRole).toString() ==
-                    QStringLiteral("Global hotkeys page") &&
+                    QStringLiteral("Global shortcuts page") &&
                 searchOptions.constFirst().metadata.value(categoryRole).toString() ==
                     QStringLiteral("Pages"),
             "search rows should expose their description and right-aligned category context");
@@ -146,23 +146,23 @@ void sidebarPlacesSearchAboveNavigation() {
 
     require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(7),
             "the delayed screenshot setting should be writable");
-    select->setSearchText(QStringLiteral("delay 7s"));
+    select->setSearchText(QStringLiteral("run after 7 seconds"));
     flushEvents();
     const auto delayOptions = select->options();
     require(
         !delayOptions.isEmpty() &&
             delayOptions.constFirst().value.toString() ==
                 QStringLiteral("item:quick.screenshot-delay") &&
-            delayOptions.constFirst().label == QStringLiteral("Delay 7s to execute") &&
+            delayOptions.constFirst().label == QStringLiteral("Run after 7 seconds") &&
             !delayOptions.constFirst().label.contains(QStringLiteral("%1")),
         "global search should render the current delayed screenshot value without placeholders");
     require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(4),
             "the delayed screenshot setting should support live updates");
-    select->setSearchText(QStringLiteral("delay 4s"));
+    select->setSearchText(QStringLiteral("run after 4 seconds"));
     flushEvents();
     const auto updatedDelayOptions = select->options();
     require(!updatedDelayOptions.isEmpty() &&
-                updatedDelayOptions.constFirst().label == QStringLiteral("Delay 4s to execute"),
+                updatedDelayOptions.constFirst().label == QStringLiteral("Run after 4 seconds"),
             "global search should refresh delayed screenshot text when the setting changes");
     select->setSearchText(QString());
     flushEvents();
@@ -279,7 +279,7 @@ void tabsRequestCategoriesWithoutChangingPages() {
 
     MainContentHeaderWidget header(ThemeManager::instance().themeColorScheme().metricAlias);
     require(header.isHidden(), "a new header should not reserve space before it has tabs");
-    header.setSections(globalHotkeySections());
+    header.setSections(globalShortcutSections());
     auto* tabs = header.findChild<adqt::widgets::AdTabs*>(QStringLiteral("mainSectionTabs"));
     require(tabs != nullptr, "section tabs should exist");
 
@@ -322,8 +322,8 @@ void tabsRequestCategoriesWithoutChangingPages() {
     require(tabs->count() == 0 && tabs->isHidden() && header.isHidden(),
             "pages without sections should hide the entire top component");
 
-    header.setSections(globalHotkeySections());
-    require(tabs->count() == globalHotkeySections().size() && !tabs->isHidden() &&
+    header.setSections(globalShortcutSections());
+    require(tabs->count() == globalShortcutSections().size() && !tabs->isHidden() &&
                 !header.isHidden() && header.layout()->contentsMargins().bottom() == 0,
             "section tabs should become visible again with their original header spacing");
 }
@@ -336,7 +336,7 @@ void searchRetranslatesWithNavigation() {
         }
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
-            if (qstrcmp(context, "SidebarWidget") == 0 && qstrcmp(source, "Search Function") == 0) {
+            if (qstrcmp(context, "SidebarWidget") == 0 && qstrcmp(source, "Search function") == 0) {
                 return QStringLiteral("Translated search");
             }
             return {};

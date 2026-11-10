@@ -328,9 +328,9 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeTool() override {}
     void setArrowTool() override {}
     void setLineTool() override {}
-    void setFreeDrawTool() override {}
+    void setBrushTool() override {}
     void setHighlightTool() override {}
-    void setPenHighlightTool() override {}
+    void setBrushHighlightTool() override {}
     void setEraserTool() override {}
     void setFilterTool() override {}
     void setWatermarkTool() override {}
@@ -338,7 +338,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
     void setTextTool() override {}
-    void setSerialNumberTool() override {}
+    void setSequenceNumberTool() override {}
     void setOcrTool() override {}
     void startScrollingScreenshot() override {}
     void pinSelectionToScreen() override {}
@@ -348,10 +348,10 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
-    void decrementSelectedSerialNumbers() override {}
-    void incrementSelectedSerialNumbers() override {}
-    void createTextForSelectedSerialNumber() override {}
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSequenceNumbers() override {}
+    void incrementSelectedSequenceNumbers() override {}
+    void createTextForSelectedSequenceNumber() override {}
     void repositionToolbarForContentChange() override {}
     void hideColorPickersForScreenshotUi() override {}
 };
@@ -783,16 +783,16 @@ constexpr ToolCase kTools[] = {
     {"shape", ScreenshotToolPalette::Tool::Shape},
     {"arrow", ScreenshotToolPalette::Tool::Arrow},
     {"line", ScreenshotToolPalette::Tool::Line},
-    {"free_draw", ScreenshotToolPalette::Tool::FreeDraw},
+    {"free_draw", ScreenshotToolPalette::Tool::Brush},
     {"rectangle_highlight", ScreenshotToolPalette::Tool::RectangleHighlight},
-    {"pen_highlight", ScreenshotToolPalette::Tool::PenHighlight},
+    {"pen_highlight", ScreenshotToolPalette::Tool::BrushHighlight},
     {"eraser", ScreenshotToolPalette::Tool::Eraser},
     {"rectangle_eraser", ScreenshotToolPalette::Tool::RectangleEraser},
     {"brush_eraser", ScreenshotToolPalette::Tool::BrushEraser},
     {"filter", ScreenshotToolPalette::Tool::Filter},
     {"watermark", ScreenshotToolPalette::Tool::Watermark},
     {"text", ScreenshotToolPalette::Tool::Text},
-    {"serial_number", ScreenshotToolPalette::Tool::SerialNumber},
+    {"serial_number", ScreenshotToolPalette::Tool::SequenceNumber},
     {"ocr", ScreenshotToolPalette::Tool::Ocr},
     {"scrolling_screenshot", ScreenshotToolPalette::Tool::ScrollingScreenshot},
 };
@@ -816,17 +816,17 @@ constexpr SourceCase kSources[] = {
     {"selected_line", SnowCanvasStyleToolbarSource::SelectedLine,
      ScreenshotToolPalette::Tool::Line},
     {"default_free_draw", SnowCanvasStyleToolbarSource::DefaultFreeDraw,
-     ScreenshotToolPalette::Tool::FreeDraw},
+     ScreenshotToolPalette::Tool::Brush},
     {"selected_free_draw", SnowCanvasStyleToolbarSource::SelectedFreeDraw,
-     ScreenshotToolPalette::Tool::FreeDraw},
+     ScreenshotToolPalette::Tool::Brush},
     {"default_rectangle_highlight", SnowCanvasStyleToolbarSource::DefaultRectangleHighlight,
      ScreenshotToolPalette::Tool::RectangleHighlight},
     {"selected_rectangle_highlight", SnowCanvasStyleToolbarSource::SelectedRectangleHighlight,
      ScreenshotToolPalette::Tool::RectangleHighlight},
     {"default_pen_highlight", SnowCanvasStyleToolbarSource::DefaultPenHighlight,
-     ScreenshotToolPalette::Tool::PenHighlight},
+     ScreenshotToolPalette::Tool::BrushHighlight},
     {"selected_pen_highlight", SnowCanvasStyleToolbarSource::SelectedPenHighlight,
-     ScreenshotToolPalette::Tool::PenHighlight},
+     ScreenshotToolPalette::Tool::BrushHighlight},
     {"eraser", SnowCanvasStyleToolbarSource::Eraser, ScreenshotToolPalette::Tool::Eraser},
     {"rectangle_eraser", SnowCanvasStyleToolbarSource::DefaultRectangleEraser,
      ScreenshotToolPalette::Tool::RectangleEraser},
@@ -841,9 +841,9 @@ constexpr SourceCase kSources[] = {
     {"selected_text", SnowCanvasStyleToolbarSource::SelectedText,
      ScreenshotToolPalette::Tool::Text},
     {"default_serial_number", SnowCanvasStyleToolbarSource::DefaultSerialNumber,
-     ScreenshotToolPalette::Tool::SerialNumber},
+     ScreenshotToolPalette::Tool::SequenceNumber},
     {"selected_serial_number", SnowCanvasStyleToolbarSource::SelectedSerialNumber,
-     ScreenshotToolPalette::Tool::SerialNumber},
+     ScreenshotToolPalette::Tool::SequenceNumber},
 };
 
 SnowCanvasStyleToolbarState stateForSource(SnowCanvasStyleToolbarSource source, int variant,
@@ -1111,7 +1111,7 @@ QVector<Scenario> createScenarios() {
         {QStringLiteral("selection.cross_type_text"), QStringLiteral("selection_action"),
          QStringLiteral(
              "Switch style controls to selected text while another creation tool is active"),
-         [](Fixture& f) { f.toolbar->setActiveTool(ScreenshotToolPalette::Tool::SerialNumber); },
+         [](Fixture& f) { f.toolbar->setActiveTool(ScreenshotToolPalette::Tool::SequenceNumber); },
          [](Fixture& f) {
              f.toolbar->setStyleToolbarState(
                  stateForSource(SnowCanvasStyleToolbarSource::SelectedText, 4, false));

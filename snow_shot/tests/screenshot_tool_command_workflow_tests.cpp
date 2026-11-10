@@ -90,7 +90,7 @@ void nonDrawingToolsDisableCanvasInteraction() {
                 interaction.activeTool() == ScreenshotActiveTool::Bracket,
             "activating Bracket forwards the tool through the shared canvas workflow");
 }
-void serialNumberStylePatchesPreservePropertyMask() {
+void sequenceNumberStylePatchesPreservePropertyMask() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displaySession;
     ScreenshotGeometryMapper geometry;
@@ -101,8 +101,8 @@ void serialNumberStylePatchesPreservePropertyMask() {
     std::optional<quint32> receivedProperties;
     SnowCanvasSerialNumberStyle receivedStyle;
     int calls = 0;
-    actions.setSerialNumberStyle = [&](const SnowCanvasSerialNumberStyle& style,
-                                       std::optional<quint32> properties) {
+    actions.setSequenceNumberStyle = [&](const SnowCanvasSerialNumberStyle& style,
+                                         std::optional<quint32> properties) {
         receivedStyle = style;
         receivedProperties = properties;
         ++calls;
@@ -115,14 +115,14 @@ void serialNumberStylePatchesPreservePropertyMask() {
     style.opacity = 0.5;
     const quint32 properties =
         SnowCanvasSerialNumberStyleMixedNumber | SnowCanvasSerialNumberStyleMixedOpacity;
-    workflow.setSerialNumberStyleFromToolbar(style, properties);
+    workflow.setSequenceNumberStyleFromToolbar(style, properties);
     require(calls == 1 && receivedProperties == properties && receivedStyle.number == 42 &&
                 receivedStyle.opacity == 0.5,
             "serial-number patches must forward exactly the requested values and property mask");
-    workflow.setSerialNumberStyleFromToolbar(style, 0);
+    workflow.setSequenceNumberStyleFromToolbar(style, 0);
     require(calls == 2 && receivedProperties.has_value() && *receivedProperties == 0,
             "an empty explicit patch must not become an unmasked style update");
-    workflow.setSerialNumberStyleFromToolbar(style);
+    workflow.setSequenceNumberStyleFromToolbar(style);
     require(calls == 3 && !receivedProperties.has_value(),
             "legacy serial-number updates must retain their unmasked semantics");
 }
@@ -130,6 +130,6 @@ void serialNumberStylePatchesPreservePropertyMask() {
 
 int main() {
     nonDrawingToolsDisableCanvasInteraction();
-    serialNumberStylePatchesPreservePropertyMask();
+    sequenceNumberStylePatchesPreservePropertyMask();
     return 0;
 }

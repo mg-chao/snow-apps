@@ -596,7 +596,7 @@ void AccountPageWidget::retranslateUi() {
     m_captchaRefresh->setText(tr("Refresh code"));
     const QString agreement = tr("User agreement");
     const QString privacy = tr("Privacy policy");
-    const QString consent = tr("I have read and agree to the %1 and %2.");
+    const QString consent = tr("I have read and agree to the %1 and %2");
     const auto link = [](const QString& url, const QString& title) {
         return QStringLiteral("<a href=\"%1\">%2</a>")
             .arg(url.toHtmlEscaped(), title.toHtmlEscaped());
@@ -611,11 +611,11 @@ void AccountPageWidget::retranslateUi() {
     m_credit->parentWidget()->setToolTip(tr("Available credits"));
     m_topUp->setText(tr("Purchase credits"));
     m_signOut->setText(tr("Sign out"));
-    m_paid->setText(tr("I've Paid"));
+    m_paid->setText(tr("I've paid"));
     m_dismiss->setText(tr("Continue"));
     m_signInInstead->setText(tr("Sign in to an existing account"));
     m_historyTitle->setText(tr("Account transactions"));
-    m_historyDescription->setText(tr("Top-ups, usage charges, and refunds."));
+    m_historyDescription->setText(tr("Top-ups, usage charges, and refunds"));
     const QStringList headings = {tr("Transaction"), tr("Date"), tr("Status"), tr("Credits")};
     const auto headerLabels = m_transactionHeader->findChildren<QLabel*>();
     for (qsizetype index = 0; index < headerLabels.size(); ++index)
@@ -675,7 +675,7 @@ void AccountPageWidget::updateState() {
         editor->setAccessibleDescription(error.isEmpty() ? editor->placeholderText() : error);
     }
     if (!m_service) {
-        m_notice->setText(tr("The account service is unavailable."));
+        m_notice->setText(tr("The account service is unavailable"));
         m_notice->show();
         return;
     }
@@ -684,7 +684,7 @@ void AccountPageWidget::updateState() {
     const QString notice = !m_service->storageNotice().isEmpty() ? m_service->storageNotice()
                            : signedIn && !paymentsAvailable
                                ? tr("Purchases are currently unavailable. Your account and "
-                                    "transaction records are still available.")
+                                    "transaction records are still available")
                                : QString();
     m_notice->setText(notice);
     m_notice->setVisible(!notice.isEmpty());
@@ -701,7 +701,7 @@ void AccountPageWidget::updateState() {
     m_debt->setVisible(debt.toLongLong() > 0);
     m_debt->setText(tr("Outstanding balance: %1").arg(AccountSessionService::formatCredits(debt)));
     m_debt->setInformativeText(tr("Paid calls are paused. Your free allowance remains available. "
-                                  "New purchases pay this balance first."));
+                                  "New purchases pay this balance first"));
     m_topUp->setEnabled(!busy && paymentsAvailable && !m_service->purchase().pending());
     m_topUp->setBusy(busy);
     const QString captcha = m_service->captcha().value(QStringLiteral("image_data_url")).toString();
@@ -751,23 +751,23 @@ void AccountPageWidget::updateState() {
                                            .toString(QStringLiteral("HH:mm:ss"))));
         } else if (purchase.pending()) {
             m_expiry->setText(
-                tr("Payment confirmation continues after the code's original expiry."));
+                tr("Payment confirmation continues after the code's original expiry"));
         } else {
             m_expiry->clear();
         }
         m_paymentHelp->setText(
             state == u"expired"
                 ? tr("Return to registration and generate a new code. Your previous "
-                     "order records are retained.")
+                     "order records are retained")
                 : tr("Scan with your own WeChat account. An existing temporary account will be "
                      "linked and signed in automatically using these desktop credentials. "
                      "Otherwise, select a package and confirm your order. The WeChat link cannot "
-                     "be changed."));
+                     "be changed"));
         m_paymentNotice->setText(purchase.notice());
         m_paymentNotice->setVisible(!purchase.notice().isEmpty());
         m_paid->setVisible(purchase.pending());
-        m_paid->setEnabled((purchase.registration() || signedIn) &&
-                           !purchase.queryingPlatform() && !purchase.cancelling());
+        m_paid->setEnabled((purchase.registration() || signedIn) && !purchase.queryingPlatform() &&
+                           !purchase.cancelling());
         m_paid->setBusy(purchase.queryingPlatform());
         m_dismiss->setText(purchase.pending() ? tr("Cancel payment") : tr("Continue"));
         m_dismiss->setVisible(!purchase.pending() || !purchase.registration());
@@ -801,7 +801,7 @@ void AccountPageWidget::rebuildTransactions() {
         m_emptyTitle->setAlignment(Qt::AlignCenter);
         m_emptyDescription = copyLabel(m_records);
         m_emptyDescription->setObjectName(QStringLiteral("accountTransactionsEmptyDescription"));
-        m_emptyDescription->setText(tr("Top-ups, usage charges, and refunds appear here."));
+        m_emptyDescription->setText(tr("Top-ups, usage charges, and refunds appear here"));
         m_emptyDescription->setAlignment(Qt::AlignCenter);
         layout->addSpacing(48);
         layout->addStretch(1);

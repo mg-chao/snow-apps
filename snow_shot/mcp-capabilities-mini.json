@@ -157,7 +157,7 @@
         "ClearPinnedHistory",
         "ClearThumbnailCache",
         "ClearRecordingTemp",
-        "CopyTodayLog",
+        "ExportLogs",
         "ExportConfiguration",
         "ImportConfiguration"
       ]
@@ -274,6 +274,10 @@
         "capture_toolbar",
         "show_cursor",
         "show_keyboard",
+        "record_number_keys",
+        "record_letters_and_symbols",
+        "record_control_keys",
+        "preserve_keyboard_shortcuts",
         "webcam",
         "webcam_size",
         "webcam_shape",
@@ -404,6 +408,18 @@
           "type": "boolean"
         },
         "show_keyboard": {
+          "type": "boolean"
+        },
+        "record_number_keys": {
+          "type": "boolean"
+        },
+        "record_letters_and_symbols": {
+          "type": "boolean"
+        },
+        "record_control_keys": {
+          "type": "boolean"
+        },
+        "preserve_keyboard_shortcuts": {
           "type": "boolean"
         },
         "webcam": {

@@ -20,6 +20,7 @@
         "VCPKG_FORCE_SYSTEM_BINARIES": null
       },
       "cacheVariables": {
+        "SNOW_APPS_FREE_TRANSLATION_API_BASE_URL": "https://index-translate.bilibili.com/v1",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON",
@@ -158,6 +159,7 @@
         "VCPKG_ROOT": "${sourceDir}/.tools/vcpkg"
       },
       "cacheVariables": {
+        "SNOW_APPS_FREE_TRANSLATION_API_BASE_URL": "https://index-translate.bilibili.com/v1",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "VCPKG_INSTALLED_DIR": "${sourceDir}/.tools/macos/installed/dynamic",
@@ -339,6 +341,7 @@
         "VCPKG_FORCE_SYSTEM_BINARIES": null
       },
       "cacheVariables": {
+        "SNOW_APPS_FREE_TRANSLATION_API_BASE_URL": "https://index-translate.bilibili.com/v1",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON",

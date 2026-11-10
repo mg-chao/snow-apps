@@ -1,4 +1,5 @@
 #include "screenshotsaveresult.h"
+#include "screenshotexportmemory_p.h"
 
 #include "screenshotsaveexportpipeline.h"
 #include "snow_shot/platform/filemanager.h"
@@ -249,7 +250,10 @@ void ScreenshotSaveResult::copyFile() {
                 QApplication::clipboard(), this, std::move(*payload),
                 [this](ScreenshotClipboardCommitResult committed) { clipboardFinished(committed); },
                 publication));
-        });
+        },
+        screenshot_export_memory::encodingWorkingBytes(
+            m_output.pixels->size, ScreenshotImageFileFormat::Png, m_output.encoding,
+            std::numeric_limits<qint64>::max(), true));
     if (!m_job.isValid())
         fail(Error::Queue);
 }

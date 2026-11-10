@@ -618,18 +618,22 @@ void trustedStartupAndExplicitClear() {
     }
     writeBytes(QDir(recordDirectory).filePath(QStringLiteral("canvas_history.json")),
                QByteArrayLiteral("not-json"));
-    const QString temporaryRecord =
-        QDir(temporary.path()).filePath(QStringLiteral("capture_history/records/.tmp-abandoned"));
-    require(QDir().mkpath(temporaryRecord), "failed to create temporary fixture");
-    writeBytes(QDir(temporaryRecord).filePath(QStringLiteral("partial")), QByteArrayLiteral("x"));
+    const auto interrupted = draftAt(QDateTime::currentDateTimeUtc());
+    const QDir orphan(
+        temporary.filePath(QStringLiteral("capture_history/records/") + interrupted.id));
+    require(QDir().mkpath(orphan.path()), "failed to create an unindexed record");
+    const QString partial = orphan.filePath(QStringLiteral("partial"));
+    writeBytes(partial, QByteArrayLiteral("x"));
 
     auto repository = storage::makeCaptureHistoryRepository(temporary.path());
-    require(repository->records().size() == 1 && QFileInfo::exists(temporaryRecord),
+    require(repository->records().size() == 1 && QFileInfo::exists(partial),
             "startup inspected payloads or unmanaged leftovers");
+    require(!repository->publish(interrupted).get().storage.success && QFileInfo::exists(partial),
+            "publication reused or removed an existing unindexed record folder");
     const auto clearResult = repository->requestClear().get();
     require(clearResult.success && repository->usage().entryCount == 0 &&
                 repository->usage().totalBytes == repository->usage().indexBytes &&
-                !QFileInfo::exists(temporaryRecord),
+                !orphan.exists(),
             "clear did not remove unmanaged leftovers inside the history tree");
 }
 
@@ -833,6 +837,8 @@ void startupReadsOnlyIndexAndWorkersStartOnDemand() {
         case storage::CaptureHistoryOperation::IndexWrite:
             ++indexWrites;
             break;
+        case storage::CaptureHistoryOperation::PayloadWritten:
+            break;
         }
     };
     auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
@@ -872,7 +878,7 @@ void resultReadDoesNotInspectOtherPayloads() {
     require(repository->records().isEmpty(), "invalid canvas was not removed");
 }
 
-void collageResultReadsPreserveHistoryOnFailure() {
+void imageStitchingResultReadsPreserveHistoryOnFailure() {
     QTemporaryDir temporary;
     auto repository = storage::makeCaptureHistoryRepository(temporary.path());
     auto draft = draftAt(QDateTime::currentDateTimeUtc());
@@ -934,6 +940,41 @@ void indexFailurePreservesFilesUntilClear() {
             "explicit clear did not reset broken index");
 }
 
+void openPayloadDoesNotPreventHistoryPublication() {
+    QTemporaryDir temporary;
+    QFile reader;
+    storage::CaptureHistoryRepositoryOptions options;
+    options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
+        if (operation != storage::CaptureHistoryOperation::PayloadWritten || reader.isOpen())
+            return;
+        const QDir records(temporary.filePath(QStringLiteral("capture_history/records")));
+        const auto dirs = records.entryList(QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot);
+        require(dirs.size() == 1, "expected one history entry being written");
+        const QDir entry(records.filePath(dirs.front()));
+        const auto files = entry.entryList(QDir::Files);
+        require(!files.isEmpty(), "expected a completed history payload");
+        reader.setFileName(entry.filePath(files.front()));
+        // On Windows a reader without delete sharing prevents renaming its parent directory.
+        require(reader.open(QIODevice::ReadOnly), "failed to open the new payload for reading");
+        require(!QFileInfo::exists(indexPath(temporary.path())),
+                "incomplete history record was already indexed");
+    };
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
+    auto draft = draftAt(QDateTime::currentDateTimeUtc());
+    draft.source = storage::CaptureHistorySource::CurrentMonitor;
+    draft.resultImage = draft.displays.front().image;
+    const auto result = repository->publish(draft).get();
+    require(reader.isOpen(), "history reader did not overlap publication");
+    require(result.storage.success, qPrintable(result.storage.error));
+    reader.close();
+    repository.reset();
+    auto reopened = storage::makeCaptureHistoryRepository(temporary.path());
+    const auto image = reopened->loadResultImage(result.record);
+    require(reopened->records() == QVector{result.record} && image &&
+                equalPixels(*image, *draft.resultImage),
+            "history published with an open reader was not recoverable");
+}
+
 void failedCommitPreservesPublishedHistory() {
     QTemporaryDir temporary;
     auto repository = storage::makeCaptureHistoryRepository(temporary.path());
@@ -946,10 +987,15 @@ void failedCommitPreservesPublishedHistory() {
     const QString saved = index + QStringLiteral(".saved");
     require(QFile::rename(index, saved) && QDir().mkdir(index), "failed to block index commit");
     const auto revision = repository->recordsSnapshot().revision;
-    const auto failed = repository->publish(draftAt(QDateTime::currentDateTimeUtc())).get();
+    const auto draft = draftAt(QDateTime::currentDateTimeUtc());
+    const auto failed = repository->publish(draft).get();
     require(!failed.storage.success && repository->records() == QVector{first.record} &&
                 repository->load(first.record).has_value(),
             "failed commit evicted acknowledged history");
+    require(failed.storage.error.contains(QStringLiteral("index.json")) &&
+                !QFileInfo::exists(
+                    temporary.filePath(QStringLiteral("capture_history/records/") + draft.id)),
+            "failed index write did not identify the file or left an unpublished entry behind");
     require(repository->recordsSnapshot().revision == revision,
             "failed index commit must not advance the history revision");
     require(QDir().rmdir(index) && QFile::rename(saved, index), "failed to restore index");
@@ -957,6 +1003,28 @@ void failedCommitPreservesPublishedHistory() {
     auto reopened = storage::makeCaptureHistoryRepository(temporary.path());
     require(reopened->records() == QVector{first.record},
             "failed publication appeared after restart");
+}
+
+void failedPayloadWriteDoesNotPublishPartialHistory() {
+    QTemporaryDir temporary;
+    const auto draft = draftAt(QDateTime::currentDateTimeUtc());
+    const QDir entry(temporary.filePath(QStringLiteral("capture_history/records/") + draft.id));
+    QString blocked;
+    storage::CaptureHistoryRepositoryOptions options;
+    options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
+        if (operation != storage::CaptureHistoryOperation::PayloadWritten || !blocked.isEmpty())
+            return;
+        blocked = entry.exists(QStringLiteral("canvas_history.json"))
+                      ? QStringLiteral("display_0.png")
+                      : QStringLiteral("canvas_history.json");
+        require(entry.mkdir(blocked), "failed to block the remaining payload write");
+    };
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
+    const auto result = repository->publish(draft).get();
+    require(!result.storage.success && !blocked.isEmpty() &&
+                result.storage.error.contains(blocked) && repository->records().isEmpty() &&
+                !entry.exists() && !QFileInfo::exists(indexPath(temporary.path())),
+            "failed payload write did not identify the file or left a partial history entry");
 }
 
 void pendingDeletionResumesWithoutScanningOrphans() {
@@ -1284,7 +1352,7 @@ void revisionCheckedMutations() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--collage-only"))) {
-        collageResultReadsPreserveHistoryOnFailure();
+        imageStitchingResultReadsPreserveHistoryOnFailure();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--worker-lifecycle-only"))) {
@@ -1322,8 +1390,10 @@ int main(int argc, char** argv) {
     traversalManifestIsRejected();
     startupReadsOnlyIndexAndWorkersStartOnDemand();
     resultReadDoesNotInspectOtherPayloads();
-    collageResultReadsPreserveHistoryOnFailure();
+    imageStitchingResultReadsPreserveHistoryOnFailure();
     indexFailurePreservesFilesUntilClear();
+    openPayloadDoesNotPreventHistoryPublication();
+    failedPayloadWriteDoesNotPublishPartialHistory();
     failedCommitPreservesPublishedHistory();
     pendingDeletionResumesWithoutScanningOrphans();
     startupExpiresAgeButDoesNotEnforceCapacity();

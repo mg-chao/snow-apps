@@ -177,6 +177,8 @@ struct ScreenshotPinnedSelectionRequest {
     ScreenshotRecognitionResults recognitionResults;
     bool recognitionVisible = false;
     bool translationVisible = false;
+    // When present, transfer annotations to the pin instead of rendering them into the image.
+    QByteArray canvasSession;
 
     [[nodiscard]] bool isPrepared() const {
         return !selection.isEmpty() && geometry.nativeGeometry.isValid() &&

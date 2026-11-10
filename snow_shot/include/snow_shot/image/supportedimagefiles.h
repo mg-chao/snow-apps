@@ -5,7 +5,7 @@
 
 namespace snow_shot::image {
 
-enum class ImageFileCodec { Gif, Png, Jpeg, WebP, Jxl, Avif, Bmp };
+enum class ImageFileCodec { Gif, Png, Jpeg, WebP, Jxl, Avif, Bmp, Tiff };
 
 struct ImageFileFormat {
     const char* suffix;
@@ -16,6 +16,7 @@ inline constexpr ImageFileFormat kImageFileFormats[] = {
     {"gif", ImageFileCodec::Gif},  {"apng", ImageFileCodec::Png},  {"png", ImageFileCodec::Png},
     {"jpg", ImageFileCodec::Jpeg}, {"jpeg", ImageFileCodec::Jpeg}, {"webp", ImageFileCodec::WebP},
     {"jxl", ImageFileCodec::Jxl},  {"avif", ImageFileCodec::Avif}, {"bmp", ImageFileCodec::Bmp},
+    {"tif", ImageFileCodec::Tiff}, {"tiff", ImageFileCodec::Tiff},
 };
 
 [[nodiscard]] inline QStringList supportedImageFileExtensions() {

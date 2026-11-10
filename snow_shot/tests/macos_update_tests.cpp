@@ -130,7 +130,7 @@ QJsonObject githubRelease(const QString& version, bool draft = false) {
         assets.append(QJsonObject{
             {QStringLiteral("name"), asset},
             {QStringLiteral("browser_download_url"),
-             QStringLiteral("https://github.com/mg-chao/snow-apps/releases/download/%1/%2")
+             QStringLiteral("https://github.com/mg-chao/snow-shot/releases/download/%1/%2")
                  .arg(tag, asset)}});
     return {{QStringLiteral("tag_name"), tag},
             {QStringLiteral("draft"), draft},
@@ -598,10 +598,23 @@ void schedulingAndFailures() {
     pump(120);
     require(github.requests.size() + gitee.requests.size() == count,
             "manual mode stops scheduled checks");
+    const auto capabilities = service.capabilities();
+    require(capabilities.check && !capabilities.download && !capabilities.install,
+            "macOS service exposes release discovery only");
+    int unsupported = 0;
+    const auto unsupportedConnection =
+        QObject::connect(&service, &UpdateService::operationFinished, &service,
+                         [&](const QString&, const QString& outcome) {
+                             require(outcome == u"unsupported", "installation is unsupported");
+                             ++unsupported;
+                         });
     service.download();
     service.beginApply();
     service.requestRestart();
-    require(service.status().state == UpdateState::Available, "macOS does not install in app");
+    service.applyAtStartup();
+    require(unsupported == 4 && service.status().state == UpdateState::Available && !service.busy(),
+            "unsupported operations finish explicitly without changing discovered release");
+    QObject::disconnect(unsupportedConnection);
 
     github.status = 503;
     gitee.status = 503;
@@ -612,6 +625,13 @@ void schedulingAndFailures() {
     require(network && network->proxy().type() == QNetworkProxy::NoProxy, "proxy defaults to none");
     service.setSystemProxy(true);
     require(network->proxyFactory() != nullptr, "system proxy is configurable");
+    service.setProxyConfiguration(QStringLiteral("manual"),
+                                  QStringLiteral("http://user:pass@127.0.0.1:7890"));
+    require(
+        network->proxyFactory() == nullptr && network->proxy().type() == QNetworkProxy::HttpProxy &&
+            network->proxy().hostName() == QStringLiteral("127.0.0.1") &&
+            network->proxy().port() == 7890 && network->proxy().user() == QStringLiteral("user"),
+        "manual proxy replaces system proxy resolution");
     service.setSystemProxy(false);
     require(network->proxyFactory() == nullptr, "direct networking restored");
 

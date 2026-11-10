@@ -433,7 +433,7 @@ class ShortcutKeyConfigContent final : public QWidget {
         m_keyListLayout->setSpacing(metric.margin);
         rootLayout->addLayout(m_keyListLayout);
 
-        m_addButton = new adqt::widgets::AdButton(QObject::tr("Add key config"), this);
+        m_addButton = new adqt::widgets::AdButton(QObject::tr("Add key configuration"), this);
         m_addButton->setObjectName(QStringLiteral("shortcutConfigAddButton"));
         m_addButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Dashed);
         m_addButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
@@ -520,7 +520,7 @@ class ShortcutKeyConfigContent final : public QWidget {
     }
 
     void retranslateUi() {
-        m_addButton->setText(QObject::tr("Add key config"));
+        m_addButton->setText(QObject::tr("Add key configuration"));
         if (!m_validationMessage.isEmpty()) {
             m_validationMessage = shortcutValidationMessage(m_rejectedValidation,
                                                             m_rejectedShortcut, m_validationScope);
@@ -1366,8 +1366,8 @@ void ShortcutKeyRow::syncRegistrationStatus() {
 QString ShortcutKeyRow::registrationTooltipText() const {
     if (m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Disabled) {
         return tr("This shortcut is temporarily disabled and released for use by other "
-                  "applications. It will be restored when global hotkeys are enabled and the "
-                  "focused window allows them.");
+                  "applications. It will be restored when global shortcuts are enabled and the "
+                  "focused window allows them");
     }
     if (m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Registered ||
         m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Unset) {
@@ -1391,22 +1391,22 @@ QString ShortcutKeyRow::registrationTooltipText() const {
         QString reason;
         switch (binding.failureReason) {
         case snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse:
-            reason = tr("already used by another application or action");
+            reason = tr("Already used by another application or action");
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::InvalidShortcut:
-            reason = tr("not supported as a global shortcut");
+            reason = tr("Not supported as a global shortcut");
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::UnsupportedPlatform:
-            reason = tr("global shortcuts are not supported on this platform");
+            reason = tr("Global shortcuts are not supported on this platform");
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::SystemError:
             reason = binding.nativeErrorCode == 0
-                         ? tr("the system rejected this shortcut")
-                         : tr("the system rejected this shortcut (error %1)")
+                         ? tr("The system rejected this shortcut")
+                         : tr("The system rejected this shortcut (error %1)")
                                .arg(binding.nativeErrorCode);
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::None:
-            reason = tr("registration did not complete");
+            reason = tr("Registration did not complete");
             break;
         }
         failedShortcuts.push_back(tr("%1: %2").arg(displayShortcut, reason));

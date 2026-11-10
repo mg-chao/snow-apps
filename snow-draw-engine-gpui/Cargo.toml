@@ -14,6 +14,7 @@ anyhow = "1"
 base64 = "0.22"
 gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions"] }
 lyon = "1"
+i_overlay = "=9.0.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 png = "=0.18.1"
 usvg = "=0.45.1"

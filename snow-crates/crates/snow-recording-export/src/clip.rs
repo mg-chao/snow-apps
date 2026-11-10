@@ -1113,6 +1113,43 @@ mod tests {
     }
 
     #[test]
+    fn legacy_matroska_input_remains_decodable_and_trimmable() {
+        // Legacy recordings use this input container. Creating Matroska during
+        // the test would require its intentionally omitted application muxer.
+        let bytes = include_bytes!("../tests/fixtures/legacy-matroska-h264.mkv");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy.mkv");
+        std::fs::write(&path, bytes).unwrap();
+        let mut config = fixture(directory.path(), ExportFormat::Mp4);
+        config.width = 16;
+        config.height = 16;
+        let source = ClipSource::open(&path, Some(config.clone())).unwrap();
+        assert_eq!((source.config.width, source.config.height), (16, 16));
+        assert_eq!(source.frame_count(), 3);
+        let token = CancellationToken::default();
+        let mut reader = VideoReader::open(source.clone(), false).unwrap();
+        let mut pixels = Vec::new();
+        let mut last = 0;
+        for at in [0, 100_000, 200_000] {
+            reader.read(at, &token).unwrap();
+            reader.copy_rgba(&mut pixels).unwrap();
+            assert!(pixels[0] > last + 40, "legacy source picture at {at}");
+            last = pixels[0];
+        }
+        let destination = directory.path().join("trimmed.mp4");
+        source
+            .export(source.range(1, 3).unwrap(), &destination, &token, |_| {})
+            .unwrap();
+        let trimmed = ClipSource::open(&destination, Some(config)).unwrap();
+        assert_eq!(trimmed.frame_count(), 2);
+        let mut reader = VideoReader::open(trimmed, false).unwrap();
+        reader.read(0, &token).unwrap();
+        reader.copy_rgba(&mut pixels).unwrap();
+        assert!((105..=135).contains(&pixels[0]));
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
     fn clip_trim_preserves_frames_and_sources_in_every_recording_format() {
         for format in [
             ExportFormat::Mp4,
@@ -1534,36 +1571,33 @@ mod tests {
     }
 
     #[test]
-    fn partial_hdr_trim_preserves_sparse_pictures_depth_and_color() {
+    fn partial_hdr_trim_preserves_sparse_pictures_and_applies_output_color_policy() {
         let directory = tempfile::tempdir().unwrap();
         let mut config = fixture(directory.path(), ExportFormat::Mp4);
         config.codec = crate::VideoCodec::H265;
         config.fps = 30;
-        let mut encoder = StreamingEncoder::builder(config.clone())
-            .hdr10_cpu_input()
-            .software_only()
-            .create()
-            .unwrap();
-        assert_eq!(
-            encoder.input_pixel_format(),
-            ffmpeg::format::Pixel::YUV420P10LE
-        );
-        for (pts, luma) in [(0, 256u16), (30, 512), (60, 768)] {
-            let mut frame = ffmpeg::frame::Video::new(encoder.input_pixel_format(), 32, 24);
-            for plane in 0..3 {
-                let value = if plane == 0 { luma } else { 512 };
-                for sample in frame.data_mut(plane).chunks_exact_mut(2) {
-                    sample.copy_from_slice(&value.to_le_bytes());
-                }
-            }
-            crate::hdr::frame(&mut frame, true);
-            encoder
-                .push_prepared_video_frame_ref_at_pts(pts, &frame)
-                .unwrap();
-        }
-        encoder.finish_at_pts(90).unwrap();
+        std::fs::write(
+            &config.output_path,
+            include_bytes!("../tests/fixtures/hdr10-sparse.mp4"),
+        )
+        .unwrap();
         let source = ClipSource::open(&config.output_path, Some(config.clone())).unwrap();
         assert!(source.hdr);
+        assert_eq!(source.duration_us, 3_000_000);
+        let copy = directory.path().join("hdr-copy.mp4");
+        source
+            .export(
+                source.range(0, source.frame_count()).unwrap(),
+                &copy,
+                &CancellationToken::default(),
+                |_| {},
+            )
+            .unwrap();
+        assert_eq!(
+            std::fs::read(copy).unwrap(),
+            include_bytes!("../tests/fixtures/hdr10-sparse.mp4")
+        );
+        let mut reference = VideoReader::open(source.clone(), false).unwrap();
         let destination = directory.path().join("sparse-hdr-trim.mp4");
         let token = CancellationToken::default();
         source
@@ -1581,7 +1615,7 @@ mod tests {
         timestamps.sort_unstable();
         assert_eq!(timestamps, [0, 15, 45]);
         let output = ClipSource::open(&destination, Some(config)).unwrap();
-        assert!(output.hdr);
+        assert_eq!(output.hdr, cfg!(feature = "hdr-encoding"));
         assert_eq!(output.duration_us, 2_000_000);
         assert_eq!(output.frame_count(), 60);
         let mut reader = VideoReader::open(output, false).unwrap();
@@ -1593,16 +1627,39 @@ mod tests {
         ] {
             reader.read(at, &token).unwrap();
             let frame = reader.current_frame().unwrap();
-            assert_eq!(frame.format(), ffmpeg::format::Pixel::YUV420P10LE);
-            assert_eq!(
-                frame.color_transfer_characteristic(),
-                ffmpeg::color::TransferCharacteristic::SMPTE2084
-            );
-            let actual = u16::from_le_bytes(frame.data(0)[..2].try_into().unwrap());
-            assert!(
-                actual.abs_diff(expected) <= 4,
-                "{at}: {actual} vs {expected}"
-            );
+            if cfg!(feature = "hdr-encoding") {
+                assert_eq!(frame.format(), ffmpeg::format::Pixel::YUV420P10LE);
+                assert_eq!(
+                    frame.color_transfer_characteristic(),
+                    ffmpeg::color::TransferCharacteristic::SMPTE2084
+                );
+                let actual = u16::from_le_bytes(frame.data(0)[..2].try_into().unwrap());
+                assert!(
+                    actual.abs_diff(expected) <= 4,
+                    "{at}: {actual} vs {expected}"
+                );
+            } else {
+                assert_eq!(frame.format(), ffmpeg::format::Pixel::YUV420P);
+                assert_eq!(
+                    frame.color_transfer_characteristic(),
+                    ffmpeg::color::TransferCharacteristic::BT709
+                );
+                assert_eq!(frame.color_primaries(), ffmpeg::color::Primaries::BT709);
+                reference.read(at + 500_000, &token).unwrap();
+                let mut expected_rgba = Vec::new();
+                reference.copy_rgba(&mut expected_rgba).unwrap();
+                let mut actual_rgba = Vec::new();
+                reader.copy_rgba(&mut actual_rgba).unwrap();
+                assert!(
+                    actual_rgba
+                        .iter()
+                        .zip(&expected_rgba)
+                        .all(|(actual, expected)| actual.abs_diff(*expected) <= 4),
+                    "SDR trim must encode the tone-mapped pixels at {at}: {:?} vs {:?}",
+                    &actual_rgba[..4],
+                    &expected_rgba[..4]
+                );
+            }
         }
     }
 

@@ -16,8 +16,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::backend::{
-    AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureBlitRegion, CaptureMode,
-    CaptureSampleMetadata, MonitorCapturer, WgcUpdateMode,
+    AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureBackendSelection,
+    CaptureBlitRegion, CaptureMode, CaptureSampleMetadata, MonitorCapturer, WgcUpdateMode,
 };
 use crate::capture_session::CaptureTargetInfo;
 use crate::error::{CaptureError, CaptureResult};
@@ -99,6 +99,7 @@ struct AutomaticWindowsCapturer {
     candidates: Vec<AutoCandidate>,
     preferred: Option<CaptureBackendKind>,
     selected: Option<CaptureBackendKind>,
+    last_successful: Option<CaptureBackendKind>,
     topology_generation: Option<u64>,
     capture_mode: CaptureMode,
     gpu_hdr_conversion_enabled: bool,
@@ -130,6 +131,7 @@ impl AutomaticWindowsCapturer {
                 .collect(),
             preferred: None,
             selected: None,
+            last_successful: None,
             topology_generation,
             capture_mode: CaptureMode::Snapshot,
             gpu_hdr_conversion_enabled: true,
@@ -149,6 +151,7 @@ impl AutomaticWindowsCapturer {
             self.discard_all_candidates();
             self.preferred = None;
             self.selected = None;
+            self.last_successful = None;
             self.topology_generation = generation;
         }
         Ok(())
@@ -287,6 +290,7 @@ impl AutomaticWindowsCapturer {
             match result {
                 Ok(frame) => {
                     self.record_success(index);
+                    self.last_successful = self.selected;
                     return Ok(frame);
                 }
                 Err(error) if error.allows_backend_fallback() => {
@@ -335,6 +339,9 @@ impl AutomaticWindowsCapturer {
             match result {
                 Ok(sample) => {
                     self.record_success(index);
+                    if sample.is_some() {
+                        self.last_successful = self.selected;
+                    }
                     return Ok(sample);
                 }
                 Err(error) if error.allows_backend_fallback() => {
@@ -399,6 +406,9 @@ impl AutomaticWindowsCapturer {
             match result {
                 Ok(sample) => {
                     self.record_success(index);
+                    if sample.is_some() {
+                        self.last_successful = self.selected;
+                    }
                     return Ok(sample);
                 }
                 Err(error) if error.allows_backend_fallback() => {
@@ -442,6 +452,25 @@ impl AutomaticWindowsCapturer {
 impl MonitorCapturer for AutomaticWindowsCapturer {
     fn backend_kind(&self) -> CaptureBackendKind {
         self.selected.unwrap_or(CaptureBackendKind::Auto)
+    }
+
+    fn backend_selection(&self) -> Option<CaptureBackendSelection> {
+        self.last_successful.map(|kind| CaptureBackendSelection {
+            kind,
+            display_generation: self.topology_generation,
+        })
+    }
+
+    fn restore_backend_selection(&mut self, selection: CaptureBackendSelection) {
+        if selection.display_generation == self.topology_generation
+            && self
+                .candidates
+                .iter()
+                .any(|candidate| candidate.kind == selection.kind)
+        {
+            self.preferred = Some(selection.kind);
+            self.last_successful = Some(selection.kind);
+        }
     }
 
     fn prewarm_environment(&mut self) -> CaptureResult<()> {
@@ -799,6 +828,8 @@ mod tests {
 
     #[derive(Default)]
     struct CandidateState {
+        creations: usize,
+        drops: usize,
         calls: usize,
         prewarm_calls: usize,
         releases: usize,
@@ -810,6 +841,12 @@ mod tests {
     struct ScriptedCapturer {
         kind: CaptureBackendKind,
         state: Arc<Mutex<CandidateState>>,
+    }
+
+    impl Drop for ScriptedCapturer {
+        fn drop(&mut self) {
+            self.state.lock().unwrap().drops += 1;
+        }
     }
 
     impl MonitorCapturer for ScriptedCapturer {
@@ -856,6 +893,19 @@ mod tests {
             *destination = self.capture(None)?;
             Ok(Some(CaptureSampleMetadata::default()))
         }
+
+        fn capture_desktop_region_into(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _width: u32,
+            _height: u32,
+            destination: &mut Frame,
+            _destination_has_history: bool,
+        ) -> CaptureResult<Option<CaptureSampleMetadata>> {
+            *destination = self.capture(None)?;
+            Ok(Some(CaptureSampleMetadata::default()))
+        }
     }
 
     fn scripted_auto(
@@ -869,12 +919,214 @@ mod tests {
             scripts.iter().map(|(kind, _)| *kind).collect(),
         );
         for (candidate, (kind, state)) in capturer.candidates.iter_mut().zip(scripts) {
+            state.lock().unwrap().creations += 1;
             candidate.capturer = Some(Box::new(ScriptedCapturer {
                 kind: *kind,
                 state: Arc::clone(state),
             }));
         }
         capturer
+    }
+
+    struct ScriptedAutoBackend {
+        scripts: Vec<(CaptureBackendKind, Arc<Mutex<CandidateState>>)>,
+    }
+
+    impl CaptureBackend for ScriptedAutoBackend {
+        fn primary_monitor(&self) -> CaptureResult<MonitorId> {
+            Ok(MonitorId::from_parts(
+                101,
+                103,
+                0,
+                "auto-test-monitor",
+                true,
+            ))
+        }
+
+        fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
+            Ok(vec![self.primary_monitor()?])
+        }
+
+        fn monitor_layout(&self) -> CaptureResult<MonitorLayout> {
+            Ok(MonitorLayout {
+                monitors: vec![crate::region::MonitorGeometry {
+                    monitor: self.primary_monitor()?,
+                    x: 0,
+                    y: 0,
+                    width: 2,
+                    height: 2,
+                }],
+                virtual_left: 0,
+                virtual_top: 0,
+                virtual_width: 2,
+                virtual_height: 2,
+            })
+        }
+
+        fn inspect_window(&self, _window: &WindowId) -> CaptureResult<CaptureTargetInfo> {
+            Ok(CaptureTargetInfo {
+                origin_x: 0,
+                origin_y: 0,
+                width: 2,
+                height: 2,
+            })
+        }
+
+        fn create_monitor_capturer(
+            &self,
+            _monitor: &MonitorId,
+        ) -> CaptureResult<Box<dyn MonitorCapturer>> {
+            Ok(Box::new(scripted_auto(&self.scripts)))
+        }
+
+        fn create_window_capturer(
+            &self,
+            _window: &WindowId,
+        ) -> CaptureResult<Box<dyn MonitorCapturer>> {
+            Ok(Box::new(scripted_auto(&self.scripts)))
+        }
+    }
+
+    #[test]
+    fn snapshot_cleanup_retains_only_successful_selection_and_still_falls_back() -> CaptureResult<()>
+    {
+        use crate::{CaptureOptions, CaptureRegion, CaptureSession, CaptureTarget};
+        use CaptureBackendKind::{DxgiDuplication, Gdi, WindowsGraphicsCapture};
+
+        for target in [
+            CaptureTarget::PrimaryMonitor,
+            CaptureTarget::Window(WindowId::from_windows_handle(7)),
+            CaptureTarget::Region(CaptureRegion::new(0, 0, 2, 2)?),
+        ] {
+            let wgc = Arc::new(Mutex::new(CandidateState {
+                outcomes: VecDeque::from([Err(CaptureError::Timeout)]),
+                ..Default::default()
+            }));
+            let dxgi = Arc::new(Mutex::new(CandidateState::default()));
+            let gdi = Arc::new(Mutex::new(CandidateState::default()));
+            let backend = Arc::new(ScriptedAutoBackend {
+                scripts: vec![
+                    (WindowsGraphicsCapture, Arc::clone(&wgc)),
+                    (DxgiDuplication, Arc::clone(&dxgi)),
+                    (Gdi, Arc::clone(&gdi)),
+                ],
+            });
+            let mut session =
+                CaptureSession::open_with_backend(target, backend, CaptureOptions::default())?;
+
+            let frame = session.capture_snapshot(false, Default::default())?;
+            assert_eq!(frame.metadata().backend_kind(), DxgiDuplication);
+            assert_eq!(session.active_capture_access_count(), 0);
+            // Reset prewarms a fresh capturer for the successful API, dropping the old one.
+            assert_eq!(dxgi.lock().unwrap().creations, 2);
+            assert_eq!(dxgi.lock().unwrap().drops, 1);
+            assert_eq!(dxgi.lock().unwrap().prewarm_calls, 1);
+            assert_eq!(wgc.lock().unwrap().prewarm_calls, 0);
+
+            session.release_idle_resources();
+            session.release_idle_resources();
+            let canceled = snow_core::cancellation::CancellationToken::default();
+            canceled.cancel();
+            assert!(matches!(
+                session.capture_snapshot(false, canceled),
+                Err(CaptureError::Canceled)
+            ));
+            for state in [&wgc, &dxgi, &gdi] {
+                let state = state.lock().unwrap();
+                assert_eq!(state.creations, state.drops);
+                assert!(!state.active);
+            }
+
+            let frame = session.capture_snapshot(false, Default::default())?;
+            assert_eq!(frame.metadata().backend_kind(), DxgiDuplication);
+            assert_eq!(dxgi.lock().unwrap().calls, 2);
+            assert_eq!(wgc.lock().unwrap().calls, 1);
+            assert_eq!(gdi.lock().unwrap().calls, 0);
+
+            // A remembered API can fail; the next successful fallback replaces it.
+            session.release_idle_resources();
+            dxgi.lock()
+                .unwrap()
+                .outcomes
+                .push_back(Err(CaptureError::Timeout));
+            let frame = session.capture_snapshot(false, Default::default())?;
+            assert_eq!(frame.metadata().backend_kind(), WindowsGraphicsCapture);
+            let frame = session.capture_snapshot(false, Default::default())?;
+            assert_eq!(frame.metadata().backend_kind(), WindowsGraphicsCapture);
+            assert_eq!(dxgi.lock().unwrap().calls, 3);
+            assert_eq!(wgc.lock().unwrap().calls, 3);
+            assert_eq!(gdi.lock().unwrap().calls, 0);
+            assert_eq!(session.active_capture_access_count(), 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_selection_requires_success_and_matching_topology_and_policy() -> CaptureResult<()> {
+        use CaptureBackendKind::{DxgiDuplication, Gdi, WindowsGraphicsCapture};
+        let scripts = [
+            (
+                WindowsGraphicsCapture,
+                Arc::new(Mutex::new(CandidateState::default())),
+            ),
+            (
+                DxgiDuplication,
+                Arc::new(Mutex::new(CandidateState::default())),
+            ),
+        ];
+        let mut capturer = scripted_auto(&scripts);
+        capturer.prewarm_environment()?;
+        assert_eq!(capturer.backend_selection(), None);
+
+        for selection in [
+            CaptureBackendSelection {
+                kind: Gdi,
+                display_generation: None,
+            },
+            CaptureBackendSelection {
+                kind: DxgiDuplication,
+                display_generation: Some(1),
+            },
+        ] {
+            let mut restored = scripted_auto(&scripts);
+            restored.restore_backend_selection(selection);
+            assert_eq!(restored.attempt_order(), [0, 1]);
+            assert_eq!(restored.backend_selection(), None);
+        }
+
+        let selection = CaptureBackendSelection {
+            kind: DxgiDuplication,
+            display_generation: None,
+        };
+        let mut restored = scripted_auto(&scripts);
+        restored.restore_backend_selection(selection);
+        scripts[1]
+            .1
+            .lock()
+            .unwrap()
+            .prewarm_outcomes
+            .push_back(Err(CaptureError::Timeout));
+        restored.prewarm_environment()?;
+        // Preparation of a fallback is not a successful screenshot.
+        assert_eq!(restored.backend_selection(), Some(selection));
+        restored.capture(None)?;
+        assert_eq!(
+            restored.backend_selection().unwrap().kind,
+            WindowsGraphicsCapture
+        );
+        scripts[0]
+            .1
+            .lock()
+            .unwrap()
+            .outcomes
+            .push_back(Err(CaptureError::InvalidConfig("test".into())));
+        assert!(restored.capture(None).is_err());
+        assert_eq!(
+            restored.backend_selection().unwrap().kind,
+            WindowsGraphicsCapture
+        );
+        assert!(retained_candidate_kinds(&restored).is_empty());
+        Ok(())
     }
 
     fn retained_candidate_kinds(capturer: &AutomaticWindowsCapturer) -> Vec<CaptureBackendKind> {
@@ -884,6 +1136,82 @@ mod tests {
             .filter(|candidate| candidate.capturer.is_some())
             .map(|candidate| candidate.kind)
             .collect()
+    }
+
+    #[test]
+    fn native_wgc_exception_falls_back_for_snapshots_and_continuous_regions() -> CaptureResult<()> {
+        use CaptureBackendKind::{DxgiDuplication, Gdi, WindowsGraphicsCapture};
+
+        for window in [false, true] {
+            for mode in [CaptureMode::Snapshot, CaptureMode::Continuous] {
+                for dxgi_fails in [false, true] {
+                    let factory = wgc::interop::tests::factory(2);
+                    let handle = 0x10003_usize as *mut std::ffi::c_void;
+                    let native_error = if window {
+                        wgc::interop::create_for_window(&factory, HWND(handle))
+                    } else {
+                        wgc::interop::create_for_monitor(
+                            &factory,
+                            windows::Win32::Graphics::Gdi::HMONITOR(handle),
+                        )
+                    }
+                    .unwrap_err();
+                    let error = wgc::map_platform_error(native_error, "WGC item creation failed");
+                    assert!(error.to_string().contains("synthetic WGC server failure"));
+                    let wgc = Arc::new(Mutex::new(CandidateState {
+                        outcomes: VecDeque::from([Err(error)]),
+                        ..Default::default()
+                    }));
+                    let dxgi = Arc::new(Mutex::new(CandidateState {
+                        outcomes: VecDeque::from([if dxgi_fails {
+                            Err(CaptureError::Timeout)
+                        } else {
+                            Ok(())
+                        }]),
+                        ..Default::default()
+                    }));
+                    let gdi = Arc::new(Mutex::new(CandidateState::default()));
+                    let mut capturer = scripted_auto(&[
+                        (WindowsGraphicsCapture, Arc::clone(&wgc)),
+                        (DxgiDuplication, Arc::clone(&dxgi)),
+                        (Gdi, Arc::clone(&gdi)),
+                    ]);
+                    if window {
+                        capturer.target = AutoTarget::Window(WindowId::from_windows_handle(7));
+                    }
+                    capturer.set_capture_mode(mode)?;
+                    let selected = if dxgi_fails { Gdi } else { DxgiDuplication };
+                    for _ in 0..2 {
+                        let mut destination = Frame::empty();
+                        assert!(
+                            capturer
+                                .capture_region_into(
+                                    CaptureBlitRegion {
+                                        src_x: 0,
+                                        src_y: 0,
+                                        width: 2,
+                                        height: 2,
+                                        dst_x: 0,
+                                        dst_y: 0,
+                                    },
+                                    &mut destination,
+                                    false,
+                                )?
+                                .is_some()
+                        );
+                        assert_eq!(destination.dimensions(), (2, 2));
+                        assert_eq!(capturer.backend_kind(), selected);
+                    }
+                    let wgc = wgc.lock().unwrap();
+                    assert_eq!(wgc.calls, 1);
+                    assert_eq!(wgc.drops, 1);
+                    assert!(!wgc.active);
+                    assert_eq!(dxgi.lock().unwrap().calls, if dxgi_fails { 1 } else { 2 });
+                    assert_eq!(gdi.lock().unwrap().calls, if dxgi_fails { 2 } else { 0 });
+                }
+            }
+        }
+        Ok(())
     }
 
     #[test]
@@ -1131,8 +1459,8 @@ mod tests {
         assert_eq!(
             crate::backend::DEFAULT_AUTO_BACKEND_PRIORITY,
             [
-                CaptureBackendKind::DxgiDuplication,
                 CaptureBackendKind::WindowsGraphicsCapture,
+                CaptureBackendKind::DxgiDuplication,
                 CaptureBackendKind::Gdi,
             ]
         );

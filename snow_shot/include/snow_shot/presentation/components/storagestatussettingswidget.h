@@ -62,19 +62,14 @@ class StorageStatusSettingsWidget final : public SettingsCustomWidget {
 
     adqt::widgets::AdDescriptions* m_descriptions = nullptr;
     adqt::widgets::AdButton* m_refreshButton = nullptr;
-    adqt::widgets::AdButton* m_copyLogButton = nullptr;
     QLabel* m_diagnosticsValue = nullptr;
     QLabel* m_logLocationValue = nullptr;
     QLabel* m_logStatusValue = nullptr;
-    QLabel* m_copyLogFeedback = nullptr;
-    int m_copyLogOutcome = 0;
-    QString m_copyLogError;
     QLabel* m_totalValue = nullptr;
     QLabel* m_historyValue = nullptr;
     QLabel* m_entryCountValue = nullptr;
     QLabel* m_pinnedValue = nullptr;
     QLabel* m_ocrValue = nullptr;
-    QLabel* m_thumbnailsValue = nullptr;
     QLabel* m_recordingTempValue = nullptr;
     QLabel* m_otherValue = nullptr;
     QLabel* m_locationValue = nullptr;

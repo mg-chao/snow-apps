@@ -37,15 +37,15 @@
         </message>
         <message>
             <source>Corrupt update archive checksum</source>
-            <translation>更新壓縮包校驗值已損壞</translation>
+            <translation>更新壓縮檔校驗值已損壞</translation>
         </message>
         <message>
             <source>Corrupt update archive entry</source>
-            <translation>更新壓縮包項目已損壞</translation>
+            <translation>更新壓縮檔項目已損壞</translation>
         </message>
         <message>
             <source>Could not back up the current application</source>
-            <translation>無法備份當前應用程式</translation>
+            <translation>無法備份目前應用程式</translation>
         </message>
         <message>
             <source>Could not clear update staging directory</source>
@@ -77,7 +77,7 @@
         </message>
         <message>
             <source>Could not create update archive reader</source>
-            <translation>無法建立更新壓縮包讀取器</translation>
+            <translation>無法建立更新壓縮檔讀取器</translation>
         </message>
         <message>
             <source>Could not create update cache</source>
@@ -109,11 +109,11 @@
         </message>
         <message>
             <source>Could not download signed update metadata</source>
-            <translation>無法下載已簽名的更新中繼資料</translation>
+            <translation>無法下載已簽章的更新中繼資料</translation>
         </message>
         <message>
             <source>Could not extract update archive entry</source>
-            <translation>無法解壓更新壓縮包項目</translation>
+            <translation>無法解壓更新壓縮檔項目</translation>
         </message>
         <message>
             <source>Could not finalize committed update state</source>
@@ -121,7 +121,7 @@
         </message>
         <message>
             <source>Could not finalize update recovery</source>
-            <translation>無法完成更新恢復</translation>
+            <translation>無法完成更新還原</translation>
         </message>
         <message>
             <source>Could not hash update payload</source>
@@ -145,15 +145,15 @@
         </message>
         <message>
             <source>Could not open the application process</source>
-            <translation>無法打開應用程式處理程序</translation>
+            <translation>無法開啟應用程式處理程序</translation>
         </message>
         <message>
             <source>Could not open the update download file</source>
-            <translation>無法打開更新下載檔案</translation>
+            <translation>無法開啟更新下載檔案</translation>
         </message>
         <message>
             <source>Could not open update archive</source>
-            <translation>無法打開更新壓縮包</translation>
+            <translation>無法開啟更新壓縮檔</translation>
         </message>
         <message>
             <source>Could not persist update state</source>
@@ -181,7 +181,7 @@
         </message>
         <message>
             <source>Could not replace an update file; close applications using it</source>
-            <translation>無法替換更新檔案；請關閉正在使用該檔案的應用程式</translation>
+            <translation>無法取代更新檔案；請關閉正在使用該檔案的應用程式</translation>
         </message>
         <message>
             <source>Could not restart the update download</source>
@@ -197,7 +197,7 @@
         </message>
         <message>
             <source>Could not send updater status</source>
-            <translation>無法發送更新程式狀態</translation>
+            <translation>無法傳送更新程式狀態</translation>
         </message>
         <message>
             <source>Could not stage an update file</source>
@@ -221,7 +221,7 @@
         </message>
         <message>
             <source>Could not write update archive entry</source>
-            <translation>無法寫入更新壓縮包項目</translation>
+            <translation>無法寫入更新壓縮檔項目</translation>
         </message>
         <message>
             <source>Elevation is unavailable on this platform</source>
@@ -233,7 +233,7 @@
         </message>
         <message>
             <source>Incomplete update archive</source>
-            <translation>更新壓縮包不完整</translation>
+            <translation>更新壓縮檔不完整</translation>
         </message>
         <message>
             <source>Invalid Snow Shot installation root</source>
@@ -253,7 +253,7 @@
         </message>
         <message>
             <source>Invalid update archive entry</source>
-            <translation>更新壓縮包項目無效</translation>
+            <translation>更新壓縮檔項目無效</translation>
         </message>
         <message>
             <source>Invalid update checksum</source>
@@ -269,7 +269,7 @@
         </message>
         <message>
             <source>Invalid update signature encoding</source>
-            <translation>無效的更新簽名編碼</translation>
+            <translation>無效的更新簽章編碼</translation>
         </message>
         <message>
             <source>Invalid updater command argument</source>
@@ -293,7 +293,7 @@
         </message>
         <message>
             <source>Not enough free space to stage and recover this update</source>
-            <translation>可用空間不足，無法暫存和恢復此更新</translation>
+            <translation>可用空間不足，無法暫存和還原此更新</translation>
         </message>
         <message>
             <source>Refusing to change a file outside the application payload</source>
@@ -301,11 +301,11 @@
         </message>
         <message>
             <source>Release archive installation metadata mismatch</source>
-            <translation>發布壓縮包的安裝中繼資料不匹配</translation>
+            <translation>發布壓縮檔的安裝中繼資料不匹配</translation>
         </message>
         <message>
             <source>Release signature is invalid or its signing key is not trusted</source>
-            <translation>發布簽名無效，或簽名密鑰不受信任</translation>
+            <translation>發布簽章無效，或簽章金鑰不受信任</translation>
         </message>
         <message>
             <source>The application cancelled the update handoff</source>
@@ -313,15 +313,15 @@
         </message>
         <message>
             <source>The application did not exit; the update was cancelled</source>
-            <translation>應用程式未退出；更新已取消</translation>
+            <translation>應用程式未結束；更新已取消</translation>
         </message>
         <message>
             <source>The download exceeded its signed size or could not be saved</source>
-            <translation>下載超過了簽名中指定的大小，或無法儲存</translation>
+            <translation>下載超過了簽章中指定的大小，或無法儲存</translation>
         </message>
         <message>
             <source>The new application failed its startup check; restoring the previous version</source>
-            <translation>新應用程式未通過啟動檢查；正在恢復上一版本</translation>
+            <translation>新應用程式未通過啟動檢查；正在還原上一版本</translation>
         </message>
         <message>
             <source>The packaged application failed its isolated startup probe</source>
@@ -333,11 +333,15 @@
         </message>
         <message>
             <source>The release is not newer than this installation</source>
-            <translation>此發布版本並不高於當前安裝版本</translation>
+            <translation>此發布版本並不高於目前安裝版本</translation>
         </message>
         <message>
             <source>The release must contain all five Windows packages</source>
             <translation>發布必須包含全部五個 Windows 軟體套件</translation>
+        </message>
+        <message>
+            <source>The selected files exceed the update restart limit</source>
+            <translation>所選檔案超過更新重新啟動的傳遞上限</translation>
         </message>
         <message>
             <source>The server changed an already published release</source>
@@ -349,7 +353,7 @@
         </message>
         <message>
             <source>The server returned an invalid download range</source>
-            <translation>伺服器返回了無效的下載範圍</translation>
+            <translation>伺服器傳回了無效的下載範圍</translation>
         </message>
         <message>
             <source>The update coordinator identity could not be verified</source>
@@ -409,11 +413,11 @@
         </message>
         <message>
             <source>Unexpected update package URL</source>
-            <translation>更新軟體套件地址不符合預期</translation>
+            <translation>更新軟體套件網址不符合預期</translation>
         </message>
         <message>
             <source>Unexpected, duplicate, or unsafe update archive entry</source>
-            <translation>更新壓縮包包含意外、重複或不安全的項目</translation>
+            <translation>更新壓縮檔包含意外、重複或不安全的項目</translation>
         </message>
         <message>
             <source>Unknown update package variant</source>
@@ -429,7 +433,7 @@
         </message>
         <message>
             <source>Unsupported update recovery journal</source>
-            <translation>不支援此更新恢復記錄格式</translation>
+            <translation>不支援此更新還原記錄格式</translation>
         </message>
         <message>
             <source>Unsupported update release</source>
@@ -437,7 +441,7 @@
         </message>
         <message>
             <source>Unsupported update signature schema</source>
-            <translation>不支援此更新簽名格式</translation>
+            <translation>不支援此更新簽章格式</translation>
         </message>
         <message>
             <source>Update file could not be read or exceeds its size limit</source>
@@ -445,7 +449,7 @@
         </message>
         <message>
             <source>Update installation metadata does not match the signed release</source>
-            <translation>更新安裝中繼資料與已簽名的版本不符</translation>
+            <translation>更新安裝中繼資料與已簽章的版本不符</translation>
         </message>
         <message>
             <source>Update metadata is too large</source>
@@ -469,11 +473,11 @@
         </message>
         <message>
             <source>Update payload size or checksum does not match the signed release</source>
-            <translation>更新內容的大小或校驗值與已簽名的版本不符</translation>
+            <translation>更新內容的大小或校驗值與已簽章的版本不符</translation>
         </message>
         <message>
             <source>Update permission was declined or could not be obtained</source>
-            <translation>更新權限被拒絕，或無法獲取權限</translation>
+            <translation>更新權限被拒絕，或無法取得權限</translation>
         </message>
     </context>
     <context>
@@ -542,8 +546,8 @@
     <context>
         <name>UpdateService</name>
         <message>
-            <source>Could not check for updates. Please try again.</source>
-            <translation>無法檢查更新，請重試。</translation>
+            <source>Could not check for updates. Please try again</source>
+            <translation>無法檢查更新，請重試</translation>
         </message>
     </context>
 </TS>

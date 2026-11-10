@@ -159,10 +159,7 @@ void requireBackend(ScreenshotCaptureWorker& worker, uint8_t expected) {
 
 uint8_t backendFor(const char* mode) {
     namespace policy = snow_shot::presentation::capture;
-    auto requested = policy::screenshotApiModeFromValue(mode);
-    if (requested == policy::ScreenshotApiMode::Auto) {
-        requested = policy::resolveAutoScreenshotApiMode();
-    }
+    const auto requested = policy::screenshotApiModeFromValue(mode);
     return policy::nativeBackendForNormalScreenshot(requested);
 }
 
@@ -322,7 +319,7 @@ void captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose purpose, bool canc
     }
 }
 
-void cursorSnapshotFailureDoesNotDispatchCapture() {
+void cursorSnapshotFailureStillCapturesCleanImage() {
     for (const auto purpose :
          {ScreenshotCapturePurpose::Initial, ScreenshotCapturePurpose::Recapture}) {
         ScreenshotCaptureCoordinator coordinator;
@@ -353,7 +350,7 @@ void cursorSnapshotFailureDoesNotDispatchCapture() {
 
 #endif
 
-void cursorCompositionFailureDoesNotPublishAnImage() {
+void cursorCompositionFailureStillPublishesCleanImage() {
     ScreenshotCaptureWorker worker;
     auto snapshot = std::shared_ptr<SnowCaptureCursorSnapshot>(
         snow_capture_cursor_snapshot_create(), snow_capture_cursor_snapshot_destroy);
@@ -593,9 +590,9 @@ int main(int argc, char** argv) {
     captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Initial, true);
     captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Recapture, false);
     captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Recapture, true);
-    cursorSnapshotFailureDoesNotDispatchCapture();
+    cursorSnapshotFailureStillCapturesCleanImage();
 #endif
-    cursorCompositionFailureDoesNotPublishAnImage();
+    cursorCompositionFailureStillPublishesCleanImage();
     require(cursorSnapshots == 0, "worker leaked a cursor snapshot");
     require(created == destroyed, "worker leaked a native capture session");
     require(leases == 0, "worker leaked a native frame lease");

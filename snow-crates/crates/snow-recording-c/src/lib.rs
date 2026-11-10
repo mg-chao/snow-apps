@@ -541,6 +541,10 @@ pub struct SnowCaptureDirectRecordingConfig {
     webcam_offset_bottom: u32,
     record_mouse_scrolling: u32,
     webcam_orientation: u32,
+    record_number_keys: u32,
+    record_letters_and_symbols: u32,
+    record_control_keys: u32,
+    preserve_keyboard_shortcuts: u32,
 }
 
 #[repr(C)]
@@ -550,7 +554,9 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 16;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 17;
+const DIRECT_RECORDING_CONFIG_V16_SIZE: u32 =
+    std::mem::offset_of!(SnowCaptureDirectRecordingConfig, record_number_keys) as u32;
 const DIRECT_RECORDING_CONFIG_V15_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, webcam_orientation);
 const DIRECT_RECORDING_CONFIG_V15_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V15_FIELDS_SIZE
@@ -599,6 +605,7 @@ fn direct_config_size(version: u32) -> Result<u32, String> {
         ),
         // v16 occupies the former v15 tail padding, without changing sizeof.
         15 => Ok(DIRECT_RECORDING_CONFIG_V15_SIZE),
+        16 => Ok(DIRECT_RECORDING_CONFIG_V16_SIZE),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -1027,6 +1034,18 @@ fn parse_direct_recording_config(
     if config.enable_microphone > 1 || config.enable_system_audio > 1 || config.show_cursor > 1 {
         return Err("direct recording boolean fields must be zero or one".to_string());
     }
+    if config.version >= 17
+        && [
+            config.record_number_keys,
+            config.record_letters_and_symbols,
+            config.record_control_keys,
+            config.preserve_keyboard_shortcuts,
+        ]
+        .into_iter()
+        .any(|value| value > 1)
+    {
+        return Err("keyboard filter boolean fields must be zero or one".to_string());
+    }
     let capture_backend = parse_capture_backend(
         u8::try_from(config.capture_backend)
             .map_err(|_| format!("invalid capture backend: {}", config.capture_backend))?,
@@ -1149,6 +1168,16 @@ fn parse_direct_recording_config(
         enable_system_audio: config.enable_system_audio != 0 && !format.is_animated_image(),
         show_cursor: config.show_cursor != 0,
         keyboard: parse_keyboard_config(config)?,
+        keyboard_filter: if config.version >= 17 {
+            snow_screen_recorder::KeyboardFilterConfig {
+                record_number_keys: config.record_number_keys != 0,
+                record_letters_and_symbols: config.record_letters_and_symbols != 0,
+                record_control_keys: config.record_control_keys != 0,
+                preserve_keyboard_shortcuts: config.preserve_keyboard_shortcuts != 0,
+            }
+        } else {
+            Default::default()
+        },
         mouse_trail_rgba: packed_rgba(config.mouse_trail_rgba),
         mouse_trail_duration_ms: if config.version < 3 {
             500
@@ -1709,6 +1738,72 @@ pub extern "C" fn snow_recording_last_error_message() -> *const c_char {
 mod tests {
     use super::*;
     #[test]
+    fn keyboard_filter_flags_round_trip_and_validate() {
+        for mask in 0..16 {
+            let mut raw = direct_config(c"keyboard-filter.mp4");
+            raw.record_number_keys = mask & 1;
+            raw.record_letters_and_symbols = (mask >> 1) & 1;
+            raw.record_control_keys = (mask >> 2) & 1;
+            raw.preserve_keyboard_shortcuts = (mask >> 3) & 1;
+            let copied = unsafe { read_direct_recording_config(&raw) }.unwrap();
+            let filter = parse_direct_recording_config(&copied)
+                .unwrap()
+                .keyboard_filter;
+            assert_eq!(filter.record_number_keys, mask & 1 != 0);
+            assert_eq!(filter.record_letters_and_symbols, mask & 2 != 0);
+            assert_eq!(filter.record_control_keys, mask & 4 != 0);
+            assert_eq!(filter.preserve_keyboard_shortcuts, mask & 8 != 0);
+        }
+        for index in 0..4 {
+            let mut raw = direct_config(c"keyboard-filter.mp4");
+            let fields = [
+                &mut raw.record_number_keys,
+                &mut raw.record_letters_and_symbols,
+                &mut raw.record_control_keys,
+                &mut raw.preserve_keyboard_shortcuts,
+            ];
+            *fields.into_iter().nth(index).unwrap() = 2;
+            assert!(
+                parse_direct_recording_config(&raw)
+                    .unwrap_err()
+                    .contains("keyboard filter")
+            );
+        }
+    }
+
+    #[test]
+    fn keyboard_filter_legacy_prefixes_enable_every_option() {
+        for version in 1..=16 {
+            let mut raw = direct_config(c"keyboard-filter.mp4");
+            raw.version = version;
+            raw.struct_size = direct_config_size(version).unwrap();
+            if version == 2 {
+                raw.mouse_trail_duration_ms = 0;
+            }
+            // Garbage outside the caller's prefix must never change the legacy defaults.
+            raw.record_number_keys = u32::MAX;
+            raw.record_letters_and_symbols = u32::MAX;
+            raw.record_control_keys = u32::MAX;
+            raw.preserve_keyboard_shortcuts = u32::MAX;
+            let prefix = unsafe {
+                std::slice::from_raw_parts((&raw const raw).cast::<u8>(), raw.struct_size as usize)
+            }
+            .to_vec();
+            let copied = unsafe { read_direct_recording_config(prefix.as_ptr().cast()) }.unwrap();
+            assert_eq!(
+                parse_direct_recording_config(&copied)
+                    .unwrap()
+                    .keyboard_filter,
+                snow_screen_recorder::KeyboardFilterConfig::default(),
+                "legacy version {version}"
+            );
+        }
+        let mut raw = direct_config(c"keyboard-filter.mp4");
+        raw.struct_size -= 1;
+        assert!(unsafe { read_direct_recording_config(&raw) }.is_err());
+    }
+
+    #[test]
     fn keyboard_font_is_owned_validated_and_legacy_compatible() {
         let mut raw = direct_config(c"font.mp4");
         raw.show_keyboard = 1;
@@ -1952,12 +2047,13 @@ mod tests {
 
     #[test]
     fn direct_recording_exclusion_abi_layout() {
-        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 16);
+        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 17);
         assert_eq!(
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, exclusions),
             192
         );
-        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 304);
+        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 320);
+        assert_eq!(direct_config_size(16).unwrap(), 304);
         assert_eq!(direct_config_size(15).unwrap(), 304);
         assert_eq!(direct_config_size(14).unwrap(), 296);
         assert_eq!(direct_config_size(13).unwrap(), 288);
@@ -2365,6 +2461,10 @@ mod tests {
             webcam_offset_left: 48,
             webcam_offset_bottom: 48,
             webcam_orientation: 0,
+            record_number_keys: 1,
+            record_letters_and_symbols: 1,
+            record_control_keys: 1,
+            preserve_keyboard_shortcuts: 1,
             exclusions: Default::default(),
             audio_mode: 0,
             system_audio_gain_db: 0,
@@ -2454,7 +2554,7 @@ mod tests {
         );
         raw.version = 16;
         raw.webcam_orientation = 7;
-        raw.struct_size -= 1;
+        raw.struct_size = direct_config_size(16).unwrap() - 1;
         assert!(unsafe { read_direct_recording_config(&raw) }.is_err());
         raw.version = 13;
         raw.struct_size = direct_config_size(13).unwrap();

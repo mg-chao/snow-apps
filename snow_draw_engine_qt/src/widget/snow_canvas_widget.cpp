@@ -93,8 +93,9 @@ std::optional<SnowCursorStyle> baselineCursorForCanvasTool(SnowCanvasTool tool) 
     case SnowCanvasTool::RectangleFilter:
     case SnowCanvasTool::RectangleEraser:
     case SnowCanvasTool::Spotlight:
-    case SnowCanvasTool::SerialNumber:
         return SNOW_CURSOR_STYLE_CROSSHAIR;
+    case SnowCanvasTool::SerialNumber:
+        return SNOW_CURSOR_STYLE_SERIAL_NUMBER;
     case SnowCanvasTool::FreeDraw:
     case SnowCanvasTool::PenHighlight:
     case SnowCanvasTool::PenFilter:
@@ -387,6 +388,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
 
     bool stepFontSize(int direction);
     bool applyStyleEdit(const SnowCanvasStyleEdit& edit);
+    bool setSharedCreationColor(const std::optional<QColor>& color);
     bool rememberDraftStyle(const SnowCanvasStyleEdit& edit);
     void initializeWidget();
     void initializeViewport();
@@ -430,6 +432,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor);
     void clearCursorForLayer(SnowCanvasCursorLayer layer);
     void setCrosshairCursorFactory(CrosshairCursorFactory factory);
+    void refreshSerialNumberCursor();
     void refreshCursorDevicePixelRatio() {
         cursorController.refreshDevicePixelRatio(widget.devicePixelRatioF());
     }
@@ -622,6 +625,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     }
     void applyCanvasToolCursor(SnowCanvasTool tool);
     void refreshToolCursorStyle();
+    void updateSerialNumberPointer(const SnowInputEvent& input);
     void refocusWidget();
 
     SnowCanvasWidget& widget;
@@ -634,6 +638,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     std::optional<std::uint64_t> activeStatePublicationEpoch;
     std::uint64_t statePublicationEpoch = 0;
     SnowCanvasCursorController cursorController;
+    std::optional<QPointF> serialNumberPointerPosition;
+    SnowModifiers serialNumberPointerModifiers{};
     SnowCanvasWidgetInputHandler inputHandler;
     SnowCanvasWidgetDisplayState displayState;
     QWidget* serialNumberToolbar = nullptr;
@@ -781,6 +787,7 @@ bool SnowCanvasWidget::Impl::prepareActiveTextResizeMeasurementForPointerUp(
 
 bool SnowCanvasWidget::Impl::dispatchInput(QEvent* event, const SnowInputEvent& input) {
     const QPointer<SnowCanvasWidget> lifetime(&widget);
+    updateSerialNumberPointer(input);
     if (isPointerInput(input, SNOW_POINTER_EVENT_DOWN))
         angleWheelSteps.reset();
     if (!isPointerInput(input, SNOW_POINTER_EVENT_MOVE)) {
@@ -804,6 +811,13 @@ bool SnowCanvasWidget::Impl::dispatchInput(QEvent* event, const SnowInputEvent& 
             return false;
         }
         applyInputProcessResult(result.process);
+        if (!lifetime) {
+            return false;
+        }
+        refreshSerialNumberCursor();
+        if (!lifetime) {
+            return false;
+        }
         if (result.process.success && isPointerInput(input, SNOW_POINTER_EVENT_MOVE)) {
             if (!applyActiveTextResizeMeasurementIfNeeded()) {
                 return false;
@@ -815,6 +829,7 @@ bool SnowCanvasWidget::Impl::dispatchInput(QEvent* event, const SnowInputEvent& 
 
 bool SnowCanvasWidget::Impl::processInput(const SnowInputEvent& input) {
     const QPointer<SnowCanvasWidget> lifetime(&widget);
+    updateSerialNumberPointer(input);
     return withPresentationUpdate([&]() {
         if (!prepareActiveTextResizeMeasurementForPointerUp(input)) {
             return false;
@@ -825,6 +840,13 @@ bool SnowCanvasWidget::Impl::processInput(const SnowInputEvent& input) {
             return false;
         }
         applyInputProcessResult(result);
+        if (!lifetime) {
+            return false;
+        }
+        refreshSerialNumberCursor();
+        if (!lifetime) {
+            return false;
+        }
         if (result.success && isPointerInput(input, SNOW_POINTER_EVENT_MOVE)) {
             if (!applyActiveTextResizeMeasurementIfNeeded()) {
                 return false;
@@ -835,8 +857,14 @@ bool SnowCanvasWidget::Impl::processInput(const SnowInputEvent& input) {
 }
 
 void SnowCanvasWidget::Impl::initializeWidget() {
-    QObject::connect(qGuiApp, &QGuiApplication::fontDatabaseChanged, &widget,
-                     [this]() { refreshArrowTextMetrics(); });
+    QObject::connect(qGuiApp, &QGuiApplication::fontDatabaseChanged, &widget, [this]() {
+        const QPointer<SnowCanvasWidget> lifetime(&widget);
+        refreshArrowTextMetrics();
+        if (lifetime) {
+            cursorController.configureSerialNumberCursor(nullptr);
+            refreshSerialNumberCursor();
+        }
+    });
     widget.setAttribute(Qt::WA_OpaquePaintEvent);
     widget.setAttribute(Qt::WA_InputMethodEnabled, false);
     widget.setMouseTracking(true);
@@ -2203,6 +2231,9 @@ void SnowCanvasWidget::Impl::clearRenderState() {
 }
 
 void SnowCanvasWidget::Impl::resetDocumentRetainedState() {
+    cursorController.configureSerialNumberCursor(nullptr);
+    serialNumberPointerPosition.reset();
+    serialNumberPointerModifiers = {};
     distanceCreationPixelScale.reset();
     snapGuideTargets.reset();
     paintedBaseImageSamplingFootprints.clear();
@@ -3038,6 +3069,7 @@ void SnowCanvasWidget::Impl::retireStatePublication() {
 }
 
 void SnowCanvasWidget::Impl::refreshToolCursorStyle() {
+    const QPointer<SnowCanvasWidget> lifetime(&widget);
     const auto& cursorStyle = displayState.snapshot().styleToolbarState;
     const bool filterCursor = displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_PEN_FILTER;
     const bool eraserCursor = displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_BRUSH_ERASER;
@@ -3052,6 +3084,43 @@ void SnowCanvasWidget::Impl::refreshToolCursorStyle() {
     cursorController.configureStrokeCursor(
         strokeWidth * displayState.displayCache().sceneInfo().camera_zoom,
         filterCursor || eraserCursor ? std::nullopt : std::optional<QColor>(cursorColor));
+    if (lifetime) {
+        refreshSerialNumberCursor();
+    }
+}
+
+void SnowCanvasWidget::Impl::updateSerialNumberPointer(const SnowInputEvent& input) {
+    if (input.kind == SNOW_INPUT_EVENT_POINTER) {
+        serialNumberPointerPosition = QPointF(input.pointer.position_x, input.pointer.position_y);
+        serialNumberPointerModifiers = input.pointer.modifiers;
+    } else if (input.kind == SNOW_INPUT_EVENT_WHEEL) {
+        serialNumberPointerPosition = QPointF(input.wheel.position_x, input.wheel.position_y);
+        serialNumberPointerModifiers = input.wheel.modifiers;
+    } else if (input.kind == SNOW_INPUT_EVENT_KEY) {
+        serialNumberPointerModifiers = input.key.modifiers;
+    }
+}
+
+void SnowCanvasWidget::Impl::refreshSerialNumberCursor() {
+    if (!hasViewport() || !interactionEnabled() ||
+        displayState.snapshot().activeTool != SNOW_ACTIVE_TOOL_SERIAL_NUMBER) {
+        cursorController.configureSerialNumberCursor(nullptr);
+        return;
+    }
+    const QPointF position =
+        serialNumberPointerPosition.value_or(widget.mapFromGlobal(QCursor::pos()));
+    SnowCanvasSceneItem preview;
+    const auto copyPreview = [](void* context, const SnowSceneDisplayItem* item) {
+        *static_cast<SnowCanvasSceneItem*>(context) = *item;
+    };
+    if (snow_viewport_visit_serial_number_cursor_preview(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(), position.x(), position.y(),
+            serialNumberPointerModifiers, copyPreview, &preview) != SNOW_OK) {
+        cursorController.configureSerialNumberCursor(nullptr);
+        return;
+    }
+    cursorController.configureSerialNumberCursor(
+        &preview, displayState.displayCache().sceneInfo().camera_zoom);
 }
 
 void SnowCanvasWidget::Impl::applyCanvasToolCursor(SnowCanvasTool tool) {
@@ -3329,6 +3398,9 @@ bool SnowCanvasWidget::event(QEvent* event) {
          event->type() == QEvent::DevicePixelRatioChange ||
          event->type() == QEvent::ScreenChangeInternal)) {
         m_impl->refreshArrowTextMetrics();
+        if (lifetime) {
+            m_impl->refreshSerialNumberCursor();
+        }
     }
     return handled;
 }
@@ -4088,6 +4160,15 @@ bool SnowCanvasWidget::stepFontSize(int direction) {
 
 bool SnowCanvasWidget::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
     return m_impl->applyStyleEdit(edit);
+}
+
+bool SnowCanvasWidget::setSharedCreationColor(const std::optional<QColor>& color) {
+    return m_impl->setSharedCreationColor(color);
+}
+
+bool SnowCanvasWidget::Impl::setSharedCreationColor(const std::optional<QColor>& color) {
+    auto* runtime = runtimeBinding.runtimeOwner();
+    return runtime != nullptr && runtime->setSharedCreationColor(color);
 }
 
 bool SnowCanvasWidget::Impl::stepFontSize(int direction) {

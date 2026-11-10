@@ -71,8 +71,12 @@ class ScreenshotController : public QObject {
     [[nodiscard]] bool captureAvailable() const;
     void setCaptureSuspended(bool suspended);
     [[nodiscard]] bool captureAcquisitionActive() const;
-    [[nodiscard]] bool blocksApplicationUpdate() const;
-    [[nodiscard]] bool blocksMemoryTrimming() const;
+    // Final handoff revalidation already owns capture suspension; it must still observe actual
+    // work without treating its own closed admission as newly admitted work.
+    [[nodiscard]] bool blocksApplicationUpdate(bool includeCaptureSuspension = true) const;
+    // Final transition checks may exclude their own acquired suspension, retaining all
+    // actual input, preparation, export and resource blockers.
+    [[nodiscard]] bool blocksMemoryTrimming(bool includeCaptureSuspension = true) const;
     [[nodiscard]] bool beginGlobalMouseCapture(
         snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
         const QPointF& position,
@@ -94,6 +98,7 @@ class ScreenshotController : public QObject {
     void mcpCancelCommand();
     void mcpDetached();
     [[nodiscard]] bool mcpBegin(const QJsonObject& options, QString* error);
+    // Returns "busy" without mutation while a selection input transaction owns the model.
     [[nodiscard]] bool mcpSetSelection(const QJsonObject& params, QString* error);
     [[nodiscard]] bool mcpSetTool(const QString& tool, QString* error);
     [[nodiscard]] bool mcpApplyAnnotations(const QByteArray& payload, QJsonObject* result,

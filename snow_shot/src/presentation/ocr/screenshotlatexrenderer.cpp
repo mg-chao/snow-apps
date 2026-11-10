@@ -41,6 +41,7 @@ struct RasterKey final {
     QSize viewport;
     qreal dpr = 1;
     QRgb foreground = 0;
+    QRgb background = 0;
 
     bool operator==(const RasterKey&) const = default;
 };
@@ -68,6 +69,7 @@ struct RenderRequest final {
     QSize viewport;
     qreal dpr = 1;
     QColor foreground;
+    QColor background;
     bool clearOnly = false;
 };
 
@@ -146,7 +148,7 @@ RenderResult renderFormula(const RenderRequest& request, bool& initializationFai
         return {{}, Error::LimitExceeded};
     }
     image.setDevicePixelRatio(request.dpr);
-    image.fill(Qt::transparent);
+    image.fill(request.background);
     {
         QPainter painter(&image);
         painter.setRenderHint(QPainter::Antialiasing);
@@ -196,7 +198,7 @@ class RenderWorker final : public QThread {
     }
 
     void forget(const std::shared_ptr<PreviewState>& state) {
-        submit({state, {}, 0, {}, {}, 1, {}, true});
+        submit({state, {}, 0, {}, {}, 1, {}, {}, true});
     }
 
     void shutdown() {
@@ -242,7 +244,7 @@ class RenderWorker final : public QThread {
             }
             RenderResult result;
             const RasterKey key{request.source, request.viewport, request.dpr,
-                                request.foreground.rgba()};
+                                request.foreground.rgba(), request.background.rgba()};
             try {
                 if (!initialized && !initializationFailed && !request.source.trimmed().isEmpty()) {
                     initializeLatexResources();
@@ -370,12 +372,13 @@ ScreenshotLatexRenderer::~ScreenshotLatexRenderer() {
 }
 
 quint64 ScreenshotLatexRenderer::request(const QString& source, QSize viewportSize,
-                                         qreal devicePixelRatio, QColor foreground) {
+                                         qreal devicePixelRatio, QColor foreground,
+                                         QColor background) {
     cancel();
     const quint64 token = m_state->generation.load(std::memory_order_relaxed);
     m_state->cancellation = std::make_shared<std::atomic_bool>(false);
     renderWorker()->submit({m_state, m_state->cancellation, token, source, viewportSize,
-                            devicePixelRatio, std::move(foreground)});
+                            devicePixelRatio, std::move(foreground), std::move(background)});
     return token;
 }
 

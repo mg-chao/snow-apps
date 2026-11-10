@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "livewindowpresentation.h"
 #include "livewindowinputrouting.h"
+#include "localwindowsurfaceowner.h"
 #include "../../presentation/pinned/livewindownative_p.h"
 
 #include <QScopedValueRollback>
@@ -37,7 +38,10 @@ struct LiveWindowPresentationSurface::Impl {
         stop();
     }
 
-    bool attach(HWND window) {
+    bool attach(QPointer<QWidget> owner) {
+        const HWND window = reinterpret_cast<HWND>(owner->winId());
+        if (!owner)
+            return false;
         if (shell == window && host && thumbnail)
             return true;
         stop();
@@ -71,8 +75,11 @@ struct LiveWindowPresentationSurface::Impl {
         if (!SetWindowLongPtrW(shell, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(host)) &&
             GetLastError() != ERROR_SUCCESS)
             return false;
-        return SetWindowSubclass(shell, shellProc, subclassId(),
-                                 reinterpret_cast<DWORD_PTR>(this)) != FALSE;
+        if (!SetWindowSubclass(shell, shellProc, subclassId(), reinterpret_cast<DWORD_PTR>(this)) ||
+            !owner)
+            return false;
+        hostOwner.bind(reinterpret_cast<WId>(host), owner);
+        return true;
     }
 
     UINT_PTR subclassId() const {
@@ -80,6 +87,7 @@ struct LiveWindowPresentationSurface::Impl {
     }
 
     void stop() {
+        hostOwner.reset();
         // Detach before destroying the owner HWND: Windows destroys owned windows with it.
         if (shell) {
             RemoveWindowSubclass(shell, shellProc, subclassId());
@@ -107,7 +115,7 @@ struct LiveWindowPresentationSurface::Impl {
                  const QRect& nextSourceBounds) {
         if (!presentation.owner || !healthy)
             return false;
-        if (!attach(reinterpret_cast<HWND>(presentation.owner->winId())))
+        if (!attach(presentation.owner))
             return false;
         margins = presentation.nativeContentMargins;
         crop = nextCrop;
@@ -245,6 +253,12 @@ struct LiveWindowPresentationSurface::Impl {
             self = static_cast<Impl*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
             SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
+        if (self && message == WM_NCDESTROY) {
+            self->hostOwner.reset();
+            self->healthy = false;
+            if (self->host == window)
+                self->host = nullptr;
+        }
         if (self && message == WM_PAINT) {
             PAINTSTRUCT paint{};
             const HDC dc = BeginPaint(window, &paint);
@@ -289,6 +303,7 @@ struct LiveWindowPresentationSurface::Impl {
     }
 
     HWND source = nullptr;
+    LocalWindowSurfaceOwnerBinding hostOwner;
     HWND shell = nullptr;
     HWND host = nullptr;
     HWND originalOwner = nullptr;

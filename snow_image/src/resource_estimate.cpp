@@ -319,6 +319,20 @@ Result<ResourceEstimate> estimate_encode_resources(const Document& document,
     case Format::png:
         private_factor = 2;
         break;
+    case Format::tiff:
+        private_factor = 0;
+        runtime_headroom = std::uint64_t{16} << 20U;
+        if (!document.frames.empty()) {
+            const auto& image = document.frames.front().image;
+            auto rows = checked_multiply(image.width(), image.format().channel_count() * 2U);
+            if (!rows)
+                return rows.error();
+            auto total = checked_add(runtime_headroom, rows.value());
+            if (!total)
+                return total.error();
+            runtime_headroom = total.value();
+        }
+        break;
     case Format::webp:
         private_factor = 6;
         runtime_headroom = std::uint64_t{32} << 20U;
@@ -378,6 +392,32 @@ Result<ResourceEstimate> estimate_encode_resources(const Document& document,
     auto output = checked_add(raw.value(), std::uint64_t{1} << 20U);
     if (!output)
         return output.error();
+    if (options.format == Format::tiff) {
+        std::uint64_t metadata = 0;
+        if (options.preserve_metadata) {
+            auto total =
+                checked_add(document.color.icc_profile.size(), document.metadata.xmp.size());
+            if (!total)
+                return total.error();
+            total = checked_add(total.value(), document.metadata.comment.size());
+            if (!total)
+                return total.error();
+            metadata = total.value();
+        }
+        auto artifact = checked_add(output.value(), raw.value() / 100U);
+        if (!artifact)
+            return artifact.error();
+        artifact = checked_add(artifact.value(), metadata);
+        if (!artifact)
+            return artifact.error();
+        output = artifact.value();
+        auto metadata_working = checked_multiply(metadata, 2U);
+        if (!metadata_working)
+            return metadata_working.error();
+        private_memory = checked_add(private_memory.value(), metadata_working.value());
+        if (!private_memory)
+            return private_memory.error();
+    }
     return ResourceEstimate{std::max(private_memory.value(), private_floor), 0, output.value()};
 }
 

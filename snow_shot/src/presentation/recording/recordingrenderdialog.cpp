@@ -106,9 +106,9 @@ void RecordingRenderDialog::refresh() {
         retained          ? (lastError.isEmpty()
                                  ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering canceled")
                                  : QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering failed"))
-        : cancelRequested ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Cancelling rendering...")
+        : cancelRequested ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Canceling rendering...")
         : stage == SNOW_RECORDING_RENDER_STAGE_PREPARE
-            ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Preparing recording...")
+            ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Preparing recording for export...")
         : stage == SNOW_RECORDING_RENDER_STAGE_FINALIZE
             ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Finalizing recording...")
             : QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering video...");
@@ -120,7 +120,8 @@ void RecordingRenderDialog::refresh() {
             .arg(path));
     cancelButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Cancel")));
     retryButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Retry")));
-    keepButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Keep Source")));
+    keepButton->setText(
+        renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Keep source files")));
     discardButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Discard")));
     cancelButton->setVisible(!retained);
     cancelButton->setEnabled(!cancelRequested && !busy);

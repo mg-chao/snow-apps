@@ -58,28 +58,28 @@
     <context>
         <name>ScreenshotCloudUploadJob</name>
         <message>
-            <source>Cloud upload failed (HTTP %1%2).</source>
-            <translation>Cloud upload failed (HTTP %1%2).</translation>
+            <source>Cloud upload failed (HTTP %1%2)</source>
+            <translation>Cloud upload failed (HTTP %1%2)</translation>
         </message>
         <message>
-            <source>Cloud upload failed because of a network error or timeout.</source>
-            <translation>Cloud upload failed because of a network error or timeout.</translation>
+            <source>Cloud upload failed because of a network error or timeout</source>
+            <translation>Cloud upload failed because of a network error or timeout</translation>
         </message>
         <message>
-            <source>The cloud upload configuration or image is unavailable.</source>
-            <translation>The cloud upload configuration or image is unavailable.</translation>
+            <source>The cloud upload configuration or image is unavailable</source>
+            <translation>The cloud upload configuration or image is unavailable</translation>
         </message>
         <message>
-            <source>The image could not be opened for upload.</source>
-            <translation>The image could not be opened for upload.</translation>
+            <source>The image could not be opened for upload</source>
+            <translation>The image could not be opened for upload</translation>
         </message>
         <message>
-            <source>The image could not be prepared for upload.</source>
-            <translation>The image could not be prepared for upload.</translation>
+            <source>The image could not be prepared for upload</source>
+            <translation>The image could not be prepared for upload</translation>
         </message>
         <message>
-            <source>The screenshot export queue is full.</source>
-            <translation>The screenshot export queue is full.</translation>
+            <source>The screenshot export queue is full</source>
+            <translation>The screenshot export queue is full</translation>
         </message>
     </context>
     <context>
@@ -132,6 +132,10 @@
             <translation>PNG image (*.png)</translation>
         </message>
         <message>
+            <source>TIFF image (*.tif *.tiff)</source>
+            <translation>TIFF image (*.tif *.tiff)</translation>
+        </message>
+        <message>
             <source>The encoded image is empty</source>
             <translation>The encoded image is empty</translation>
         </message>
@@ -142,6 +146,10 @@
         <message>
             <source>The save was cancelled</source>
             <translation>The save was cancelled</translation>
+        </message>
+        <message>
+            <source>The screenshot filename format is invalid</source>
+            <translation>The screenshot filename format is invalid</translation>
         </message>
         <message>
             <source>WebP image (*.webp)</source>
@@ -438,6 +446,10 @@
             <translation>Percentage</translation>
         </message>
         <message>
+            <source>Pixels</source>
+            <translation>Pixels</translation>
+        </message>
+        <message>
             <source>Please enter a name</source>
             <translation>Please enter a name</translation>
         </message>
@@ -494,6 +506,10 @@
             <translation>Size unit</translation>
         </message>
         <message>
+            <source>TIFF</source>
+            <translation>TIFF</translation>
+        </message>
+        <message>
             <source>The clipboard could not be updated: %1</source>
             <translation>The clipboard could not be updated: %1</translation>
         </message>
@@ -522,8 +538,8 @@
             <translation>The image dimensions exceed the export limit</translation>
         </message>
         <message>
-            <source>The save paths could not be stored</source>
-            <translation>The save paths could not be stored</translation>
+            <source>The save path settings could not be saved</source>
+            <translation>The save path settings could not be saved</translation>
         </message>
         <message>
             <source>The saved file no longer exists</source>
@@ -560,10 +576,6 @@
         <message>
             <source>Width</source>
             <translation>Width</translation>
-        </message>
-        <message>
-            <source>pixel</source>
-            <translation>pixel</translation>
         </message>
     </context>
     <context>

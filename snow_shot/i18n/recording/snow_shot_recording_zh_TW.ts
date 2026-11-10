@@ -8,8 +8,8 @@
             <translation>%1 dB</translation>
         </message>
         <message>
-            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</source>
-            <translation>將增益調整至 -24 到 +24 dB。滑軌顯示處理後的音訊電平。</translation>
+            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level</source>
+            <translation>將增益調整至 -24 到 +24 dB。滑軌顯示處理後的音訊電平</translation>
         </message>
         <message>
             <source>Microphone gain</source>
@@ -54,8 +54,8 @@
     <context>
         <name>RecordingRegionDragHandle</name>
         <message>
-            <source>Move recording area</source>
-            <translation>移動錄影區域</translation>
+            <source>Move screen recording area</source>
+            <translation>移動螢幕錄製區域</translation>
         </message>
     </context>
     <context>
@@ -65,8 +65,8 @@
             <translation>取消</translation>
         </message>
         <message>
-            <source>Cancelling rendering...</source>
-            <translation>正在取消轉繪...</translation>
+            <source>Canceling rendering...</source>
+            <translation>正在取消算繪...</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -77,32 +77,32 @@
             <translation>正在完成錄製匯出...</translation>
         </message>
         <message>
-            <source>Keep Source</source>
+            <source>Keep source files</source>
             <translation>保留來源檔案</translation>
         </message>
         <message>
-            <source>Preparing recording...</source>
-            <translation>正在準備錄製...</translation>
+            <source>Preparing recording for export...</source>
+            <translation>正在準備錄製匯出...</translation>
         </message>
         <message>
             <source>Rendering canceled</source>
-            <translation>轉繪已取消</translation>
+            <translation>算繪已取消</translation>
         </message>
         <message>
             <source>Rendering failed</source>
-            <translation>轉繪失敗</translation>
+            <translation>算繪失敗</translation>
         </message>
         <message>
             <source>Rendering progress</source>
-            <translation>轉繪進度</translation>
+            <translation>算繪進度</translation>
         </message>
         <message>
             <source>Rendering recording</source>
-            <translation>轉繪錄製</translation>
+            <translation>算繪錄製內容</translation>
         </message>
         <message>
             <source>Rendering video...</source>
-            <translation>正在轉繪影片...</translation>
+            <translation>正在算繪影片...</translation>
         </message>
         <message>
             <source>Retry</source>
@@ -116,11 +116,11 @@
         </message>
         <message>
             <source>Unable to read rendering progress</source>
-            <translation>無法讀取轉繪進度</translation>
+            <translation>無法讀取算繪進度</translation>
         </message>
         <message>
             <source>Unable to start rendering</source>
-            <translation>無法開始轉繪</translation>
+            <translation>無法開始算繪</translation>
         </message>
     </context>
     <context>
@@ -146,12 +146,12 @@
             <translation>麥克風已開啟</translation>
         </message>
         <message>
-            <source>Speaker disabled</source>
-            <translation>喇叭已關閉</translation>
+            <source>System audio disabled</source>
+            <translation>系統音訊已關閉</translation>
         </message>
         <message>
-            <source>Speaker enabled</source>
-            <translation>喇叭已開啟</translation>
+            <source>System audio enabled</source>
+            <translation>系統音訊已開啟</translation>
         </message>
         <message>
             <source>WebP</source>
@@ -161,11 +161,11 @@
     <context>
         <name>RecordingTrimSession</name>
         <message>
-            <source>Choose a different file to preserve the original recording.</source>
-            <translation>請選擇其他檔案，以保留原始錄製。</translation>
+            <source>Choose a different file to preserve the original recording</source>
+            <translation>請選擇其他檔案，以保留原始錄製</translation>
         </message>
         <message>
-            <source>Save to File</source>
+            <source>Save to file</source>
             <translation>儲存至檔案</translation>
         </message>
         <message>
@@ -223,11 +223,11 @@
             <translation>垂直翻轉</translation>
         </message>
         <message>
-            <source>Move webcam</source>
+            <source>Move webcam preview</source>
             <translation>移動攝影機畫面</translation>
         </message>
         <message>
-            <source>Resize webcam</source>
+            <source>Resize webcam preview</source>
             <translation>調整攝影機畫面大小</translation>
         </message>
         <message>
@@ -242,8 +242,8 @@
     <context>
         <name>ScreenRecordingController</name>
         <message>
-            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder.</source>
-            <translation>Windows 結束工作階段時中斷了螢幕錄製。您可以復原已儲存的錄製內容或開啟其資料夾。</translation>
+            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder</source>
+            <translation>Windows 結束工作階段時中斷了螢幕錄製。您可以復原已儲存的錄製內容或開啟其資料夾</translation>
         </message>
         <message>
             <source>Keyboard recording failed: %1</source>
@@ -258,10 +258,6 @@
             <translation>開啟資料夾</translation>
         </message>
         <message>
-            <source>Recording recovery</source>
-            <translation>錄製復原</translation>
-        </message>
-        <message>
             <source>Recover</source>
             <translation>復原</translation>
         </message>
@@ -270,22 +266,26 @@
             <translation>螢幕錄製</translation>
         </message>
         <message>
+            <source>Screen recording recovery</source>
+            <translation>螢幕錄製復原</translation>
+        </message>
+        <message>
             <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
 %1
 
-Keep this folder to recover the recording.</source>
+Keep this folder to recover the recording</source>
             <translation>無法完成錄製檔案。可復原的媒體及其時間軸已儲存於：
 %1
 
-請保留此資料夾，以便復原錄製內容。</translation>
+請保留此資料夾，以便復原錄製內容</translation>
         </message>
         <message>
             <source>The recording operation failed</source>
             <translation>錄製作業失敗</translation>
         </message>
         <message>
-            <source>The webcam could not be initialized.</source>
-            <translation>無法初始化攝影機。</translation>
+            <source>The webcam could not be initialized</source>
+            <translation>無法初始化攝影機</translation>
         </message>
         <message>
             <source>Unable to create the recording directory</source>
@@ -311,15 +311,15 @@ Keep this folder to recover the recording.</source>
             <translation>完成</translation>
         </message>
         <message>
-            <source>Recording settings</source>
-            <translation>錄影設定</translation>
+            <source>Screen recording settings</source>
+            <translation>螢幕錄製設定</translation>
         </message>
     </context>
     <context>
         <name>ScreenRecordingToolbarWindow</name>
         <message>
             <source>Show recording toolbar</source>
-            <translation>顯示錄影工具列</translation>
+            <translation>顯示螢幕錄製工具列</translation>
         </message>
     </context>
 </TS>

@@ -38,11 +38,15 @@ its enclosing window. Native AX objects never cross worker threads.
   They do not depend on `AXWindow`, which can be absent or return a stale WebKit proxy
   despite a valid parent chain. Frames are clipped to the visible display; duplicate
   rectangles and hidden, unrelated, or broken parent branches are rejected.
-- Windows owned by the selector's process use their clipped Quartz snapshot bounds in
-  both window and element modes. They are never activated or traversed through AX:
-  macOS dispatches in-process AX requests directly on the calling worker, which would
-  access AppKit/Qt UI objects outside the GUI thread. Foreground and refinement queries
-  share this boundary; element traversal remains available for other applications.
+- Workers return clipped Quartz snapshot bounds for windows owned by the selector's
+  process. They never activate or traverse those windows through AX: macOS dispatches
+  in-process AX requests directly on the calling worker, outside the GUI thread.
+  Snow Shot completes these results on its GUI thread using local `NSAccessibility`
+  hit testing and bounded ancestry traversal, supporting both Qt and AppKit controls
+  without Accessibility permission. Only plain rectangles leave that local call.
+  Children are accepted only when the ancestry reaches the exact selected window and
+  its visible bounds still match the worker's snapshot. Broken providers retain the
+  window fallback. Foreground and refinement workers keep the same remote-only boundary.
 - Child enumeration prefers `AXVisibleChildren`, falling back to `AXChildren` when unsupported.
   Pages contain at most 32 references; traversal is limited to 512 visited nodes, 64 levels,
   and 48 distinct frames. Missing bounds do not hide a container's descendants.
@@ -75,7 +79,9 @@ its enclosing window. Native AX objects never cross worker threads.
 
 No complete window tree is cached. Apps with inaccessible or unexposed content retain a
 window fallback. Native calls depend on the target honoring macOS IPC timeouts; the UI
-thread never performs those calls or waits for worker shutdown.
+thread never performs remote AX calls or waits for worker shutdown. Local hit testing
+uses the native deepest-element result without enumerating children, with at most 64
+ancestors, 48 frames, and an 8 ms cooperative budget between provider calls.
 
 ## Focused diagnostics
 

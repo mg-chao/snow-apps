@@ -180,7 +180,8 @@ class ScreenshotTableModel final : public QAbstractTableModel {
         if (anchor.x() < 0) {
             return Qt::NoItemFlags;
         }
-        return Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable;
+        return Qt::ItemIsEnabled | Qt::ItemIsSelectable |
+               (m_editor->previewOnly() ? Qt::NoItemFlags : Qt::ItemIsEditable);
     }
 
     bool setData(const QModelIndex& index, const QVariant& value,
@@ -467,6 +468,37 @@ void ScreenshotTableEditor::setSession(std::shared_ptr<ScreenshotTableEditingSes
     refreshCommandState();
 }
 
+void ScreenshotTableEditor::setPreviewOnly(bool preview) {
+    m_previewOnly = preview;
+    if (!preview)
+        m_previewColumns = 0;
+    setEditTriggers(preview ? QAbstractItemView::NoEditTriggers
+                            : QAbstractItemView::EditKeyPressed | QAbstractItemView::AnyKeyPressed);
+    refreshCommandState();
+}
+
+void ScreenshotTableEditor::setPreview(const ScreenshotTableDocument& document) {
+    const int vertical = verticalScrollBar()->value();
+    const int horizontal = horizontalScrollBar()->value();
+    const bool follow = vertical >= verticalScrollBar()->maximum() - 2;
+    QVector<int> widths;
+    if (m_previewOnly && m_session)
+        for (int column = 0; column < m_session->document.columnCount(); ++column)
+            widths.append(columnWidth(column));
+    setPreviewOnly(true);
+    if (!m_session) {
+        setSession(std::make_shared<ScreenshotTableEditingSession>(document));
+    } else if (m_session->document != document) {
+        m_session->replaceDocument(document);
+        updateTableMetrics();
+    }
+    for (int column = 0; column < std::min(widths.size(), qsizetype(document.columnCount()));
+         ++column)
+        setColumnWidth(column, widths[column]);
+    horizontalScrollBar()->setValue(horizontal);
+    verticalScrollBar()->setValue(follow ? verticalScrollBar()->maximum() : vertical);
+}
+
 void ScreenshotTableEditor::clearSession() {
     if (m_session != nullptr) {
         saveSessionViewState();
@@ -544,6 +576,8 @@ bool ScreenshotTableEditor::cancelActiveEdit() {
 }
 
 void ScreenshotTableEditor::mergeSelection() {
+    if (m_previewOnly)
+        return;
     if (m_session == nullptr) {
         return;
     }
@@ -557,6 +591,8 @@ void ScreenshotTableEditor::mergeSelection() {
 }
 
 void ScreenshotTableEditor::splitSelection() {
+    if (m_previewOnly)
+        return;
     if (m_session == nullptr) {
         return;
     }
@@ -570,18 +606,24 @@ void ScreenshotTableEditor::splitSelection() {
 }
 
 void ScreenshotTableEditor::resetDocument() {
+    if (m_previewOnly)
+        return;
     if (m_session != nullptr && m_session->document != m_session->baseline) {
         pushDocumentChange(m_session->baseline, tr("Reset table"));
     }
 }
 
 void ScreenshotTableEditor::undoEdit() {
+    if (m_previewOnly)
+        return;
     if (m_session != nullptr) {
         m_session->undoStack.undo();
     }
 }
 
 void ScreenshotTableEditor::redoEdit() {
+    if (m_previewOnly)
+        return;
     if (m_session != nullptr) {
         m_session->undoStack.redo();
     }
@@ -594,6 +636,8 @@ void ScreenshotTableEditor::copySelection() {
 }
 
 std::unique_ptr<QMimeData> ScreenshotTableEditor::clipboardMimeData() const {
+    if (m_previewOnly)
+        return {};
     if (m_session == nullptr) {
         return {};
     }
@@ -623,6 +667,8 @@ bool ScreenshotTableEditor::copySelectionToClipboard() {
 }
 
 void ScreenshotTableEditor::pasteSelection() {
+    if (m_previewOnly)
+        return;
     if (m_session == nullptr || QApplication::clipboard() == nullptr) {
         return;
     }
@@ -638,6 +684,8 @@ void ScreenshotTableEditor::pasteSelection() {
 }
 
 void ScreenshotTableEditor::clearSelectionContents() {
+    if (m_previewOnly)
+        return;
     if (m_session == nullptr) {
         return;
     }
@@ -792,7 +840,7 @@ void ScreenshotTableEditor::showContextMenu(const QPoint& globalPosition,
         menu.addItem(tr("Split cells"), adqt::icons::antd::outlined::SplitCells());
     const ScreenshotTableCommandState state = commandState();
     copyAction->setEnabled(state.hasSelection);
-    pasteAction->setEnabled(QApplication::clipboard() != nullptr &&
+    pasteAction->setEnabled(!m_previewOnly && QApplication::clipboard() != nullptr &&
                             QApplication::clipboard()->mimeData() != nullptr);
     clearAction->setEnabled(state.hasSelection);
     mergeAction->setEnabled(state.canMerge);
@@ -823,7 +871,7 @@ void ScreenshotTableEditor::showCellEditorContextMenu(QPlainTextEdit* editor,
     QAction* paste = menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets());
     QAction* remove = menu.addItem(tr("Delete"), adqt::icons::antd::outlined::IconDelete());
     menu.addSeparator();
-    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    QAction* selectAll = menu.addItem(tr("Select all"), adqt::icons::antd::outlined::Select());
 
     const bool hasSelection = editor->textCursor().hasSelection();
     const bool writable = !editor->isReadOnly();
@@ -884,6 +932,8 @@ void ScreenshotTableEditor::updateGeometries() {
 }
 
 bool ScreenshotTableEditor::commitCellText(const QModelIndex& sourceIndex, const QString& text) {
+    if (m_previewOnly)
+        return false;
     if (m_session == nullptr) {
         return false;
     }
@@ -908,6 +958,8 @@ bool ScreenshotTableEditor::commitCellText(const QModelIndex& sourceIndex, const
 
 void ScreenshotTableEditor::pushDocumentChange(const ScreenshotTableDocument& replacement,
                                                const QString& label) {
+    if (m_previewOnly)
+        return;
     if (m_session == nullptr || replacement == m_session->document) {
         return;
     }
@@ -994,7 +1046,7 @@ void ScreenshotTableEditor::handleDocumentChanged() {
 
 void ScreenshotTableEditor::refreshCommandState() {
     ScreenshotTableCommandState state;
-    if (m_session != nullptr) {
+    if (m_session != nullptr && !m_previewOnly) {
         const ScreenshotTableRange range = selectedRange();
         state.canUndo = m_session->undoStack.canUndo();
         state.canRedo = m_session->undoStack.canRedo();
@@ -1091,6 +1143,7 @@ void ScreenshotTableEditor::updateTableMetrics() {
     const int horizontalPadding = cellInset * 2;
     const int sampleRows = std::min(m_session->document.rowCount(), 200);
     QVector<int> widths(m_session->document.columnCount(), minimumWidth);
+    const int retainedColumns = m_previewOnly ? m_previewColumns : 0;
     int totalWidth = 0;
     for (int column = 0; column < widths.size(); ++column) {
         for (int row = 0; row < sampleRows; ++row) {
@@ -1119,8 +1172,11 @@ void ScreenshotTableEditor::updateTableMetrics() {
         }
     }
     for (int column = 0; column < widths.size(); ++column) {
-        setColumnWidth(column, widths.at(column));
+        if (column >= retainedColumns)
+            setColumnWidth(column, widths.at(column));
     }
+    if (m_previewOnly)
+        m_previewColumns = m_session->document.columnCount();
 
     const int baseHeight = std::max(24, qRound(theme.controlHeight));
     verticalHeader()->setDefaultSectionSize(baseHeight);
@@ -1174,6 +1230,8 @@ QModelIndex ScreenshotTableEditor::anchorIndex(const QModelIndex& index) const {
 }
 
 bool ScreenshotTableEditor::pasteDocument(const ScreenshotTableDocument& source) {
+    if (m_previewOnly)
+        return false;
     if (m_session == nullptr || source.empty()) {
         return false;
     }

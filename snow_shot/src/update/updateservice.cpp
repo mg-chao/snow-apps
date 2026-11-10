@@ -1,5 +1,7 @@
+#include "snow_shot/proxyconfiguration.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/update/updateservice.h"
+#include "snow_shot/update/relaunchintent.h"
 #include "snow_shot/app/distribution.h"
 
 #include <QCoreApplication>
@@ -12,14 +14,16 @@
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QProcess>
+#include <QPointer>
 #include <QSet>
+#include <QThread>
 #include <QTimer>
 #include <optional>
 
 namespace snow_shot::update {
 namespace {
 constexpr int kProtocolVersion = 2;
-constexpr qsizetype kMaximumFrameBytes = 64 * 1024;
+constexpr qsizetype kMaximumFrameBytes = kMaximumUpdateFrameBytes;
 constexpr qsizetype kMaximumDiagnosticBytes = 8 * 1024;
 
 QJsonObject progressTexts() {
@@ -154,8 +158,11 @@ struct UpdateService::Impl {
         QObject::connect(
             &process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), &q,
             [this](int exitCode, QProcess::ExitStatus exitStatus) {
+                const QPointer<UpdateService> lifetime(&q);
                 readDiagnostics();
                 readProtocol();
+                if (!lifetime)
+                    return;
                 if (!stdoutBuffer.isEmpty() && !preserveStatusOnExit) {
                     protocolFailure();
                 }
@@ -457,6 +464,7 @@ struct UpdateService::Impl {
     }
 
     void readProtocol() {
+        const QPointer<UpdateService> lifetime(&q);
         stdoutBuffer.append(process.readAllStandardOutput());
         if (stdoutBuffer.size() > kMaximumFrameBytes && !stdoutBuffer.contains('\n')) {
             protocolFailure(QCoreApplication::translate(
@@ -482,6 +490,8 @@ struct UpdateService::Impl {
                 return;
             }
             handleEvent(document.object());
+            if (!lifetime)
+                return;
         }
         if (stdoutBuffer.size() > kMaximumFrameBytes) {
             protocolFailure(QCoreApplication::translate(
@@ -531,6 +541,7 @@ struct UpdateService::Impl {
             command.insert(QStringLiteral("operation"), operationName(activeOperation));
             command.insert(QStringLiteral("trigger"), triggerName(activeTrigger));
             command.insert(QStringLiteral("systemProxy"), systemProxy);
+            command.insert(QStringLiteral("httpProxy"), httpProxy);
             send(QStringLiteral("execute"), command);
             if (cancelWhenRunning) {
                 cancelWhenRunning = false;
@@ -554,17 +565,49 @@ struct UpdateService::Impl {
             applyStatus(event.value(QStringLiteral("status")).toObject());
             completeOperation(outcome);
         } else if (type == u"handoff_ready") {
-            emit q.handoffReady();
-            const bool proceed = status.state == UpdateState::Applying;
-            if (proceed) {
-                setHandoffPending(true);
-                QJsonObject decision{{QStringLiteral("proceed"), true}};
-                if (relaunchArguments.has_value()) {
-                    decision.insert(QStringLiteral("relaunchArguments"),
-                                    QJsonArray::fromStringList(*relaunchArguments));
-                }
-                pendingHandoffRequestId = send(QStringLiteral("handoff_decision"), decision);
+            const QPointer<UpdateService> lifetime(&q);
+            bool proceed = false;
+            try {
+                const auto approval = handoffApproval;
+                proceed = approval && approval();
+            } catch (...) {
+                // The helper has not been allowed to proceed, so the application can recover.
+                proceed = false;
             }
+            if (!lifetime)
+                return;
+            proceed = proceed && status.state == UpdateState::Applying;
+            if (proceed) {
+                try {
+                    setHandoffPending(true);
+                    if (!lifetime)
+                        return;
+                    const auto validation = handoffValidation;
+                    proceed = validation && validation();
+                } catch (...) {
+                    // Suspension observers and final validation are still reversible.
+                    proceed = false;
+                }
+                if (!lifetime)
+                    return;
+                proceed = proceed && handoffPending && status.state == UpdateState::Applying;
+            }
+            if (!proceed && status.state == UpdateState::Applying) {
+                q.reportBlocked(QCoreApplication::translate(
+                    "UpdateErrors", "The application cancelled the update handoff"));
+            }
+            if (!lifetime)
+                return;
+            if (!proceed) {
+                setHandoffPending(false);
+                return;
+            }
+            QJsonObject decision{{QStringLiteral("proceed"), true}};
+            if (relaunchArguments.has_value()) {
+                decision.insert(QStringLiteral("relaunchArguments"),
+                                QJsonArray::fromStringList(*relaunchArguments));
+            }
+            pendingHandoffRequestId = send(QStringLiteral("handoff_decision"), decision);
         } else if (type == u"fatal") {
             const auto error = event.value(QStringLiteral("error")).toObject();
             fail(translatedError(error));
@@ -717,11 +760,14 @@ struct UpdateService::Impl {
     quint64 pendingHandoffRequestId = 0;
     QSet<quint64> pendingRelaunchRequestIds;
     std::optional<QStringList> relaunchArguments;
+    std::function<bool()> handoffApproval;
+    std::function<bool()> handoffValidation;
     Operation activeOperation = Operation::None;
     Trigger activeTrigger = Trigger::Startup;
     Operation pendingOperation = Operation::None;
     Trigger pendingTrigger = Trigger::Periodic;
     bool systemProxy = false;
+    QString httpProxy;
     bool started = false;
     bool handshakeComplete = false;
     bool helloSeen = false;
@@ -747,6 +793,9 @@ UpdateService::~UpdateService() {
     // Reaping the helper can dispatch its last frames. Observers must not receive
     // callbacks from a service whose dependent application objects are tearing down.
     QObject::disconnect(this, nullptr, nullptr, nullptr);
+    QObject::disconnect(&m_impl->process, nullptr, this, nullptr);
+    m_impl->handoffApproval = [] { return false; };
+    m_impl->handoffValidation = [] { return false; };
     m_impl.reset();
 }
 
@@ -764,6 +813,40 @@ bool UpdateService::event(QEvent* event) {
 
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
+}
+UpdateCapabilities UpdateService::capabilities() const {
+    return {!managedByStore(), !managedByStore(), !managedByStore()};
+}
+
+void UpdateService::setHandoffApproval(QObject* context, std::function<bool()> approval) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    Q_ASSERT(!context || context->thread() == thread());
+    if (!approval) {
+        m_impl->handoffApproval = {};
+        return;
+    }
+    m_impl->handoffApproval = [context = QPointer<QObject>(context),
+                               approval = std::move(approval)] {
+        if (!context)
+            return false;
+        const bool accepted = approval();
+        return context && accepted;
+    };
+}
+void UpdateService::setHandoffValidation(QObject* context, std::function<bool()> validation) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    Q_ASSERT(!context || context->thread() == thread());
+    if (!validation) {
+        m_impl->handoffValidation = {};
+        return;
+    }
+    m_impl->handoffValidation = [context = QPointer<QObject>(context),
+                                 validation = std::move(validation)] {
+        if (!context)
+            return false;
+        const bool accepted = validation();
+        return context && accepted;
+    };
 }
 bool UpdateService::managedByStore() const {
     return m_impl->storeManaged;
@@ -850,7 +933,14 @@ void UpdateService::setMode(const QString& mode) {
 }
 
 void UpdateService::setSystemProxy(bool enabled) {
-    m_impl->systemProxy = enabled;
+    setProxyConfiguration(enabled ? QStringLiteral("system") : QStringLiteral("none"), {});
+}
+
+void UpdateService::setProxyConfiguration(const QString& mode, const QString& address) {
+    m_impl->systemProxy = mode == QStringLiteral("system");
+    m_impl->httpProxy = mode == QStringLiteral("manual")
+                            ? normalizedHttpProxyUrl(address).value_or(QString())
+                            : QString();
 }
 
 void UpdateService::setProgressAppearance(const QJsonObject& appearance) {
@@ -902,9 +992,20 @@ void UpdateService::applyAtStartup() {
     m_impl->request(Operation::Apply, Trigger::Startup);
 }
 
-void UpdateService::setRelaunchArguments(const QStringList& arguments) {
+bool UpdateService::acceptsRelaunchArguments(const QStringList& arguments) const {
+    if (m_impl->handoffCommittedReported)
+        return false;
+    const QString executable =
+        QDir(m_impl->options.root)
+            .filePath(QStringLiteral("bin/") + app::edition::executableName());
+    return relaunchIntentFits(arguments, executable);
+}
+
+bool UpdateService::setRelaunchArguments(const QStringList& arguments) {
+    if (!acceptsRelaunchArguments(arguments))
+        return false;
     if (m_impl->relaunchArguments == arguments)
-        return;
+        return true;
     m_impl->relaunchArguments = arguments;
     if (m_impl->pendingHandoffRequestId != 0 || (m_impl->handedOff && m_impl->handoffPending)) {
         const quint64 requestId = m_impl->send(
@@ -912,7 +1013,10 @@ void UpdateService::setRelaunchArguments(const QStringList& arguments) {
             {{QStringLiteral("relaunchArguments"), QJsonArray::fromStringList(arguments)}});
         if (requestId != 0)
             m_impl->pendingRelaunchRequestIds.insert(requestId);
+        else
+            return false;
     }
+    return true;
 }
 
 void UpdateService::clearRelaunchArguments() {
@@ -920,11 +1024,14 @@ void UpdateService::clearRelaunchArguments() {
 }
 
 void UpdateService::reportBlocked(const QString& reason) {
+    const QPointer<UpdateService> lifetime(this);
     m_impl->errorSource.clear();
     if (m_impl->status.state == UpdateState::Applying) {
         m_impl->status.state = UpdateState::Ready;
         m_impl->status.error = reason;
         emit statusChanged();
+        if (!lifetime)
+            return;
         m_impl->send(QStringLiteral("handoff_decision"),
                      {{QStringLiteral("proceed"), false}, {QStringLiteral("reason"), reason}});
     } else {

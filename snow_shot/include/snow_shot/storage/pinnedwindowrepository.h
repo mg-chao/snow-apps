@@ -42,6 +42,7 @@ struct PinnedWindowPreviewSource final {
     QDateTime createdUtc{};
     std::optional<PinnedTextStyle> textStyle;
     PinnedTextFormat textFormat = PinnedTextFormat::PlainText;
+    QSize naturalSize;
 };
 
 enum class PinnedWindowOperation {
@@ -49,6 +50,7 @@ enum class PinnedWindowOperation {
     PayloadReadAdmission,
     PayloadRead,
     PayloadWrite,
+    ManifestWrite,
     RetentionWait,
     RetentionScan,
     StorageReadDrain
@@ -75,9 +77,14 @@ class PinnedWindowRepository final {
     [[nodiscard]] std::optional<PinnedWindowPreviewSource>
     loadPreviewSource(const QString& id, std::function<bool(qint64)> allocationCheck = {},
                       std::function<bool()> cancelled = {}) const;
+    [[nodiscard]] std::optional<PinnedWindowPreviewSource>
+    loadThumbnailSource(const QString& id, QSize targetSize,
+                        std::function<bool()> cancelled = {}) const;
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id,
                                                                bool* colorSwatch = nullptr) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
+    // Management applies its own activity ordering; skip the repository's timestamp sort.
+    [[nodiscard]] QVector<PinnedWindowSummary> unorderedSummaries() const;
     // One metadata snapshot across persisted records and pending first saves.
     [[nodiscard]] QVector<PinnedWindowSummary> summariesIncludingPending() const;
     // Looks up either lifecycle state without reading source or document payloads.
@@ -88,11 +95,20 @@ class PinnedWindowRepository final {
     [[nodiscard]] PinnedSourceIdentity sourceIdentity(const QString& id) const;
     // Resolves only persisted managed content; never flushes a pending first save.
     [[nodiscard]] std::optional<QString> revealPath(const QString& id) const;
+    // Resolves a persisted image file without decoding it or falling back to a directory or text.
+    [[nodiscard]] std::optional<QString> imagePath(const QString& id) const;
     [[nodiscard]] quint64 revision() const;
     // Advances only when records enter, leave, close, restore, or change groups.
     [[nodiscard]] quint64 membershipRevision() const;
     // Also advances for pending-only visibility changes; image payloads are unaffected.
     [[nodiscard]] quint64 visibilityRevision() const;
+    [[nodiscard]] quint64 stackingRevision() const;
+    [[nodiscard]] QStringList stackingOrder(const QString& groupId) const;
+    // Reorders observed members in their existing slots; absent members retain their order.
+    // These metadata-only operations do not invalidate source previews or group/visibility caches.
+    [[nodiscard]] StorageResult updateStackingOrder(const QString& groupId,
+                                                    const QStringList& frontToBack);
+    [[nodiscard]] StorageResult promoteStackingWindow(const QString& id);
     [[nodiscard]] StorageResult setRecordsHidden(const QVector<QString>& ids, bool hidden);
     [[nodiscard]] int allocateHideToTopAccent();
     [[nodiscard]] QVector<PinnedWindowGroup> groups() const;
@@ -152,7 +168,11 @@ class PinnedWindowRepository final {
     [[nodiscard]] QString lastError() const;
 
   private:
-    [[nodiscard]] QVector<PinnedWindowSummary> summariesImpl(bool includePending) const;
+    [[nodiscard]] std::optional<PinnedWindowPreviewSource>
+    loadPreviewSourceImpl(const QString& id, std::function<bool(qint64)> allocationCheck,
+                          std::function<bool()> cancelled, QSize targetSize) const;
+    [[nodiscard]] QVector<PinnedWindowSummary> summariesImpl(bool includePending,
+                                                             bool sorted = true) const;
     [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, PreparedPngImage sourceImage,
                                            bool requireReservation);
     [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, bool requireReservation);

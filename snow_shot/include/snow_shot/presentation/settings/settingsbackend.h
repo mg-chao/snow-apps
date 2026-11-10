@@ -17,9 +17,11 @@
 #include "snow_shot/platform/windows/shellcontextmenuregistration.h"
 
 #include <QObject>
+#include <QHash>
 #include <QPointer>
 #include <QVariant>
 #include <QVector>
+#include <algorithm>
 #include <future>
 #include <functional>
 #include <memory>
@@ -54,6 +56,31 @@ struct SettingsActionState {
     QString label{};
     QString hint{};
     bool successAccent = false;
+};
+
+struct SettingsFieldResetResult {
+    bool accepted = false;
+    QString error{};
+    // A valid value identifies async work admitted by this reset, not an older field write.
+    QVariant pendingValue{};
+};
+
+struct SettingsResetResult {
+    // Providers with an atomic reset can return a boolean. Compound resets override
+    // individual fields so one failed operation does not reject unrelated fields.
+    SettingsResetResult(bool accepted) : defaultAccepted(accepted) {}
+
+    bool defaultAccepted = false;
+    QHash<QString, SettingsFieldResetResult> fields{};
+
+    [[nodiscard]] SettingsFieldResetResult fieldResult(const QString& fieldId) const {
+        return fields.value(fieldId, {defaultAccepted, {}});
+    }
+    [[nodiscard]] bool success() const {
+        return defaultAccepted &&
+               std::all_of(fields.cbegin(), fields.cend(),
+                           [](const SettingsFieldResetResult& field) { return field.accepted; });
+    }
 };
 
 class SettingsBackend : public QObject {
@@ -232,10 +259,20 @@ class SettingsBackend : public QObject {
     virtual void refreshStorageStatusIfStale() {
         refreshStorageStatus();
     }
-    [[nodiscard]] virtual bool resetSection(SettingsSectionReset reset) = 0;
+    [[nodiscard]] bool resetSection(SettingsSectionReset reset) {
+        return resetSectionWithResults(reset).success();
+    }
+    [[nodiscard]] virtual SettingsResetResult
+    resetSectionWithResults(SettingsSectionReset reset) = 0;
     [[nodiscard]] virtual QString fieldError(const QString& fieldId) const {
         Q_UNUSED(fieldId);
         return {};
+    }
+    // Native transactions report their own persistence errors; a concurrent settings write
+    // must not turn their successful completion into a failure.
+    [[nodiscard]] virtual bool fieldUsesStorageErrors(const QString& fieldId) const {
+        Q_UNUSED(fieldId);
+        return true;
     }
     [[nodiscard]] virtual bool fieldPending(const QString& fieldId) const {
         Q_UNUSED(fieldId);
@@ -361,10 +398,12 @@ class BuiltInSettingsBackend final : public SettingsBackend {
         std::shared_future<storage::StorageResult>* completion = nullptr) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
     void refreshPlatformSettings() override;
+    QString fieldError(const QString& fieldId) const override;
+    bool fieldUsesStorageErrors(const QString& fieldId) const override;
     void refreshStorageStatus() override;
     storage::StorageResult changeStorageDirectory(const QString& directory, bool migrate) override;
     void refreshStorageStatusIfStale() override;
-    [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
+    [[nodiscard]] SettingsResetResult resetSectionWithResults(SettingsSectionReset reset) override;
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -374,8 +413,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     void connectSkinControllerIfNeeded();
     [[nodiscard]] bool applyContextMenuSettings(const QJsonValue& mode,
                                                 const QJsonValue& shortcuts);
-    [[nodiscard]] platform::windows::AdministratorResult applyStartupSettings(bool enabled,
-                                                                              bool elevated);
+    [[nodiscard]] platform::windows::AdministratorResult
+    applyStartupSettings(bool enabled, bool elevated, bool reportError = true);
 
     ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
     AppPermissionService* m_permissions = nullptr;
@@ -386,7 +425,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     std::function<platform::windows::AdministratorResult(bool, bool)> m_startupSettingsApply;
     QPointer<MainWindowSkinController> m_skinController;
     QMetaObject::Connection m_skinStatusConnection;
-    bool m_copyLogBusy = false;
+    bool m_exportLogsBusy = false;
     bool m_configurationBusy = false;
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QPointer<translation::TranslationService> m_translationService;

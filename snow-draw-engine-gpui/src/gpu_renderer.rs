@@ -1849,7 +1849,7 @@ impl GpuCanvas {
                     raster_scale,
                     raster_region,
                     1.0,
-                    item.label_gap,
+                    None,
                 )?;
             } else {
                 // A text line can be outside this tile even when another line
@@ -1884,7 +1884,7 @@ impl GpuCanvas {
                         raster_scale,
                         raster_region,
                         1.0,
-                        item.label_gap,
+                        None,
                     );
                     if part.coverage_group != 0 {
                         parameters.color = [1.0; 4];
@@ -1962,6 +1962,11 @@ impl GpuCanvas {
             (region.y - group.y) as f32 / group.height as f32,
         ];
         parameters.effect[3] = item.opacity as f32;
+        // Clip the completed item after rough displacement. Clipping the source
+        // coverage first lets displaced ink and outlines leak back into labels.
+        parameters.gap = self
+            .paint_parameters(&item.parts[0], frame, scale, region, 1.0, item.label_gap)
+            .gap;
         let scissor = Some(local_scissor(group.bounds(), region));
         if item.blend == DisplayBlendMode::Multiply {
             let output = self.scratch.take(device, region.size(), 1, &self.memory)?;

@@ -132,6 +132,11 @@ class ScreenshotClipboardContentReader final {
     // Optional admission for automation. The callback reserves total retained
     // and transient bytes before image copies, decoding, and rasterization.
     using AllocationCheck = std::function<bool(qint64)>;
+    // Called on the decode worker after image/file/color-card precedence is resolved.
+    // Return true to retain a text snapshot in the caller instead of rasterizing it;
+    // decode() then returns nullopt. HTML-only sources supply their decoded plain text.
+    using TextDeferral =
+        std::function<bool(const ScreenshotClipboardContentSnapshot&, const QString&)>;
     // Editors admit files against their raster budget; clipboard pins retain their own limits.
     enum class FilePurpose { Clipboard, ImageImport };
 
@@ -167,7 +172,7 @@ class ScreenshotClipboardContentReader final {
                      AllocationCheck allocate = {});
     [[nodiscard]] static std::optional<ScreenshotClipboardContent>
     decode(ScreenshotClipboardContentSnapshot snapshot, CancellationCheck cancelled = {},
-           AllocationCheck allocate = {});
+           AllocationCheck allocate = {}, TextDeferral deferText = {});
 
     // Prepare animation pixels on the import worker before the GUI commits a
     // replacement. The fingerprint normalizes translation to the source bounds.
@@ -187,6 +192,20 @@ class ScreenshotClipboardContentReader final {
     renderOriginalText(const ScreenshotClipboardOriginalContent& original, qreal devicePixelRatio,
                        const QColor& baseColor = {}, AllocationCheck allocate = {},
                        std::optional<PinnedColorSwatchStyle> colorSwatchStyle = {});
+    // Keeps the original text layout but rasterizes directly into a bounded thumbnail.
+    [[nodiscard]] static std::optional<ScreenshotClipboardContent>
+    renderOriginalTextThumbnail(const ScreenshotClipboardOriginalContent& original,
+                                qreal devicePixelRatio, QSize targetSize, QSize* naturalSize,
+                                CancellationCheck cancelled = {},
+                                std::optional<PinnedColorSwatchStyle> colorSwatchStyle = {});
+
+  private:
+    [[nodiscard]] static std::optional<ScreenshotClipboardContent>
+    renderOriginalTextImpl(const ScreenshotClipboardOriginalContent& original,
+                           qreal devicePixelRatio, const QColor& baseColor,
+                           AllocationCheck allocate,
+                           std::optional<PinnedColorSwatchStyle> colorSwatchStyle, QSize targetSize,
+                           QSize* naturalSize, CancellationCheck cancelled);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDCONTENT_H

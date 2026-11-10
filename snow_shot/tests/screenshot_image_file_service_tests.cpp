@@ -56,6 +56,8 @@ class SaveDialogTranslator final : public QTranslator {
         if (source == QStringLiteral("BMP image (*.bmp)")) {
             return QStringLiteral("BMP localized (*.bmp)");
         }
+        if (source == QStringLiteral("TIFF image (*.tif *.tiff)"))
+            return QStringLiteral("TIFF localized (*.tif *.tiff)");
         return {};
     }
 };
@@ -136,6 +138,12 @@ void namingAndFormatSelection() {
     require(ScreenshotImageFileService::formatForDialogSelection(
                 QStringLiteral("capture.unknown"), localizedBmp) == ScreenshotImageFileFormat::Bmp,
             "the localized BMP filter must resolve to BMP output");
+    const QString localizedTiff =
+        ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Tiff);
+    require(localizedTiff == QStringLiteral("TIFF localized (*.tif *.tiff)") &&
+                ScreenshotImageFileService::formatForDialogSelection(
+                    QStringLiteral("capture"), localizedTiff) == ScreenshotImageFileFormat::Tiff,
+            "localized TIFF dialog filters must retain their format mapping");
     QCoreApplication::removeTranslator(&translator);
 
     require(ScreenshotImageFileService::normalizedPath(QStringLiteral("capture.unknown"),
@@ -193,6 +201,7 @@ void writesEveryAdvertisedFormat() {
              ScreenshotImageFileFormat::Webp,
              ScreenshotImageFileFormat::Jxl,
              ScreenshotImageFileFormat::Avif,
+             ScreenshotImageFileFormat::Tiff,
          }) {
         const QString path = QDir(directory.path())
                                  .filePath(QStringLiteral("encoded.%1")
@@ -386,12 +395,14 @@ void codecCapabilitiesAndEncodingOptionsMatchTheOutputContract() {
         require(ScreenshotImageFileService::supportsQuality(format),
                 "quality-supporting format was not advertised");
     }
-    for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Bmp}) {
+    for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Bmp,
+                              ScreenshotImageFileFormat::Tiff}) {
         require(!ScreenshotImageFileService::supportsQuality(format),
-                "quality must be hidden for PNG and BMP");
+                "quality must be hidden for lossless-only raster formats");
     }
     for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Webp,
-                              ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif}) {
+                              ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
+                              ScreenshotImageFileFormat::Tiff}) {
         require(ScreenshotImageFileService::supportsCompressionLevel(format),
                 "compression-supporting format was not advertised");
     }
@@ -468,7 +479,7 @@ void atomicWritersReturnEncodedIntegrity() {
     for (auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
                         ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
                         ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
-                        ScreenshotImageFileFormat::Pdf}) {
+                        ScreenshotImageFileFormat::Pdf, ScreenshotImageFileFormat::Tiff}) {
         const auto result = ScreenshotImageFileService::write(
             image(), directory.filePath(QStringLiteral("digest")), format);
         QFile file(result.path);
@@ -501,6 +512,96 @@ void atomicWritersReturnEncodedIntegrity() {
                     cancelled.encodedSha256.isEmpty(),
                 "failed writes published success metadata");
     }
+}
+
+void tiffNamesCompressionAndAtomicStaging() {
+    using Format = ScreenshotImageFileFormat;
+    using Compression = ScreenshotCompressionLevel;
+    require(ScreenshotImageFileService::formatKey(Format::Tiff) == QStringLiteral("tiff") &&
+                ScreenshotImageFileService::extension(Format::Tiff) == QStringLiteral("tiff") &&
+                ScreenshotImageFileService::formatForKey(QStringLiteral("TIFF")) == Format::Tiff &&
+                ScreenshotImageFileService::formatForKey(QStringLiteral("tif")) == Format::Tiff,
+            "TIFF must have one canonical format key and accept either suffix alias");
+    for (const auto* suffix : {"tif", "TIFF"}) {
+        const QString path = QStringLiteral("capture.") + QLatin1String(suffix);
+        require(ScreenshotImageFileService::formatForPath(path) == Format::Tiff &&
+                    ScreenshotImageFileService::formatForDialogSelection(
+                        path, ScreenshotImageFileService::dialogFilter(Format::Png)) ==
+                        Format::Tiff,
+                "both TIFF suffixes must select TIFF independently of the dialog filter");
+    }
+    require(
+        ScreenshotImageFileService::normalizedPath(QStringLiteral("capture.TIF"), Format::Tiff) ==
+                QStringLiteral("capture.tif") &&
+            ScreenshotImageFileService::normalizedPath(
+                QStringLiteral("capture.png"), Format::Tiff) == QStringLiteral("capture.tiff") &&
+            ScreenshotImageFileService::saveDialogFilter().contains(
+                ScreenshotImageFileService::dialogFilter(Format::Tiff)) &&
+            ScreenshotImageFileService::formatForDialogSelection(
+                QStringLiteral("capture"),
+                ScreenshotImageFileService::dialogFilter(Format::Tiff)) == Format::Tiff,
+        "TIFF dialogs must retain explicit tif aliases and use tiff for inferred suffixes");
+    QTemporaryDir directory;
+    require(directory.isValid(), "TIFF staging fixture unavailable");
+    QImage source = image();
+    source.setColorSpace(QColorSpace::SRgb);
+    source.setPixelColor(1, 1, QColor(10, 20, 30, 40));
+    for (const auto compression : {Compression::Low, Compression::Medium, Compression::High}) {
+        const auto options = ScreenshotImageFileService::encodeOptions(
+            Format::Tiff, ScreenshotImageEncodingOptions{37, compression});
+        const int level = compression == Compression::Low    ? 0
+                          : compression == Compression::High ? 9
+                                                             : 6;
+        require(
+            options.lossless && options.compression_level == level,
+            "TIFF compression must select lossless Deflate levels 0/6/9 independently of quality");
+        const auto result = ScreenshotImageFileService::write(
+            source, directory.filePath(QStringLiteral("alpha.tif")), Format::Tiff, {}, {},
+            ScreenshotImageEncodingOptions{37, compression});
+        const auto decoded =
+            snow_shot::image_codec::decodeFile(result.path, snow::image::Format::tiff);
+        require(result.succeeded() && result.path.endsWith(QStringLiteral(".tif")) &&
+                    decoded == source && decoded.colorSpace() == source.colorSpace(),
+                "staged TIFF must preserve transparent pixels and the sRGB description");
+        QFile file(result.path);
+        require(file.open(QIODevice::ReadOnly), "staged TIFF must be readable");
+        const QByteArray bytes = file.readAll();
+        require(result.encodedByteCount == bytes.size() &&
+                    result.encodedSha256 ==
+                        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex(),
+                "TIFF integrity must describe finalized backpatched bytes");
+    }
+    const QString destination = directory.filePath(QStringLiteral("existing.tiff"));
+    const QByteArray original("existing destination");
+    {
+        QFile file(destination);
+        require(file.open(QIODevice::WriteOnly) && file.write(original) == original.size(),
+                "TIFF cancellation destination fixture unavailable");
+    }
+    auto readDestination = [&] {
+        QFile file(destination);
+        require(file.open(QIODevice::ReadOnly), "TIFF cancellation destination unreadable");
+        return file.readAll();
+    };
+    auto rows = snow_shot::image_codec::srgbRowSource(source);
+    bool cancelled = false;
+    const auto read = rows.readRows;
+    rows.readRows = [&](int first, int count, qsizetype stride, uchar* target, qsizetype capacity) {
+        const bool result = read(first, count, stride, target, capacity);
+        cancelled = true;
+        return result;
+    };
+    rows.cancellationRequested = [&] { return cancelled; };
+    const auto stopped = ScreenshotImageFileService::write(rows, destination, Format::Tiff);
+    require(cancelled && !stopped.succeeded() && stopped.encodedSha256.isEmpty() &&
+                stopped.encodedByteCount == -1 && readDestination() == original,
+            "cancelling TIFF staging must preserve the previous destination and publish no digest");
+    int checks = 0;
+    const auto stoppedCopy = ScreenshotImageFileService::writeEncodedFile(
+        directory.filePath(QStringLiteral("alpha.tif")), destination, Format::Tiff,
+        [&] { return ++checks >= 3; });
+    require(!stoppedCopy.succeeded() && readDestination() == original,
+            "cancelling the finalized TIFF copy must preserve the previous destination");
 }
 
 void encodedFilesPublishAtomically() {
@@ -542,6 +643,7 @@ int main(int argc, char** argv) {
     QGuiApplication application(argc, argv);
     try {
         namingAndFormatSelection();
+        tiffNamesCompressionAndAtomicStaging();
         writesLosslessImageAndPreservesCollisionNames();
         writesEveryAdvertisedFormat();
         bmpPreservesTransparentPixels();

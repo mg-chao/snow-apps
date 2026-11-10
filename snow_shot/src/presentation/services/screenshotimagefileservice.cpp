@@ -13,6 +13,7 @@
 #include <QMimeData>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QUrl>
 
 #include <utility>
@@ -35,6 +36,9 @@ QString filterForFormat(ScreenshotImageFileFormat format) {
         return QCoreApplication::translate("ScreenshotImageFileService", "JPEG XL image (*.jxl)");
     case ScreenshotImageFileFormat::Avif:
         return QCoreApplication::translate("ScreenshotImageFileService", "AVIF image (*.avif)");
+    case ScreenshotImageFileFormat::Tiff:
+        return QCoreApplication::translate("ScreenshotImageFileService",
+                                           "TIFF image (*.tif *.tiff)");
     }
     return {};
 }
@@ -51,8 +55,8 @@ QString collisionSafePath(const QString& directory, const QString& baseName,
     return candidate;
 }
 
-// All image and PDF writers emit bytes sequentially. Hash those bytes as they
-// pass to the atomic file so consumers need no second read of the output.
+// Finalized image and PDF bytes pass sequentially to the atomic file. TIFF encoders
+// stage their seekable output first so backpatches are included in this digest.
 class HashedOutput final : public QIODevice {
   public:
     explicit HashedOutput(QIODevice& output) : m_output(output) {
@@ -237,6 +241,7 @@ QString ScreenshotImageFileService::saveDialogFilter() {
                        filterForFormat(ScreenshotImageFileFormat::Webp),
                        filterForFormat(ScreenshotImageFileFormat::Jxl),
                        filterForFormat(ScreenshotImageFileFormat::Avif),
+                       filterForFormat(ScreenshotImageFileFormat::Tiff),
                        filterForFormat(ScreenshotImageFileFormat::Pdf)}
         .join(QStringLiteral(";;"));
 }
@@ -309,6 +314,8 @@ QString ScreenshotImageFileService::extension(ScreenshotImageFileFormat format) 
         return QStringLiteral("jxl");
     case ScreenshotImageFileFormat::Avif:
         return QStringLiteral("avif");
+    case ScreenshotImageFileFormat::Tiff:
+        return QStringLiteral("tiff");
     }
     return {};
 }
@@ -332,6 +339,8 @@ ScreenshotImageFileFormat ScreenshotImageFileService::formatForKey(const QString
     if (normalized == QStringLiteral("avif")) {
         return ScreenshotImageFileFormat::Avif;
     }
+    if (normalized == QStringLiteral("tif") || normalized == QStringLiteral("tiff"))
+        return ScreenshotImageFileFormat::Tiff;
     return ScreenshotImageFileFormat::Png;
 }
 
@@ -356,6 +365,9 @@ QString ScreenshotImageFileService::normalizedPath(QString path, ScreenshotImage
     } else if (path.endsWith(QLatin1Char('.'))) {
         path.chop(1);
     }
+    if (format == ScreenshotImageFileFormat::Tiff &&
+        information.suffix().compare(QStringLiteral("tif"), Qt::CaseInsensitive) == 0)
+        return path + QStringLiteral(".tif");
     return path + QStringLiteral(".") + extension(format);
 }
 
@@ -382,6 +394,8 @@ ScreenshotImageFileService::formatForPath(const QString& path) {
     if (suffix == QStringLiteral("avif")) {
         return ScreenshotImageFileFormat::Avif;
     }
+    if (suffix == QStringLiteral("tif") || suffix == QStringLiteral("tiff"))
+        return ScreenshotImageFileFormat::Tiff;
     return std::nullopt;
 }
 
@@ -395,7 +409,7 @@ ScreenshotImageFileService::formatForDialogSelection(const QString& path,
          {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
           ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
           ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
-          ScreenshotImageFileFormat::Pdf}) {
+          ScreenshotImageFileFormat::Tiff, ScreenshotImageFileFormat::Pdf}) {
         if (selectedFilter == filterForFormat(format)) {
             return format;
         }
@@ -481,7 +495,8 @@ ScreenshotImageFileService::write(const QImage& image, const QString& path,
                                   ScreenshotImageFileFormat format, ScreenshotPdfOptions pdf,
                                   std::function<bool()> cancelled,
                                   ScreenshotImageEncodingOptions encoding) {
-    if (format == ScreenshotImageFileFormat::Pdf || cancelled) {
+    if (format == ScreenshotImageFileFormat::Pdf || format == ScreenshotImageFileFormat::Tiff ||
+        cancelled) {
         auto source = snow_shot::image_codec::srgbRowSource(image);
         source.cancellationRequested = std::move(cancelled);
         return write(source, path, format, std::move(pdf), encoding);
@@ -556,6 +571,27 @@ ScreenshotImageFileService::write(const ScreenshotImageRowSource& source, const 
         return payload
                    ? writePdf(*payload, outputPath, std::move(pdf), source.cancellationRequested)
                    : ScreenshotImageFileSaveResult{{}, error};
+    }
+    if (format == ScreenshotImageFileFormat::Tiff) {
+        if (source.cancellationRequested && source.cancellationRequested())
+            return {{},
+                    QCoreApplication::translate("ScreenshotImageFileService",
+                                                "The save was cancelled")};
+        QTemporaryDir directory(QDir::temp().filePath(QStringLiteral("snow-shot-tiff-XXXXXX")));
+        if (!directory.isValid())
+            return {{}, directory.errorString()};
+        const QString stagedPath = directory.filePath(QStringLiteral("encoded.tiff"));
+        QFile staged(stagedPath);
+        if (!staged.open(QIODevice::WriteOnly))
+            return {{}, staged.errorString()};
+        QString error;
+        if (!snow_shot::image_codec::encodeToDevice(source, &staged, snowImageFormat(format),
+                                                    encodeOptions(format, encoding), &error))
+            return {{}, error};
+        if (!staged.flush())
+            return {{}, staged.errorString()};
+        staged.close();
+        return writeEncodedFile(stagedPath, outputPath, format, source.cancellationRequested);
     }
     return writeAtomically(
         outputPath, [&source, format, encoding](QIODevice* device, QString* error) {

@@ -10,6 +10,8 @@
 #include <functional>
 #include <memory>
 
+enum class ScreenshotImageAlphaContent { Unknown, Opaque, NonOpaque };
+
 struct ScreenshotImageRowSource final {
     QSize size;
     // Rows contain straight-alpha RGBA8888 pixels in sRGB, ordered top to bottom.
@@ -33,16 +35,22 @@ struct ScreenshotImageRowSource final {
     // that storage; producers that already preflight their own caches do not reserve twice.
     std::function<std::shared_ptr<void>(qint64 retainedBytes, qint64 scratchBytes, QString* error)>
         reserveResources;
-    // Optional cached verification of immutable pixels. Invoke on an export worker, not while
-    // snapshotting the source on the GUI thread. False remains conservative (unknown or alpha).
-    std::function<bool()> verifyOpaque;
+    // Optional cached classification of immutable pixels. Invoke on an export worker, not while
+    // snapshotting the source on the GUI thread. Unsupported layouts remain Unknown.
+    std::function<ScreenshotImageAlphaContent()> classifyAlpha;
 
     [[nodiscard]] bool isValid() const {
         return size.isValid() && !size.isEmpty() && static_cast<bool>(readRows);
     }
 
+    [[nodiscard]] ScreenshotImageAlphaContent verifiedAlphaContent() const {
+        return isKnownOpaque   ? ScreenshotImageAlphaContent::Opaque
+               : classifyAlpha ? classifyAlpha()
+                               : ScreenshotImageAlphaContent::Unknown;
+    }
+
     [[nodiscard]] bool hasVerifiedOpaquePixels() const {
-        return isKnownOpaque || (verifyOpaque && verifyOpaque());
+        return verifiedAlphaContent() == ScreenshotImageAlphaContent::Opaque;
     }
 };
 

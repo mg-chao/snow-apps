@@ -40,13 +40,11 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QHideEvent>
-#include <QHelpEvent>
 #include <QLabel>
 #include <QLayout>
 #include <QBoxLayout>
 #include <QLineEdit>
 #include <QMargins>
-#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
@@ -364,7 +362,7 @@ void drawingSelectsInheritScaleWhenMaterialized() {
         toolbar.setPhysicalScale(scale);
         for (const auto tool :
              {ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::RectangleFilter,
-              ScreenshotToolPalette::Tool::SerialNumber, ScreenshotToolPalette::Tool::PenFilter,
+              ScreenshotToolPalette::Tool::SequenceNumber, ScreenshotToolPalette::Tool::BrushFilter,
               ScreenshotToolPalette::Tool::Text}) {
             toolbar.setActiveTool(tool);
             flushEvents();
@@ -611,6 +609,70 @@ void toolbarSeparatorsKeepMinimumWidthAtCompactScale() {
             "toolbar separator should retain at least one pixel at compact scale");
 }
 
+void actionButtonsRecoverAfterLoading() {
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const QString copyAction = QStringLiteral("copy_to_clipboard");
+    for (const bool grouped : {false, true}) {
+        for (const bool disablePalette : {false, true}) {
+            QWidget owner;
+            auto options = snow_shot::presentation::screenshotDrawingToolbarOptions();
+            options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::PinAction;
+            // Stacks are stored top to bottom; the bottom action is the initial trigger.
+            options.actionToolsLayout = ScreenshotToolbarLayout{
+                grouped
+                    ? QVector<QStringList>{{QStringLiteral("save-as-file"), QStringLiteral("copy")}}
+                    : QVector<QStringList>{{QStringLiteral("copy")},
+                                           {QStringLiteral("save-as-file")}},
+                {}};
+            ScreenshotToolPalette palette(options, &owner);
+            prepare(palette);
+            owner.show();
+            palette.show();
+            flushEvents();
+            auto* copySource = buttonWithTooltip(palette, QStringLiteral("Copy to clipboard"));
+            auto* saveSource = buttonWithTooltip(palette, QStringLiteral("Save as file"));
+            require(copySource && saveSource, "editor loading fixture has copy and save actions");
+            int copies = 0;
+            QObject::connect(&palette, &ScreenshotToolPalette::copyRequested, &palette,
+                             [&] { ++copies; });
+            // A locally unavailable action must stay disabled when its owner recovers.
+            saveSource->setEnabled(false);
+            QWidget* loadingOwner = disablePalette ? &palette : &owner;
+            for (int reload = 0; reload < 2; ++reload) {
+                loadingOwner->setEnabled(false);
+                // Image loading/recognition and toolbar scaling refresh the action groups.
+                palette.setOcrEnabled(false);
+                palette.setOcrEnabled(true);
+                palette.prepareForDisplay();
+                require(!palette.canActivateScreenshotShortcut(copyAction) &&
+                            !palette.activateScreenshotShortcut(copyAction) && copies == reload * 2,
+                        "copy shortcuts cannot bypass a temporarily disabled editor toolbar");
+                loadingOwner->setEnabled(true);
+                flushEvents();
+                require(copySource->isEnabled() && !saveSource->isEnabled() &&
+                            palette.canActivateScreenshotShortcut(copyAction),
+                        "copy recovers after loading without enabling unavailable actions");
+                adqt::widgets::AdButton* copyEntry = nullptr;
+                for (auto* button : palette.findChildren<adqt::widgets::AdButton*>()) {
+                    if (button->property("screenshotToolbarItemId").toString() ==
+                            QStringLiteral("copy") &&
+                        !button->isHidden()) {
+                        copyEntry = button;
+                        break;
+                    }
+                }
+                require(copyEntry && copyEntry->isEnabled(),
+                        "both standalone and stacked copy buttons recover after loading");
+                copyEntry->click();
+                require(copies == reload * 2 + 1,
+                        "clicking the recovered copy button dispatches exactly one command");
+                require(palette.activateScreenshotShortcut(copyAction) && copies == reload * 2 + 2,
+                        "copy shortcut dispatches after the editor toolbar recovers");
+            }
+        }
+    }
+}
+
 void cachedToolbarIconsFollowThemeColors() {
     auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
@@ -643,7 +705,7 @@ void cachedToolbarIconsFollowThemeColors() {
     auto* microphoneButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Record microphone"));
     auto* systemAudioButton =
-        buttonWithTooltip(recordingToolbar, QStringLiteral("Record speakers"));
+        buttonWithTooltip(recordingToolbar, QStringLiteral("Record system audio"));
     auto* pauseButton = buttonWithTooltip(recordingToolbar, QStringLiteral("Pause recording"));
     auto* copyRecordingButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Copy recording"));
@@ -773,8 +835,8 @@ void recordingAudioIconsFollowSettings() {
     prepare(toolbar);
     auto* microphone =
         toolbar.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingMicrophone"));
-    auto* speaker = buttonWithTooltip(toolbar, QStringLiteral("Record speakers"));
-    require(microphone != nullptr && speaker != nullptr, "recording audio controls exist");
+    auto* systemAudio = buttonWithTooltip(toolbar, QStringLiteral("Record system audio"));
+    require(microphone != nullptr && systemAudio != nullptr, "recording audio controls exist");
 
     QImage preview(480, 160, QImage::Format_ARGB32_Premultiplied);
     preview.fill(Qt::transparent);
@@ -787,7 +849,7 @@ void recordingAudioIconsFollowSettings() {
         const auto scheme = themeManager.themeColorScheme();
         painter.fillRect(0, row * 80, 480, 80, scheme.map.colorBgContainer);
         int column = 0;
-        for (auto* button : {microphone, speaker}) {
+        for (auto* button : {microphone, systemAudio}) {
             const bool isMicrophone = button == microphone;
             const auto setEnabled = [&](bool enabled) {
                 if (isMicrophone)
@@ -990,7 +1052,7 @@ void toolbarTooltipsUseApplicationBridge() {
     require(tooltipTriggerCount > 0, "screenshot toolbar should expose tooltip triggers");
 }
 
-void mainToolbarTooltipsOpenWithoutHoverDelay() {
+void mainToolbarTooltipsUseNormalHoverDelay() {
     adqt::theme::ThemeManager::instance().applyTo(*qApp);
     adqt::widgets::AdTooltip::installApplicationTooltips();
     QWidget ordinaryControl;
@@ -1020,37 +1082,20 @@ void mainToolbarTooltipsOpenWithoutHoverDelay() {
         QWidget nestedContainer(toolbar.mainPanel());
         QLabel lateControl(&nestedContainer);
         require(lateControl.style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr,
-                                               &lateControl) == 0,
-                "late-created nested main toolbar controls should inherit immediate tooltips");
+                                               &lateControl) == normalDelay,
+                "late-created nested main toolbar controls should retain the normal tooltip delay");
 
-        int hoveredControls = 0;
+        int tooltipTriggerCount = 0;
         for (QWidget* control : toolbar.mainPanel()->findChildren<QWidget*>()) {
             if (control->toolTip().isEmpty()) {
                 continue;
             }
             require(control->style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, control) ==
-                        0,
-                    "every main toolbar tooltip should have zero wake-up delay");
-            if (!control->isVisible() || !control->isEnabled()) {
-                continue;
-            }
-            const QPoint center = control->rect().center();
-            const QPoint global = control->mapToGlobal(center);
-            QMouseEvent move(QEvent::MouseMove, center, global, Qt::NoButton, Qt::NoButton,
-                             Qt::NoModifier);
-            QApplication::sendEvent(control, &move);
-            QHelpEvent help(QEvent::ToolTip, center, global);
-            QApplication::sendEvent(control, &help);
-            bool visible = false;
-            for (auto* tooltip : qApp->findChildren<adqt::widgets::AdTooltip*>()) {
-                visible |= tooltip->isVisible() && tooltip->targetWidget() == control &&
-                           tooltip->text() == control->toolTip();
-            }
-            require(help.isAccepted() && visible,
-                    "hover should show or switch main toolbar tooltips without waiting");
-            ++hoveredControls;
+                        normalDelay,
+                    "every main toolbar tooltip should retain the normal hover delay");
+            ++tooltipTriggerCount;
         }
-        require(hoveredControls >= 2, "exercise initial hover and switching toolbar controls");
+        require(tooltipTriggerCount >= 2, "exercise tooltip delays on multiple toolbar controls");
         toolbar.hide();
         flushEvents();
     }
@@ -1604,15 +1649,15 @@ void toolbarSkinProfilesAndLifecycle() {
         options.showMoveTool = index < 2;
         options.enableMoveOptionsToolbar = index == 0;
         options.showLineTool = true;
-        options.showFreeDrawTool = true;
+        options.showBrushTool = true;
         options.showHighlightTool = true;
-        options.showPenHighlightTool = index == 3;
+        options.showBrushHighlightTool = index == 3;
         options.showSpotlightTool = true;
         options.showEraserTool = true;
         options.showFilterTool = true;
         options.showWatermarkTool = true;
         options.showTextTool = true;
-        options.showSerialNumberTool = true;
+        options.showSequenceNumberTool = true;
         options.showOcrTool = index < 2;
         options.showTextTranslationTool = index < 2;
         options.showTableTool = index < 2;
@@ -1685,20 +1730,20 @@ void toolbarSkinProfilesAndLifecycle() {
         {Tool::Shape, "shape"},
         {Tool::Arrow, "arrow"},
         {Tool::Line, "line"},
-        {Tool::FreeDraw, "free-draw"},
+        {Tool::Brush, "free-draw"},
         {Tool::RectangleHighlight, "rectangle-highlight"},
-        {Tool::PenHighlight, "pen-highlight"},
+        {Tool::BrushHighlight, "pen-highlight"},
         {Tool::Eraser, "eraser"},
         {Tool::RectangleFilter, "rectangle-filter"},
         {Tool::Watermark, "watermark"},
         {Tool::Text, "text"},
-        {Tool::SerialNumber, "serial-number"},
+        {Tool::SequenceNumber, "serial-number"},
         {Tool::Ocr, "ocr"},
         {Tool::TextTranslation, "text-translation"},
         {Tool::Table, "table"},
         {Tool::Qr, "qr"},
         {Tool::ScrollingScreenshot, "scrolling-screenshot"},
-        {Tool::PenFilter, "pen-filter"},
+        {Tool::BrushFilter, "pen-filter"},
         {Tool::Spotlight, "spotlight"},
         {Tool::Markdown, "markdown"},
         {Tool::Html, "html"},
@@ -2227,7 +2272,7 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
             QString translate(const char* context, const char* source, const char*,
                               int) const override {
                 if (qstrcmp(context, "ScreenshotToolPalette") == 0 &&
-                    qstrcmp(source, "Pin Window to Screen") == 0)
+                    qstrcmp(source, "Pin window to screen") == 0)
                     return QStringLiteral("Translated live pin");
                 return {};
             }
@@ -2257,7 +2302,7 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
                 !trigger->toolTip().contains(liveShortcut),
             "the selected window pin tooltip must refresh immediately after rebinding");
         require(shortcutSettings.setShortcuts(shortcutId, {}) &&
-                    trigger->toolTip() == QStringLiteral("Pin Window to Screen"),
+                    trigger->toolTip() == QStringLiteral("Pin window to screen"),
                 "disabling the shortcut must remove its hint from the window pin tooltip");
         require(shortcutSettings.setShortcuts(shortcutId, defaults),
                 "restore the window pin shortcut after tooltip checks");
@@ -2284,12 +2329,12 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
     }
 }
 
-void speechBubbleSharesSerialNumberToolbarGroup() {
+void speechBubbleSharesSequenceNumberToolbarGroup() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     const QStringList group{QStringLiteral("speech-bubble"), QStringLiteral("serial-number")};
     for (bool configured : {false, true}) {
         auto options = screenshotOptions();
-        options.showSerialNumberTool = true;
+        options.showSequenceNumberTool = true;
         if (configured)
             options.toolbarLayout =
                 snow_shot::storage::ScreenshotToolbarLayout{layout::defaultPositions(), {}};
@@ -2314,13 +2359,13 @@ void speechBubbleSharesSerialNumberToolbarGroup() {
                 "grouped Speech Bubble does not occupy a standalone toolbar position");
         int serialRequests = 0;
         int bubbleRequests = 0;
-        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::sequenceNumberRequested,
                          [&] { ++serialRequests; });
         QObject::connect(&palette, &ScreenshotToolPalette::speechBubbleRequested,
                          [&] { ++bubbleRequests; });
         trigger->click();
         require(serialRequests == 1 && bubbleRequests == 0 &&
-                    palette.activeTool() == ScreenshotToolPalette::Tool::SerialNumber,
+                    palette.activeTool() == ScreenshotToolPalette::Tool::SequenceNumber,
                 "clicking the initial group button activates Serial Number once");
         auto* popover = trigger->findChild<adqt::widgets::AdPopover*>();
         require(popover != nullptr, "the shared group exposes a tool popup");
@@ -2344,7 +2389,7 @@ void speechBubbleSharesSerialNumberToolbarGroup() {
                 "the shared popup activates Speech Bubble once");
     }
     auto options = screenshotOptions();
-    options.showSerialNumberTool = false;
+    options.showSequenceNumberTool = false;
     ScreenshotToolPalette palette(options);
     prepare(palette);
     auto* bubble =
@@ -2400,7 +2445,7 @@ void speechBubbleReusesShapeControlsWithIndependentStyles() {
     auto* thought = group->button(3);
     require(thought != nullptr && group->buttons().size() == 4,
             "Thought Bubble is the fourth Speech Bubble type after Diamond");
-    require(thought->accessibleName() == QStringLiteral("Thought Bubble"),
+    require(thought->accessibleName() == QStringLiteral("Thought bubble"),
             "Thought Bubble has an accessible English label");
     class BubbleTranslator final : public QTranslator {
       public:
@@ -2410,7 +2455,7 @@ void speechBubbleReusesShapeControlsWithIndependentStyles() {
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
             if (qstrcmp(context, "ScreenshotToolPalette") == 0 &&
-                qstrcmp(source, "Thought Bubble") == 0)
+                qstrcmp(source, "Thought bubble") == 0)
                 return QStringLiteral("Translated thought bubble");
             return {};
         }
@@ -2539,9 +2584,13 @@ int main(int argc, char** argv) {
             "initialize isolated toolbar test configuration");
     const auto shutdownStorage =
         qScopeGuard([] { snow_shot::storage::ApplicationStorage::instance().shutdown(); });
+    if (application.arguments().contains(QStringLiteral("--action-loading-only"))) {
+        actionButtonsRecoverAfterLoading();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--tooltips-only"))) {
         toolbarTooltipsUseApplicationBridge();
-        mainToolbarTooltipsOpenWithoutHoverDelay();
+        mainToolbarTooltipsUseNormalHoverDelay();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--recording-audio-only"))) {
@@ -2549,7 +2598,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--speech-bubble-only"))) {
-        speechBubbleSharesSerialNumberToolbarGroup();
+        speechBubbleSharesSequenceNumberToolbarGroup();
         speechBubbleReusesShapeControlsWithIndependentStyles();
         return 0;
     }
@@ -2578,6 +2627,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     smallToolbarIconStaysVerticallyCentered();
+    actionButtonsRecoverAfterLoading();
     liveWindowPinToolbarGroupAndLayoutMigration();
     customToolbarWidgetsKeepCallerMetricsDuringScaling();
     hiddenToolbarPeersKeepVisibleReferenceMetrics();
@@ -2603,6 +2653,6 @@ int main(int argc, char** argv) {
     duplicateStyleStateDoesNotInvalidateToolbarGeometry();
     filterValuesDoNotRelayoutTheStableControlSet();
     spotlightConfigSurvivesStyleRowEviction();
-    mainToolbarTooltipsOpenWithoutHoverDelay();
+    mainToolbarTooltipsUseNormalHoverDelay();
     return 0;
 }

@@ -9,7 +9,8 @@ use snow_draw_engine_document::{
 use snow_draw_engine_model::DocumentModel;
 
 use crate::{
-    ApplyTransactionCommand, Editor, EditorCommand, ElementCreationPreview, SelectionArrowState,
+    ActiveTool, ApplyTransactionCommand, Editor, EditorCommand, ElementCreationPreview,
+    SelectionArrowState,
 };
 
 pub const DISTANCE_STYLE_PROPERTY_STROKE: u32 = 1 << 0;
@@ -175,10 +176,12 @@ impl Editor {
         } else {
             point
         };
+        let mut style = self.state.default_distance_style;
+        style.stroke = self.creation_stroke(style.stroke);
         let mut arrow = ArrowData::from_global_points(
             &[start, point],
-            self.state.default_distance_style.stroke,
-            self.state.default_distance_style.stroke_width,
+            style.stroke,
+            style.stroke_width,
             StrokeStyle::Solid,
             ArrowType::Straight,
             None,
@@ -189,7 +192,7 @@ impl Editor {
             pixel_scale_y: state.distance_pixel_scale.y,
             ..Default::default()
         });
-        self.state.default_distance_style.apply_to_arrow(&mut arrow);
+        style.apply_to_arrow(&mut arrow);
         Some(arrow)
     }
 
@@ -362,6 +365,15 @@ impl Editor {
             snow_draw_engine_document::validate_arrow(arrow)?;
         }
         self.state.default_distance_style = next_default;
+        self.edit_creation_colors(
+            ActiveTool::Distance,
+            (properties & DISTANCE_STYLE_PROPERTY_STROKE != 0).then_some(style.stroke),
+            None,
+        );
+        let preview = preview.map(|mut arrow| {
+            arrow.stroke = self.creation_stroke(arrow.stroke);
+            arrow
+        });
         if let Some(updated) = preview
             && let Some(ElementCreationPreview::Arrow(arrow)) = self.state.creation_preview.as_mut()
             && *arrow != updated

@@ -12,7 +12,8 @@ pub struct SnowCaptureTargetScreenshotRequest {
     pub screenshot: SnowCaptureScreenshotRequest,
     pub monitor_utf8: *const c_char,
     pub pixel_format: u8,
-    pub reserved: [u8; 7],
+    pub capture_backend: u8,
+    pub reserved: [u8; 6],
     pub admission_context: *mut c_void,
     pub admit_raster: Option<unsafe extern "C" fn(*mut c_void, u32, u32) -> u8>,
 }
@@ -25,7 +26,15 @@ enum Target {
 
 unsafe fn plan(
     request: *const SnowCaptureTargetScreenshotRequest,
-) -> Result<(SnowCaptureScreenshotRequest, Target, CapturePixelFormat), String> {
+) -> Result<
+    (
+        SnowCaptureScreenshotRequest,
+        Target,
+        CapturePixelFormat,
+        CaptureBackendKind,
+    ),
+    String,
+> {
     if request.is_null() {
         return Err("target screenshot request is null".to_owned());
     }
@@ -61,6 +70,7 @@ unsafe fn plan(
         screenshot,
         target,
         parse_pixel_format(request.pixel_format)?,
+        parse_capture_backend(request.capture_backend)?,
     ))
 }
 
@@ -77,6 +87,7 @@ fn capture_target(
     request: SnowCaptureScreenshotRequest,
     target: Target,
     pixel_format: CapturePixelFormat,
+    preferred: CaptureBackendKind,
 ) -> Result<SnowCaptureScreenshotResultImpl, String> {
     let cancellation = if request.cancellation_token.is_null() {
         CancellationToken::default()
@@ -108,15 +119,14 @@ fn capture_target(
             focused_window: Some(capture_window_snapshot(
                 window,
                 options,
+                preferred,
                 include_cursor,
                 cancellation.clone(),
                 correction,
             )?),
         },
         Target::Monitor(identity) => {
-            let system = CaptureSystem::builder()
-                .build()
-                .map_err(|error| error.to_string())?;
+            let system = screenshot_capture_system(preferred)?;
             // Enumerating geometry opens no capture backend or worker. Only the selected
             // monitor reaches open_session, preparation and pixel acquisition.
             let entry = build_monitor_entries(&system)?
@@ -197,11 +207,11 @@ fn with_target_admission<T>(
 pub unsafe extern "C" fn snow_capture_target_screenshot(
     request: *const SnowCaptureTargetScreenshotRequest,
 ) -> *mut SnowCaptureScreenshotResultImpl {
-    let result = unsafe { plan(request) }.and_then(|(capture, target, format)| {
+    let result = unsafe { plan(request) }.and_then(|(capture, target, format, preferred)| {
         // plan checked the complete versioned request before reading trailing fields.
         let input = unsafe { &*request };
         with_target_admission(input, || {
-            with_capture_autoreleasepool(|| capture_target(capture, target, format))
+            with_capture_autoreleasepool(|| capture_target(capture, target, format, preferred))
         })
     });
     match result {
@@ -236,7 +246,8 @@ mod tests {
             },
             monitor_utf8: c"display:7".as_ptr(),
             pixel_format: 1,
-            reserved: [0; 7],
+            capture_backend: 0,
+            reserved: [0; 6],
             admission_context: ptr::null_mut(),
             admit_raster: None,
         }
@@ -245,10 +256,11 @@ mod tests {
     #[test]
     fn target_planning_is_exclusive_sized_and_keeps_capture_policies() {
         let mut input = request();
-        let (capture, target, format) = unsafe { plan(&input) }.unwrap();
+        let (capture, target, format, backend) = unsafe { plan(&input) }.unwrap();
         assert_eq!(target, Target::Monitor("display:7".into()));
         assert_eq!(capture.flags, input.screenshot.flags);
         assert_eq!(format, CapturePixelFormat::Bgra8);
+        assert_eq!(backend, CaptureBackendKind::Auto);
         input.screenshot.focused_window = 42;
         assert!(unsafe { plan(&input) }.is_err());
         input.monitor_utf8 = ptr::null();
@@ -282,6 +294,70 @@ mod tests {
         assert!(unsafe { snow_capture_target_screenshot(&input) }.is_null());
         assert!(LAST_ERROR.with(|error| error.borrow().to_string_lossy().contains("canceled")));
         unsafe { snow_capture_cancellation_token_destroy(token) };
+    }
+
+    #[test]
+    fn target_backend_preference_accepts_auto_and_rejects_invalid_values_before_capture() {
+        let mut input = request();
+        for (value, expected) in [
+            (0, CaptureBackendKind::Auto),
+            (1, CaptureBackendKind::DxgiDuplication),
+            (2, CaptureBackendKind::WindowsGraphicsCapture),
+            (3, CaptureBackendKind::Gdi),
+            (4, CaptureBackendKind::ScreenCaptureKit),
+        ] {
+            input.capture_backend = value;
+            assert_eq!(unsafe { plan(&input) }.unwrap().3, expected);
+        }
+        for value in [5, u8::MAX] {
+            input.capture_backend = value;
+            assert!(unsafe { snow_capture_target_screenshot(&input) }.is_null());
+            assert!(LAST_ERROR.with(|error| {
+                error
+                    .borrow()
+                    .to_string_lossy()
+                    .contains("invalid capture backend")
+            }));
+        }
+    }
+
+    #[test]
+    fn target_backend_preference_preserves_version_one_abi_and_zero_default() {
+        #[repr(C)]
+        struct OriginalRequest {
+            version: u32,
+            struct_size: u32,
+            screenshot: SnowCaptureScreenshotRequest,
+            monitor_utf8: *const c_char,
+            pixel_format: u8,
+            reserved: [u8; 7],
+            admission_context: *mut c_void,
+            admit_raster: Option<unsafe extern "C" fn(*mut c_void, u32, u32) -> u8>,
+        }
+        use std::mem::{offset_of, size_of};
+        assert_eq!(
+            size_of::<SnowCaptureTargetScreenshotRequest>(),
+            size_of::<OriginalRequest>()
+        );
+        assert_eq!(
+            offset_of!(SnowCaptureTargetScreenshotRequest, capture_backend),
+            offset_of!(OriginalRequest, reserved)
+        );
+        assert_eq!(
+            offset_of!(SnowCaptureTargetScreenshotRequest, admission_context),
+            offset_of!(OriginalRequest, admission_context)
+        );
+        assert_eq!(
+            offset_of!(SnowCaptureTargetScreenshotRequest, admit_raster),
+            offset_of!(OriginalRequest, admit_raster)
+        );
+        let mut input: SnowCaptureTargetScreenshotRequest = unsafe { std::mem::zeroed() };
+        let valid = request();
+        input.version = valid.version;
+        input.struct_size = valid.struct_size;
+        input.screenshot = valid.screenshot;
+        input.monitor_utf8 = valid.monitor_utf8;
+        assert_eq!(unsafe { plan(&input) }.unwrap().3, CaptureBackendKind::Auto);
     }
 
     #[test]

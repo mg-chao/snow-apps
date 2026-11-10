@@ -40,6 +40,7 @@ mod tests {
     fn preview(lifetime_ms: u64) -> EffectsPreview {
         EffectsPreview::new(
             PreviewConfig {
+                keyboard_filter: Default::default(),
                 webcam: None,
                 region: (0, 0, SIZE.0, SIZE.1),
                 canvas: SIZE,

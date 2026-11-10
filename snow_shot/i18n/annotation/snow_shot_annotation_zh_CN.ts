@@ -2,6 +2,29 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en_US">
     <context>
+        <name>ScreenshotQuickTextAnnotationToolbar</name>
+        <message>
+            <source>Copy text</source>
+            <translation>复制文本</translation>
+        </message>
+        <message>
+            <source>Highlight</source>
+            <translation>高亮</translation>
+        </message>
+        <message>
+            <source>Strikethrough</source>
+            <translation>删除线</translation>
+        </message>
+        <message>
+            <source>Underline</source>
+            <translation>下划线</translation>
+        </message>
+        <message>
+            <source>Wavy underline</source>
+            <translation>波浪下划线</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolPalette</name>
         <message>
             <source>%1 (unavailable)</source>
@@ -34,10 +57,6 @@
         <message>
             <source>Add</source>
             <translation>添加</translation>
-        </message>
-        <message>
-            <source>Add Template</source>
-            <translation>添加模板</translation>
         </message>
         <message>
             <source>Add screenshot region</source>
@@ -116,7 +135,7 @@
             <translation>动画录制格式不包含音频</translation>
         </message>
         <message>
-            <source>Annotation Template</source>
+            <source>Annotation template</source>
             <translation>标注模板</translation>
         </message>
         <message>
@@ -153,7 +172,7 @@
         </message>
         <message>
             <source>Arrow outline width %1px</source>
-            <translation>箭头描边宽度 %1px</translation>
+            <translation>箭头描边宽度 %1 像素</translation>
         </message>
         <message>
             <source>Arrow shaft type</source>
@@ -172,7 +191,7 @@
             <translation>艺术家</translation>
         </message>
         <message>
-            <source>Auto Filter</source>
+            <source>Auto filter</source>
             <translation>自动滤镜</translation>
         </message>
         <message>
@@ -182,10 +201,6 @@
         <message>
             <source>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</source>
             <translation>自动滚动间隔（滚轮调整；单击重置为 200 ms）</translation>
-        </message>
-        <message>
-            <source>Available for multi-region selections</source>
-            <translation>仅适用于多区域选区</translation>
         </message>
         <message>
             <source>Avatar</source>
@@ -232,12 +247,40 @@
             <translation>置于顶层</translation>
         </message>
         <message>
-            <source>Brush Eraser</source>
+            <source>Brush</source>
+            <translation>画笔</translation>
+        </message>
+        <message>
+            <source>Brush eraser</source>
             <translation>画笔橡皮擦</translation>
         </message>
         <message>
             <source>Brush eraser width %1 (%2px)</source>
             <translation>画笔橡皮擦宽度 %1（%2 像素）</translation>
+        </message>
+        <message>
+            <source>Brush filter</source>
+            <translation>画笔滤镜</translation>
+        </message>
+        <message>
+            <source>Brush filter width %1 (%2px)</source>
+            <translation>画笔滤镜宽度 %1（%2 像素）</translation>
+        </message>
+        <message>
+            <source>Brush highlight</source>
+            <translation>画笔高亮</translation>
+        </message>
+        <message>
+            <source>Brush highlight color</source>
+            <translation>画笔高亮颜色</translation>
+        </message>
+        <message>
+            <source>Brush highlight color %1</source>
+            <translation>画笔高亮颜色 %1</translation>
+        </message>
+        <message>
+            <source>Brush highlight width %1 (%2px)</source>
+            <translation>画笔高亮宽度 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -248,7 +291,7 @@
             <translation>取消截图</translation>
         </message>
         <message>
-            <source>Capture interface during scrolling screenshot</source>
+            <source>Capture UI during scrolling screenshots</source>
             <translation>滚动截图时捕获界面</translation>
         </message>
         <message>
@@ -290,6 +333,10 @@
         <message>
             <source>Connection type</source>
             <translation>连接类型</translation>
+        </message>
+        <message>
+            <source>Control keys</source>
+            <translation>控制键</translation>
         </message>
         <message>
             <source>Convert to HTML</source>
@@ -356,20 +403,20 @@
             <translation>当前画笔橡皮擦宽度</translation>
         </message>
         <message>
+            <source>Current brush filter width</source>
+            <translation>当前画笔滤镜宽度</translation>
+        </message>
+        <message>
+            <source>Current brush highlight width</source>
+            <translation>当前画笔高亮宽度</translation>
+        </message>
+        <message>
             <source>Current distance stroke width</source>
             <translation>当前距离描边宽度</translation>
         </message>
         <message>
             <source>Current magnifier stroke width</source>
             <translation>当前放大镜描边宽度</translation>
-        </message>
-        <message>
-            <source>Current pen filter width</source>
-            <translation>当前画笔滤镜宽度</translation>
-        </message>
-        <message>
-            <source>Current pen highlight width</source>
-            <translation>当前画笔高亮宽度</translation>
         </message>
         <message>
             <source>Current sequence number font size</source>
@@ -388,8 +435,8 @@
             <translation>当前水印字体大小</translation>
         </message>
         <message>
-            <source>Cursor data is unavailable for this screenshot.</source>
-            <translation>此截图没有可用的光标数据。</translation>
+            <source>Cursor data is unavailable for this screenshot</source>
+            <translation>此截图没有可用的光标数据</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -416,7 +463,7 @@
             <translation>小数位数</translation>
         </message>
         <message>
-            <source>Dedicated Model</source>
+            <source>Dedicated model</source>
             <translation>专用模型</translation>
         </message>
         <message>
@@ -436,12 +483,12 @@
             <translation>删除</translation>
         </message>
         <message>
-            <source>Delete Annotation Template</source>
+            <source>Delete annotation template</source>
             <translation>删除标注模板</translation>
         </message>
         <message>
-            <source>Delete annotation template "%1"? This action cannot be undone.</source>
-            <translation>删除标注模板“%1”？此操作无法撤销。</translation>
+            <source>Delete annotation template "%1"? This action cannot be undone</source>
+            <translation>删除标注模板“%1”？此操作无法撤销</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -508,7 +555,7 @@
             <translation>编辑选区</translation>
         </message>
         <message>
-            <source>Effect Settings</source>
+            <source>Effect settings</source>
             <translation>效果设置</translation>
         </message>
         <message>
@@ -516,7 +563,7 @@
             <translation>折线箭头</translation>
         </message>
         <message>
-            <source>Element Eraser</source>
+            <source>Element eraser</source>
             <translation>元素橡皮擦</translation>
         </message>
         <message>
@@ -604,7 +651,7 @@
             <translation>退出</translation>
         </message>
         <message>
-            <source>Export Settings</source>
+            <source>Export settings</source>
             <translation>导出设置</translation>
         </message>
         <message>
@@ -704,7 +751,7 @@
             <translation>高亮描边宽度 %1 像素</translation>
         </message>
         <message>
-            <source>Horizontal Crop</source>
+            <source>Horizontal crop</source>
             <translation>水平裁剪</translation>
         </message>
         <message>
@@ -720,12 +767,12 @@
             <translation>图像</translation>
         </message>
         <message>
-            <source>Image Editing</source>
-            <translation>图片编辑</translation>
+            <source>Image editing</source>
+            <translation>图像编辑</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>图片分割</translation>
+            <source>Image splitting</source>
+            <translation>图像分割</translation>
         </message>
         <message>
             <source>Integers</source>
@@ -740,27 +787,27 @@
             <translation>斜体</translation>
         </message>
         <message>
-            <source>Jump to Translation Page</source>
+            <source>Jump to translation page</source>
             <translation>跳转到翻译页面</translation>
         </message>
         <message>
-            <source>Keyboard Background Color</source>
+            <source>Keyboard background color</source>
             <translation>键盘背景颜色</translation>
         </message>
         <message>
-            <source>Keyboard Foreground Color</source>
+            <source>Keyboard foreground color</source>
             <translation>键盘前景颜色</translation>
         </message>
         <message>
-            <source>Keyboard Size</source>
+            <source>Keyboard size</source>
             <translation>键盘大小</translation>
         </message>
         <message>
-            <source>LaTeX Formula Recognition</source>
+            <source>LaTeX formula recognition</source>
             <translation>LaTeX 公式识别</translation>
         </message>
         <message>
-            <source>LaTeX-Specific Model</source>
+            <source>LaTeX-specific model</source>
             <translation>LaTeX 专用模型</translation>
         </message>
         <message>
@@ -788,11 +835,15 @@
             <translation>引导线箭头样式</translation>
         </message>
         <message>
+            <source>Letters and symbols</source>
+            <translation>字母和符号</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直线</translation>
         </message>
         <message>
-            <source>Logical Pixel Selection</source>
+            <source>Logical pixel selection</source>
             <translation>逻辑像素选区</translation>
         </message>
         <message>
@@ -852,10 +903,6 @@
             <translation>马赛克</translation>
         </message>
         <message>
-            <source>Mouse Trail Duration</source>
-            <translation>鼠标轨迹持续时间</translation>
-        </message>
-        <message>
             <source>Mouse click color</source>
             <translation>鼠标点击颜色</translation>
         </message>
@@ -896,6 +943,10 @@
             <translation>鼠标轨迹颜色 透明</translation>
         </message>
         <message>
+            <source>Mouse trail duration</source>
+            <translation>鼠标轨迹持续时间</translation>
+        </message>
+        <message>
             <source>Move selection horizontally (press and hold to drag)</source>
             <translation>水平移动选区（按住并拖动）</translation>
         </message>
@@ -918,6 +969,14 @@
         <message>
             <source>None</source>
             <translation>无</translation>
+        </message>
+        <message>
+            <source>Number keys</source>
+            <translation>数字键</translation>
+        </message>
+        <message>
+            <source>Only available for multi-region selections</source>
+            <translation>仅适用于多区域选区</translation>
         </message>
         <message>
             <source>Opacity</source>
@@ -948,35 +1007,7 @@
             <translation>暂停录制</translation>
         </message>
         <message>
-            <source>Pen</source>
-            <translation>画笔</translation>
-        </message>
-        <message>
-            <source>Pen filter</source>
-            <translation>画笔滤镜</translation>
-        </message>
-        <message>
-            <source>Pen filter width %1 (%2px)</source>
-            <translation>画笔滤镜宽度 %1（%2 像素）</translation>
-        </message>
-        <message>
-            <source>Pen highlight</source>
-            <translation>画笔高亮</translation>
-        </message>
-        <message>
-            <source>Pen highlight color</source>
-            <translation>画笔高亮颜色</translation>
-        </message>
-        <message>
-            <source>Pen highlight color %1</source>
-            <translation>画笔高亮颜色 %1</translation>
-        </message>
-        <message>
-            <source>Pen highlight width %1 (%2px)</source>
-            <translation>画笔高亮宽度 %1（%2 像素）</translation>
-        </message>
-        <message>
-            <source>Physical Pixel Selection</source>
+            <source>Physical pixel selection</source>
             <translation>物理像素选区</translation>
         </message>
         <message>
@@ -984,12 +1015,12 @@
             <translation>从画布拾取颜色</translation>
         </message>
         <message>
-            <source>Pin Window to Screen</source>
-            <translation>固定窗口到屏幕</translation>
-        </message>
-        <message>
             <source>Pin to screen</source>
             <translation>固定到屏幕</translation>
+        </message>
+        <message>
+            <source>Pin window to screen</source>
+            <translation>固定窗口到屏幕</translation>
         </message>
         <message>
             <source>Plain shaft</source>
@@ -1012,6 +1043,10 @@
             <translation>后处理效果</translation>
         </message>
         <message>
+            <source>Preserve keyboard shortcuts</source>
+            <translation>保留键盘快捷键</translation>
+        </message>
+        <message>
             <source>Pressure-sensitive brush</source>
             <translation>压感画笔</translation>
         </message>
@@ -1020,7 +1055,7 @@
             <translation>打印</translation>
         </message>
         <message>
-            <source>Progress Bar Color</source>
+            <source>Progress bar color</source>
             <translation>进度条颜色</translation>
         </message>
         <message>
@@ -1060,8 +1095,8 @@
             <translation>录制屏幕</translation>
         </message>
         <message>
-            <source>Record speakers</source>
-            <translation>录制系统声音</translation>
+            <source>Record system audio</source>
+            <translation>录制系统音频</translation>
         </message>
         <message>
             <source>Record webcam</source>
@@ -1076,15 +1111,11 @@
             <translation>录制格式</translation>
         </message>
         <message>
-            <source>Recording settings</source>
-            <translation>屏幕录制设置</translation>
-        </message>
-        <message>
             <source>Rectangle</source>
             <translation>矩形</translation>
         </message>
         <message>
-            <source>Rectangle Eraser</source>
+            <source>Rectangle eraser</source>
             <translation>矩形橡皮擦</translation>
         </message>
         <message>
@@ -1132,8 +1163,12 @@
             <translation>保存为文件</translation>
         </message>
         <message>
-            <source>Save to File</source>
+            <source>Save to file</source>
             <translation>保存到文件</translation>
+        </message>
+        <message>
+            <source>Screen recording settings</source>
+            <translation>屏幕录制设置</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -1166,6 +1201,10 @@
         <message>
             <source>Send to back</source>
             <translation>置于底层</translation>
+        </message>
+        <message>
+            <source>Sequence number</source>
+            <translation>序号</translation>
         </message>
         <message>
             <source>Sequence number (scroll to adjust)</source>
@@ -1208,10 +1247,6 @@
             <translation>序号类型</translation>
         </message>
         <message>
-            <source>Serial number</source>
-            <translation>序号</translation>
-        </message>
-        <message>
             <source>Settings</source>
             <translation>设置</translation>
         </message>
@@ -1220,20 +1255,12 @@
             <translation>图形</translation>
         </message>
         <message>
-            <source>Show Cursor</source>
-            <translation>显示光标</translation>
-        </message>
-        <message>
-            <source>Show Playback Time</source>
-            <translation>显示播放时间</translation>
-        </message>
-        <message>
-            <source>Show Progress Bar</source>
-            <translation>显示进度条</translation>
-        </message>
-        <message>
-            <source>Show QR Code</source>
+            <source>Show QR code</source>
             <translation>显示二维码</translation>
+        </message>
+        <message>
+            <source>Show cursor</source>
+            <translation>显示光标</translation>
         </message>
         <message>
             <source>Show cursor in recording</source>
@@ -1248,7 +1275,15 @@
             <translation>显示原图</translation>
         </message>
         <message>
-            <source>Smart Erase</source>
+            <source>Show playback time</source>
+            <translation>显示播放时间</translation>
+        </message>
+        <message>
+            <source>Show progress bar</source>
+            <translation>显示进度条</translation>
+        </message>
+        <message>
+            <source>Smart erase</source>
             <translation>智能擦除</translation>
         </message>
         <message>
@@ -1288,7 +1323,7 @@
             <translation>源区域轮廓</translation>
         </message>
         <message>
-            <source>Speech Bubble</source>
+            <source>Speech bubble</source>
             <translation>对话气泡</translation>
         </message>
         <message>
@@ -1400,7 +1435,7 @@
             <translation>表格识别</translation>
         </message>
         <message>
-            <source>Table-Specific Model</source>
+            <source>Table-specific model</source>
             <translation>表格专用模型</translation>
         </message>
         <message>
@@ -1408,11 +1443,11 @@
             <translation>渐宽箭杆</translation>
         </message>
         <message>
-            <source>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads.</source>
-            <translation>渐宽箭杆支持标准、三角形、空心三角形和内凹三角形箭头。</translation>
+            <source>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads</source>
+            <translation>渐宽箭杆支持标准、三角形、空心三角形和内凹三角形箭头</translation>
         </message>
         <message>
-            <source>Target Language</source>
+            <source>Target language</source>
             <translation>目标语言</translation>
         </message>
         <message>
@@ -1424,11 +1459,11 @@
             <translation>模板 %1</translation>
         </message>
         <message>
-            <source>Template Name</source>
+            <source>Template name</source>
             <translation>模板名称</translation>
         </message>
         <message>
-            <source>Template Value</source>
+            <source>Template value</source>
             <translation>模板值</translation>
         </message>
         <message>
@@ -1504,8 +1539,12 @@
             <translation>文本翻译</translation>
         </message>
         <message>
-            <source>Thought Bubble</source>
+            <source>Thought bubble</source>
             <translation>思考气泡</translation>
+        </message>
+        <message>
+            <source>Translation service</source>
+            <translation>翻译服务</translation>
         </message>
         <message>
             <source>Translation settings</source>
@@ -1516,7 +1555,7 @@
             <translation>透明</translation>
         </message>
         <message>
-            <source>Trim Video</source>
+            <source>Trim video</source>
             <translation>裁剪视频</translation>
         </message>
         <message>
@@ -1528,7 +1567,7 @@
             <translation>撤销</translation>
         </message>
         <message>
-            <source>Upload to Cloud</source>
+            <source>Upload to cloud</source>
             <translation>上传到云端</translation>
         </message>
         <message>
@@ -1536,7 +1575,7 @@
             <translation>大写字母</translation>
         </message>
         <message>
-            <source>Vertical Crop</source>
+            <source>Vertical crop</source>
             <translation>垂直裁剪</translation>
         </message>
         <message>
@@ -1544,7 +1583,7 @@
             <translation>垂直滚动</translation>
         </message>
         <message>
-            <source>Vision Model</source>
+            <source>Vision model</source>
             <translation>视觉模型</translation>
         </message>
         <message>
@@ -1569,7 +1608,7 @@
         </message>
         <message>
             <source>Watermark font size %1 (%2px)</source>
-            <translation>水印字体大小 %1 (%2px)</translation>
+            <translation>水印字号 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Watermark gap</source>
@@ -1580,11 +1619,11 @@
             <translation>水印文本</translation>
         </message>
         <message>
-            <source>Webcam Shape</source>
+            <source>Webcam shape</source>
             <translation>摄像头形状</translation>
         </message>
         <message>
-            <source>Webcam Size</source>
+            <source>Webcam size</source>
             <translation>摄像头大小</translation>
         </message>
         <message>
@@ -1644,16 +1683,16 @@
     <context>
         <name>snow_shot::presentation::GlobalCanvasController</name>
         <message>
-            <source>Could not change canvas click-through.</source>
-            <translation>无法切换画布的鼠标穿透状态。</translation>
+            <source>Could not change canvas click-through</source>
+            <translation>无法切换画布的鼠标穿透状态</translation>
         </message>
         <message>
             <source>Could not show the laser pointer: %1</source>
             <translation>无法显示激光笔：%1</translation>
         </message>
         <message>
-            <source>The laser pointer is unavailable.</source>
-            <translation>激光笔不可用。</translation>
+            <source>The laser pointer is unavailable</source>
+            <translation>激光笔不可用</translation>
         </message>
     </context>
 </TS>

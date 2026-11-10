@@ -61,36 +61,36 @@ try {
     [IO.File]::WriteAllText($path, 'signed fixture')
     $assets = @{ 'latest-version.json' = $path }
     $verify = Join-Path $root 'verify'
-    Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' $assets $verify
+    Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' $assets $verify
     Require (-not $global:SnowGitHubTestRelease.draft -and $global:SnowGitHubTestLatest) 'Stable release becomes public and latest.'
     Require (($global:SnowGitHubTestEvents -join ',') -eq 'create,upload,download,edit') 'Upload/verify/publish ordering.'
     $global:SnowGitHubTestEvents.Clear()
-    Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' $assets $verify
+    Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' $assets $verify
     Require (($global:SnowGitHubTestEvents -join ',') -eq 'download,download') 'Identical retry makes no mutations.'
     $global:SnowGitHubTestEvents.Clear()
-    Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' $assets $verify -VerifyOnly
+    Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' $assets $verify -VerifyOnly
     Require (($global:SnowGitHubTestEvents -join ',') -eq 'download') 'Verification never mutates releases.'
     [IO.File]::WriteAllText($path, 'different bytes')
-    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' $assets $verify }
+    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' $assets $verify }
     Require (-not $global:SnowGitHubTestEvents.Contains('upload')) 'Conflicts rejected before upload.'
     $global:SnowGitHubTestRelease = $null
     $global:SnowGitHubTestBytes = @{}
     $global:SnowGitHubTestEvents.Clear()
-    Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0-beta' $assets $verify
+    Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0-beta' $assets $verify
     Require ($global:SnowGitHubTestRelease.prerelease -and -not $global:SnowGitHubTestLatest) 'Beta never becomes latest.'
     $global:SnowGitHubTestRelease.prerelease = $false
-    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0-beta' $assets $verify }
+    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0-beta' $assets $verify }
 
     $global:SnowGitHubTestRelease = $null
     $global:SnowGitHubTestBytes = @{}
     $global:SnowGitHubTestEvents.Clear()
     $global:SnowGitHubTestFailDownload = $true
-    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' $assets $verify }
+    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' $assets $verify }
     Require ($global:SnowGitHubTestRelease.draft -and -not $global:SnowGitHubTestEvents.Contains('edit')) 'Failed verification leaves a draft.'
     $global:SnowGitHubTestFailDownload = $false
-    Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' $assets $verify
+    Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' $assets $verify
     $missing = @{ 'missing.zip' = $path }
-    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' $missing $verify }
+    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' $missing $verify }
 
     # Execute the real orchestration with isolated files, real RSA signing, and mocked
     # packaging audit/network/CLI boundaries. No production settings or server are used.
@@ -228,7 +228,7 @@ $global:SnowGitHubTestEvents.Add('website')
     & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -Arm64BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -ReleaseNotesPath $notesPath -DeployWebsite -WebsiteDirectory 'fixture-site'
     Require ($global:SnowGitHubTestEvents[0] -eq 'gitee-auth' -and $global:SnowGitHubTestEvents[-2] -eq 'gitee-publish' -and
         $global:SnowGitHubTestEvents[-1] -eq 'website') 'Website deployment follows verified publication to both release destinations.'
-    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' @{ 'latest-version.json' = $path } $verify -NotesPath $keyPath }
+    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-shot' '2.0.0' @{ 'latest-version.json' = $path } $verify -NotesPath $keyPath }
     $global:SnowGitHubTestEvents.Clear()
     & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -WhatIf -DeployWebsite -WebsiteDirectory 'fixture-site'
     Require ($global:SnowGitHubTestEvents.Count -eq 0) 'WhatIf does not build, sign, or contact GitHub.'

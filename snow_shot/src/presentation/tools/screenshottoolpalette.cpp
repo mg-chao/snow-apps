@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/components/pointerhoverevents.h"
 #include "snow_shot/ocrtextoptions.h"
 #include "snow_shot/translation/translationlanguagecatalog.h"
+#include "snow_shot/presentation/components/translationserviceoptions.h"
 #include "../recording/recordingaudiogainpopover.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
@@ -104,13 +105,13 @@ constexpr int kRecordingSettingsColumnGap = 16;
 constexpr int kRecordingSettingsColorPickerWidth = 154;
 [[maybe_unused]] constexpr const char* kScreenshotToolPaletteTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Print"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pin Window to Screen"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pin window to screen"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto Filter"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill regions"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show Cursor"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cursor data is unavailable for this screenshot."),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show cursor"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cursor data is unavailable for this screenshot"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recapture"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Hide selection toolbar"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter type"),
@@ -120,7 +121,7 @@ constexpr int kRecordingSettingsColorPickerWidth = 154;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Inversion"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Emboss"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brightness"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart Erase"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart erase"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Opacity"),
@@ -144,21 +145,21 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Resize window"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Select elements"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Shape"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Speech Bubble"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Speech bubble"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Line"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Spotlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Magnifier"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Serial number"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Eraser"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Element Eraser"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle Eraser"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush Eraser"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Element eraser"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle eraser"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush eraser"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Undo"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Redo"),
@@ -169,7 +170,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Barcode recognition"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Edit"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text translation"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Jump to Translation Page"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Jump to translation page"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Translation settings"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Merge cells"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Split cells"),
@@ -177,7 +178,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Open spreadsheet file"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Formatting"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Punctuation"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Target Language"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Target language"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Scrolling screenshot"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Save as file"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Quick save"),
@@ -189,10 +190,10 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pause recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Resume recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record microphone"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record speakers"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record system audio"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Open recording folder"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Close recording"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Export Settings"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Export settings"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color %1"),
@@ -204,8 +205,8 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record webcam"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Delay recording (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy recording"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Trim Video"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Save to File"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Trim video"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Save to file"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Animated recording formats do not contain audio"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recording format"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Transparent"),
@@ -233,7 +234,7 @@ constexpr int TOOLBAR_SEPARATOR_HEIGHT = 16;
 constexpr int TOOLBAR_SEPARATOR_WIDTH = 1;
 constexpr int RECORDING_DURATION_HORIZONTAL_PADDING = 2;
 constexpr int RECORDING_DURATION_FONT_SIZE = 14;
-constexpr int TOOLBAR_ROW_SPACING = 6;
+constexpr int TOOLBAR_ROW_SPACING = screenshot_action_toolbar::RowSpacing;
 constexpr int STYLE_BUTTON_SIZE = 28;
 constexpr int STYLE_ICON_SIZE = 18;
 constexpr int TOOLBAR_PANEL_HORIZONTAL_MARGIN = screenshot_action_toolbar::HorizontalMargin;
@@ -353,20 +354,20 @@ bool toolUsesStandardStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::Angle:
     case ScreenshotToolPalette::Tool::Bracket:
     case ScreenshotToolPalette::Tool::Line:
-    case ScreenshotToolPalette::Tool::FreeDraw:
+    case ScreenshotToolPalette::Tool::Brush:
     case ScreenshotToolPalette::Tool::RectangleHighlight:
-    case ScreenshotToolPalette::Tool::PenHighlight:
+    case ScreenshotToolPalette::Tool::BrushHighlight:
     case ScreenshotToolPalette::Tool::Spotlight:
     case ScreenshotToolPalette::Tool::Magnifier:
     case ScreenshotToolPalette::Tool::AutoFilter:
     case ScreenshotToolPalette::Tool::RectangleFilter:
-    case ScreenshotToolPalette::Tool::PenFilter:
+    case ScreenshotToolPalette::Tool::BrushFilter:
     case ScreenshotToolPalette::Tool::Eraser:
     case ScreenshotToolPalette::Tool::RectangleEraser:
     case ScreenshotToolPalette::Tool::BrushEraser:
     case ScreenshotToolPalette::Tool::Watermark:
     case ScreenshotToolPalette::Tool::Text:
-    case ScreenshotToolPalette::Tool::SerialNumber:
+    case ScreenshotToolPalette::Tool::SequenceNumber:
         return true;
     case ScreenshotToolPalette::Tool::Move:
     case ScreenshotToolPalette::Tool::Select:
@@ -403,7 +404,7 @@ ScreenshotToolPalette::Tool filterToolFromSetting(const QString& value) {
     if (value == QStringLiteral("auto-filter")) {
         return ScreenshotToolPalette::Tool::AutoFilter;
     }
-    return ScreenshotToolPalette::Tool::PenFilter;
+    return ScreenshotToolPalette::Tool::BrushFilter;
 }
 
 QString filterToolSetting(ScreenshotToolPalette::Tool tool) {
@@ -435,7 +436,7 @@ QString eraserToolSetting(ScreenshotToolPalette::Tool tool) {
 ScreenshotToolPalette::Tool highlightToolFromSetting(const QString& value) {
     return value == QStringLiteral("rectangle-highlight")
                ? ScreenshotToolPalette::Tool::RectangleHighlight
-               : ScreenshotToolPalette::Tool::PenHighlight;
+               : ScreenshotToolPalette::Tool::BrushHighlight;
 }
 
 QString highlightToolSetting(ScreenshotToolPalette::Tool tool) {
@@ -574,20 +575,20 @@ ScreenshotToolPalette::Tool drawingToolFromItem(toolbar_layout::Item item) {
         return ScreenshotToolPalette::Tool::Bracket;
     case toolbar_layout::Item::Line:
         return ScreenshotToolPalette::Tool::Line;
-    case toolbar_layout::Item::FreeDraw:
-        return ScreenshotToolPalette::Tool::FreeDraw;
+    case toolbar_layout::Item::Brush:
+        return ScreenshotToolPalette::Tool::Brush;
     case toolbar_layout::Item::Highlighter:
-        return ScreenshotToolPalette::Tool::PenHighlight;
+        return ScreenshotToolPalette::Tool::BrushHighlight;
     case toolbar_layout::Item::Spotlight:
         return ScreenshotToolPalette::Tool::Spotlight;
     case toolbar_layout::Item::Magnifier:
         return ScreenshotToolPalette::Tool::Magnifier;
     case toolbar_layout::Item::Text:
         return ScreenshotToolPalette::Tool::Text;
-    case toolbar_layout::Item::SerialNumber:
-        return ScreenshotToolPalette::Tool::SerialNumber;
+    case toolbar_layout::Item::SequenceNumber:
+        return ScreenshotToolPalette::Tool::SequenceNumber;
     case toolbar_layout::Item::Filter:
-        return ScreenshotToolPalette::Tool::PenFilter;
+        return ScreenshotToolPalette::Tool::BrushFilter;
     case toolbar_layout::Item::Eraser:
         return ScreenshotToolPalette::Tool::Eraser;
     case toolbar_layout::Item::Watermark:
@@ -598,7 +599,7 @@ ScreenshotToolPalette::Tool drawingToolFromItem(toolbar_layout::Item item) {
 
 ScreenshotToolPalette::Tool toolbarFacingDrawingTool(ScreenshotToolPalette::Tool tool) {
     return tool == ScreenshotToolPalette::Tool::RectangleHighlight
-               ? ScreenshotToolPalette::Tool::PenHighlight
+               ? ScreenshotToolPalette::Tool::BrushHighlight
                : tool;
 }
 
@@ -620,9 +621,9 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
         return QStringLiteral("bracket");
     case ScreenshotToolPalette::Tool::Line:
         return QStringLiteral("line");
-    case ScreenshotToolPalette::Tool::FreeDraw:
+    case ScreenshotToolPalette::Tool::Brush:
         return QStringLiteral("free-draw");
-    case ScreenshotToolPalette::Tool::PenHighlight:
+    case ScreenshotToolPalette::Tool::BrushHighlight:
         return QStringLiteral("highlighter");
     case ScreenshotToolPalette::Tool::Spotlight:
         return QStringLiteral("spotlight");
@@ -630,11 +631,11 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
         return QStringLiteral("magnifier");
     case ScreenshotToolPalette::Tool::Text:
         return QStringLiteral("text");
-    case ScreenshotToolPalette::Tool::SerialNumber:
+    case ScreenshotToolPalette::Tool::SequenceNumber:
         return QStringLiteral("serial-number");
     case ScreenshotToolPalette::Tool::AutoFilter:
     case ScreenshotToolPalette::Tool::RectangleFilter:
-    case ScreenshotToolPalette::Tool::PenFilter:
+    case ScreenshotToolPalette::Tool::BrushFilter:
         return QStringLiteral("filter");
     case ScreenshotToolPalette::Tool::Eraser:
     case ScreenshotToolPalette::Tool::RectangleEraser:
@@ -711,7 +712,7 @@ QString drawingShortcutToolIdForTooltipSource(const QString& source) {
     if (source == QStringLiteral("Select elements")) {
         return QStringLiteral("select");
     }
-    if (source == QStringLiteral("Speech Bubble")) {
+    if (source == QStringLiteral("Speech bubble")) {
         return QStringLiteral("speech_bubble");
     }
     if (source == QStringLiteral("Shape")) {
@@ -720,16 +721,16 @@ QString drawingShortcutToolIdForTooltipSource(const QString& source) {
     if (source == QStringLiteral("Arrow")) {
         return QStringLiteral("arrow");
     }
-    if (source == QStringLiteral("Pen")) {
+    if (source == QStringLiteral("Brush")) {
         return QStringLiteral("brush");
     }
-    if (source == QStringLiteral("Highlight") || source == QStringLiteral("Pen highlight")) {
+    if (source == QStringLiteral("Highlight") || source == QStringLiteral("Brush highlight")) {
         return QStringLiteral("highlight");
     }
     if (source == QStringLiteral("Text")) {
         return QStringLiteral("text");
     }
-    if (source == QStringLiteral("Serial number")) {
+    if (source == QStringLiteral("Sequence number")) {
         return QStringLiteral("serial_number");
     }
     if (source == QStringLiteral("Filter")) {
@@ -854,10 +855,10 @@ initialToolbarLayout(const ScreenshotToolPalette::Options& options) {
     const bool hasDrawingTools =
         options.showShapeTool || options.showSpeechBubbleTool || options.showArrowTool ||
         options.showDistanceTool || options.showBracketTool || options.showAngleTool ||
-        options.showLineTool || options.showFreeDrawTool || options.showHighlightTool ||
-        options.showRectangleHighlightTool || options.showPenHighlightTool ||
+        options.showLineTool || options.showBrushTool || options.showHighlightTool ||
+        options.showRectangleHighlightTool || options.showBrushHighlightTool ||
         options.showSpotlightTool || options.showMagnifierTool || options.showTextTool ||
-        options.showSerialNumberTool || options.showFilterTool || options.showEraserTool ||
+        options.showSequenceNumberTool || options.showFilterTool || options.showEraserTool ||
         options.showWatermarkTool;
     return hasDrawingTools ? std::optional(toolbar_layout::normalizedLayout(
                                  snow_shot::storage::ScreenshotToolbarLayout{}))
@@ -1055,9 +1056,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                     static_cast<void>(
                         submitStyleEdit(SnowCanvasSerialNumberEdit{style, properties}));
                 },
-                [this]() { emit serialNumberDecrementRequested(); },
-                [this]() { emit serialNumberIncrementRequested(); },
-                [this]() { emit serialNumberCreateTextRequested(); },
+                [this]() { emit sequenceNumberDecrementRequested(); },
+                [this]() { emit sequenceNumberIncrementRequested(); },
+                [this]() { emit sequenceNumberCreateTextRequested(); },
                 [this](const SnowCanvasWatermarkConfig& config, quint32 properties) {
                     static_cast<void>(submitStyleEdit(SnowCanvasWatermarkEdit{config, properties}));
                 },
@@ -1119,7 +1120,7 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 }
                 refreshThemeDependentIcons();
                 refreshFilterEditorMetrics(m_filterEditor);
-                refreshFilterEditorMetrics(m_penFilterEditor);
+                refreshFilterEditorMetrics(m_brushFilterEditor);
                 ScreenshotToolPaletteSliderEditor spotlightEditor;
                 spotlightEditor.icon = m_spotlightOpacityIcon;
                 spotlightEditor.slider = m_spotlightOpacitySlider;
@@ -1135,8 +1136,18 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
 
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {
+        const auto refreshColor = [this] {
+            const snow_shot::storage::DrawingSettings settings;
+            setSharedCreationColor(settings.syncToolColors()
+                                       ? std::optional<QColor>(settings.sharedToolColor())
+                                       : std::nullopt);
+        };
+        refreshColor();
         connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
-                this, [this](const QString& key, const QJsonValue& value) {
+                this, [this, refreshColor](const QString& key, const QJsonValue& value) {
+                    if (key == QStringLiteral("drawing/sync_tool_colors") ||
+                        key == QStringLiteral("drawing/shared_tool_color"))
+                        refreshColor();
                     if (key == QStringLiteral("cloud_upload/configuration")) {
                         setCloudUploadBusy(m_cloudUploadBusy);
                     } else if (key ==
@@ -1368,7 +1379,7 @@ void ScreenshotToolPalette::resetStyleState() {
     m_watermarkContentRestorePending = true;
     m_styleControls->reset();
     refreshFilterEditorState(m_filterEditor, false);
-    refreshFilterEditorState(m_penFilterEditor, true);
+    refreshFilterEditorState(m_brushFilterEditor, true);
     setSpotlightConfig(m_styleDefaults.spotlight);
     updateSelectionActionAvailability(false, 0, false);
 }
@@ -1376,7 +1387,11 @@ void ScreenshotToolPalette::resetStyleState() {
 void ScreenshotToolPalette::setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults) {
     m_styleControls->setCreationStyleDefaults(defaults);
     refreshFilterEditorState(m_filterEditor, false);
-    refreshFilterEditorState(m_penFilterEditor, true);
+    refreshFilterEditorState(m_brushFilterEditor, true);
+}
+
+void ScreenshotToolPalette::setSharedCreationColor(const std::optional<QColor>& color) {
+    m_styleControls->setSharedCreationColor(color);
 }
 
 void ScreenshotToolPalette::setStyleEditHandler(
@@ -1406,7 +1421,7 @@ void ScreenshotToolPalette::notifyFilterStyleChanged(const SnowCanvasFilterStyle
     const auto source = m_styleControls->styleState().filterStyleSource;
     const bool pen = source == SnowCanvasStyleToolbarSource::SelectedPenFilter ||
                      source == SnowCanvasStyleToolbarSource::DefaultPenFilter ||
-                     (!source.has_value() && m_activeTool == Tool::PenFilter);
+                     (!source.has_value() && m_activeTool == Tool::BrushFilter);
     const bool bothFamilies = (m_styleControls->styleState().filterStyleMixed &
                                SnowCanvasFilterStyleMixedContainsBothFamilies) != 0;
     if (!submitStyleEdit(SnowCanvasFilterEdit{style, properties, pen, bothFamilies}))
@@ -1476,13 +1491,13 @@ bool ScreenshotToolPalette::stepFilterIntensity(int direction) {
     return true;
 }
 
-bool ScreenshotToolPalette::stepPenFilterStrokeWidth(int direction) {
-    if (direction == 0 || m_activeTool != Tool::PenFilter) {
+bool ScreenshotToolPalette::stepBrushFilterStrokeWidth(int direction) {
+    if (direction == 0 || m_activeTool != Tool::BrushFilter) {
         return false;
     }
 
-    setPenFilterStrokeWidth(m_styleControls->styleState().penFilterStyle.strokeWidth +
-                            (direction > 0 ? 1.0 : -1.0));
+    setBrushFilterStrokeWidth(m_styleControls->styleState().brushFilterStyle.strokeWidth +
+                              (direction > 0 ? 1.0 : -1.0));
     return true;
 }
 
@@ -1493,29 +1508,29 @@ void ScreenshotToolPalette::setFilterStrength(double strength) {
         (state.filterStyleMixed & SnowCanvasFilterStylePropertyStrength) == 0)
         return;
     state.rectangleFilterStyle.strength = next;
-    state.penFilterStyle.strength = next;
+    state.brushFilterStyle.strength = next;
     state.filterStyleMixed &= ~SnowCanvasFilterStylePropertyStrength;
-    for (auto* editor : {&m_filterEditor, &m_autoFilterEditor, &m_penFilterEditor}) {
+    for (auto* editor : {&m_filterEditor, &m_autoFilterEditor, &m_brushFilterEditor}) {
         if (editor->intensitySlider != nullptr) {
             const QSignalBlocker blocker(editor->intensitySlider);
             editor->intensitySlider->setValue(qRound(next * 100.0));
         }
     }
-    notifyFilterStyleChanged(m_activeTool == Tool::PenFilter ? state.penFilterStyle
-                                                             : state.rectangleFilterStyle,
+    notifyFilterStyleChanged(m_activeTool == Tool::BrushFilter ? state.brushFilterStyle
+                                                               : state.rectangleFilterStyle,
                              SnowCanvasFilterStylePropertyStrength);
 }
 
-void ScreenshotToolPalette::setPenFilterStrokeWidth(double width) {
+void ScreenshotToolPalette::setBrushFilterStrokeWidth(double width) {
     auto& state = m_styleControls->styleState();
     const double next = std::clamp(width, 1.0, 72.0);
-    if (next == state.penFilterStyle.strokeWidth &&
+    if (next == state.brushFilterStyle.strokeWidth &&
         (state.filterStyleMixed & SnowCanvasFilterStylePropertyStrokeWidth) == 0)
         return;
-    state.penFilterStyle.strokeWidth = next;
+    state.brushFilterStyle.strokeWidth = next;
     state.filterStyleMixed &= ~SnowCanvasFilterStylePropertyStrokeWidth;
-    updatePenFilterStrokeWidthControls();
-    notifyFilterStyleChanged(state.penFilterStyle, SnowCanvasFilterStylePropertyStrokeWidth);
+    updateBrushFilterStrokeWidthControls();
+    notifyFilterStyleChanged(state.brushFilterStyle, SnowCanvasFilterStylePropertyStrokeWidth);
 }
 
 bool ScreenshotToolPalette::stepBrushEraserStrokeWidth(int direction) {
@@ -1622,6 +1637,8 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
         (m_textEditButton == nullptr || m_textEditButton->isHidden() == !ocrVisible) &&
         (m_textTargetLanguageSelect == nullptr ||
          m_textTargetLanguageSelect->isHidden() == !targetLanguageVisible) &&
+        (m_textTranslationServiceSelect == nullptr ||
+         m_textTranslationServiceSelect->isHidden() == !targetLanguageVisible) &&
         (m_jumpToTranslationPageButton == nullptr ||
          m_jumpToTranslationPageButton->isHidden() ==
              !(ocrVisible && m_jumpToTranslationPageVisible)) &&
@@ -1680,6 +1697,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     if (m_textTargetLanguageSelect != nullptr)
         m_textTargetLanguageSelect->setVisible(targetLanguageVisible);
     setStyleToolbarSpacingVisible(m_textTargetLanguageSpacer, targetLanguageVisible);
+    if (m_textTranslationServiceSelect != nullptr)
+        m_textTranslationServiceSelect->setVisible(targetLanguageVisible);
+    setStyleToolbarSpacingVisible(m_textTranslationServiceSpacer, targetLanguageVisible);
     if (m_tableMergeButton != nullptr) {
         m_tableMergeButton->setVisible(tableVisible);
     }
@@ -1806,7 +1826,7 @@ void ScreenshotToolPalette::updateFilterIntensityIcon(FilterEditor& editor) {
 void ScreenshotToolPalette::refreshThemeDependentIcons() {
     updateSelectionOpacityIcon();
     updateFilterIntensityIcon(m_filterEditor);
-    updateFilterIntensityIcon(m_penFilterEditor);
+    updateFilterIntensityIcon(m_brushFilterEditor);
     m_styleControls->refreshThemeIcons(styleButtonMetrics(m_physicalScale));
 
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
@@ -1842,15 +1862,16 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
     updateRecordingControls();
     updateRecordingExportSettingsControls();
     refreshRecordingMouseOptions();
+    refreshRecordingKeyboardOptions();
     updateRecordingControlMetrics();
     refreshRecordingPostProcessingOptions();
 }
 
-void ScreenshotToolPalette::updatePenFilterStrokeWidthControls() {
+void ScreenshotToolPalette::updateBrushFilterStrokeWidthControls() {
     const bool mixed = (m_styleControls->styleState().filterStyleMixed &
                         SnowCanvasFilterStylePropertyStrokeWidth) != 0;
-    m_styleControls->updatePenFilterStrokeWidthControls(
-        m_styleControls->styleState().penFilterStyle.strokeWidth, mixed);
+    m_styleControls->updateBrushFilterStrokeWidthControls(
+        m_styleControls->styleState().brushFilterStyle.strokeWidth, mixed);
 }
 
 bool ScreenshotToolPalette::toolUsesStyleToolbar(Tool tool) const {
@@ -1875,8 +1896,8 @@ bool ScreenshotToolPalette::prepareStyleControlsForActivation(Tool destinationTo
                                            static_cast<int>(destinationTool), sourceControls);
 
     const bool highlightPair =
-        (sourceTool == Tool::RectangleHighlight || sourceTool == Tool::PenHighlight) &&
-        (destinationTool == Tool::RectangleHighlight || destinationTool == Tool::PenHighlight);
+        (sourceTool == Tool::RectangleHighlight || sourceTool == Tool::BrushHighlight) &&
+        (destinationTool == Tool::RectangleHighlight || destinationTool == Tool::BrushHighlight);
     if (highlightPair && sourceControls != nullptr) {
         m_styleControls->stageExternalStyleEditorWidget(
             sourceControls->findChild<QWidget*>(QStringLiteral("screenshotHighlightModeSelector")));
@@ -1892,13 +1913,13 @@ bool ScreenshotToolPalette::prepareStyleControlsForActivation(Tool destinationTo
 
     const bool filterPair =
         (sourceTool == Tool::AutoFilter || sourceTool == Tool::RectangleFilter ||
-         sourceTool == Tool::PenFilter) &&
+         sourceTool == Tool::BrushFilter) &&
         (destinationTool == Tool::AutoFilter || destinationTool == Tool::RectangleFilter ||
-         destinationTool == Tool::PenFilter);
+         destinationTool == Tool::BrushFilter);
     if (filterPair && sourceControls != nullptr) {
         m_styleControls->stageExternalStyleEditorWidget(
             sourceControls->findChild<QWidget*>(QStringLiteral("screenshotFilterModeSelector")));
-        FilterEditor& sourceEditor = sourceTool == Tool::PenFilter    ? m_penFilterEditor
+        FilterEditor& sourceEditor = sourceTool == Tool::BrushFilter  ? m_brushFilterEditor
                                      : sourceTool == Tool::AutoFilter ? m_autoFilterEditor
                                                                       : m_filterEditor;
         m_styleControls->stageExternalStyleEditorWidget(sourceEditor.typeSelect);
@@ -1936,9 +1957,8 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (m_releasingSecondaryResources) {
         return;
     }
-    if (m_options.recordingDrawingMode && m_recordExportSettingsVisible) {
-        setRecordingExportSettingsVisible(false);
-    }
+    const bool closeExportSettings =
+        m_options.recordingDrawingMode && m_recordExportSettingsVisible;
     const bool activeToolNoop = m_activeTool.has_value() && *m_activeTool == tool &&
                                 (!toolUsesStyleToolbar(tool) ||
                                  (m_activeStyleTool.has_value() && *m_activeStyleTool == tool));
@@ -2001,6 +2021,10 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (activeToolNoop) {
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("palette.active_tool_noop");
         const bool styleControlsChanged = setStyleControlsActive(tool);
+        if (closeExportSettings) {
+            setRecordingExportSettingsVisible(false);
+            return;
+        }
         const bool visibilityChanged = applyActiveToolSecondaryToolbarVisibility();
         if (styleControlsChanged || visibilityChanged) {
             updateToolbarGeometry();
@@ -2033,13 +2057,13 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::Line:
         activeButton = drawingToolEntryButton(tool);
         break;
-    case Tool::FreeDraw:
+    case Tool::Brush:
         activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::RectangleHighlight:
         activeButton = drawingToolEntryButton(tool);
         break;
-    case Tool::PenHighlight:
+    case Tool::BrushHighlight:
         activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::Magnifier:
@@ -2053,7 +2077,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         break;
     case Tool::AutoFilter:
     case Tool::RectangleFilter:
-    case Tool::PenFilter:
+    case Tool::BrushFilter:
         activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::Watermark:
@@ -2062,7 +2086,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::Text:
         activeButton = drawingToolEntryButton(tool);
         break;
-    case Tool::SerialNumber:
+    case Tool::SequenceNumber:
         activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::Ocr:
@@ -2097,6 +2121,12 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     updateHistoryActionAvailability();
     const bool styleControlsChanged = setStyleControlsActive(tool);
     secondaryContentsEvicted = finishStyleControlsActivation(tool) || secondaryContentsEvicted;
+    if (closeExportSettings) {
+        // Commit the destination row together with closing Export settings. A
+        // separate collapsed-row commit would re-anchor the native window twice.
+        setRecordingExportSettingsVisible(false);
+        return;
+    }
     const bool visibilityChanged = applyActiveToolSecondaryToolbarVisibility();
     if (visibilityChanged || secondaryContentsEvicted) {
         updateToolbarGeometry();
@@ -2225,19 +2255,23 @@ void ScreenshotToolPalette::setSelectionOpacity(qreal opacity, bool mixed) {
 }
 
 void ScreenshotToolPalette::clearActiveTool() {
+    if (clearActiveToolState()) {
+        updateToolbarGeometry();
+        update();
+        emit visibleContentChanged();
+    }
+}
+
+bool ScreenshotToolPalette::clearActiveToolState() {
     const bool secondaryContentsEvicted = evictSecondaryToolbarContents();
     if (!m_activeTool.has_value() && m_activeToolButton == nullptr && !secondaryContentsEvicted) {
-        return;
+        return false;
     }
     m_activeTool.reset();
     setActiveToolButton(nullptr);
     updateHistoryActionAvailability();
     m_activeStyleTool.reset();
-    if (secondaryContentsEvicted || applyActiveToolSecondaryToolbarVisibility()) {
-        updateToolbarGeometry();
-        update();
-        emit visibleContentChanged();
-    }
+    return secondaryContentsEvicted || applyActiveToolSecondaryToolbarVisibility();
 }
 
 std::optional<ScreenshotToolPalette::Tool> ScreenshotToolPalette::activeTool() const {
@@ -2497,6 +2531,46 @@ QColor ScreenshotToolPalette::recordingKeyboardForegroundColor() const {
     return m_recordingKeyboardForegroundColor;
 }
 
+void ScreenshotToolPalette::setRecordingRecordNumberKeys(bool value) {
+    m_recordingRecordNumberKeys = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingRecordNumberKeys() const {
+    return m_recordingRecordNumberKeys;
+}
+
+void ScreenshotToolPalette::setRecordingRecordLettersAndSymbols(bool value) {
+    m_recordingRecordLettersAndSymbols = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingRecordLettersAndSymbols() const {
+    return m_recordingRecordLettersAndSymbols;
+}
+
+void ScreenshotToolPalette::setRecordingRecordControlKeys(bool value) {
+    m_recordingRecordControlKeys = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingRecordControlKeys() const {
+    return m_recordingRecordControlKeys;
+}
+
+void ScreenshotToolPalette::setRecordingPreserveKeyboardShortcuts(bool value) {
+    m_recordingPreserveKeyboardShortcuts = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingPreserveKeyboardShortcuts() const {
+    return m_recordingPreserveKeyboardShortcuts;
+}
+
+adqt::widgets::AdPopover* ScreenshotToolPalette::recordingKeyboardPopover() const {
+    return m_recordKeyboardPopover;
+}
+
 void ScreenshotToolPalette::setRecordingMouseTrailColor(const QColor& color) {
     const QColor value = color.isValid() ? color : QColor(0, 0, 0, 0);
     if (m_recordingMouseTrailColor == value) {
@@ -2640,16 +2714,52 @@ void ScreenshotToolPalette::refreshRecordingMouseOptions() {
     }
 }
 
+void ScreenshotToolPalette::refreshRecordingKeyboardOptions() {
+    if (!m_recordNumberKeysCheckbox || !m_recordLettersAndSymbolsCheckbox ||
+        !m_recordControlKeysCheckbox || !m_recordPreserveKeyboardShortcutsCheckbox) {
+        return;
+    }
+    const QSignalBlocker numbersBlocker(m_recordNumberKeysCheckbox);
+    const QSignalBlocker lettersBlocker(m_recordLettersAndSymbolsCheckbox);
+    const QSignalBlocker controlsBlocker(m_recordControlKeysCheckbox);
+    const QSignalBlocker shortcutsBlocker(m_recordPreserveKeyboardShortcutsCheckbox);
+    m_recordNumberKeysCheckbox->setText(tr("Number keys"));
+    m_recordLettersAndSymbolsCheckbox->setText(tr("Letters and symbols"));
+    m_recordControlKeysCheckbox->setText(tr("Control keys"));
+    m_recordPreserveKeyboardShortcutsCheckbox->setText(tr("Preserve keyboard shortcuts"));
+    m_recordNumberKeysCheckbox->setChecked(m_recordingRecordNumberKeys);
+    m_recordLettersAndSymbolsCheckbox->setChecked(m_recordingRecordLettersAndSymbols);
+    m_recordControlKeysCheckbox->setChecked(m_recordingRecordControlKeys);
+    m_recordPreserveKeyboardShortcutsCheckbox->setChecked(m_recordingPreserveKeyboardShortcuts);
+    m_recordPreserveKeyboardShortcutsCheckbox->setEnabled(m_recordingRecordControlKeys);
+    for (auto* checkbox :
+         {m_recordNumberKeysCheckbox.data(), m_recordLettersAndSymbolsCheckbox.data(),
+          m_recordControlKeysCheckbox.data(), m_recordPreserveKeyboardShortcutsCheckbox.data()}) {
+        checkbox->setAccessibleName(checkbox->text());
+        auto tokens = adqt::widgets::AdCheckbox::ComponentTokens{};
+        tokens.metrics.checkboxSize = scaledMetric(16);
+        tokens.metrics.labelPaddingInlineStart = scaledMetric(8);
+        tokens.metrics.textLineHeight = scaledMetric(22);
+        checkbox->setComponentTokens(tokens);
+        QFont textFont = font();
+        textFont.setPixelSize(scaledMetric(14));
+        checkbox->setFont(textFont);
+    }
+    if (auto* content = m_recordKeyboardPopover->contentWidget()) {
+        content->layout()->setSpacing(scaledMetric(8));
+    }
+}
+
 void ScreenshotToolPalette::refreshRecordingPostProcessingOptions() {
     if (!m_recordProgressBarRadio || !m_recordPlaybackTimeRadio) {
         return;
     }
     const QSignalBlocker progressBlocker(m_recordProgressBarRadio);
     const QSignalBlocker playbackBlocker(m_recordPlaybackTimeRadio);
-    m_recordProgressBarRadio->setText(tr("Show Progress Bar"));
-    m_recordProgressBarRadio->setAccessibleName(tr("Show Progress Bar"));
-    m_recordPlaybackTimeRadio->setText(tr("Show Playback Time"));
-    m_recordPlaybackTimeRadio->setAccessibleName(tr("Show Playback Time"));
+    m_recordProgressBarRadio->setText(tr("Show progress bar"));
+    m_recordProgressBarRadio->setAccessibleName(tr("Show progress bar"));
+    m_recordPlaybackTimeRadio->setText(tr("Show playback time"));
+    m_recordPlaybackTimeRadio->setAccessibleName(tr("Show playback time"));
     m_recordProgressBarRadio->setChecked(!m_recordPlaybackTimeSelected);
     m_recordPlaybackTimeRadio->setChecked(m_recordPlaybackTimeSelected);
     for (auto* radio : {m_recordProgressBarRadio.data(), m_recordPlaybackTimeRadio.data()}) {
@@ -2748,7 +2858,7 @@ void ScreenshotToolPalette::setLayoutCompactionState(ScreenshotLayoutCompaction 
         m_layoutCompactionButton->setEnabled(available);
         setScreenshotToolPaletteButtonActive(m_layoutCompactionButton, m_layoutCompaction.enabled);
         m_layoutCompactionButton->setAccessibleDescription(
-            !available                   ? tr("Available for multi-region selections")
+            !available                   ? tr("Only available for multi-region selections")
             : m_layoutCompaction.enabled ? tr("Layout compaction enabled")
                                          : tr("Layout compaction disabled"));
     }
@@ -2760,7 +2870,7 @@ void ScreenshotToolPalette::setLayoutCompactionState(ScreenshotLayoutCompaction 
                              : ScreenshotSelectionDisplayUnit::PhysicalPixels));
         m_layoutSpacingEditor->setAccessibleDescription(
             available ? m_layoutSpacingEditor->valueText()
-                      : tr("Available for multi-region selections"));
+                      : tr("Only available for multi-region selections"));
     }
 }
 
@@ -2837,8 +2947,8 @@ void ScreenshotToolPalette::setQrCodeState(bool available, bool visible, const Q
         const QSignalBlocker blocker(m_showQrCodeButton);
         m_showQrCodeButton->setChecked(available && visible);
         setScreenshotToolPaletteButtonActive(m_showQrCodeButton, available && visible);
-        m_showQrCodeButton->setAccessibleName(tr("Show QR Code"));
-        m_showQrCodeButton->setToolTip(error.isEmpty() ? tr("Show QR Code") : error);
+        m_showQrCodeButton->setAccessibleName(tr("Show QR code"));
+        m_showQrCodeButton->setToolTip(error.isEmpty() ? tr("Show QR code") : error);
     }
 #else
     Q_UNUSED(available);
@@ -3166,22 +3276,22 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         state.source == SnowCanvasStyleToolbarSource::SelectedRectangleFilter ||
         state.source == SnowCanvasStyleToolbarSource::DefaultPenFilter ||
         state.source == SnowCanvasStyleToolbarSource::SelectedPenFilter) {
-        const bool penFilterSource =
+        const bool brushFilterSource =
             state.source == SnowCanvasStyleToolbarSource::DefaultPenFilter ||
             state.source == SnowCanvasStyleToolbarSource::SelectedPenFilter;
-        const Tool filterTool = penFilterSource                    ? Tool::PenFilter
+        const Tool filterTool = brushFilterSource                  ? Tool::BrushFilter
                                 : m_activeTool == Tool::AutoFilter ? Tool::AutoFilter
                                                                    : Tool::RectangleFilter;
         FilterEditor& activeFilterEditor = filterTool == Tool::AutoFilter ? m_autoFilterEditor
-                                           : penFilterSource              ? m_penFilterEditor
+                                           : brushFilterSource            ? m_brushFilterEditor
                                                                           : m_filterEditor;
         if (styleToolbarActive) {
             static_cast<void>(prepareStyleControlsForActivation(filterTool));
             static_cast<void>(ensureStyleFamily(filterTool));
         }
         SnowCanvasFilterStyle& currentStyle =
-            penFilterSource ? m_styleControls->styleState().penFilterStyle
-                            : m_styleControls->styleState().rectangleFilterStyle;
+            brushFilterSource ? m_styleControls->styleState().brushFilterStyle
+                              : m_styleControls->styleState().rectangleFilterStyle;
         adqt::widgets::AdSelect* typeSelect = activeFilterEditor.typeSelect;
         adqt::widgets::AdSlider* intensitySlider = activeFilterEditor.intensitySlider;
         const bool sourceChanged = m_styleControls->styleState().filterStyleSource != state.source;
@@ -3220,7 +3330,7 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         m_styleControls->styleState().filterStyleSource = state.source;
         currentStyle = state.filterStyle;
         if (state.source == SnowCanvasStyleToolbarSource::DefaultPenFilter) {
-            m_styleControls->styleState().creationPenFilterStyle = state.filterStyle;
+            m_styleControls->styleState().creationBrushFilterStyle = state.filterStyle;
         } else if (state.source == SnowCanvasStyleToolbarSource::DefaultRectangleFilter) {
             m_styleControls->styleState().creationRectangleFilterStyle = state.filterStyle;
         }
@@ -3228,7 +3338,7 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
             state.source == SnowCanvasStyleToolbarSource::DefaultRectangleFilter) {
             m_styleControls->styleState().creationRectangleFilterStyle.strength =
                 state.filterStyle.strength;
-            m_styleControls->styleState().creationPenFilterStyle.strength =
+            m_styleControls->styleState().creationBrushFilterStyle.strength =
                 state.filterStyle.strength;
         }
         m_styleControls->styleState().filterStyleMixed = state.filterStyleMixed;
@@ -3270,8 +3380,8 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
 #endif
             SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.filter.opacity_refresh");
         }
-        if (penFilterSource && strokeWidthChanged) {
-            updatePenFilterStrokeWidthControls();
+        if (brushFilterSource && strokeWidthChanged) {
+            updateBrushFilterStrokeWidthControls();
         }
         synchronizeFilterModeGroups(filterTool);
         if (!styleToolbarActive) {
@@ -3332,13 +3442,13 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         activeStyleTool = Tool::Line;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultFreeDraw ||
                state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw) {
-        activeStyleTool = Tool::FreeDraw;
+        activeStyleTool = Tool::Brush;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultRectangleHighlight ||
                state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight) {
         activeStyleTool = Tool::RectangleHighlight;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultPenHighlight ||
                state.source == SnowCanvasStyleToolbarSource::SelectedPenHighlight) {
-        activeStyleTool = Tool::PenHighlight;
+        activeStyleTool = Tool::BrushHighlight;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultSpotlight ||
                state.source == SnowCanvasStyleToolbarSource::SelectedSpotlight) {
         activeStyleTool = Tool::Spotlight;
@@ -3347,7 +3457,7 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         activeStyleTool = Tool::Text;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultSerialNumber ||
                state.source == SnowCanvasStyleToolbarSource::SelectedSerialNumber) {
-        activeStyleTool = Tool::SerialNumber;
+        activeStyleTool = Tool::SequenceNumber;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultSpeechBubble ||
                state.source == SnowCanvasStyleToolbarSource::SelectedSpeechBubble) {
         activeStyleTool = Tool::SpeechBubble;
@@ -3622,12 +3732,12 @@ QSize ScreenshotToolPalette::maximumSecondaryToolbarSizeHint() const {
 
     QSize controlsSize;
     const QWidget* controlGroups[] = {
-        m_rectangleStyleControlsWidget,    m_speechBubbleStyleControlsWidget,
-        m_arrowStyleControlsWidget,        m_distanceStyleControlsWidget,
-        m_angleStyleControlsWidget,        m_magnifierStyleControlsWidget,
-        m_bracketStyleControlsWidget,      m_highlightStyleControlsWidget,
-        m_penHighlightStyleControlsWidget, m_spotlightStyleControlsWidget,
-        m_textStyleControlsWidget,         m_serialNumberStyleControlsWidget,
+        m_rectangleStyleControlsWidget,      m_speechBubbleStyleControlsWidget,
+        m_arrowStyleControlsWidget,          m_distanceStyleControlsWidget,
+        m_angleStyleControlsWidget,          m_magnifierStyleControlsWidget,
+        m_bracketStyleControlsWidget,        m_highlightStyleControlsWidget,
+        m_brushHighlightStyleControlsWidget, m_spotlightStyleControlsWidget,
+        m_textStyleControlsWidget,           m_sequenceNumberStyleControlsWidget,
         m_watermarkStyleControlsWidget,
     };
     for (const QWidget* group : controlGroups) {
@@ -3795,8 +3905,9 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                 configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
             }
         }
-        for (adqt::widgets::AdSelect* select : {m_textFormattingSelect, m_textPunctuationSelect,
-                                                m_textTargetLanguageSelect, m_drawTemplateSelect}) {
+        for (adqt::widgets::AdSelect* select :
+             {m_textFormattingSelect, m_textPunctuationSelect, m_textTargetLanguageSelect,
+              m_textTranslationServiceSelect, m_drawTemplateSelect}) {
             ScreenshotToolPaletteSelectEditor editor{select, TEXT_TRANSFORM_SELECT_WIDTH};
             configureScreenshotToolPaletteSelectEditor(editor, metrics);
         }
@@ -3894,7 +4005,9 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         configureScreenshotToolPaletteStyleButton(m_recordKeyboardButton,
                                                   "Show keystrokes in recording",
                                                   styleButtonMetrics(m_physicalScale));
+        m_recordKeyboardButton->setFocusPolicy(Qt::StrongFocus);
     }
+    refreshRecordingKeyboardOptions();
     if (m_recordPostProcessingButton != nullptr) {
         configureScreenshotToolPaletteStyleButton(m_recordPostProcessingButton,
                                                   "Post-processing effects",
@@ -3906,7 +4019,8 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     }
     refreshRecordingPostProcessingOptions();
     if (m_recordPreferencesButton != nullptr) {
-        configureScreenshotToolPaletteStyleButton(m_recordPreferencesButton, "Recording settings",
+        configureScreenshotToolPaletteStyleButton(m_recordPreferencesButton,
+                                                  "Screen recording settings",
                                                   styleButtonMetrics(m_physicalScale));
     }
     if (m_backgroundOpacityEditor) {
@@ -3991,8 +4105,8 @@ void ScreenshotToolPalette::applyStyleMetricsForScope(QWidget* scope) {
     if (scope == m_filterStyleControlsWidget) {
         refreshFilterEditorMetrics(m_filterEditor);
     }
-    if (scope == m_penFilterStyleControlsWidget) {
-        refreshFilterEditorMetrics(m_penFilterEditor);
+    if (scope == m_brushFilterStyleControlsWidget) {
+        refreshFilterEditorMetrics(m_brushFilterEditor);
     }
     if (scope == m_spotlightStyleControlsWidget) {
         ScreenshotToolPaletteSliderEditor spotlightEditor;
@@ -4383,8 +4497,8 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         event->accept();
         return true;
     }
-    if (m_activeTool == Tool::PenFilter) {
-        static_cast<void>(stepPenFilterStrokeWidth(direction));
+    if (m_activeTool == Tool::BrushFilter) {
+        static_cast<void>(stepBrushFilterStrokeWidth(direction));
         event->accept();
         return true;
     }
@@ -4406,10 +4520,10 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         }
         return false;
     }
-    if (m_serialNumberStyleControlsWidget != nullptr &&
-        m_serialNumberStyleControlsWidget->isVisible()) {
-        if (m_styleControls->handleSerialNumberWheel(event->globalPosition().toPoint(),
-                                                     direction)) {
+    if (m_sequenceNumberStyleControlsWidget != nullptr &&
+        m_sequenceNumberStyleControlsWidget->isVisible()) {
+        if (m_styleControls->handleSequenceNumberWheel(event->globalPosition().toPoint(),
+                                                       direction)) {
             event->accept();
             return true;
         }
@@ -4450,6 +4564,48 @@ void ScreenshotToolPalette::finishScrollingSelectionMove() {
 }
 
 bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
+    if (event && m_recordKeyboardPopover) {
+        const auto* widget = qobject_cast<QWidget*>(watched);
+        const auto* content = m_recordKeyboardPopover->contentWidget();
+        const bool inKeyboardOptions =
+            content && widget && (content == widget || content->isAncestorOf(widget));
+        if (inKeyboardOptions &&
+            (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress)) {
+            // Keep keyboard or pointer editing open until it is explicitly dismissed.
+            m_recordKeyboardPopover->show();
+        }
+        if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride) {
+            auto* key = static_cast<QKeyEvent*>(event);
+            const bool sourceDown =
+                watched == m_recordKeyboardButton && key->key() == Qt::Key_Down &&
+                (key->modifiers() == Qt::NoModifier || key->modifiers() == Qt::AltModifier);
+            const bool escape = key->key() == Qt::Key_Escape &&
+                                (m_recordKeyboardPopover->isVisible() || inKeyboardOptions);
+            if (event->type() == QEvent::ShortcutOverride) {
+                if (sourceDown || escape || inKeyboardOptions) {
+                    key->accept();
+                    return true;
+                }
+            } else if (escape) {
+                m_recordKeyboardPopover->hide();
+                if (inKeyboardOptions) {
+                    m_recordKeyboardButton->window()->activateWindow();
+                    m_recordKeyboardButton->setFocus(Qt::OtherFocusReason);
+                }
+                key->accept();
+                return true;
+            } else if (sourceDown && m_recordKeyboardPopover->isEnabled()) {
+                m_recordKeyboardPopover->show();
+                if (m_recordNumberKeysCheckbox && m_recordKeyboardPopover->surfaceWidget() &&
+                    m_recordKeyboardPopover->surfaceWidget()->isVisible()) {
+                    m_recordKeyboardPopover->surfaceWidget()->activateWindow();
+                    m_recordNumberKeysCheckbox->setFocus(Qt::OtherFocusReason);
+                }
+                key->accept();
+                return true;
+            }
+        }
+    }
     if (event && watched && watched == m_backgroundOpacityEditor) {
         if (snow_shot::presentation::pointerHoverPositionWithin(m_backgroundOpacityEditor, event))
             emit selectionBackgroundPreviewVisibleChanged(true);
@@ -4597,6 +4753,7 @@ void ScreenshotToolPalette::retranslateUi() {
                              m_layoutCompactionCanvasUsesPoints);
     refreshRecognitionModelSelect();
     retranslateDrawTemplateUi();
+    refreshTextTranslationServiceSelect();
     if (m_styleControls != nullptr) {
         m_styleControls->retranslateWatermarkTemplateUi();
         m_styleControls->retranslateTextEmphasisUi();
@@ -4690,15 +4847,15 @@ void ScreenshotToolPalette::refreshShortcutTooltips() {
     refreshRecordingShortcutTooltips();
     if (m_cursorButton) {
         m_cursorButton->setAccessibleDescription(
-            m_cursorAvailable ? QString() : tr("Cursor data is unavailable for this screenshot."));
+            m_cursorAvailable ? QString() : tr("Cursor data is unavailable for this screenshot"));
         if (m_cursorAvailable)
-            applyScreenshotShortcutTooltip(m_cursorButton, QStringLiteral("Show Cursor"),
+            applyScreenshotShortcutTooltip(m_cursorButton, QStringLiteral("Show cursor"),
                                            QStringLiteral("toggle_cursor_visibility"));
         else {
-            configureScreenshotToolPaletteTooltip(
-                m_cursorButton, "Cursor data is unavailable for this screenshot.");
-            setScreenshotToolPaletteAccessibleNameSource(m_cursorButton, "Show Cursor");
-            m_cursorButton->setAccessibleName(tr("Show Cursor"));
+            configureScreenshotToolPaletteTooltip(m_cursorButton,
+                                                  "Cursor data is unavailable for this screenshot");
+            setScreenshotToolPaletteAccessibleNameSource(m_cursorButton, "Show cursor");
+            m_cursorButton->setAccessibleName(tr("Show cursor"));
         }
     }
     if (m_recaptureButton != nullptr) {
@@ -4772,7 +4929,7 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
 
     if (options.showRecordingControls) {
         m_recordExportSettingsButton =
-            addActionButton("Export Settings", custom_outlined_icons::ExportSettings());
+            addActionButton("Export settings", custom_outlined_icons::ExportSettings());
         m_recordExportSettingsButton->setObjectName(
             QStringLiteral("screenRecordingExportSettings"));
         panelLayout->addWidget(m_recordExportSettingsButton);
@@ -4844,8 +5001,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::drawingToolButton(const QString&
         return m_bracketButton;
     case toolbar_layout::Item::Line:
         return m_lineButton;
-    case toolbar_layout::Item::FreeDraw:
-        return m_freeDrawButton;
+    case toolbar_layout::Item::Brush:
+        return m_brushButton;
     case toolbar_layout::Item::Highlighter:
         return m_highlighterButton;
     case toolbar_layout::Item::Spotlight:
@@ -4854,8 +5011,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::drawingToolButton(const QString&
         return m_magnifierButton;
     case toolbar_layout::Item::Text:
         return m_textButton;
-    case toolbar_layout::Item::SerialNumber:
-        return m_serialNumberButton;
+    case toolbar_layout::Item::SequenceNumber:
+        return m_sequenceNumberButton;
     case toolbar_layout::Item::Filter:
         return m_filterButton;
     case toolbar_layout::Item::Eraser:
@@ -4943,14 +5100,14 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::Line:
         emit lineRequested();
         break;
-    case Tool::FreeDraw:
-        emit freeDrawRequested();
+    case Tool::Brush:
+        emit brushRequested();
         break;
     case Tool::RectangleHighlight:
         emit highlightRequested();
         break;
-    case Tool::PenHighlight:
-        emit penHighlightRequested();
+    case Tool::BrushHighlight:
+        emit brushHighlightRequested();
         break;
     case Tool::Magnifier:
         emit magnifierRequested();
@@ -4973,8 +5130,8 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::RectangleFilter:
         emit rectangleFilterRequested();
         break;
-    case Tool::PenFilter:
-        emit penFilterRequested();
+    case Tool::BrushFilter:
+        emit brushFilterRequested();
         break;
     case Tool::Watermark:
         emit watermarkRequested();
@@ -4983,8 +5140,8 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::Text:
         emit textRequested();
         break;
-    case Tool::SerialNumber:
-        emit serialNumberRequested();
+    case Tool::SequenceNumber:
+        emit sequenceNumberRequested();
         break;
     case Tool::Ocr:
         emit ocrRequested();
@@ -5029,7 +5186,7 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
 
 ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool tool) const {
     const auto isHighlightVariant = [](Tool candidate) {
-        return candidate == Tool::RectangleHighlight || candidate == Tool::PenHighlight;
+        return candidate == Tool::RectangleHighlight || candidate == Tool::BrushHighlight;
     };
     const auto isEraserVariant = [](Tool candidate) {
         return candidate == Tool::Eraser || candidate == Tool::RectangleEraser ||
@@ -5037,7 +5194,7 @@ ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool to
     };
     const auto isFilterVariant = [](Tool candidate) {
         return candidate == Tool::AutoFilter || candidate == Tool::RectangleFilter ||
-               candidate == Tool::PenFilter;
+               candidate == Tool::BrushFilter;
     };
     // Reflective canvas synchronization can activate a family variant without user
     // intent (for example while creation defaults are applied). The active variant
@@ -5074,10 +5231,10 @@ void ScreenshotToolPalette::rememberDrawingMode(Tool tool) {
         }
         return;
     }
-    const bool highlightVariant = tool == Tool::RectangleHighlight || tool == Tool::PenHighlight;
+    const bool highlightVariant = tool == Tool::RectangleHighlight || tool == Tool::BrushHighlight;
     const bool filterVariant =
         !highlightVariant &&
-        (tool == Tool::AutoFilter || tool == Tool::RectangleFilter || tool == Tool::PenFilter);
+        (tool == Tool::AutoFilter || tool == Tool::RectangleFilter || tool == Tool::BrushFilter);
     if (!highlightVariant && !filterVariant) {
         return;
     }
@@ -5180,8 +5337,8 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         return false;
     }
 
-    // Toolbar clicks and shortcuts toggle the active drawing/action tool back
-    // to selection mode. Programmatic setActiveTool() calls remain
+    // Toolbar clicks and shortcuts return the active drawing/action tool to
+    // the toolbar's default. Programmatic setActiveTool() calls remain
     // explicit so state synchronization does not unexpectedly toggle.
     adqt::widgets::AdButton* requestedButton = toolEntryButton(tool);
     const bool fixedGroupButton =
@@ -5192,9 +5349,22 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         !toggleVisibleButton || fixedGroupButton ? m_activeTool.has_value() && *m_activeTool == tool
         : requestedButton != nullptr             ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
-    const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
-    activateDrawingTool(requestedTool);
+    if (alreadyActive) {
+        activateDefaultToolbarTool();
+    } else {
+        activateDrawingTool(tool);
+    }
     return true;
+}
+
+void ScreenshotToolPalette::activateDefaultToolbarTool() {
+    if (m_options.showRecordingControls && m_options.recordingDrawingMode) {
+        setRecordingExportSettingsVisible(true);
+    } else if (m_options.showMoveTool) {
+        activateDrawingTool(Tool::Move);
+    } else {
+        activateDrawingTool(Tool::Select);
+    }
 }
 
 bool ScreenshotToolPalette::historyActionEnabled(const QString& itemId) const {
@@ -5483,12 +5653,16 @@ ScreenshotToolPalette::actionToolState(const QString& itemId) const {
         return {m_qrEnabled, m_qrBusy};
     }
     if (auto* source = actionToolSourceButton(itemId)) {
-        return {source->isEnabled(), source->busy()};
+        // Loading/cropping can disable the entire floating toolbar. Do not turn that
+        // inherited state into a command's explicit disabled state when refreshing groups.
+        return {source->isEnabledTo(this), source->busy()};
     }
     return {};
 }
 
 bool ScreenshotToolPalette::canActivateActionTool(const QString& itemId) const {
+    if (!isEnabled())
+        return false;
     if (const auto tool = actionTool(itemId))
         return canActivateToolShortcut(*tool);
     return actionToolAvailable(itemId) && actionToolState(itemId).enabled;
@@ -6259,7 +6433,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showSpeechBubbleTool) {
         m_speechBubbleButton =
-            addToolButton("Speech Bubble", custom_outlined_icons::ToolSpeechBubble());
+            addToolButton("Speech bubble", custom_outlined_icons::ToolSpeechBubble());
         m_speechBubbleButton->setObjectName(QStringLiteral("screenshotSpeechBubbleButton"));
         addButton(m_speechBubbleButton);
         connect(m_speechBubbleButton, &adqt::widgets::AdButton::clicked, this,
@@ -6304,20 +6478,20 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
                 [this]() { activateToolFromToolbar(Tool::Line); });
     }
 
-    if (options.showFreeDrawTool) {
-        m_freeDrawButton = addToolButton("Pen", custom_outlined_icons::ToolFreeDraw());
-        addButton(m_freeDrawButton);
-        connect(m_freeDrawButton, &adqt::widgets::AdButton::clicked, this,
-                [this]() { activateToolFromToolbar(Tool::FreeDraw); });
+    if (options.showBrushTool) {
+        m_brushButton = addToolButton("Brush", custom_outlined_icons::ToolFreeDraw());
+        addButton(m_brushButton);
+        connect(m_brushButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::Brush); });
     }
 
     if (options.showHighlightTool || options.showRectangleHighlightTool ||
-        options.showPenHighlightTool) {
+        options.showBrushHighlightTool) {
         m_highlighterButton = addToolButton("Highlight", custom_outlined_icons::ToolHighlight());
         m_highlighterButton->setObjectName(QStringLiteral("screenshotHighlighterButton"));
         addButton(m_highlighterButton);
         connect(m_highlighterButton, &adqt::widgets::AdButton::clicked, this,
-                [this]() { activateToolFromToolbar(Tool::PenHighlight); });
+                [this]() { activateToolFromToolbar(Tool::BrushHighlight); });
     }
     if (options.showMagnifierTool) {
         m_magnifierButton = addToolButton("Magnifier", custom_outlined_icons::ToolMagnifier());
@@ -6341,19 +6515,19 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
                 [this]() { activateToolFromToolbar(Tool::Text); });
     }
 
-    if (options.showSerialNumberTool) {
-        m_serialNumberButton =
-            addToolButton("Serial number", custom_outlined_icons::ToolSerialNumber());
-        addButton(m_serialNumberButton);
-        connect(m_serialNumberButton, &adqt::widgets::AdButton::clicked, this,
-                [this]() { activateToolFromToolbar(Tool::SerialNumber); });
+    if (options.showSequenceNumberTool) {
+        m_sequenceNumberButton =
+            addToolButton("Sequence number", custom_outlined_icons::ToolSerialNumber());
+        addButton(m_sequenceNumberButton);
+        connect(m_sequenceNumberButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::SequenceNumber); });
     }
 
     if (options.showFilterTool) {
         m_filterButton = addToolButton("Filter", custom_outlined_icons::ToolFilter());
         addButton(m_filterButton);
         connect(m_filterButton, &adqt::widgets::AdButton::clicked, this,
-                [this]() { activateToolFromToolbar(Tool::PenFilter); });
+                [this]() { activateToolFromToolbar(Tool::BrushFilter); });
     }
 
     if (options.showEraserTool) {
@@ -6465,10 +6639,10 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
 
     if (options.showCropTools) {
         m_cropRowsButton =
-            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Vertical Crop"),
+            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Vertical crop"),
                           custom_outlined_icons::CropVertical());
         m_cropColumnsButton =
-            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Horizontal Crop"),
+            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Horizontal crop"),
                           custom_outlined_icons::CropHorizontal());
         m_cropRowsButton->setObjectName(QStringLiteral("imageEditingCropRows"));
         m_cropColumnsButton->setObjectName(QStringLiteral("imageEditingCropColumns"));
@@ -6478,10 +6652,18 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         }
         addButton(m_cropRowsButton);
         addButton(m_cropColumnsButton);
-        connect(m_cropRowsButton, &adqt::widgets::AdButton::clicked, this,
-                &ScreenshotToolPalette::cropRowsRequested);
-        connect(m_cropColumnsButton, &adqt::widgets::AdButton::clicked, this,
-                &ScreenshotToolPalette::cropColumnsRequested);
+        connect(m_cropRowsButton, &adqt::widgets::AdButton::clicked, this, [this](bool checked) {
+            if (checked)
+                emit cropRowsRequested();
+            else
+                activateDefaultToolbarTool();
+        });
+        connect(m_cropColumnsButton, &adqt::widgets::AdButton::clicked, this, [this](bool checked) {
+            if (checked)
+                emit cropColumnsRequested();
+            else
+                activateDefaultToolbarTool();
+        });
     }
 
     if ((options.showTableTool && snow_shot::app::edition::tableRecognition) &&
@@ -6529,7 +6711,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
 
     if ((options.showImageConversionTools && snow_shot::app::edition::imageConversion)) {
         m_latexButton =
-            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "LaTeX Formula Recognition"),
+            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "LaTeX formula recognition"),
                           adqt::icons::antd::outlined::Function());
         m_latexButton->setObjectName(QStringLiteral("screenshotLatexRecognitionButton"));
         connect(m_latexButton, &adqt::widgets::AdButton::clicked, this,
@@ -6572,9 +6754,9 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateActionTool(QStringLiteral("pin-to-screen")); });
         if (snow_shot::app::editionActionToolAvailable(QStringLiteral("pin-window-to-screen"))) {
             m_pinWindowButton =
-                addActionButton("Pin Window to Screen", custom_outlined_icons::PinWindowToScreen());
+                addActionButton("Pin window to screen", custom_outlined_icons::PinWindowToScreen());
             applyScreenshotShortcutTooltip(m_pinWindowButton,
-                                           QStringLiteral("Pin Window to Screen"),
+                                           QStringLiteral("Pin window to screen"),
                                            QStringLiteral("pin_window_to_screen"));
             m_pinWindowButton->setObjectName(QStringLiteral("screenshotPinWindowToScreenButton"));
             addButton(m_pinWindowButton);
@@ -6646,11 +6828,11 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("quick-save")); });
         m_cloudUploadButton =
-            addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Upload to Cloud"),
+            addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Upload to cloud"),
                             outlined_icons::CloudUpload());
         m_cloudUploadButton->setObjectName(QStringLiteral("screenshotCloudUploadButton"));
         m_cloudUploadButton->hide();
-        applyScreenshotShortcutTooltip(m_cloudUploadButton, QStringLiteral("Upload to Cloud"),
+        applyScreenshotShortcutTooltip(m_cloudUploadButton, QStringLiteral("Upload to cloud"),
                                        QStringLiteral("upload_to_cloud"));
         connect(m_cloudUploadButton, &adqt::widgets::AdButton::clicked, this,
                 [this] { activateActionTool(QStringLiteral("upload-to-cloud")); });
@@ -6691,15 +6873,15 @@ ScreenshotToolPalette::drawingShortcutTool(const QString& toolId) const {
     } else if (toolId == QStringLiteral("spotlight")) {
         tool = Tool::Spotlight;
     } else if (toolId == QStringLiteral("brush")) {
-        tool = Tool::FreeDraw;
+        tool = Tool::Brush;
     } else if (toolId == QStringLiteral("highlight")) {
-        tool = Tool::PenHighlight;
+        tool = Tool::BrushHighlight;
     } else if (toolId == QStringLiteral("text")) {
         tool = Tool::Text;
     } else if (toolId == QStringLiteral("serial_number")) {
-        tool = Tool::SerialNumber;
+        tool = Tool::SequenceNumber;
     } else if (toolId == QStringLiteral("filter")) {
-        tool = Tool::PenFilter;
+        tool = Tool::BrushFilter;
     } else if (toolId == QStringLiteral("eraser")) {
         tool = Tool::Eraser;
     } else if (toolId == QStringLiteral("watermark")) {
@@ -6916,11 +7098,11 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
         connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("quick-save")); });
         m_cloudUploadButton =
-            addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Upload to Cloud"),
+            addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Upload to cloud"),
                             outlined_icons::CloudUpload());
         m_cloudUploadButton->setObjectName(QStringLiteral("screenshotCloudUploadButton"));
         m_cloudUploadButton->hide();
-        applyScreenshotShortcutTooltip(m_cloudUploadButton, QStringLiteral("Upload to Cloud"),
+        applyScreenshotShortcutTooltip(m_cloudUploadButton, QStringLiteral("Upload to cloud"),
                                        QStringLiteral("upload_to_cloud"));
         connect(m_cloudUploadButton, &adqt::widgets::AdButton::clicked, this,
                 [this] { activateActionTool(QStringLiteral("upload-to-cloud")); });
@@ -6964,12 +7146,12 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
 }
 
 SnowCanvasFilterStyle& ScreenshotToolPalette::filterStyleForEditor(const FilterEditor& editor) {
-    return editor.tool == Tool::PenFilter ? m_styleControls->styleState().penFilterStyle
-                                          : m_styleControls->styleState().rectangleFilterStyle;
+    return editor.tool == Tool::BrushFilter ? m_styleControls->styleState().brushFilterStyle
+                                            : m_styleControls->styleState().rectangleFilterStyle;
 }
 
 void ScreenshotToolPalette::synchronizeFilterModeGroups(Tool tool) {
-    if (tool != Tool::AutoFilter && tool != Tool::RectangleFilter && tool != Tool::PenFilter) {
+    if (tool != Tool::AutoFilter && tool != Tool::RectangleFilter && tool != Tool::BrushFilter) {
         return;
     }
 
@@ -7022,8 +7204,8 @@ void ScreenshotToolPalette::refreshFilterEditorState(FilterEditor& editor, bool 
                                            (mixedType || filterTypeSupportsIntensity(style.type)));
     }
     updateFilterIntensityIcon(editor);
-    if (refreshWidth && editor.tool == Tool::PenFilter) {
-        updatePenFilterStrokeWidthControls();
+    if (refreshWidth && editor.tool == Tool::BrushFilter) {
+        updateBrushFilterStrokeWidthControls();
     }
 }
 
@@ -7050,8 +7232,8 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
         case Tool::RectangleHighlight:
             emit highlightRequested();
             break;
-        case Tool::PenHighlight:
-            emit penHighlightRequested();
+        case Tool::BrushHighlight:
+            emit brushHighlightRequested();
             break;
         case Tool::AutoFilter:
             emit autoFilterRequested();
@@ -7059,8 +7241,8 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
         case Tool::RectangleFilter:
             emit rectangleFilterRequested();
             break;
-        case Tool::PenFilter:
-            emit penFilterRequested();
+        case Tool::BrushFilter:
+            emit brushFilterRequested();
             break;
         case Tool::Eraser:
             emit eraserRequested();
@@ -7084,7 +7266,7 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
     const Tool tool = config.tool;
     ScreenshotToolPaletteFilterCallbacks callbacks;
     callbacks.setType = [this, tool](int typeValue) {
-        FilterEditor& target = tool == Tool::PenFilter    ? m_penFilterEditor
+        FilterEditor& target = tool == Tool::BrushFilter  ? m_brushFilterEditor
                                : tool == Tool::AutoFilter ? m_autoFilterEditor
                                                           : m_filterEditor;
         SnowCanvasFilterStyle& style = filterStyleForEditor(target);
@@ -7096,13 +7278,13 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
         notifyFilterStyleChanged(style, SnowCanvasFilterStylePropertyType);
     };
     callbacks.setStrength = [this](double strength) { setFilterStrength(strength); };
-    const auto setPenFilterWidth = [this, tool](double width) {
-        if (tool == Tool::PenFilter)
-            setPenFilterStrokeWidth(width);
+    const auto setBrushFilterWidth = [this, tool](double width) {
+        if (tool == Tool::BrushFilter)
+            setBrushFilterStrokeWidth(width);
     };
-    callbacks.setStrokeWidth = setPenFilterWidth;
-    callbacks.cycleStrokeWidth = [this, setPenFilterWidth]() {
-        setPenFilterWidth(m_styleControls->styleState().penFilterStyle.strokeWidth + 1.0);
+    callbacks.setStrokeWidth = setBrushFilterWidth;
+    callbacks.cycleStrokeWidth = [this, setBrushFilterWidth]() {
+        setBrushFilterWidth(m_styleControls->styleState().brushFilterStyle.strokeWidth + 1.0);
     };
 
     ScreenshotToolPaletteFilterFamilyConfig familyConfig;
@@ -7113,8 +7295,8 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
     familyConfig.intensitySliderObjectName = config.intensitySliderObjectName;
     familyConfig.includeStrokeWidth = config.includeStrokeWidth;
     familyConfig.initialStrokeWidth =
-        config.tool == Tool::PenFilter
-            ? m_styleControls->styleState().penFilterStyle.strokeWidth
+        config.tool == Tool::BrushFilter
+            ? m_styleControls->styleState().brushFilterStyle.strokeWidth
             : m_styleControls->styleState().rectangleFilterStyle.strokeWidth;
 
     ScreenshotToolPaletteStyleFamilyHost host;
@@ -7365,6 +7547,62 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingKeyboard(), styleButtonMetrics(m_physicalScale));
     m_recordKeyboardButton->setObjectName(QStringLiteral("screenRecordingShowKeyboard"));
     layout->addWidget(m_recordKeyboardButton);
+    m_recordKeyboardButton->setFocusPolicy(Qt::StrongFocus);
+    m_recordKeyboardPopover = new adqt::widgets::AdPopover(m_recordKeyboardButton);
+    m_recordKeyboardPopover->setObjectName(QStringLiteral("screenRecordingKeyboardPopover"));
+    m_recordKeyboardPopover->setSourceWidget(m_recordKeyboardButton);
+    m_recordKeyboardPopover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    m_recordKeyboardPopover->setPlacement(adqt::widgets::AdPopover::Placement::Bottom);
+    m_recordKeyboardPopover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    m_recordKeyboardPopover->setContentFactory(
+        [this]() -> QWidget* {
+            auto* content = new QWidget;
+            content->setObjectName(QStringLiteral("screenRecordingKeyboardOptions"));
+            auto* options = new QVBoxLayout(content);
+            options->setContentsMargins(0, 0, 0, 0);
+            options->setSpacing(scaledMetric(8));
+            m_recordNumberKeysCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordLettersAndSymbolsCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordControlKeysCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordPreserveKeyboardShortcutsCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordNumberKeysCheckbox->setObjectName(
+                QStringLiteral("screenRecordingRecordNumberKeys"));
+            m_recordLettersAndSymbolsCheckbox->setObjectName(
+                QStringLiteral("screenRecordingRecordLettersAndSymbols"));
+            m_recordControlKeysCheckbox->setObjectName(
+                QStringLiteral("screenRecordingRecordControlKeys"));
+            m_recordPreserveKeyboardShortcutsCheckbox->setObjectName(
+                QStringLiteral("screenRecordingPreserveKeyboardShortcuts"));
+            options->addWidget(m_recordNumberKeysCheckbox);
+            options->addWidget(m_recordLettersAndSymbolsCheckbox);
+            options->addWidget(m_recordControlKeysCheckbox);
+            options->addWidget(m_recordPreserveKeyboardShortcutsCheckbox);
+            refreshRecordingKeyboardOptions();
+            connect(m_recordNumberKeysCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingRecordNumberKeys(value);
+                        emit recordingRecordNumberKeysChanged(value);
+                    });
+            connect(m_recordLettersAndSymbolsCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingRecordLettersAndSymbols(value);
+                        emit recordingRecordLettersAndSymbolsChanged(value);
+                    });
+            connect(m_recordControlKeysCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingRecordControlKeys(value);
+                        emit recordingRecordControlKeysChanged(value);
+                    });
+            connect(m_recordPreserveKeyboardShortcutsCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingPreserveKeyboardShortcuts(value);
+                        emit recordingPreserveKeyboardShortcutsChanged(value);
+                    });
+            installWheelFilters(this, content);
+            emit materializedScope(content);
+            return content;
+        },
+        adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
     m_recordWebcamButton = createScreenshotToolPaletteStyleActionButton(
         m_recordExportSettingsPanel, "Record webcam", custom_outlined_icons::RecordingCamera(),
         styleButtonMetrics(m_physicalScale));
@@ -7459,7 +7697,7 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         m_recordSettingsModal->open();
     });
     m_recordPreferencesButton = createScreenshotToolPaletteStyleActionButton(
-        m_recordExportSettingsPanel, "Recording settings", outlined_icons::Setting(),
+        m_recordExportSettingsPanel, "Screen recording settings", outlined_icons::Setting(),
         styleButtonMetrics(m_physicalScale));
     m_recordPreferencesButton->setObjectName(QStringLiteral("screenRecordingSettings"));
     layout->addWidget(m_recordPreferencesButton);
@@ -7603,7 +7841,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
         const QSignalBlocker blocker(m_recordTrailDurationInput);
         m_recordTrailDurationInput->setValue(m_recordingMouseTrailDurationMs);
     }
-    form->addField(tr("Mouse Trail Duration"), m_recordTrailDurationInput,
+    form->addField(tr("Mouse trail duration"), m_recordTrailDurationInput,
                    QStringLiteral("duration"));
     m_recordKeyboardSizeInput = new adqt::widgets::AdInputNumber;
     m_recordKeyboardSizeInput->setObjectName(QStringLiteral("screenRecordingKeyboardSize"));
@@ -7618,7 +7856,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     }
     m_recordKeyboardSizeInput->setStepButtonLayout(
         adqt::widgets::AdInputNumber::StepButtonLayout::Compact);
-    form->addField(tr("Keyboard Size"), m_recordKeyboardSizeInput, QStringLiteral("keyboardSize"))
+    form->addField(tr("Keyboard size"), m_recordKeyboardSizeInput, QStringLiteral("keyboardSize"))
         ->setFixedWidth(kRecordingSettingsContentWidth);
     connect(m_recordKeyboardSizeInput, &adqt::widgets::AdInputNumber::valueChanged, this,
             [this](double value) {
@@ -7638,7 +7876,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     m_recordWebcamSizeInput->setValue(m_recordingWebcamSize);
     m_recordWebcamSizeInput->setStepButtonLayout(
         adqt::widgets::AdInputNumber::StepButtonLayout::Compact);
-    form->addField(tr("Webcam Size"), m_recordWebcamSizeInput, QStringLiteral("webcamSize"));
+    form->addField(tr("Webcam size"), m_recordWebcamSizeInput, QStringLiteral("webcamSize"));
     connect(m_recordWebcamSizeInput, &adqt::widgets::AdInputNumber::valueChanged, this,
             [this](double value) {
                 const int previous = m_recordingWebcamSize;
@@ -7657,7 +7895,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     m_recordWebcamShapeSelect->setOptions(
         {{QStringLiteral("square"), tr("Square")}, {QStringLiteral("circle"), tr("Circle")}});
     m_recordWebcamShapeSelect->setCurrentValue(m_recordingWebcamShape);
-    form->addField(tr("Webcam Shape"), m_recordWebcamShapeSelect, QStringLiteral("webcamShape"));
+    form->addField(tr("Webcam shape"), m_recordWebcamShapeSelect, QStringLiteral("webcamShape"));
     connect(m_recordWebcamShapeSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
             [this](const QVariant& value) {
                 const QString previous = m_recordingWebcamShape;
@@ -7686,7 +7924,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
         return picker;
     };
     m_recordKeyboardBackgroundPicker = addKeyboardPicker(
-        QStringLiteral("screenRecordingKeyboardBackgroundColor"), tr("Keyboard Background Color"),
+        QStringLiteral("screenRecordingKeyboardBackgroundColor"), tr("Keyboard background color"),
         QStringLiteral("background"), m_recordingKeyboardBackgroundColor);
     auto* columnSpacer = new QWidget(form);
     columnSpacer->setFixedSize(kRecordingSettingsColumnGap, 1);
@@ -7694,7 +7932,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     spacerItem->setNoStyle(true);
     spacerItem->setFixedWidth(kRecordingSettingsColumnGap);
     m_recordKeyboardForegroundPicker = addKeyboardPicker(
-        QStringLiteral("screenRecordingKeyboardForegroundColor"), tr("Keyboard Foreground Color"),
+        QStringLiteral("screenRecordingKeyboardForegroundColor"), tr("Keyboard foreground color"),
         QStringLiteral("foreground"), m_recordingKeyboardForegroundColor);
     m_recordHighlightRadiusInput = new adqt::widgets::AdInputNumber;
     m_recordHighlightRadiusInput->setObjectName(
@@ -7744,7 +7982,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
                 }
             });
     m_recordProgressBarColorPicker = addKeyboardPicker(
-        QStringLiteral("screenRecordingProgressBarColor"), tr("Progress Bar Color"),
+        QStringLiteral("screenRecordingProgressBarColor"), tr("Progress bar color"),
         QStringLiteral("progressBarColor"), m_recordProgressBarColor);
     connect(m_recordProgressBarColorPicker, &adqt::widgets::AdColorPicker::valueChanged, this,
             [this](const adqt::widgets::AdColorValue& value) {
@@ -7818,43 +8056,45 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
         ->setLabel(tr("Mouse highlight color"));
     m_recordSettingsForm->field(QStringLiteral("highlightPreview"))
         ->setLabel(tr("Mouse highlight preview"));
-    m_recordSettingsModal->setWindowTitle(tr("Effect Settings"));
-    m_recordWebcamSizeInput->setAccessibleName(tr("Webcam Size"));
+    m_recordSettingsModal->setWindowTitle(tr("Effect settings"));
+    m_recordWebcamSizeInput->setAccessibleName(tr("Webcam size"));
     m_recordWebcamSizeInput->setSuffixText(tr("px"));
-    m_recordWebcamShapeSelect->setAccessibleName(tr("Webcam Shape"));
+    m_recordWebcamShapeSelect->setAccessibleName(tr("Webcam shape"));
     {
         const QSignalBlocker blocker(m_recordWebcamShapeSelect);
         m_recordWebcamShapeSelect->setOptions(
             {{QStringLiteral("square"), tr("Square")}, {QStringLiteral("circle"), tr("Circle")}});
         m_recordWebcamShapeSelect->setCurrentValue(m_recordingWebcamShape);
     }
-    m_recordSettingsForm->field(QStringLiteral("webcamSize"))->setLabel(tr("Webcam Size"));
-    m_recordSettingsForm->field(QStringLiteral("webcamShape"))->setLabel(tr("Webcam Shape"));
-    m_recordKeyboardSizeInput->setAccessibleName(tr("Keyboard Size"));
+    m_recordSettingsForm->field(QStringLiteral("webcamSize"))->setLabel(tr("Webcam size"));
+    m_recordSettingsForm->field(QStringLiteral("webcamShape"))->setLabel(tr("Webcam shape"));
+    m_recordKeyboardSizeInput->setAccessibleName(tr("Keyboard size"));
     m_recordKeyboardSizeInput->setSuffixText(tr("px"));
     m_recordTrailDurationInput->setSuffixText(tr("ms"));
-    m_recordTrailDurationInput->setAccessibleName(tr("Mouse Trail Duration"));
-    m_recordKeyboardBackgroundPicker->setAccessibleName(tr("Keyboard Background Color"));
-    m_recordKeyboardForegroundPicker->setAccessibleName(tr("Keyboard Foreground Color"));
-    m_recordProgressBarColorPicker->setAccessibleName(tr("Progress Bar Color"));
+    m_recordTrailDurationInput->setAccessibleName(tr("Mouse trail duration"));
+    m_recordKeyboardBackgroundPicker->setAccessibleName(tr("Keyboard background color"));
+    m_recordKeyboardForegroundPicker->setAccessibleName(tr("Keyboard foreground color"));
+    m_recordProgressBarColorPicker->setAccessibleName(tr("Progress bar color"));
     m_recordSettingsForm->field(QStringLiteral("progressBarColor"))
-        ->setLabel(tr("Progress Bar Color"));
-    m_recordSettingsForm->field(QStringLiteral("keyboardSize"))->setLabel(tr("Keyboard Size"));
-    m_recordSettingsForm->field(QStringLiteral("duration"))->setLabel(tr("Mouse Trail Duration"));
+        ->setLabel(tr("Progress bar color"));
+    m_recordSettingsForm->field(QStringLiteral("keyboardSize"))->setLabel(tr("Keyboard size"));
+    m_recordSettingsForm->field(QStringLiteral("duration"))->setLabel(tr("Mouse trail duration"));
     m_recordSettingsForm->field(QStringLiteral("background"))
-        ->setLabel(tr("Keyboard Background Color"));
+        ->setLabel(tr("Keyboard background color"));
     m_recordSettingsForm->field(QStringLiteral("foreground"))
-        ->setLabel(tr("Keyboard Foreground Color"));
+        ->setLabel(tr("Keyboard foreground color"));
 }
 
 void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
     if (m_recordWebcamButton)
         configureScreenshotToolPaletteTooltip(m_recordWebcamButton, "Record webcam");
     if (m_recordPreferencesButton != nullptr) {
-        configureScreenshotToolPaletteTooltip(m_recordPreferencesButton, "Recording settings");
-        m_recordPreferencesButton->setAccessibleName(tr("Recording settings"));
+        configureScreenshotToolPaletteTooltip(m_recordPreferencesButton,
+                                              "Screen recording settings");
+        m_recordPreferencesButton->setAccessibleName(tr("Screen recording settings"));
     }
     refreshRecordingMouseOptions();
+    refreshRecordingKeyboardOptions();
     refreshRecordingPostProcessingOptions();
     if (m_recordPostProcessingButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordPostProcessingButton,
@@ -7906,18 +8146,23 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     if (!visible && m_recordCursorPopover) {
         m_recordCursorPopover->hide();
     }
+    if (!visible && m_recordKeyboardPopover) {
+        m_recordKeyboardPopover->hide();
+    }
     if (!visible && m_recordSettingsModal != nullptr) {
         m_recordSettingsModal->close();
-    }
-    if (visible && m_options.recordingDrawingMode && m_activeTool.has_value()) {
-        clearActiveTool();
-        emit selectRequested();
     }
     if (m_recordExportSettingsVisible == visible) {
         return;
     }
+    const bool clearDrawingTool =
+        visible && m_options.recordingDrawingMode && m_activeTool.has_value();
     m_recordExportSettingsVisible = visible;
-    emit recordingExportSettingsVisibleChanged(visible);
+    if (clearDrawingTool) {
+        // Retire drawing controls without publishing the temporary collapsed
+        // layout. Placement must observe only the completed settings row.
+        static_cast<void>(clearActiveToolState());
+    }
     setScreenshotToolPaletteButtonActive(m_recordExportSettingsButton, visible);
     if (visible) {
         static_cast<void>(setSecondaryToolbarVisibility(false, false));
@@ -7927,6 +8172,10 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     markLayoutDirty(true);
     updateToolbarGeometry();
     emit visibleContentChanged();
+    emit recordingExportSettingsVisibleChanged(visible);
+    if (clearDrawingTool) {
+        emit selectRequested();
+    }
 }
 
 void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
@@ -7945,6 +8194,12 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
         m_recordCursorPopover->setEnabled(editable);
         if (!editable) {
             m_recordCursorPopover->hide();
+        }
+    }
+    if (m_recordKeyboardPopover) {
+        m_recordKeyboardPopover->setEnabled(editable);
+        if (!editable) {
+            m_recordKeyboardPopover->hide();
         }
     }
     if (m_recordSettingsForm != nullptr) {
@@ -8039,7 +8294,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_eraserModeGroups.clear();
 
     m_filterEditor = {};
-    m_penFilterEditor = {};
+    m_brushFilterEditor = {};
     m_autoFilterEditor = {};
     m_fillRegionsSelect = nullptr;
     m_activeStyleControlsWidget = nullptr;
@@ -8074,6 +8329,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_textPunctuationSelect = nullptr;
     m_textTargetLanguageSelect = nullptr;
     m_textTargetLanguageSpacer = nullptr;
+    m_textTranslationServiceSelect = nullptr;
+    m_textTranslationServiceSpacer = nullptr;
     finishScrollingSelectionMove();
     m_scrollingMoveHorizontalButton = nullptr;
     m_scrollingMoveVerticalButton = nullptr;
@@ -8098,20 +8355,20 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_addRegionButton = nullptr;
     m_subtractRegionButton = nullptr;
     m_lineStyleControlsWidget = nullptr;
-    m_freeDrawStyleControlsWidget = nullptr;
+    m_brushStyleControlsWidget = nullptr;
     m_arrowStyleControlsWidget = nullptr;
     m_distanceStyleControlsWidget = nullptr;
     m_angleStyleControlsWidget = nullptr;
     m_bracketStyleControlsWidget = nullptr;
     m_magnifierStyleControlsWidget = nullptr;
     m_highlightStyleControlsWidget = nullptr;
-    m_penHighlightStyleControlsWidget = nullptr;
+    m_brushHighlightStyleControlsWidget = nullptr;
     m_spotlightStyleControlsWidget = nullptr;
     m_textStyleControlsWidget = nullptr;
-    m_serialNumberStyleControlsWidget = nullptr;
+    m_sequenceNumberStyleControlsWidget = nullptr;
     m_filterStyleControlsWidget = nullptr;
     m_autoFilterStyleControlsWidget = nullptr;
-    m_penFilterStyleControlsWidget = nullptr;
+    m_brushFilterStyleControlsWidget = nullptr;
     m_eraserStyleControlsWidget = nullptr;
     m_brushEraserStyleControlsWidget = nullptr;
     m_watermarkStyleControlsWidget = nullptr;
@@ -8342,27 +8599,27 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
     clearRemoved(m_speechBubbleStyleControlsWidget);
 
     clearRemoved(m_lineStyleControlsWidget);
-    clearRemoved(m_freeDrawStyleControlsWidget);
+    clearRemoved(m_brushStyleControlsWidget);
     clearRemoved(m_arrowStyleControlsWidget);
     clearRemoved(m_distanceStyleControlsWidget);
     clearRemoved(m_angleStyleControlsWidget);
     clearRemoved(m_bracketStyleControlsWidget);
     clearRemoved(m_magnifierStyleControlsWidget);
     clearRemoved(m_highlightStyleControlsWidget);
-    clearRemoved(m_penHighlightStyleControlsWidget);
+    clearRemoved(m_brushHighlightStyleControlsWidget);
     clearRemoved(m_spotlightStyleControlsWidget);
     clearRemoved(m_textStyleControlsWidget);
-    clearRemoved(m_serialNumberStyleControlsWidget);
+    clearRemoved(m_sequenceNumberStyleControlsWidget);
     clearRemoved(m_filterStyleControlsWidget);
-    clearRemoved(m_penFilterStyleControlsWidget);
+    clearRemoved(m_brushFilterStyleControlsWidget);
     clearRemoved(m_eraserStyleControlsWidget);
     clearRemoved(m_brushEraserStyleControlsWidget);
     clearRemoved(m_watermarkStyleControlsWidget);
     if (removedRows.contains(m_filterEditor.controls)) {
         m_filterEditor = {};
     }
-    if (removedRows.contains(m_penFilterEditor.controls)) {
-        m_penFilterEditor = {};
+    if (removedRows.contains(m_brushFilterEditor.controls)) {
+        m_brushFilterEditor = {};
     }
     if (removedRows.contains(m_autoFilterEditor.controls)) {
         m_autoFilterEditor = {};
@@ -8596,9 +8853,9 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
 void ScreenshotToolPalette::createDrawTemplateSelect() {
     ScreenshotToolPaletteSelectEditorConfig config;
     config.objectName = QStringLiteral("screenshotDrawTemplateSelect");
-    config.accessibleName = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation Template");
-    config.tooltip = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation Template");
-    config.placeholder = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation Template");
+    config.accessibleName = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation template");
+    config.tooltip = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation template");
+    config.placeholder = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation template");
     config.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
     config.compact = false;
     config.searchEnabled = true;
@@ -8629,9 +8886,9 @@ void ScreenshotToolPalette::createDrawTemplateSelect() {
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         m_drawTemplateAddButton = button;
         button->setEnabled(m_hasSelectedElements);
-        button->setText(tr("Add Template"));
-        button->setToolTip(tr("Add Template"));
-        button->setAccessibleName(tr("Add Template"));
+        button->setText(tr("Add template"));
+        button->setToolTip(tr("Add template"));
+        button->setAccessibleName(tr("Add template"));
         connect(button, &QAbstractButton::clicked, this, [this]() {
             if (m_drawTemplateSelect != nullptr) {
                 m_drawTemplateSelect->hidePopup();
@@ -8730,7 +8987,7 @@ void ScreenshotToolPalette::openCreateDrawTemplateModal() {
     nameInput->setMaxLength(80);
     nameInput->setText(tr("Template %1").arg(suffix));
     auto* nameItem =
-        form->addField(tr("Template Name"), nameInput, QStringLiteral("drawTemplateName"));
+        form->addField(tr("Template name"), nameInput, QStringLiteral("drawTemplateName"));
     nameItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     nameItem->setRequired(true);
     nameItem->setRequiredMessage(tr("Please enter a template name"));
@@ -8876,9 +9133,9 @@ void ScreenshotToolPalette::openDeleteDrawTemplateModal(int index) {
 
 void ScreenshotToolPalette::retranslateDrawTemplateUi() {
     if (m_drawTemplateAddButton != nullptr) {
-        m_drawTemplateAddButton->setText(tr("Add Template"));
-        m_drawTemplateAddButton->setToolTip(tr("Add Template"));
-        m_drawTemplateAddButton->setAccessibleName(tr("Add Template"));
+        m_drawTemplateAddButton->setText(tr("Add template"));
+        m_drawTemplateAddButton->setToolTip(tr("Add template"));
+        m_drawTemplateAddButton->setAccessibleName(tr("Add template"));
     }
     if (m_drawTemplateEmptyLabel != nullptr) {
         m_drawTemplateEmptyLabel->setText(m_drawTemplateSelect != nullptr &&
@@ -8887,12 +9144,12 @@ void ScreenshotToolPalette::retranslateDrawTemplateUi() {
                                               : tr("No templates yet"));
     }
     if (m_createDrawTemplateModal != nullptr) {
-        m_createDrawTemplateModal->setWindowTitle(tr("Add Template"));
+        m_createDrawTemplateModal->setWindowTitle(tr("Add template"));
         m_createDrawTemplateModal->setAcceptText(tr("Add"));
         m_createDrawTemplateModal->setRejectText(tr("Cancel"));
     }
     if (m_drawTemplateNameItem != nullptr) {
-        m_drawTemplateNameItem->setLabel(tr("Template Name"));
+        m_drawTemplateNameItem->setLabel(tr("Template name"));
         m_drawTemplateNameItem->setRequiredMessage(tr("Please enter a template name"));
     }
     if (m_drawTemplateAlert != nullptr) {
@@ -8902,9 +9159,9 @@ void ScreenshotToolPalette::retranslateDrawTemplateUi() {
         m_drawTemplateAlert->setVisible(m_drawTemplateAlertKind != 0);
     }
     if (m_deleteDrawTemplateModal != nullptr) {
-        m_deleteDrawTemplateModal->setWindowTitle(tr("Delete Annotation Template"));
+        m_deleteDrawTemplateModal->setWindowTitle(tr("Delete annotation template"));
         m_deleteDrawTemplateModal->setText(
-            tr("Delete annotation template \"%1\"? This action cannot be undone.")
+            tr("Delete annotation template \"%1\"? This action cannot be undone")
                 .arg(m_deleteDrawTemplateName));
         m_deleteDrawTemplateModal->setAcceptText(tr("Delete"));
         m_deleteDrawTemplateModal->setRejectText(tr("Cancel"));
@@ -8957,7 +9214,7 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_jumpToTranslationPageLeadingSpacer =
         addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
     m_jumpToTranslationPageButton =
-        addButton("Jump to Translation Page", custom_outlined_icons::JumpTranslate(),
+        addButton("Jump to translation page", custom_outlined_icons::JumpTranslate(),
                   QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
 #endif
@@ -9005,7 +9262,7 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textTargetLanguageSpacer = addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
     ScreenshotToolPaletteSelectEditorConfig targetConfig;
     targetConfig.objectName = QStringLiteral("screenshotTranslationQuickTargetLanguageSelect");
-    targetConfig.placeholder = QStringLiteral("Target Language");
+    targetConfig.placeholder = QStringLiteral("Target language");
     targetConfig.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
     targetConfig.compact = false;
     targetConfig.popupMatchSelectWidth = false;
@@ -9034,6 +9291,30 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
                     emit textTargetLanguageRequested(value.toString());
             });
     setTextTargetLanguage(m_textTargetLanguageSelection);
+    m_textTranslationServiceSpacer =
+        addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
+    ScreenshotToolPaletteSelectEditorConfig serviceConfig;
+    serviceConfig.objectName = QStringLiteral("screenshotTranslationQuickServiceSelect");
+    serviceConfig.placeholder = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Translation service");
+    serviceConfig.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
+    serviceConfig.compact = false;
+    serviceConfig.popupMatchSelectWidth = false;
+    m_textTranslationServiceSelect =
+        createScreenshotToolPaletteSelectEditor(m_selectActionPanel, serviceConfig,
+                                                actionButtonMetrics(m_physicalScale))
+            .select;
+    m_textTranslationServiceSelect->setSearchEnabled(true);
+    m_textTranslationServiceSelect->setSearchFilterFields({QStringLiteral("label")});
+    m_textTranslationServiceSelect->setAllowClear(false);
+    m_selectActionLayout->addWidget(m_textTranslationServiceSelect);
+    connect(m_textTranslationServiceSelect, &adqt::widgets::AdSelect::popupOpening, this,
+            &ScreenshotToolPalette::textTranslationServicesRequested);
+    connect(m_textTranslationServiceSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
+            [this](const QVariant& value) {
+                if (!m_replayingMaterializedState && value.isValid())
+                    emit textTranslationServiceRequested(value.toString());
+            });
+    refreshTextTranslationServiceSelect();
 #endif
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),
@@ -9079,6 +9360,33 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
                             m_textCanUndo, m_textCanRedo, m_textCanReset, m_textTranslationInImage);
     setTextTransformSelections(m_textFormattingSelection, m_textPunctuationSelection);
     static_cast<void>(applyActiveToolSecondaryToolbarVisibility());
+}
+
+void ScreenshotToolPalette::setTextTranslationServices(const QVector<SnowShotChatModel>& models,
+                                                       const QString& selection, bool loading) {
+    if (m_textTranslationServices == models && m_textTranslationServiceSelection == selection &&
+        m_textTranslationServicesLoading == loading)
+        return;
+    m_textTranslationServices = models;
+    m_textTranslationServiceSelection = selection;
+    m_textTranslationServicesLoading = loading;
+    refreshTextTranslationServiceSelect();
+}
+
+void ScreenshotToolPalette::refreshTextTranslationServiceSelect() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (m_textTranslationServiceSelect == nullptr)
+        return;
+    const QSignalBlocker blocker(m_textTranslationServiceSelect);
+    const auto options =
+        snow_shot::presentation::translationServiceOptions(m_textTranslationServices);
+    m_textTranslationServiceSelect->setOptions(options);
+    m_textTranslationServiceSelect->setCurrentValue(m_textTranslationServiceSelection);
+    m_textTranslationServiceSelect->setLoading(options.isEmpty() &&
+                                               m_textTranslationServicesLoading);
+    m_textTranslationServiceSelect->setEnabled(!options.isEmpty());
+    m_textTranslationServiceSelect->setAccessibleName(tr("Translation service"));
+#endif
 }
 
 void ScreenshotToolPalette::setTextTargetLanguage(const QString& language) {
@@ -9244,8 +9552,8 @@ void ScreenshotToolPalette::refreshRecognitionModelSelect() {
         m_activeTool == Tool::Table ? m_tableRecognitionModelState : m_latexRecognitionModelState;
     QVector<AdSelect::Option> options{
         {screenshotDedicatedRecognitionModelId(),
-         m_activeTool == Tool::Table ? tr("Table-Specific Model") : tr("LaTeX-Specific Model"),
-         false, tr("Dedicated Model")},
+         m_activeTool == Tool::Table ? tr("Table-specific model") : tr("LaTeX-specific model"),
+         false, tr("Dedicated model")},
     };
     options.reserve(state.models.size() + 1);
     QSet<QString> modelIds{screenshotDedicatedRecognitionModelId(),
@@ -9264,7 +9572,7 @@ void ScreenshotToolPalette::refreshRecognitionModelSelect() {
             builtInDefault = model.id;
         }
         options.push_back(
-            {model.id, model.name.isEmpty() ? model.id : model.name, false, tr("Vision Model")});
+            {model.id, model.name.isEmpty() ? model.id : model.name, false, tr("Vision model")});
     }
     // Keep the semantic default in preferences while displaying its catalog name and identity.
     // Explicit catalog choices remain distinct from that default as the server order changes.
@@ -9284,7 +9592,7 @@ void ScreenshotToolPalette::refreshRecognitionModelSelect() {
         selectedLabel = selection == screenshotDefaultVisionRecognitionModelId()
                             ? tr("Snow Shot visual understanding")
                             : tr("Selected model (%1)").arg(selection);
-        options.push_back({selection, selectedLabel, true, tr("Vision Model")});
+        options.push_back({selection, selectedLabel, true, tr("Vision model")});
     } else {
         selectedLabel = selected->label;
     }
@@ -9416,7 +9724,7 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
 
     m_cursorButton = createScreenshotToolPaletteStyleActionButton(
-        m_moveActionControls, "Show Cursor", custom_outlined_icons::RecordingCursor(),
+        m_moveActionControls, "Show cursor", custom_outlined_icons::RecordingCursor(),
         actionButtonMetrics(m_physicalScale));
     m_cursorButton->setObjectName(QStringLiteral("screenshotCaptureCursorButton"));
     layout->addWidget(m_cursorButton);
@@ -9430,7 +9738,7 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     layout->addWidget(m_recaptureButton);
     addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
     m_showQrCodeButton = createScreenshotToolPaletteStyleActionButton(
-        m_moveActionControls, "Show QR Code", custom_outlined_icons::ScanQrcode(),
+        m_moveActionControls, "Show QR code", custom_outlined_icons::ScanQrcode(),
         actionButtonMetrics(m_physicalScale));
     m_showQrCodeButton->setObjectName(QStringLiteral("screenshotShowQrCodeButton"));
     layout->addWidget(m_showQrCodeButton);
@@ -9445,8 +9753,8 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     unitConfig.objectName = QStringLiteral("screenshotSelectionDisplayUnitButtonGroup");
     unitConfig.options = {
         {int(ScreenshotSelectionDisplayUnit::PhysicalPixels),
-         QT_TR_NOOP("Physical Pixel Selection"), custom_outlined_icons::PhysicalPixels()},
-        {int(ScreenshotSelectionDisplayUnit::LogicalPixels), QT_TR_NOOP("Logical Pixel Selection"),
+         QT_TR_NOOP("Physical pixel selection"), custom_outlined_icons::PhysicalPixels()},
+        {int(ScreenshotSelectionDisplayUnit::LogicalPixels), QT_TR_NOOP("Logical pixel selection"),
          custom_outlined_icons::LogicalPixels()},
     };
     unitConfig.initialId = int(m_selectionDisplayUnit);
@@ -9578,7 +9886,7 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
     layout->addWidget(settingsSeparator);
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
     auto* splitButton = createScreenshotToolPaletteStyleActionButton(
-        m_scrollingRecognitionControls, QT_TR_NOOP("Image Splitting"),
+        m_scrollingRecognitionControls, QT_TR_NOOP("Image splitting"),
         custom_outlined_icons::ImageSplitting(), actionButtonMetrics(m_physicalScale));
     splitButton->setObjectName(QStringLiteral("screenshotScrollingImageSplittingButton"));
     layout->addWidget(splitButton);
@@ -9586,7 +9894,7 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
     connect(splitButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::scrollingImageSplittingRequested);
     auto* editingButton = createScreenshotToolPaletteStyleActionButton(
-        m_scrollingRecognitionControls, QT_TR_NOOP("Image Editing"),
+        m_scrollingRecognitionControls, QT_TR_NOOP("Image editing"),
         custom_outlined_icons::ImageEditing(), actionButtonMetrics(m_physicalScale));
     editingButton->setObjectName(QStringLiteral("screenshotScrollingImageEditingButton"));
     layout->addWidget(editingButton);
@@ -9672,12 +9980,11 @@ void ScreenshotToolPalette::openScrollingSettings() {
     options.parent = form;
     options.form = form;
     options.commitPolicy = fields::CommitPolicy::Explicit;
-    const auto captureInterfaceField =
-        fields::switchField({QStringLiteral("captureInterface"),
-                             {"ScreenshotToolPalette",
-                              QT_TRANSLATE_NOOP("ScreenshotToolPalette",
-                                                "Capture interface during scrolling screenshot")}},
-                            options);
+    const auto captureInterfaceField = fields::switchField(
+        {QStringLiteral("captureInterface"),
+         {"ScreenshotToolPalette",
+          QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Capture UI during scrolling screenshots")}},
+        options);
     auto* captureInterface = captureInterfaceField.editor;
     captureInterface->setObjectName(QStringLiteral("screenshotScrollingCaptureInterface"));
     captureInterfaceField.field->syncValue(
@@ -9878,10 +10185,10 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
 
     QWidget** shapeControlsSlot = tool == Tool::SpeechBubble ? &m_speechBubbleStyleControlsWidget
                                   : tool == Tool::Line       ? &m_lineStyleControlsWidget
-                                  : tool == Tool::FreeDraw   ? &m_freeDrawStyleControlsWidget
+                                  : tool == Tool::Brush      ? &m_brushStyleControlsWidget
                                                              : &m_rectangleStyleControlsWidget;
     if ((tool == Tool::Shape || tool == Tool::SpeechBubble || tool == Tool::Line ||
-         tool == Tool::FreeDraw) &&
+         tool == Tool::Brush) &&
         *shapeControlsSlot == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.shape");
         const ScreenshotToolPaletteShapeFamilyResult result = m_styleControls->buildShapeFamily(
@@ -9932,7 +10239,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         return;
     }
     if ((tool == Tool::RectangleHighlight && m_highlightStyleControlsWidget == nullptr) ||
-        (tool == Tool::PenHighlight && m_penHighlightStyleControlsWidget == nullptr)) {
+        (tool == Tool::BrushHighlight && m_brushHighlightStyleControlsWidget == nullptr)) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.highlight");
         const ScreenshotToolPaletteHighlightFamilyResult result =
             m_styleControls->buildHighlightFamily(static_cast<int>(tool), m_rectangleStylePanel,
@@ -9943,8 +10250,8 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
             registerStyleFamily(m_highlightStyleControlsWidget, {Tool::RectangleHighlight});
         }
         if (result.penControls != nullptr) {
-            m_penHighlightStyleControlsWidget = result.penControls;
-            registerStyleFamily(m_penHighlightStyleControlsWidget, {Tool::PenHighlight});
+            m_brushHighlightStyleControlsWidget = result.penControls;
+            registerStyleFamily(m_brushHighlightStyleControlsWidget, {Tool::BrushHighlight});
         }
         return;
     }
@@ -9990,12 +10297,12 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         registerStyleFamily(m_textStyleControlsWidget, {Tool::Text});
         return;
     }
-    if (tool == Tool::SerialNumber && m_serialNumberStyleControlsWidget == nullptr) {
+    if (tool == Tool::SequenceNumber && m_sequenceNumberStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.serial_number");
-        m_serialNumberStyleControlsWidget = m_styleControls->buildSerialNumberFamily(
+        m_sequenceNumberStyleControlsWidget = m_styleControls->buildSequenceNumberFamily(
             m_rectangleStylePanel, makeHost(m_highlightModeGroups),
             styleButtonMetrics(m_physicalScale));
-        registerStyleFamily(m_serialNumberStyleControlsWidget, {Tool::SerialNumber});
+        registerStyleFamily(m_sequenceNumberStyleControlsWidget, {Tool::SequenceNumber});
         return;
     }
     if (tool == Tool::AutoFilter && m_autoFilterStyleControlsWidget == nullptr) {
@@ -10065,16 +10372,16 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         registerStyleFamily(m_filterStyleControlsWidget, {Tool::RectangleFilter});
         return;
     }
-    if (tool == Tool::PenFilter && m_penFilterStyleControlsWidget == nullptr) {
+    if (tool == Tool::BrushFilter && m_brushFilterStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.filter");
-        m_penFilterEditor =
-            createFilterEditor({Tool::PenFilter, QStringLiteral("screenshotPenFilterStyleControls"),
-                                QStringLiteral("screenshotPenFilterTypeSelect"),
-                                QStringLiteral("screenshotPenFilterIntensityIcon"),
-                                QStringLiteral("screenshotPenFilterIntensitySlider"), true});
-        m_penFilterStyleControlsWidget = m_penFilterEditor.controls;
-        refreshFilterEditorState(m_penFilterEditor, true);
-        registerStyleFamily(m_penFilterStyleControlsWidget, {Tool::PenFilter});
+        m_brushFilterEditor = createFilterEditor(
+            {Tool::BrushFilter, QStringLiteral("screenshotPenFilterStyleControls"),
+             QStringLiteral("screenshotPenFilterTypeSelect"),
+             QStringLiteral("screenshotPenFilterIntensityIcon"),
+             QStringLiteral("screenshotPenFilterIntensitySlider"), true});
+        m_brushFilterStyleControlsWidget = m_brushFilterEditor.controls;
+        refreshFilterEditorState(m_brushFilterEditor, true);
+        registerStyleFamily(m_brushFilterStyleControlsWidget, {Tool::BrushFilter});
         return;
     }
     if (tool == Tool::Watermark && m_watermarkStyleControlsWidget == nullptr) {
@@ -10126,13 +10433,13 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
 
         m_recordMicrophoneButton =
             addActionButton("Record microphone", custom_outlined_icons::RecordingMicrophone());
-        m_recordSystemAudioButton = addActionButton("Record speakers", outlined_icons::Sound());
+        m_recordSystemAudioButton = addActionButton("Record system audio", outlined_icons::Sound());
 
         m_recordOpenFolderButton =
             addActionButton("Open recording folder", custom_outlined_icons::RecordingFolder());
         m_recordCloseButton = addActionButton("Close recording", outlined_icons::Close(), true);
-        m_recordTrimButton = addActionButton("Trim Video", custom_outlined_icons::RecordingTrim());
-        m_recordSaveButton = addActionButton("Save to File", custom_outlined_icons::Save());
+        m_recordTrimButton = addActionButton("Trim video", custom_outlined_icons::RecordingTrim());
+        m_recordSaveButton = addActionButton("Save to file", custom_outlined_icons::Save());
         m_recordTrimButton->setObjectName(QStringLiteral("screenRecordingTrim"));
         m_recordSaveButton->setObjectName(QStringLiteral("screenRecordingSave"));
         connect(m_recordTrimButton, &adqt::widgets::AdButton::clicked, this,
@@ -10380,11 +10687,11 @@ void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeB
         m_shapeButton,       m_speechBubbleButton,
         m_arrowButton,       m_distanceButton,
         m_angleButton,       m_bracketButton,
-        m_lineButton,        m_freeDrawButton,
+        m_lineButton,        m_brushButton,
         m_highlighterButton, m_spotlightButton,
         m_magnifierButton,   m_eraserButton,
         m_filterButton,      m_watermarkButton,
-        m_textButton,        m_serialNumberButton,
+        m_textButton,        m_sequenceNumberButton,
         m_ocrButton,         m_textTranslationButton,
         m_tableButton,       m_scrollingScreenshotButton,
     };
@@ -10485,7 +10792,7 @@ bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
             if (group != nullptr)
                 group->setCheckedId(static_cast<int>(tool));
     }
-    if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
+    if (tool == Tool::RectangleHighlight || tool == Tool::BrushHighlight) {
         for (adqt::widgets::AdRadioButtonGroup* group : m_highlightModeGroups) {
             if (group != nullptr) {
                 group->setCheckedId(static_cast<int>(tool));
@@ -10500,9 +10807,9 @@ bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
     m_activeStyleControlsWidget = styleControlsForTool(tool);
     if (m_styleControls != nullptr) {
         m_styleControls->setLineControlsActive(tool == Tool::Line);
-        m_styleControls->setFreeDrawControlsActive(tool == Tool::FreeDraw);
+        m_styleControls->setBrushControlsActive(tool == Tool::Brush);
         m_styleControls->setHighlightControlsActive(tool == Tool::RectangleHighlight);
-        m_styleControls->setPenHighlightControlsActive(tool == Tool::PenHighlight);
+        m_styleControls->setBrushHighlightControlsActive(tool == Tool::BrushHighlight);
         m_styleControls->setArrowControlsActive(tool == Tool::Arrow);
         m_styleControls->setDistanceControlsActive(tool == Tool::Distance);
         m_styleControls->setAngleControlsActive(tool == Tool::Angle);
@@ -10531,8 +10838,8 @@ bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
     // spotlight sliders retain their explicit, shared width at every scale.
     if (m_activeStyleControlsWidget == m_filterStyleControlsWidget) {
         refreshFilterEditorMetrics(m_filterEditor);
-    } else if (m_activeStyleControlsWidget == m_penFilterStyleControlsWidget) {
-        refreshFilterEditorMetrics(m_penFilterEditor);
+    } else if (m_activeStyleControlsWidget == m_brushFilterStyleControlsWidget) {
+        refreshFilterEditorMetrics(m_brushFilterEditor);
     } else if (m_activeStyleControlsWidget == m_spotlightStyleControlsWidget) {
         ScreenshotToolPaletteSliderEditor spotlightEditor;
         spotlightEditor.icon = m_spotlightOpacityIcon;
@@ -10716,8 +11023,8 @@ void ScreenshotToolPalette::updateRecordingControls() {
         }
         m_recordSystemAudioButton->setToolTip(
             animatedFormat ? tr("Animated recording formats do not contain audio")
-                           : tr("Record speakers"));
-        m_recordSystemAudioButton->setAccessibleName(tr("Record speakers"));
+                           : tr("Record system audio"));
+        m_recordSystemAudioButton->setAccessibleName(tr("Record system audio"));
         m_recordSystemAudioButton->setAccessibleDescription(
             animatedFormat ? tr("Animated recording formats do not contain audio") : QString());
     }

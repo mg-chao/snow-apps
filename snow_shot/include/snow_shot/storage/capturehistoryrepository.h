@@ -17,7 +17,13 @@ struct CaptureHistorySnapshot {
     quint64 revision = 0;
     QVector<CaptureHistoryRecord> records;
 };
-enum class CaptureHistoryOperation { IndexRead, IndexWrite, PayloadRead, WorkerStarted };
+enum class CaptureHistoryOperation {
+    IndexRead,
+    IndexWrite,
+    PayloadRead,
+    WorkerStarted,
+    PayloadWritten
+};
 
 struct CaptureHistoryRepositoryCallbacks {
     std::function<void()> recordsChanged;
@@ -64,11 +70,6 @@ class CaptureHistoryRepository {
     publish(CaptureHistoryDraft draft) = 0;
     [[nodiscard]] virtual std::optional<CaptureHistoryPayload>
     load(const CaptureHistoryRecord& record) const = 0;
-    // Read-only editor import: failures must never prune the source record.
-    [[nodiscard]] virtual std::optional<CaptureHistoryPayload>
-    loadPreservingRecord(const CaptureHistoryRecord&) const {
-        return std::nullopt;
-    }
     [[nodiscard]] virtual std::optional<CaptureHistoryAssetSet>
     displayAssets(const CaptureHistoryRecord& record) const = 0;
     [[nodiscard]] virtual std::optional<QImage>

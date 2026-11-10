@@ -1440,14 +1440,20 @@ void AdModal::setCloseOnEscape(bool value) {
   emit closeOnEscapeChanged(closeOnEscape_);
 }
 
-bool AdModal::closeButtonVisible() const { return closeButtonVisible_; }
+bool AdModal::closeButtonVisible() const {
+  return closeButtonVisible_.value_or(preset_ == Preset::Plain);
+}
 
 void AdModal::setCloseButtonVisible(bool value) {
   if (closeButtonVisible_ == value) {
     return;
   }
+  const bool wasVisible = closeButtonVisible();
   closeButtonVisible_ = value;
-  emit closeButtonVisibleChanged(closeButtonVisible_);
+  if (wasVisible == value) {
+    return;
+  }
+  emit closeButtonVisibleChanged(value);
   refreshVisibility();
 }
 
@@ -1559,8 +1565,12 @@ void AdModal::setPreset(Preset value) {
   if (preset_ == value) {
     return;
   }
+  const bool wasCloseButtonVisible = closeButtonVisible();
   preset_ = value;
   emit presetChanged(preset_);
+  if (wasCloseButtonVisible != closeButtonVisible()) {
+    emit closeButtonVisibleChanged(closeButtonVisible());
+  }
   refreshVisibility();
   applyVisualStyle();
 }
@@ -2349,6 +2359,8 @@ void AdModal::ensureOverlay() {
 
   headerLayout->addWidget(windowIconLabel, 0, Qt::AlignVCenter);
   headerLayout->addWidget(titleLabel, 1, Qt::AlignVCenter);
+  // Keep the actions at the edge even when the title is hidden or moved into the body.
+  headerLayout->addStretch();
   headerLayout->addWidget(minimizeButton, 0, Qt::AlignTop);
   headerLayout->addWidget(maximizeButton, 0, Qt::AlignTop);
   headerLayout->addWidget(alwaysOnTopButton, 0, Qt::AlignTop);
@@ -2769,9 +2781,7 @@ void AdModal::refreshTexts() {
 bool AdModal::showsHeader() const {
   const bool hasTitle = !windowTitle_.trimmed().isEmpty();
   const bool confirmMode = preset_ != Preset::Plain;
-  const bool showPanelCloseButton =
-      closeButtonVisible_ && !(usesWindowSurface() && preset_ == Preset::Confirm);
-  return confirmMode ? showPanelCloseButton : (hasTitle || showPanelCloseButton);
+  return closeButtonVisible() || (!confirmMode && hasTitle);
 }
 
 bool AdModal::showsFooter() const {
@@ -2783,8 +2793,6 @@ bool AdModal::showsFooter() const {
 void AdModal::refreshVisibility() {
   const bool hasTitle = !windowTitle_.trimmed().isEmpty();
   const bool confirmMode = preset_ != Preset::Plain;
-  const bool showPanelCloseButton =
-      closeButtonVisible_ && !(usesWindowSurface() && preset_ == Preset::Confirm);
   const bool showTextContent = contentLoading_ || !contentWidget_;
   const bool showAcceptButton = standardButtons_.testFlag(StandardButton::Ok);
   const bool showRejectButton = standardButtons_.testFlag(StandardButton::Cancel);
@@ -2799,7 +2807,7 @@ void AdModal::refreshVisibility() {
   }
 
   if (closeButton_) {
-    closeButton_->setVisible(showPanelCloseButton);
+    closeButton_->setVisible(closeButtonVisible());
   }
 
   const bool windowChrome = usesWindowSurface();
@@ -3407,7 +3415,7 @@ AdModal::VisualStyle AdModal::resolveVisualStyle() const {
   context.contentLoading = contentLoading_;
   context.acceptButtonBusy = acceptButtonBusy_;
   context.maskVisible = !usesWindowSurface() && maskVisible_;
-  context.closeButtonVisible = closeButtonVisible_;
+  context.closeButtonVisible = closeButtonVisible();
   context.standardButtons = standardButtons_;
   context.preset = preset_;
 

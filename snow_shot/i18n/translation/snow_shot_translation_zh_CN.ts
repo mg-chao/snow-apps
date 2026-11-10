@@ -2,6 +2,13 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en_US">
     <context>
+        <name>FreeTranslation</name>
+        <message>
+            <source>The free translation service may no longer be available. Please update the app or report the issue</source>
+            <translation>免费翻译服务可能已不可用。请更新应用或反馈此问题</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotTranslationSettingsDialog</name>
         <message>
             <source>%</source>
@@ -12,23 +19,23 @@
             <translation>取消</translation>
         </message>
         <message>
-            <source>Language Detection Confidence Threshold</source>
+            <source>Language detection confidence threshold</source>
             <translation>语言检测置信度阈值</translation>
         </message>
         <message>
             <source>Minimum confidence required to switch to the secondary target language</source>
-            <translation>切换到次目标语言所需的最低置信度</translation>
+            <translation>切换到次要目标语言所需的最低置信度</translation>
         </message>
         <message>
             <source>OK</source>
             <translation>确定</translation>
         </message>
         <message>
-            <source>Original Image Translation</source>
+            <source>Original image translation</source>
             <translation>原图翻译</translation>
         </message>
         <message>
-            <source>Primary Target Language</source>
+            <source>Primary target language</source>
             <translation>主要目标语言</translation>
         </message>
         <message>
@@ -36,7 +43,7 @@
             <translation>重试</translation>
         </message>
         <message>
-            <source>Secondary Target Language</source>
+            <source>Secondary target language</source>
             <translation>次要目标语言</translation>
         </message>
         <message>
@@ -126,15 +133,15 @@
     <context>
         <name>TranslationPageWidget</name>
         <message>
-            <source>Auto Detect</source>
-            <translation>自动检测</translation>
+            <source>Auto-detect language</source>
+            <translation>自动检测语言</translation>
         </message>
         <message>
             <source>Copy (%1)</source>
             <translation>复制 (%1)</translation>
         </message>
         <message>
-            <source>Copy and Close (%1)</source>
+            <source>Copy and close (%1)</source>
             <translation>复制并关闭 (%1)</translation>
         </message>
         <message>
@@ -154,7 +161,7 @@
             <translation>重试</translation>
         </message>
         <message>
-            <source>Select a service</source>
+            <source>Select a translation service</source>
             <translation>选择翻译服务</translation>
         </message>
         <message>
@@ -201,11 +208,11 @@
     <context>
         <name>TranslationService</name>
         <message>
-            <source>General Models</source>
+            <source>General models</source>
             <translation>通用模型</translation>
         </message>
         <message>
-            <source>Translation Models</source>
+            <source>Translation models</source>
             <translation>翻译模型</translation>
         </message>
     </context>
@@ -216,7 +223,7 @@
             <translation>关闭</translation>
         </message>
         <message>
-            <source>Copy and Close</source>
+            <source>Copy and close</source>
             <translation>复制并关闭</translation>
         </message>
         <message>
@@ -253,20 +260,24 @@
     <context>
         <name>snow_shot::translation::TranslationService</name>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>模型配置已更改。请重试以使用更新后的设置。</translation>
+            <source>Free translation</source>
+            <translation>免费翻译</translation>
         </message>
         <message>
-            <source>No translation services are available.</source>
-            <translation>没有可用的翻译服务。</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>模型配置已更改。请重试以使用更新后的设置</translation>
+        </message>
+        <message>
+            <source>No translation services are available</source>
+            <translation>没有可用的翻译服务</translation>
         </message>
         <message>
             <source>Unable to load translation services: %1</source>
             <translation>无法加载翻译服务：%1</translation>
         </message>
         <message>
-            <source>Unable to save translation preferences. Your previous selections were restored.</source>
-            <translation>无法保存翻译偏好，已恢复之前的选择。</translation>
+            <source>Unable to save translation preferences. Your previous selections were restored</source>
+            <translation>无法保存翻译偏好，已恢复之前的选择</translation>
         </message>
     </context>
 </TS>

@@ -1,5 +1,6 @@
 use crate::{
-    ApplyTransactionCommand, Editor, EditorCommand, ElementCreationPreview, SelectionArrowState,
+    ActiveTool, ApplyTransactionCommand, Editor, EditorCommand, ElementCreationPreview,
+    SelectionArrowState,
 };
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::{
@@ -161,15 +162,22 @@ impl Editor {
             updates.push(SelectionArrowState { id, arrow: next });
         }
         self.state.default_bracket_style = next_default;
+        self.edit_creation_colors(
+            ActiveTool::Bracket,
+            (properties & BRACKET_STYLE_PROPERTY_STROKE != 0).then_some(style.stroke),
+            None,
+        );
+        let mut preview_style = next_default;
+        preview_style.stroke = self.creation_stroke(preview_style.stroke);
         if let Some(ElementCreationPreview::Arrow(arrow)) = &mut self.state.creation_preview
             && self.state.active_tool == crate::ActiveTool::Bracket
         {
             let previous = arrow.clone();
             if arrow.points.len() == 3 {
-                next_default.apply_to_arrow(arrow);
+                preview_style.apply_to_arrow(arrow);
             } else {
-                arrow.stroke = next_default.stroke;
-                arrow.stroke_width = next_default.stroke_width;
+                arrow.stroke = preview_style.stroke;
+                arrow.stroke_width = preview_style.stroke_width;
             }
             if *arrow != previous {
                 self.bump_scene_state_revision();
@@ -230,7 +238,8 @@ impl Editor {
         let moved = crate::pointer_drag_distance(state.press_view_position, event.position) >= 3.0;
         let end = crate::view_to_canvas(event.position, &self.camera(), self.surface_size());
         let (end, guides) = self.snap_arrow_creation_point(document, end, event.modifiers);
-        let style = self.state.default_bracket_style;
+        let mut style = self.state.default_bracket_style;
+        style.stroke = self.creation_stroke(style.stroke);
         let preview = if (end.y - start.y).abs() > 1e-6 && (end.x - start.x).abs() > 1e-6 {
             ArrowData::from_global_points(
                 &[

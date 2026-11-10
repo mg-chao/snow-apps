@@ -695,7 +695,7 @@ class SettingsPageWidget::Impl {
                                             adqt::widgets::AdMessage::Request request;
                                             request.content =
                                                 q.tr("Could not open System Settings. Open System "
-                                                     "Settings > Privacy & Security > %1.")
+                                                     "Settings > Privacy & Security > %1")
                                                     .arg(snow_shot::presentation::appPermissionName(
                                                         permission));
                                             adqt::widgets::AdMessageService::error(
@@ -1117,7 +1117,7 @@ class SettingsPageWidget::Impl {
             button->setText(q.tr("Authorized"));
             button->setAccentRole(adqt::widgets::AdButton::AccentRole::Success);
         } else {
-            button->setText(q.tr("Go to Settings"));
+            button->setText(q.tr("Go to settings"));
             button->setAccentRole(permission == snow_shot::presentation::AppPermission::Microphone
                                       ? adqt::widgets::AdButton::AccentRole::Orange
                                       : adqt::widgets::AdButton::AccentRole::Danger);
@@ -1173,18 +1173,18 @@ class SettingsPageWidget::Impl {
         permissionBanner->setText(q.tr("Permissions needed"));
         if (page->id == QStringLiteral("global-mouse")) {
             permissionBanner->setInformativeText(
-                q.tr("Global mouse actions need access to: %1.").arg(names.join(q.tr(", "))));
+                q.tr("Global mouse actions need access to: %1").arg(names.join(q.tr(", "))));
         } else {
             QStringList actions;
             using Permission = snow_shot::presentation::AppPermission;
             if (missing.contains(Permission::ScreenRecording))
-                actions.append(q.tr("screenshots and screen recording"));
+                actions.append(q.tr("Screenshots and screen recording"));
             if (missing.contains(Permission::Accessibility))
-                actions.append(q.tr("selected-text translation"));
+                actions.append(q.tr("Selected-text translation"));
             if (missing.contains(Permission::Microphone))
-                actions.append(q.tr("microphone recording"));
+                actions.append(q.tr("Microphone recording"));
             permissionBanner->setInformativeText(
-                q.tr("To use %1, review access to: %2.")
+                q.tr("To use %1, review access to: %2")
                     .arg(actions.join(q.tr(", ")), names.join(q.tr(", "))));
         }
         permissionBanner->setVisible(bannerVisible);

@@ -131,6 +131,7 @@ pub(super) fn native_config(
         },
         audio,
         effects: NativeEffectsConfig {
+            keyboard_filter: config.keyboard_filter,
             clicks: effects.mouse_click_rgba[3] != 0,
             trail: effects.mouse_trail_rgba[3] != 0,
             click_rgba: effects.mouse_click_rgba,
@@ -412,6 +413,7 @@ mod tests {
     }
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
+            keyboard_filter: Default::default(),
             webcam: None,
             audio_mode: Default::default(),
             system_audio_gain_db: 0,

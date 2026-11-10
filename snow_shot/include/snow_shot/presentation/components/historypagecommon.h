@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_HISTORYPAGECOMMON_H
 
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "widgets/image.h"
 
 #include <QDate>
 #include <QDateTime>
@@ -9,6 +10,7 @@
 #include <QString>
 #include <QVariant>
 #include <QVector>
+#include <functional>
 
 class QBoxLayout;
 class QLabel;
@@ -23,6 +25,19 @@ class AdSelect;
 } // namespace adqt::widgets
 
 namespace snow_shot::presentation::components::history_page {
+
+// Gallery metadata is generated only for rows queried by the viewer.
+class PreviewModel final : public QAbstractListModel {
+  public:
+    using QAbstractListModel::QAbstractListModel;
+    int rowCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    void reset(int count, std::function<adqt::widgets::AdImageItem(int)> itemAt);
+
+  private:
+    int m_count = 0;
+    std::function<adqt::widgets::AdImageItem(int)> m_itemAt;
+};
 
 inline constexpr int kWideEntryBreakpoint = 560;
 
@@ -53,6 +68,8 @@ struct TextControls {
 void configureSourceFilter(adqt::widgets::AdSelect* filter);
 [[nodiscard]] QString revealActionText();
 void showRevealFailure(QWidget* parent);
+[[nodiscard]] QString copyImagePathActionText();
+void copyImagePath(const QString& path, QWidget* parent);
 void configureDateFilter(adqt::widgets::AdDateRangePicker* filter);
 void configurePagination(adqt::widgets::AdPagination* pagination, int pageSize);
 void configureSelectionAction(adqt::widgets::AdButton* button, bool destructive);

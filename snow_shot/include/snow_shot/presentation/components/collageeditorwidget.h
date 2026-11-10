@@ -9,26 +9,36 @@
 #include <memory>
 
 namespace snow_shot::presentation::components {
-class CollagePdfPageGrid;
+class ImageStitchingPdfPageGrid;
+class ImageStitchingPdfTemplateWidget;
 
-class CollagePreviewCanvas final : public QWidget {
+class ImageStitchingPreviewCanvas final : public QWidget {
     Q_OBJECT
   public:
-    explicit CollagePreviewCanvas(CollageDocument* document, QWidget* parent = nullptr);
-    ~CollagePreviewCanvas() override;
+    explicit ImageStitchingPreviewCanvas(ImageStitchingDocument* document,
+                                         QWidget* parent = nullptr);
+    ~ImageStitchingPreviewCanvas() override;
     [[nodiscard]] qreal zoom() const;
     [[nodiscard]] QPointF offset() const;
+    [[nodiscard]] bool canFitToCanvas() const;
     [[nodiscard]] QRectF imageViewportRect(quint64 id) const;
+    [[nodiscard]] QRectF cellViewportRect(quint64 id) const;
     void fitToCanvas();
     void centerImage(quint64 id);
     void preserveViewport();
-    void setEditingEnabled(bool enabled);
+    void setEditingEnabled(bool enabled, bool replacementAllowed = true);
     void setRenderingEnabled(bool enabled);
     void retranslateUi();
+
+  signals:
+    void replaceImageRequested(quint64 id);
+    void previewOriginalRequested(quint64 id);
 
   protected:
     void paintEvent(QPaintEvent*) override;
     void resizeEvent(QResizeEvent*) override;
+    void hideEvent(QHideEvent*) override;
+    void showEvent(QShowEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
@@ -45,16 +55,18 @@ class CollagePreviewCanvas final : public QWidget {
     std::unique_ptr<Impl> m_impl;
 };
 
-class CollageEditorWidget final : public QWidget {
+class ImageStitchingEditorWidget final : public QWidget {
     Q_OBJECT
   public:
-    explicit CollageEditorWidget(CollageDocument* document, QWidget* parent = nullptr);
-    ~CollageEditorWidget() override;
+    explicit ImageStitchingEditorWidget(ImageStitchingDocument* document,
+                                        QWidget* parent = nullptr);
+    ~ImageStitchingEditorWidget() override;
     void setLoading(bool loading);
     void setExportBusy(bool busy);
     void retranslateUi();
-    [[nodiscard]] CollagePreviewCanvas* canvas() const;
-    [[nodiscard]] CollagePdfPageGrid* pdfGrid() const;
+    [[nodiscard]] ImageStitchingPreviewCanvas* canvas() const;
+    [[nodiscard]] ImageStitchingPdfPageGrid* pdfGrid() const;
+    [[nodiscard]] ImageStitchingPdfTemplateWidget* pdfTemplateWidget() const;
     [[nodiscard]] QWidget* outputDescriptionWidget() const;
 
   signals:
@@ -65,6 +77,7 @@ class CollageEditorWidget final : public QWidget {
     void settingsEdited(const QString& field);
 
   protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void changeEvent(QEvent*) override;
     void resizeEvent(QResizeEvent*) override;
     void hideEvent(QHideEvent*) override;

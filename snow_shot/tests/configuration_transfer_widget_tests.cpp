@@ -51,6 +51,15 @@ void flushEvents() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+QMap<QString, QJsonValue> configuredDirectories() {
+    return {{QStringLiteral("screenshot/image_save_directory"),
+             QStringLiteral("D:/configuration-transfer-tests/images")},
+            {QStringLiteral("screen_recording/video_save_directory"),
+             QStringLiteral("D:/configuration-transfer-tests/videos")},
+            {QStringLiteral("screenshot/last_manual_save_directory"),
+             QStringLiteral("D:/configuration-transfer-tests/manual")}};
+}
+
 class SettingsCatalogButtonTranslator final : public QTranslator {
   public:
     QString translate(const char* context, const char* sourceText, const char*,
@@ -193,7 +202,7 @@ class RecordingSettingsBackend final : public settings::SettingsBackend {
         status.effectiveDirectory = QStringLiteral("C:/configuration-transfer-tests");
         return status;
     }
-    bool resetSection(settings::SettingsSectionReset) override {
+    settings::SettingsResetResult resetSectionWithResults(settings::SettingsSectionReset) override {
         return false;
     }
 
@@ -297,7 +306,7 @@ void configurationItemsRenderAsButtons() {
     auto* styleSwitch = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
         QStringLiteral("includeToolbarStyles"));
     require(styleSwitch != nullptr, "export options must contain a switch field");
-    require(styleSwitch->accessibleName() == QStringLiteral("Canvas Style Configuration"),
+    require(styleSwitch->accessibleName() == QStringLiteral("Canvas style configuration"),
             "the switch field must use the canvas style configuration label");
     require(!styleSwitch->isChecked(), "toolbar style export must default to off");
     modal->reject();
@@ -403,7 +412,9 @@ void realBackendExportFiltersToolbarStyles() {
     const QString styleKey = QStringLiteral("drawing/shape_style");
     const QJsonObject style{{QStringLiteral("test_marker"), QStringLiteral("included")}};
     const QString ordinaryKey = QStringLiteral("drawing/remember_last_used_tool");
-    require(store.setValue(styleKey, style) && store.setValue(ordinaryKey, true),
+    const auto directories = configuredDirectories();
+    require(store.setValue(styleKey, style) && store.setValue(ordinaryKey, true) &&
+                store.setValues(directories),
             "export fixtures must be accepted by the configuration store");
 
     for (const bool includeStyles : {false, true}) {
@@ -436,6 +447,10 @@ void realBackendExportFiltersToolbarStyles() {
                 "configuration export must retain settings unrelated to toolbar styles");
         require(archive.values.contains(styleKey) == includeStyles,
                 "configuration export must honor the toolbar style option");
+        for (auto it = directories.cbegin(); it != directories.cend(); ++it) {
+            require(!archive.values.contains(it.key()) && store.value(it.key()) == it.value(),
+                    "UI exports must omit local directories without changing their stored values");
+        }
         if (includeStyles) {
             require(archive.values.value(styleKey).toObject() == style,
                     "included toolbar styles must keep their configured values");
@@ -479,8 +494,9 @@ void realBackendImportReplacesConfiguration() {
             "the schema must expose at least two boolean settings");
 
     storage::ConfigurationStore& store = storage::ApplicationStorage::instance().configuration();
+    const auto directories = configuredDirectories();
     require(store.setValue(archivedKey, archivedValue) &&
-                store.setValue(replacedKey, replacedValue),
+                store.setValue(replacedKey, replacedValue) && store.setValues(directories),
             "seeding local settings must succeed");
 
     QTemporaryDir temporary;
@@ -499,6 +515,10 @@ void realBackendImportReplacesConfiguration() {
             "values carried by the archive must be applied");
     require(store.value(replacedKey) == storage::ConfigurationSchema::defaultValue(replacedKey),
             "settings absent from the archive must revert to schema defaults");
+    for (auto it = directories.cbegin(); it != directories.cend(); ++it) {
+        require(store.value(it.key()) == it.value(),
+                "UI imports must preserve local directories omitted from the archive");
+    }
     require(store.value(QStringLiteral("storage/schema_version")).toInt() ==
                 storage::ConfigurationStore::currentSchemaVersion(),
             "the store-managed schema version must survive imports");

@@ -378,7 +378,7 @@ void pageActionsAndLifecycle() {
                 surface->findChild<QToolButton*>(QStringLiteral("ad-modal-minimize")) &&
                 surface->findChild<QToolButton*>(QStringLiteral("ad-modal-always-on-top")),
             "standalone chrome exposes a taskbar window with minimize and pin buttons");
-    require(modal->acceptButton()->text() == QStringLiteral("Copy and Close") &&
+    require(modal->acceptButton()->text() == QStringLiteral("Copy and close") &&
                 modal->rejectButton()->text() == QStringLiteral("Close"),
             "footer buttons offer copy-and-close and close");
     const QRect available = qApp->primaryScreen()->availableGeometry().adjusted(16, 16, -16, -16);
@@ -624,6 +624,9 @@ int main(int argc, char** argv) {
     require(directory.isValid() &&
                 storage.initialize({directory.path(), directory.path(), 60000}).success,
             "initialize isolated standalone translation storage");
+    require(storage.configuration().setValue(QStringLiteral("screenshot_translation/model"),
+                                             QStringLiteral("general")),
+            "select the server fixture for translation UI tests");
     styles::ThemeManager::instance().initialize(app);
     if (app.arguments().contains(QStringLiteral("--native-display-check"))) {
         nativeDisplayCheck();

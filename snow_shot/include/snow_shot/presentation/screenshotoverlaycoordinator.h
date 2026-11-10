@@ -114,11 +114,12 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
                                 const SnowCanvasSpotlightConfig& config);
     void setTextStyle(const ScreenshotDisplaySession& displaySession,
                       const SnowCanvasTextStyle& style, quint32 properties);
-    void setSerialNumberStyle(const ScreenshotDisplaySession& displaySession,
-                              const SnowCanvasSerialNumberStyle& style,
-                              std::optional<quint32> properties = std::nullopt);
-    void adjustSelectedSerialNumbers(const ScreenshotDisplaySession& displaySession, qint64 delta);
-    void createTextForSelectedSerialNumber(const ScreenshotDisplaySession& displaySession);
+    void setSequenceNumberStyle(const ScreenshotDisplaySession& displaySession,
+                                const SnowCanvasSerialNumberStyle& style,
+                                std::optional<quint32> properties = std::nullopt);
+    void adjustSelectedSequenceNumbers(const ScreenshotDisplaySession& displaySession,
+                                       qint64 delta);
+    void createTextForSelectedSequenceNumber(const ScreenshotDisplaySession& displaySession);
     void reorderSelectedElements(const ScreenshotDisplaySession& displaySession,
                                  SnowCanvasSelectionOrder order);
     void alignSelectedElements(const ScreenshotDisplaySession& displaySession,
@@ -159,7 +160,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);
     [[nodiscard]] bool stepToolbarSpotlightOpacity(int direction);
     [[nodiscard]] bool stepToolbarFilterIntensity(int direction);
-    [[nodiscard]] bool stepToolbarPenFilterStrokeWidth(int direction);
+    [[nodiscard]] bool stepToolbarBrushFilterStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarWatermarkFontSize(int direction);
     void resetToolbarForNewCapture();
     void hideToolbar();

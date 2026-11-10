@@ -309,7 +309,8 @@ typedef enum SnowCursorStyle {
     SNOW_CURSOR_STYLE_CORNER_RADIUS = 11,
     SNOW_CURSOR_STYLE_HIDDEN = 12,
     SNOW_CURSOR_STYLE_STROKE = 13,
-    SNOW_CURSOR_STYLE_ERASER = 14
+    SNOW_CURSOR_STYLE_ERASER = 14,
+    SNOW_CURSOR_STYLE_SERIAL_NUMBER = 15
 } SnowCursorStyle;
 
 typedef enum SnowSceneDisplayItemKind {
@@ -1491,6 +1492,15 @@ SnowError snow_runtime_visit_smart_erase(SnowRuntime runtime,
                                                          const SnowSceneDisplayItem* item),
                                          void* context);
 
+/* Read-only next badge at the pointer's view position, using current creation defaults.
+ * The visitor borrows the item and its pointer fields only for the callback's duration,
+ * must copy retained data, and must not reenter the runtime. Placement snapping is
+ * resolved for stroke seeds; the native cursor remains centered on its hotspot. */
+SnowError snow_viewport_visit_serial_number_cursor_preview(
+    SnowRuntime runtime, SnowViewport viewport, double view_x, double view_y,
+    SnowModifiers modifiers, void (*visitor)(void* context, const SnowSceneDisplayItem* item),
+    void* context);
+
 typedef struct SnowOverlayDisplayItem {
     SnowOverlayDisplayItemKind kind;
     SnowOverlayRectKind rect_kind;
@@ -1565,6 +1575,11 @@ SnowError snow_runtime_end_presentation_update_ex(SnowRuntime runtime,
 
 SnowError snow_runtime_set_automatically_select_newly_created_elements_ex(
     SnowRuntime runtime, uint8_t enabled, SnowChangedViewportList* out_changed_viewports);
+
+// Creation preferences only; preserves document content, selection, drafts and history.
+SnowError snow_runtime_set_creation_color_ex(SnowRuntime runtime, uint8_t enabled,
+                                             SnowColorRgba8 color,
+                                             SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_runtime_set_automatic_selection_excluded_tools_ex(
     SnowRuntime runtime, uint64_t tools, SnowChangedViewportList* out_changed_viewports);

@@ -4,18 +4,23 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotselectioncomposition.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
-#include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
 #include <QColorSpace>
+#include <QDataStream>
+#include <QDir>
 #include <QEventLoop>
-#include <QMouseEvent>
+#include <QFile>
+#include <QFileInfo>
 #include <QPainter>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
+#include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -89,12 +94,6 @@ QImage exportSource(const ImageEditingSource& source) {
     const auto snapshot = document.snapshot();
     require(snapshot.error.isEmpty(), "history document prepares its export");
     return exportPixels(imageEditingExportSource(snapshot));
-}
-
-ImageEditingSource loadComposite(ImageEditingSource source) {
-    auto composite = imageEditingCompositeSource(source);
-    require(composite.isValid(), "styled pin prepares a faithful composite source");
-    return completeImageEditingComposite(std::move(source), exportPixels(std::move(composite)));
 }
 
 CaptureHistoryDraft makeDraft(const SnowCanvasRuntime& runtime) {
@@ -206,16 +205,11 @@ void appearanceSurvivesHistoryEditing() {
         const auto revision = repository->recordsSnapshot().revision;
         const auto imported = readImageEditingHistory(*repository, published.record);
         require(imported.error.isEmpty(), "history appearance imports successfully");
-        if (variant == 6) {
-            require(!imported.flattened && !imported.canvasHistory.isEmpty(),
-                    "plain rectangle retains editable annotations and harmless preferences");
-        } else {
-            require(imported.flattened && imported.canvasHistory.isEmpty() &&
-                        imported.canvasSession.isEmpty(),
-                    "unsupported selection appearance explicitly opens its composited pixels");
-            require(imported.image == *stored,
-                    "history import preserves the stored decoded composite pixels exactly");
-        }
+        require(imported.flattened && imported.canvasHistory.isEmpty() &&
+                    imported.canvasSession.isEmpty(),
+                "every selection appearance opens its stored result as a new image");
+        require(imported.image == *stored,
+                "history import preserves the stored decoded composite pixels exactly");
         requirePixels(exportSource(imported), *stored,
                       "history editor export preserves selection appearance without duplicates");
         require(repository->recordsSnapshot().revision == revision,
@@ -254,45 +248,111 @@ void appearanceSurvivesHistoryEditing() {
             "failed appearance import never removes the source record");
 }
 
-void historyResolutionUsesSelectedDisplays() {
+void historyImportsStoredResults() {
     QTemporaryDir directory;
-    require(directory.isValid(), "history resolution fixture directory");
+    require(directory.isValid(), "history result fixture directory");
+    auto repository = makeCaptureHistoryRepository(directory.path());
+    SnowCanvasRuntime runtime;
+    require(
+        !runtime
+             .applyAnnotationTransaction(
+                 R"({"version":1,"operations":[{"type":"rectangle","bounds":[-2,26,10,6],"style":{"fill":[255,0,0,255],"stroke":[0,0,0,0]}}]})")
+             .isEmpty(),
+        "history result fixture has a baked annotation");
+    for (int variant = 0; variant < 5; ++variant) {
+        auto draft = makeDraft(runtime);
+        if (variant < 3)
+            draft.scrolling = variant != 0;
+        const auto viewport = composeHistoryResult(runtime, draft);
+        QSize size = viewport.size();
+        if (variant != 0) {
+            if (variant % 2 == 0)
+                size.rwidth() *= 4;
+            else
+                size.rheight() *= 4;
+        }
+        QImage result(size, QImage::Format_ARGB32_Premultiplied);
+        result.setColorSpace(QColorSpace::SRgb);
+        result.fill(Qt::green);
+        {
+            QPainter painter(&result);
+            painter.drawImage(QPoint(), viewport);
+        }
+        draft.resultImage = result;
+        const auto published = repository->publish(draft).get();
+        require(published.storage.success, "history result fixture publishes");
+        const auto revision = repository->recordsSnapshot().revision;
+        const auto imported = readImageEditingHistory(*repository, published.record);
+        require(imported.error.isEmpty() && imported.flattened &&
+                    imported.canvasRect == QRectF(QPointF(), QSizeF(size)) &&
+                    imported.pixelSize == size && imported.canvasHistory.isEmpty() &&
+                    imported.canvasSession.isEmpty() && imported.samplingSources.isEmpty(),
+                "ordinary, scrolling and legacy history open the complete result in pixel space");
+        requirePixels(imported.image, result, "history imports the saved result pixels");
+        requirePixels(exportSource(imported), result,
+                      "history result exports without restoring or duplicating old annotations");
+        ImageEditingDocument document;
+        require(document.load(imported) && !document.undo() &&
+                    !document.runtime().hasDocumentContent(),
+                "history result starts a clean document without the old annotation history");
+        require(
+            !document.runtime()
+                    .applyAnnotationTransaction(
+                        R"({"version":1,"operations":[{"type":"rectangle","bounds":[2,2,10,6],"style":{"fill":[0,0,255,255],"stroke":[0,0,0,0]}}]})")
+                    .isEmpty() &&
+                document.undo(),
+            "new annotations can be edited and undone independently");
+        requirePixels(exportSource(document.snapshot()), result,
+                      "undoing new annotations preserves the baked history result");
+
+        const auto assets = repository->displayAssets(published.record);
+        require(assets && assets->result && !assets->displays.isEmpty(),
+                "history result fixture exposes its persisted assets");
+        require(QFile::remove(assets->displays.front().localFileUrl.toLocalFile()) &&
+                    QFile::remove(
+                        QDir(QFileInfo(assets->result->localFileUrl.toLocalFile()).absolutePath())
+                            .filePath(QStringLiteral("canvas_history.json"))),
+                "history result fixture removes its old display and canvas payloads");
+        const auto withoutPayload = readImageEditingHistory(*repository, published.record);
+        require(withoutPayload.error.isEmpty(), "result import does not need the original capture");
+        requirePixels(withoutPayload.image, result,
+                      "missing original payloads cannot change the imported result");
+        require(repository->recordsSnapshot().revision == revision,
+                "history result import and editing never modify the original record");
+    }
+}
+
+void historyImportsRequireStoredResults() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "missing history result fixture directory");
     auto repository = makeCaptureHistoryRepository(directory.path());
     SnowCanvasRuntime runtime;
     for (int variant = 0; variant < 3; ++variant) {
         auto draft = makeDraft(runtime);
-        draft.canvasBounds = QRect(0, 0, 200, 80);
-        draft.selection.rectangle = variant == 0 ? QRect(0, 0, 60, 40) : QRect(80, 0, 80, 40);
-        draft.displays.clear();
-        for (int i = 0; i < 2; ++i) {
-            CaptureHistoryDisplayDraft display;
-            display.stableId = QString::number(i);
-            display.name = display.stableId;
-            display.sourceCanvasRect = QRect(i * 100, 0, 100, 80);
-            display.canvasUsesPoints = true;
-            display.backingScale = i == 0 ? 1.0 : variant == 2 ? 1.25 : 2.0;
-            const QSize pixels = screenshotSelectionRenderedPixelSize(
-                display.sourceCanvasRect->size(), display.backingScale);
-            display.image = QImage(pixels, QImage::Format_ARGB32_Premultiplied);
-            display.image.setColorSpace(QColorSpace::SRgb);
-            display.image.fill(i == 0 ? Qt::red : Qt::blue);
-            draft.displays.append(std::move(display));
+        if (variant != 0)
+            draft.resultImage = composeHistoryResult(runtime, draft);
+        const auto published = repository->publish(std::move(draft)).get();
+        require(published.storage.success, "missing history result fixture publishes");
+        const auto assets = repository->displayAssets(published.record);
+        require(assets && !assets->displays.isEmpty(), "original history display is retained");
+        if (variant == 1) {
+            require(assets->result && QFile::remove(assets->result->localFileUrl.toLocalFile()),
+                    "history result fixture removes its saved result");
+        } else if (variant == 2) {
+            require(assets->result.has_value(), "history result fixture has a saved result");
+            QFile corrupt(assets->result->localFileUrl.toLocalFile());
+            require(corrupt.open(QIODevice::WriteOnly) && corrupt.write("invalid") == 7,
+                    "history result fixture corrupts its saved result");
         }
-        // The exact recorded backing scale remains authoritative when source extents round up.
-        if (variant == 2)
-            draft.displays.back().image = draft.displays.back().image.scaled(QSize(126, 101));
-        const auto published = repository->publish(draft).get();
-        require(published.storage.success, "mixed-DPI history fixture publishes");
+        const auto revision = repository->recordsSnapshot().revision;
         const auto imported = readImageEditingHistory(*repository, published.record);
-        const qreal expectedScale = variant == 0 ? 1.0 : variant == 1 ? 2.0 : 1.25;
-        const QSize expected =
-            screenshotSelectionRenderedPixelSize(draft.selection.rectangle.size(), expectedScale);
-        require(imported.error.isEmpty() && !imported.flattened &&
-                    imported.image.size() == expected &&
-                    imported.canvasRect == QRectF(draft.selection.rectangle),
-                "history import uses only selected display backing scales");
-        require(exportSource(imported).size() == expected,
-                "history editor export retains the selected display pixel resolution");
+        require(imported.image.isNull() && !imported.error.isEmpty() &&
+                    imported.canvasHistory.isEmpty() && imported.canvasSession.isEmpty(),
+                "absent or unreadable results fail without reconstructing the original selection");
+        require(QFileInfo::exists(assets->displays.front().localFileUrl.toLocalFile()) &&
+                    repository->recordsSnapshot().revision == revision &&
+                    repository->records().contains(published.record),
+                "failed result imports preserve the original history record and capture");
     }
 }
 
@@ -312,10 +372,7 @@ void layeredImportsRetainInteriorCoverage() {
             "interior layer coverage exposes only its included pixels");
 }
 
-void editableImportsPreserveResampledExportPixels() {
-    QTemporaryDir directory;
-    require(directory.isValid(), "resampled history fixture directory");
-    auto repository = makeCaptureHistoryRepository(directory.path());
+void layeredImportsPreserveResampledExportPixels() {
     SnowCanvasRuntime background;
     SnowCanvasRuntime annotations;
     require(
@@ -372,24 +429,6 @@ void editableImportsPreserveResampledExportPixels() {
             screenshotSelectionRenderedPixelSize(draft.selection.rectangle.size(), scale);
         const auto expectedBase = background.renderToImage(bounds, pixels, donors);
         const auto expected = annotations.renderToImage(bounds, pixels, donors);
-        draft.resultImage = expected;
-        const auto published = repository->publish(std::move(draft)).get();
-        require(published.storage.success, "resampled history fixture publishes");
-        const auto imported = readImageEditingHistory(*repository, published.record);
-        require(imported.error.isEmpty() && !imported.flattened,
-                "resampled history remains editable");
-        requirePixels(imported.image, expectedBase,
-                      "history import preserves export projection interpolation and cursor alpha");
-        require(imported.image.colorSpace() == QColorSpace(QColorSpace::SRgb),
-                "resampled history retains canonical capture color metadata");
-        requirePixels(exportSource(imported), expected,
-                      "untouched mixed-DPI history exports the original annotated pixels");
-        ImageEditingDocument document;
-        require(document.load(imported) && document.undo(),
-                "resampled history retains editable annotation undo");
-        requirePixels(exportSource(document.snapshot()), expectedBase,
-                      "undo removes imported annotations without leaving baked pixels");
-
         ImageEditingSource layered;
         layered.layeredImage = ScreenshotImageSource::fromLayers(std::move(layers));
         layered.canvasRect = bounds;
@@ -411,99 +450,11 @@ void editableImportsPreserveResampledExportPixels() {
             loop.exec();
         require(loaded, "layered pin source finishes independent editor preparation");
         requirePixels(window.document()->image(), expectedBase,
-                      "layered editor imports use the same projection and sampling as history");
+                      "layered editor imports preserve projection interpolation and cursor alpha");
         requirePixels(
             exportSource(window.document()->snapshot()), expected,
             "layered editor imports retain annotations without baking or resampling twice");
         window.shutdown();
-    }
-}
-
-void historyMagnifiersRetainExteriorSamplingPixels() {
-    ImageEditingSource source;
-    source.image = QImage(200, 140, QImage::Format_ARGB32_Premultiplied);
-    source.image.fill(Qt::blue);
-    {
-        QPainter painter(&source.image);
-        painter.fillRect(QRect(0, 0, 100, 140), Qt::green);
-    }
-    source.canvasRect = QRectF(0, 0, 200, 140);
-    ImageEditingDocument original;
-    require(original.load(source), "magnifier history fixture opens");
-    SnowCanvasWidget canvas(original.runtime());
-    canvas.resize(200, 140);
-    canvas.show();
-    QApplication::processEvents();
-    require(canvas.setViewportCamera(100, 70, 1) && canvas.setCanvasTool(SnowCanvasTool::Magnifier),
-            "magnifier history fixture has an unscaled creation camera");
-    const auto mouse = [&](QEvent::Type type, QPointF point, Qt::MouseButton button,
-                           Qt::MouseButtons buttons) {
-        QMouseEvent event(type, point, point, canvas.mapToGlobal(point), button, buttons,
-                          Qt::NoModifier);
-        QApplication::sendEvent(&canvas, &event);
-    };
-    const auto drag = [&](QPointF from, QPointF to) {
-        mouse(QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
-        mouse(QEvent::MouseMove, to, Qt::NoButton, Qt::LeftButton);
-        mouse(QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton);
-    };
-    drag({20, 50}, {40, 70});
-    drag({30, 60}, {30, 60});
-    drag({30, 104}, {160, 104});
-    require(canvas.resetEditingStatePreservingTool(), "magnifier annotation is committed");
-
-    QTemporaryDir directory;
-    auto repository = makeCaptureHistoryRepository(directory.path());
-    const QRect selection(100, 0, 100, 140);
-    for (int variant = 0; variant < 3; ++variant) {
-        CaptureHistoryDraft draft;
-        draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        draft.createdUtc = QDateTime::currentDateTimeUtc();
-        draft.canvasBounds = source.canvasRect.toRect();
-        draft.selection.rectangle = selection;
-        draft.selection.shadowColor = Qt::transparent;
-        draft.canvasHistory = original.runtime().serializeDocumentHistory();
-        QList<CanvasExportSource> donors;
-        const bool separateDisplays = variant != 0;
-        for (int index = 0; index < (separateDisplays ? 2 : 1); ++index) {
-            CaptureHistoryDisplayDraft display;
-            display.stableId = QString::number(index);
-            display.name = display.stableId;
-            display.sourceCanvasRect =
-                separateDisplays ? QRect(index * 100, 0, 100, 140) : draft.canvasBounds;
-            display.canvasUsesPoints = variant == 2;
-            display.backingScale = index == 0 && variant == 2 ? 2.0 : 1.0;
-            display.image = source.image.copy(*display.sourceCanvasRect);
-            if (display.backingScale != 1)
-                display.image = display.image.scaled(display.image.size() * display.backingScale);
-            donors.append({display.image, QRectF(*display.sourceCanvasRect), {}});
-            if (variant == 2 && index == 0) {
-                display.cursorPixelRect = QRect(50, 110, 20, 20);
-                display.cursorPatch = QImage(20, 20, QImage::Format_ARGB32_Premultiplied);
-                display.cursorPatch.fill(Qt::yellow);
-                donors.append({display.cursorPatch, QRectF(25, 55, 10, 10), {}});
-                draft.cursorVisible = draft.cursorAvailable = true;
-            }
-            draft.displays.append(std::move(display));
-        }
-        const auto expected = original.runtime().renderToImage(selection, selection.size(), donors);
-        require(expected.pixelColor(60, 60) == QColor(variant == 2 ? Qt::yellow : Qt::green),
-                "the original magnifier samples an exterior display and its captured cursor");
-        draft.resultImage = expected;
-        const auto published = repository->publish(std::move(draft)).get();
-        require(published.storage.success, "magnifier history publishes its complete donors");
-        const auto imported = readImageEditingHistory(*repository, published.record);
-        require(imported.error.isEmpty() && !imported.flattened &&
-                    imported.image.size() == selection.size(),
-                "exterior donors preserve editability without changing selected display DPI");
-        requirePixels(exportSource(imported), expected,
-                      "history export retains exterior magnifier sampling pixels");
-        ImageEditingDocument document;
-        require(document.load(imported), "magnifier working copy opens");
-        require(document.crop(ImageEditingDocument::CropAxis::Rows, 120, 130) && document.undo(),
-                "exterior donors survive mixed raster undo");
-        requirePixels(exportPixels(imageEditingExportSource(document.snapshot())), expected,
-                      "export snapshots retain exterior donors across crop and undo");
     }
 }
 
@@ -519,9 +470,12 @@ void pinnedAppearanceSurvivesEditing() {
     record.image = QImage(96, 64, QImage::Format_ARGB32_Premultiplied);
     record.image.fill(QColor(20, 80, 160));
     record.contentCanvasRect = QRectF(0, 0, 48, 32);
+    record.canvasSourceRect = record.contentCanvasRect;
+    record.initialWindowSize = QSize(48, 32);
+    record.nativeGeometry = QRect(0, 0, 96, 64);
     record.canvasSession = runtime.serializeDocumentSession();
     record.originalFileName = QStringLiteral("styled-pin.png");
-    const auto preparation = captureScreenshotPinnedTextPreparation();
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
     for (int variant = 0; variant < 4; ++variant) {
         ScreenshotResultStyle style;
         if (variant == 0)
@@ -540,19 +494,16 @@ void pinnedAppearanceSurvivesEditing() {
             }
         }
         record.resultStyle = encodeScreenshotResultStyle(style);
-        const auto imported = readImageEditingPinned(record, preparation);
-        require(imported.error.isEmpty() && imported.resultStyle.has_value(),
-                "closed styled pin retains its pending appearance");
-        auto expectedStyle = style;
-        expectedStyle.cornerRadius *= 2;
-        expectedStyle.shadowWidth *= 2;
-        expectedStyle.borderWidth *= 2;
-        if (style.region)
-            expectedStyle.region = QRegion(0, 0, 96, 64).subtracted(QRect(32, 20, 18, 16));
-        const auto content = runtime.renderToImage(record.contentCanvasRect, record.image.size(),
+        const qreal scale =
+            screenshotPinnedRenderScale(200, record.image.size(), record.contentCanvasRect);
+        const QSize pixels(qRound(record.contentCanvasRect.width() * scale),
+                           qRound(record.contentCanvasRect.height() * scale));
+        const auto expectedStyle = ScreenshotResultCompositor::scaledStyle(style, scale);
+        const auto content = runtime.renderToImage(record.contentCanvasRect, pixels,
                                                    {{record.image, record.contentCanvasRect}});
         const auto expected = ScreenshotResultCompositor::compose(content, expectedStyle);
-        const auto flattened = loadComposite(imported);
+        const auto flattened = readImageEditingPinned(record, preparation);
+        require(flattened.error.isEmpty(), "closed styled pin renders before editing import");
         require(flattened.flattened && flattened.canvasSession.isEmpty() &&
                     flattened.canvasHistory.isEmpty() && !flattened.resultStyle &&
                     flattened.recognition.isEmpty() &&
@@ -563,19 +514,394 @@ void pinnedAppearanceSurvivesEditing() {
                       "styled pin editor export does not duplicate annotations or effects");
         if (variant >= 2) {
             const int padding = expectedStyle.effectWidth();
-            require(flattened.image.pixelColor(40 + padding, 28 + padding).alpha() == 0,
+            require(flattened.image
+                            .pixelColor(qRound(20 * scale) + padding, qRound(14 * scale) + padding)
+                            .alpha() == 0,
                     "excluded pin pixels remain excluded when opening the editor");
         }
     }
     record.resultStyle.clear();
     const auto plain = readImageEditingPinned(record, preparation);
     require(!plain.resultStyle && !imageEditingCompositeSource(plain).isValid() &&
-                !plain.canvasSession.isEmpty(),
-            "plain pin annotations remain editable without a composite stage");
+                plain.canvasSession.isEmpty() && plain.flattened,
+            "plain pin annotations also become the independent editor's rendered base");
     record.resultStyle = QByteArrayLiteral("invalid style");
     const auto invalid = readImageEditingPinned(record, preparation);
     require(invalid.image.isNull() && !invalid.error.isEmpty(),
             "invalid pin appearance never falls back to raw donor pixels");
+}
+
+void pinnedRasterPreparationUsesExpandedGeometry() {
+    PinnedWindowRecord record;
+    record.image = QImage(80, 60, QImage::Format_ARGB32_Premultiplied);
+    record.image.fill(QColor(20, 80, 160));
+    record.canvasSourceRect = record.contentCanvasRect = QRectF(100, 200, 80, 60);
+    record.initialWindowSize = QSize(80, 60);
+    record.nativeGeometry = QRect(50, 70, 120, 90);
+    record.scalePercent = 999; // Informational values cannot override encoded window geometry.
+    record.opacityPercent = 60;
+    record.originalFileName = QStringLiteral("shared-raster.png");
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
+    const auto full = renderScreenshotPinnedImageRecord(record, preparation);
+    require(full.succeeded() && full.image.size() == QSize(120, 90) &&
+                qAbs(full.image.pixelColor(40, 40).alpha() - 153) <= 1,
+            "persisted raster uses geometry-derived zoom and final opacity");
+    const auto source = readScreenshotPinnedImageSnapshot(record, preparation);
+    require(source.error.isEmpty() && source.outputSize == full.image.size() &&
+                source.originalFileName == record.originalFileName,
+            "deferred pin source reports rendered size and retains naming metadata");
+    requirePixels(exportPixels(source.source), full.image,
+                  "deferred and worker-side pin rendering share identical pixels");
+    record.thumbnailMode = true;
+    record.preThumbnailNativeGeometry = record.nativeGeometry;
+    record.nativeGeometry.setSize(QSize(16, 12));
+    requirePixels(renderScreenshotPinnedImageRecord(record, preparation).image, full.image,
+                  "thumbnail resolution never changes the expanded rendered result");
+    record.thumbnailMode = false;
+    record.cropRect = QRectF(10.25, 11.5, 30.5, 20.25);
+    record.scalePercent = 137;
+    const auto baseline =
+        screenshotPinnedScaleReferenceSize(record.initialWindowSize, {}, 0, record.cropRect,
+                                           record.image.size(), record.canvasSourceRect, {});
+    record.nativeGeometry.setSize(
+        QSize(qRound(baseline.width() * 1.37), qRound(baseline.height() * 1.37)));
+    require(screenshotPinnedRestoredScalePercent(baseline, record.nativeGeometry.size(), 137,
+                                                 true) == 137,
+            "fractional crop retains precise saved zoom only when geometry agrees");
+    const auto cropped = renderScreenshotPinnedImageRecord(record, preparation);
+    require(cropped.succeeded() && cropped.image.size() == record.nativeGeometry.size(),
+            "fractional persisted crop uses canonical rounding at the chosen zoom");
+    int allocations = 0;
+    const auto rejected = readScreenshotPinnedImageSnapshot(record, preparation, {}, [&](qint64) {
+        ++allocations;
+        return false;
+    });
+    require(allocations > 0 && !rejected.source.isValid() && !rejected.error.isEmpty(),
+            "persisted raster respects allocation admission before transformation");
+    require(!readScreenshotPinnedImageSnapshot(record, preparation, [] { return true; })
+                 .source.isValid(),
+            "cancelled record preparation never publishes an export source");
+    record.canvasSession = QByteArrayLiteral("invalid current drawing");
+    const auto invalid = renderScreenshotPinnedImageRecord(record, preparation);
+    require(!invalid.succeeded() && invalid.image.isNull(),
+            "invalid drawing state cannot publish unannotated persisted pixels");
+}
+
+void pinnedRenderPlansRejectOverflowAndInvalidGeometry() {
+    ScreenshotPinnedViewportExportSource source;
+    source.backgroundImage = QImage(4, 4, QImage::Format_ARGB32_Premultiplied);
+    source.backgroundImage.fill(Qt::blue);
+    source.backgroundCanvasRect = QRectF(100, -20, 16, 16);
+    constexpr int maximum = std::numeric_limits<int>::max();
+    source.contentPixelSize = QSize(maximum, maximum);
+    require(!screenshotPinnedViewportRenderPlan(source) &&
+                renderScreenshotPinnedViewport(source).isNull(),
+            "unrepresentable full-image byte counts fail before allocating virtual rasters");
+    source.contentPixelSize = QSize(maximum - 1, 2);
+    source.resultStyle.shadowWidth = 4;
+    require(!screenshotPinnedViewportRenderPlan(source) &&
+                renderScreenshotPinnedViewport(source).isNull(),
+            "effect padding cannot overflow the composed output dimensions");
+    source.resultStyle = {};
+    source.resultStyle.borderType = ScreenshotSelectionBorderType::Border;
+    source.resultStyle.borderWidth = 4;
+    require(!screenshotPinnedViewportRenderPlan(source),
+            "border expansion also rejects an unrepresentable composed layout");
+
+    source.resultStyle = {};
+    source.contentPixelSize = QSize(16, 16);
+    const qreal nan = std::numeric_limits<qreal>::quiet_NaN();
+    const qreal infinity = std::numeric_limits<qreal>::infinity();
+    for (const auto& visible :
+         {QRectF(101, -19, 0, 2), QRectF(101, -19, -1, 2), QRectF(nan, -19, 2, 2),
+          QRectF(101, infinity, 2, 2), QRectF(101, -19, infinity, 2), QRectF(101, -19, 2, nan)}) {
+        source.visibleCanvasRect = visible;
+        require(!screenshotPinnedViewportRenderPlan(source) &&
+                    renderScreenshotPinnedViewport(source).isNull(),
+                "invalid and nonfinite crop coordinates never reach raster rendering");
+    }
+
+    source.contentPixelSize = QSize(maximum, maximum);
+    source.backgroundCanvasRect = QRectF(100, -20, maximum, maximum);
+    source.visibleCanvasRect = QRectF(112, -9, 3, 2);
+    const auto crop = screenshotPinnedViewportRenderPlan(source);
+    require(crop && !crop->cropAfterRender && crop->renderCanvasRect == *source.visibleCanvasRect &&
+                crop->renderPixelSize == QSize(3, 2) && crop->outputSize() == QSize(3, 2) &&
+                crop->workingBytes > 0 && crop->workingBytes < 1024,
+            "a plain tiny crop admits only its bounded domain despite full-domain byte overflow");
+    const auto pixels = renderScreenshotPinnedViewport(source);
+    require(!pixels.isNull() && pixels.size() == QSize(3, 2),
+            "a valid tiny-crop plan renders without allocating its virtual full image");
+    source.resultStyle.cornerRadius = 2;
+    require(!screenshotPinnedViewportRenderPlan(source),
+            "the same overflowing full domain is rejected when rounded crops must compose it");
+}
+
+void pinnedHighDepthTransformsReserveNativeWorkingImages() {
+    PinnedWindowRecord record;
+    record.image = QImage(16, 12, QImage::Format_RGBA64);
+    record.image.fill(QColor(30, 80, 170, 190));
+    record.imageTransform.rotate(90);
+    record.quarterTurns = 1;
+    record.canvasSourceRect = QRectF(-4, 7, 16, 12);
+    record.contentCanvasRect = QRectF(-4, 7, 12, 16);
+    record.initialWindowSize = record.image.size();
+    record.nativeGeometry = QRect(QPoint(), QSize(12, 16));
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
+    // This admits the previous source + normalized + two output raster estimate, while
+    // remaining too small for transformed images that retain the source's 64-bit depth.
+    const qint64 capacity = record.image.sizeInBytes() + qint64(16 * 12 * 4) * 3;
+    qint64 requested = 0;
+    int allocations = 0;
+    const auto allocate = [&](qint64 bytes) {
+        ++allocations;
+        requested = bytes;
+        return bytes <= capacity;
+    };
+    const auto rejected = readScreenshotPinnedImageSnapshot(record, preparation, {}, allocate);
+    require(allocations == 1 && requested > capacity && !rejected.source.isValid() &&
+                !rejected.error.isEmpty(),
+            "high-depth transforms reject insufficient memory before preparing transformed donors");
+    allocations = 0;
+    const auto rejectedPixels =
+        renderScreenshotPinnedImageRecord(record, preparation, {}, allocate);
+    require(allocations == 1 && requested > capacity && !rejectedPixels.succeeded() &&
+                rejectedPixels.image.isNull(),
+            "worker rendering enforces the same native-depth transform admission");
+    const auto accepted = renderScreenshotPinnedImageRecord(
+        record, preparation, {}, [](qint64 bytes) { return bytes <= 64 * 1024; });
+    require(accepted.succeeded(), "sufficient memory admits the high-depth rotated source");
+    const auto expected = ScreenshotResultCompositor::normalizeImage(
+        snowCanvasTransformImage(record.image, record.imageTransform, Qt::SmoothTransformation));
+    requirePixels(accepted.image, expected,
+                  "admitted high-depth transforms preserve their normalized rendered pixels");
+}
+
+ScreenshotResultStyle pinnedCropAppearance(int variant, QSize size) {
+    ScreenshotResultStyle style;
+    if (variant == 0)
+        style.cornerRadius = 6;
+    else if (variant == 1) {
+        style.shadowWidth = 4;
+        style.shadowColor = QColor(0, 0, 0, 180);
+    } else if (variant == 2) {
+        style.borderType = ScreenshotSelectionBorderType::Border;
+        style.borderWidth = 3;
+        style.borderColor = QColor(240, 190, 20);
+    } else {
+        style.region = QRegion(QRect(QPoint(), size))
+                           .subtracted(QRect(size.width() / 4, size.height() / 4, size.width() / 2,
+                                             size.height() / 3));
+    }
+    return style;
+}
+
+void setPinnedCropGeometry(PinnedWindowRecord& record, const ScreenshotResultStyle& style,
+                           double zoom) {
+    record.resultStyle = encodeScreenshotResultStyle(style);
+    record.scalePercent = zoom;
+    const auto baseline = screenshotPinnedScaleReferenceSize(
+        record.initialWindowSize, record.exactInitialWindowSize, record.quarterTurns,
+        record.cropRect, record.image.size(), record.canvasSourceRect, style);
+    record.nativeGeometry = QRect(QPoint(), QSize(qRound(baseline.width() * zoom / 100),
+                                                  qRound(baseline.height() * zoom / 100)));
+}
+
+void pinnedStyledCropsReserveTheirFullRenderingWorkingSet() {
+    PinnedWindowRecord record;
+    record.image = QImage(120, 90, QImage::Format_ARGB32_Premultiplied);
+    record.image.fill(QColor(20, 80, 160));
+    record.canvasSourceRect = record.contentCanvasRect = QRectF(300, -200, 1200, 900);
+    record.initialWindowSize = QSize(1200, 900);
+    record.exactInitialWindowSize = QSizeF(record.initialWindowSize);
+    record.cropRect = QRectF(3, 4, 1, 1);
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
+    constexpr qint64 capacity = 1024 * 1024;
+    qint64 requested = 0;
+    const auto allocate = [&](qint64 bytes) {
+        requested = std::max(requested, bytes);
+        return bytes <= capacity;
+    };
+    setPinnedCropGeometry(record, {}, 1000);
+    const auto plain = readScreenshotPinnedImageSnapshot(record, preparation, {}, allocate);
+    require(plain.error.isEmpty() && plain.source.isValid() && requested <= capacity &&
+                !plain.outputSize.isEmpty() &&
+                qint64(plain.outputSize.width()) * plain.outputSize.height() * 4 < capacity,
+            "a small plain crop is admitted independently of its large virtual full image");
+    const auto plainPixels = renderScreenshotPinnedImageRecord(record, preparation, {}, allocate);
+    require(plainPixels.succeeded() && plainPixels.image.size() == plain.outputSize,
+            "plain stored crops render within their bounded admission");
+    requirePixels(exportPixels(plain.source), plainPixels.image,
+                  "admitted plain crop snapshots retain their exact bounded rendering");
+
+    for (int variant = 0; variant < 4; ++variant) {
+        setPinnedCropGeometry(
+            record, pinnedCropAppearance(variant, record.contentCanvasRect.size().toSize()), 1000);
+        requested = 0;
+        const auto rejected = readScreenshotPinnedImageSnapshot(record, preparation, {}, allocate);
+        require(requested > capacity && !rejected.source.isValid() && !rejected.error.isEmpty(),
+                "styled crop snapshots reject full-size intermediates before publishing a source");
+        requested = 0;
+        const auto rejectedPixels =
+            renderScreenshotPinnedImageRecord(record, preparation, {}, allocate);
+        require(requested > capacity && !rejectedPixels.succeeded() &&
+                    rejectedPixels.image.isNull() && !rejectedPixels.error.isEmpty(),
+                "stored styled crop workers reject the same oversized rendering working set");
+    }
+
+    int allocations = 0;
+    const auto cancelled = readScreenshotPinnedImageSnapshot(
+        record, preparation, [] { return true; },
+        [&](qint64) {
+            ++allocations;
+            return true;
+        });
+    require(allocations == 0 && !cancelled.source.isValid() && !cancelled.error.isEmpty(),
+            "already cancelled styled crops never request allocation or publish deferred work");
+    bool stop = false;
+    const auto interrupted = readScreenshotPinnedImageSnapshot(
+        record, preparation, [&] { return stop; },
+        [&](qint64) {
+            if (++allocations == 2)
+                stop = true;
+            return true;
+        });
+    require(allocations == 2 && !interrupted.source.isValid() && !interrupted.error.isEmpty(),
+            "cancellation during admission prevents publication of a styled crop source");
+}
+
+void pinnedStyledCropsMatchFullRenderingWithTheirOriginalCoordinates() {
+    SnowCanvasRuntime drawing;
+    require(
+        !drawing
+             .applyAnnotationTransaction(
+                 R"({"version":1,"operations":[{"type":"rectangle","bounds":[-10,24,12,14],"style":{"fill":[255,0,0,255],"stroke":[0,0,0,0]}}]})")
+             .isEmpty(),
+        "rotated crop fixture contains a drawing across a region exclusion");
+    PinnedWindowRecord record;
+    record.image = QImage(48, 36, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < record.image.height(); ++y)
+        for (int x = 0; x < record.image.width(); ++x)
+            record.image.setPixelColor(x, y, QColor(x * 5, y * 7, 90, (x + y) % 3 ? 255 : 120));
+    record.canvasSourceRect = QRectF(201, -105, 48, 36);
+    record.contentCanvasRect = QRectF(-17, 23, 36, 48);
+    record.initialWindowSize = record.image.size();
+    record.exactInitialWindowSize = QSizeF(record.initialWindowSize);
+    record.imageTransform.rotate(90);
+    record.quarterTurns = 1;
+    record.cropRect = QRectF(0, 0, 24, 36);
+    record.opacityPercent = 62;
+    record.canvasSession = drawing.serializeDocumentSession();
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
+    const QImage oriented = ScreenshotResultCompositor::normalizeImage(
+        snowCanvasTransformImage(record.image, record.imageTransform, Qt::SmoothTransformation));
+    QTransform pixelsToCanvas;
+    pixelsToCanvas.translate(record.contentCanvasRect.left(), record.contentCanvasRect.top());
+    pixelsToCanvas.scale(record.contentCanvasRect.width() / oriented.width(),
+                         record.contentCanvasRect.height() / oriented.height());
+    const QTransform orientation =
+        QImage::trueMatrix(record.imageTransform, record.image.width(), record.image.height());
+    const auto visible = (orientation * pixelsToCanvas).mapRect(*record.cropRect);
+    constexpr qint64 capacity = 4 * 1024 * 1024;
+    for (int variant = 0; variant < 4; ++variant) {
+        const auto style = pinnedCropAppearance(variant, record.contentCanvasRect.size().toSize());
+        setPinnedCropGeometry(record, style, 175);
+        const qreal scale =
+            screenshotPinnedRenderScale(175, oriented.size(), record.contentCanvasRect);
+        const QSize pixels(qRound(record.contentCanvasRect.width() * scale),
+                           qRound(record.contentCanvasRect.height() * scale));
+        ScreenshotPinnedViewportExportSource full;
+        full.documentSession = record.canvasSession;
+        full.backgroundImage = oriented;
+        full.backgroundCanvasRect = record.contentCanvasRect;
+        full.contentPixelSize = pixels;
+        full.resultStyle = ScreenshotResultCompositor::scaledStyle(style, scale);
+        full.outputOpacity = record.opacityPercent / 100.0;
+        const auto rendered = renderScreenshotPinnedViewport(full);
+        const auto layout = ScreenshotResultCompositor::layoutForContent(pixels, full.resultStyle);
+        const qreal sx = pixels.width() / record.contentCanvasRect.width();
+        const qreal sy = pixels.height() / record.contentCanvasRect.height();
+        const QRect crop(
+            qRound((visible.x() - record.contentCanvasRect.x()) * sx) - layout.outputRect.x(),
+            qRound((visible.y() - record.contentCanvasRect.y()) * sy) - layout.outputRect.y(),
+            qRound(visible.width() * sx), qRound(visible.height() * sy));
+        require(!rendered.isNull() && rendered.rect().contains(crop),
+                "the styled crop reference remains inside its full rendered image");
+        const auto expected = rendered.copy(crop);
+        if (variant == 3) {
+            const QPoint drawingPixel(qRound((-6 - record.contentCanvasRect.left()) * sx),
+                                      qRound((36 - record.contentCanvasRect.top()) * sy));
+            auto pristine = full;
+            pristine.documentSession.clear();
+            const auto excluded = renderScreenshotPinnedViewport(pristine);
+            const auto annotated = expected.pixelColor(drawingPixel - crop.topLeft());
+            require(!excluded.isNull() && excluded.pixelColor(drawingPixel).alpha() == 0 &&
+                        annotated.red() > 240 && annotated.green() < 15 &&
+                        qAbs(annotated.alpha() - 158) <= 1,
+                    "cropped region exclusions preserve overlaid drawing and final opacity");
+        }
+        qint64 requested = 0;
+        const auto allocate = [&](qint64 bytes) {
+            requested = std::max(requested, bytes);
+            return bytes <= capacity;
+        };
+        const auto snapshot = readScreenshotPinnedImageSnapshot(record, preparation, {}, allocate);
+        require(snapshot.error.isEmpty() && snapshot.source.isValid() &&
+                    snapshot.outputSize == expected.size() && requested > 0 &&
+                    requested <= capacity,
+                "moderate styled crops admit a complete drawing and effect working set");
+        requirePixels(
+            exportPixels(snapshot.source), expected,
+            "deferred styled crops retain full-render phase, origin, rotation and opacity");
+        const auto actual = renderScreenshotPinnedImageRecord(record, preparation, {}, allocate);
+        require(actual.succeeded(), "admitted styled crop workers render successfully");
+        requirePixels(actual.image, expected,
+                      "stored styled crops exactly match clipping their full rendered document");
+    }
+}
+
+void pinnedRecognitionUsesSavedImageVisibility() {
+    PinnedWindowRecord record;
+    record.image = QImage(100, 60, QImage::Format_ARGB32_Premultiplied);
+    record.image.fill(Qt::white);
+    record.canvasSourceRect = record.contentCanvasRect = QRectF(0, 0, 100, 60);
+    record.initialWindowSize = record.image.size();
+    record.nativeGeometry = QRect(QPoint(), record.image.size());
+    auto preparation = captureScreenshotPinnedRenderPreparation();
+    preparation.backgroundFill = true;
+    const auto original = renderScreenshotPinnedImageRecord(record, preparation);
+    require(original.succeeded(), "legacy pin without visibility metadata renders its image");
+    record.recognitionVisible = true;
+    require(!renderScreenshotPinnedImageRecord(record, preparation).succeeded(),
+            "missing visible recognition content reports failure instead of substituting pixels");
+    const QPolygonF quad{QPointF(5, 5), QPointF(95, 5), QPointF(95, 30), QPointF(5, 30)};
+    QDataStream stream(&record.recognitionResults, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_6_11);
+    stream << QStringLiteral("persisted-image-recognition") << quint8(1) << quint8(0) << quint8(0)
+           << QString() << QRect(0, 0, 100, 60) << qint64(1) << QStringLiteral("Recognized text")
+           << qreal(1) << quad << quint8(0);
+    const auto recognized = renderScreenshotPinnedImageRecord(record, preparation);
+    require(recognized.succeeded() && recognized.image != original.image,
+            "visible cached OCR contributes image pixels without starting recognition");
+    record.translationVisible = true;
+    requirePixels(renderScreenshotPinnedImageRecord(record, preparation).image, recognized.image,
+                  "explicit recognition type overrides the legacy translation visibility hint");
+    record.recognitionVisible = false;
+    requirePixels(renderScreenshotPinnedImageRecord(record, preparation).image, original.image,
+                  "hidden cached OCR does not change the original image baseline");
+    if constexpr (snow_shot::app::edition::textTranslation) {
+        record.recognitionVisible = true;
+        record.textType = PinnedTextType::TranslationResults;
+        require(!renderScreenshotPinnedImageRecord(record, preparation).succeeded(),
+                "a missing visible translation cannot silently fall back to recognized text");
+        stream << quint32(0x53535452) << quint8(2) << QRect(0, 0, 100, 60) << qint64(1)
+               << QStringLiteral("Translated words") << qreal(1) << quad << quint8(0) << false
+               << QVector<QPolygonF>();
+        const auto translated = renderScreenshotPinnedImageRecord(record, preparation);
+        require(translated.succeeded() && translated.image != recognized.image &&
+                    translated.image != original.image,
+                "stored translated image content renders from its saved layout and selected type");
+    }
 }
 
 void pinnedTextUsesCapturedRenderingInputs() {
@@ -624,10 +950,16 @@ void pinnedTextUsesCapturedRenderingInputs() {
 
 void runImageEditingSourceTests() {
     appearanceSurvivesHistoryEditing();
-    historyResolutionUsesSelectedDisplays();
+    historyImportsStoredResults();
+    historyImportsRequireStoredResults();
     layeredImportsRetainInteriorCoverage();
-    editableImportsPreserveResampledExportPixels();
-    historyMagnifiersRetainExteriorSamplingPixels();
+    layeredImportsPreserveResampledExportPixels();
     pinnedAppearanceSurvivesEditing();
+    pinnedRasterPreparationUsesExpandedGeometry();
+    pinnedRenderPlansRejectOverflowAndInvalidGeometry();
+    pinnedHighDepthTransformsReserveNativeWorkingImages();
+    pinnedStyledCropsReserveTheirFullRenderingWorkingSet();
+    pinnedStyledCropsMatchFullRenderingWithTheirOriginalCoordinates();
+    pinnedRecognitionUsesSavedImageVisibility();
     pinnedTextUsesCapturedRenderingInputs();
 }

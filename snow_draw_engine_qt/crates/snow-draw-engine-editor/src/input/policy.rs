@@ -19,13 +19,11 @@ impl Editor {
         policy
     }
 
-    /// Whether a press on empty canvas is currently spent on deselecting an
-    /// existing selection instead of beginning the active tool's creation
-    /// workflow. The empty-canvas press handler is the only caller: host
-    /// layers follow the resulting interaction (including
-    /// `pending_new_text_draft`) rather than re-asking this question.
+    /// Whether an active text edit takes the blank press that would otherwise
+    /// start creation. An idle selection is cleared as part of starting the tool.
     pub fn empty_canvas_press_deselects_first(&self) -> bool {
-        self.tool_policy().empty_canvas_action.starts_creation() && !self.state.selection.is_empty()
+        self.state.active_text_draft.is_some()
+            && self.tool_policy().empty_canvas_action.starts_creation()
     }
 
     pub(crate) fn tool_policy_for(active_tool: ActiveTool) -> ToolPolicy {
@@ -200,7 +198,7 @@ impl Editor {
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreateSerialNumber,
                 allow_shift_toggle: true,
-                default_cursor: CursorStyle::Crosshair,
+                default_cursor: CursorStyle::SerialNumber,
             },
         }
     }
@@ -281,6 +279,14 @@ impl Editor {
 #[cfg(test)]
 mod line_policy_tests {
     use super::*;
+
+    #[test]
+    fn serial_number_uses_its_native_creation_cursor() {
+        assert_eq!(
+            Editor::tool_policy_for(ActiveTool::SerialNumber).default_cursor,
+            CursorStyle::SerialNumber
+        );
+    }
 
     #[test]
     fn shape_uses_a_crosshair_creation_cursor() {

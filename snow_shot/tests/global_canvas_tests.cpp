@@ -359,7 +359,9 @@ void canvasCollectionBehavior() {
     require(captureWindowLevel({CaptureFamily::Screenshot, 0}) == screenshotLevel &&
                 captureWindowLevel({CaptureFamily::Recording, 0}) ==
                     screenshotLevel - kCaptureBandSize &&
-                pinnedWindowLevel() == screenshotLevel - 2 * kCaptureBandSize,
+                pinnedWindowLevel() > captureWindowLevel({CaptureFamily::DesktopToolbar, 1000}) &&
+                captureWindowLevel({CaptureFamily::Pinned, 1000}) <
+                    CGWindowLevelForKey(kCGDraggingWindowLevelKey),
             "screenshot, recording, and pin windows use separate native level bands");
     QWindow canvas;
     canvas.setProperty(kScreenshotLayer, kOverlayLayer);
@@ -491,7 +493,7 @@ void toolbarPlacement(QApplication& app) {
         nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
     controller.activate();
     auto* palette = controller.toolbar()->palette();
-    palette->freeDrawRequested();
+    palette->brushRequested();
     const auto requireStyleBelowMain = [&]() {
         app.processEvents();
         QWidget* main = palette->mainPanel();
@@ -1262,7 +1264,7 @@ void canvasClickThroughToolbarOpacity(QApplication& app) {
             "opacity fixture requires unused toolbar frame space");
     hover(unused);
     requireOpacity(0.32, "unused toolbar frame space must not count as hovering controls");
-    toolbar->palette()->freeDrawRequested();
+    toolbar->palette()->brushRequested();
     app.processEvents();
     auto* style = toolbar->palette()->stylePanel();
     require(style && style->isVisible(), "opacity fixture requires a visible style row");
@@ -1685,7 +1687,7 @@ int main(int argc, char** argv) {
     require(handle != nullptr, "drawing toolbar provides a drag handle");
     // The native test exercises dragging: Windows placement reads the physical
     // cursor rather than synthetic mouse-event positions.
-    palette->freeDrawRequested();
+    palette->brushRequested();
     const double widthBefore = canvas->canvasStyleToolbarState().shapeStyle.strokeWidth;
     require(palette->stepStrokeWidth(1) &&
                 canvas->canvasStyleToolbarState().shapeStyle.strokeWidth > widthBefore,

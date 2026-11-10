@@ -95,6 +95,8 @@ class ScreenshotColorPresetSettings final {
     bool setStrokeColors(const QVector<QColor>& colors) const;
     [[nodiscard]] QVector<QColor> fillColors() const;
     bool setFillColors(const QVector<QColor>& colors) const;
+    [[nodiscard]] QVector<QColor> highlightColors() const;
+    bool setHighlightColors(const QVector<QColor>& colors) const;
 };
 
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
@@ -167,8 +169,8 @@ class ShortcutSettings final {
     bool setScreenshot(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotDelay() const;
     bool setScreenshotDelay(const shortcuts::ShortcutBindingList& bindings) const;
-    [[nodiscard]] shortcuts::ShortcutBindingList screenshotFixed() const;
-    bool setScreenshotFixed(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotPinToScreen() const;
+    bool setScreenshotPinToScreen(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotOcr() const;
     bool setScreenshotOcr(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotOcrCopy() const;
@@ -178,6 +180,8 @@ class ShortcutSettings final {
     bool setScreenshotTranslation(const shortcuts::ShortcutBindingList& bindings) const;
 #endif
 
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotScrolling() const;
+    bool setScreenshotScrolling(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotCopy() const;
     bool setScreenshotCopy(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotSave() const;
@@ -204,6 +208,8 @@ class ShortcutSettings final {
     bool setStitchSelectedImages(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList splitSelectedImages() const;
     bool setSplitSelectedImages(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList editSelectedImages() const;
+    bool setEditSelectedImages(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList openPinToScreenManagement() const;
     bool setOpenPinToScreenManagement(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList openSettings() const;
@@ -224,8 +230,8 @@ class ShortcutSettings final {
     [[nodiscard]] shortcuts::ShortcutBindingList toggleWindowUnderCursorAlwaysOnTop() const;
     bool
     setToggleWindowUnderCursorAlwaysOnTop(const shortcuts::ShortcutBindingList& bindings) const;
-    [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;
-    bool setToggleGlobalHotkeys(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalShortcuts() const;
+    bool setToggleGlobalShortcuts(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleDisableOnFocusedFullscreenWindow() const;
     bool
     setToggleDisableOnFocusedFullscreenWindow(const shortcuts::ShortcutBindingList& bindings) const;
@@ -235,6 +241,8 @@ class GlobalShortcutSettings final {
   public:
     [[nodiscard]] bool disableOnFocusedFullscreenWindow() const;
     bool setDisableOnFocusedFullscreenWindow(bool disabled) const;
+    [[nodiscard]] QString fullscreenWindowFilter() const;
+    bool setFullscreenWindowFilter(const QString& filter) const;
 };
 
 class ScreenshotSettings final {
@@ -271,6 +279,8 @@ class ScreenshotSettings final {
     bool setMiddleMouseButtonAction(const QString& action) const;
     [[nodiscard]] bool quickSelectionModification() const;
     bool setQuickSelectionModification(bool enabled) const;
+    [[nodiscard]] QString hiDpiImageScaling() const;
+    bool setHiDpiImageScaling(const QString& mode) const;
     [[nodiscard]] QString selectionResizeMode() const;
     bool setSelectionResizeMode(const QString& mode) const;
     [[nodiscard]] QStringList autoSaveAfterExecutionActions() const;
@@ -280,6 +290,8 @@ class ScreenshotSettings final {
     bool setCopyImageFileToClipboard(bool enabled) const;
     [[nodiscard]] bool copyAfterPinningToScreen() const;
     bool setCopyAfterPinningToScreen(bool enabled) const;
+    [[nodiscard]] bool keepAnnotationsEditableAfterPinningToScreen() const;
+    bool setKeepAnnotationsEditableAfterPinningToScreen(bool enabled) const;
     [[nodiscard]] QString imageSaveDirectory() const;
     bool setImageSaveDirectory(const QString& directory) const;
     [[nodiscard]] QString lastManualSaveDirectory() const;
@@ -311,6 +323,10 @@ class ScreenshotSettings final {
 
 class DrawingSettings final {
   public:
+    [[nodiscard]] bool syncToolColors() const;
+    bool setSyncToolColors(bool enabled) const;
+    // The remembered shared color, or the Shape creation stroke before first use.
+    [[nodiscard]] QColor sharedToolColor() const;
     [[nodiscard]] bool automaticallySelectNewlyCreatedElements() const;
     bool setAutomaticallySelectNewlyCreatedElements(bool enabled) const;
     [[nodiscard]] QStringList automaticSelectionExcludedTools() const;
@@ -328,6 +344,10 @@ class DrawingSettings final {
 // Applies partial updates across local shortcut scopes in one commit. Each affected
 // scope is validated against its complete resulting assignment before any values change.
 [[nodiscard]] bool setLocalShortcutValuesAtomic(const QMap<QString, QJsonValue>& values);
+
+// Keeps the shared color and per-tool appearance preferences consistent in one commit.
+// Also accepts drawing section reset values; disabling materializes the current color.
+[[nodiscard]] bool setDrawingStyleValues(QMap<QString, QJsonValue> values);
 
 class ScreenshotShortcutSettings final {
   public:
@@ -556,6 +576,14 @@ class RecordingSettings final {
     bool setWebcamOrientation(int orientation) const;
     [[nodiscard]] bool showKeyboard() const;
     bool setShowKeyboard(bool show) const;
+    [[nodiscard]] bool recordNumberKeys() const;
+    bool setRecordNumberKeys(bool enabled) const;
+    [[nodiscard]] bool recordLettersAndSymbols() const;
+    bool setRecordLettersAndSymbols(bool enabled) const;
+    [[nodiscard]] bool recordControlKeys() const;
+    bool setRecordControlKeys(bool enabled) const;
+    [[nodiscard]] bool preserveKeyboardShortcuts() const;
+    bool setPreserveKeyboardShortcuts(bool enabled) const;
     [[nodiscard]] bool mouseHighlightEnabled() const;
     bool setMouseHighlightEnabled(bool enabled) const;
     [[nodiscard]] bool recordMouseClicks() const;
@@ -704,6 +732,8 @@ class PinToScreenSettings final {
     bool setDuplicateContentAction(const QString& value) const;
     [[nodiscard]] QString textSelectionOnRecognitionResults() const;
     [[nodiscard]] bool setTextSelectionOnRecognitionResults(const QString& mode) const;
+    [[nodiscard]] bool quickAnnotationForSelectedText() const;
+    bool setQuickAnnotationForSelectedText(bool enabled) const;
     [[nodiscard]] bool automaticTextRecognition() const;
     bool setAutomaticTextRecognition(bool enabled) const;
     [[nodiscard]] bool autoResizeWindow() const;
@@ -746,6 +776,8 @@ class NetworkSettings final {
   public:
     [[nodiscard]] QString proxy() const;
     bool setProxy(const QString& proxy) const;
+    [[nodiscard]] QString httpProxy() const;
+    bool setHttpProxy(const QString& address) const;
 };
 } // namespace snow_shot::storage
 

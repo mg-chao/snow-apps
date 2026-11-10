@@ -293,6 +293,15 @@ if (-not $StandaloneMedia) {
         Copy-LicenseNotice -Category "source" -Package "microtex-0e3707f6" `
             -DeclaredLicense $notice.Value -Source $noticePath -RelativeName $notice.Key
     }
+    if ($CargoTarget.EndsWith('-windows-msvc', [StringComparison]::Ordinal)) {
+        $lzmaNoticeRoot = Join-Path $PSScriptRoot '../licenses/lzma-sdk'
+        foreach ($notice in @('LICENSE.txt', 'SOURCE.md')) {
+            $noticePath = Resolve-ExistingPath -Path (Join-Path $lzmaNoticeRoot $notice) `
+                -Description 'LZMA SDK installer decoder notice' -PathType Leaf
+            Copy-LicenseNotice -Category 'source' -Package 'lzma-sdk-26.05' `
+                -DeclaredLicense 'LicenseRef-Public-Domain' -Source $noticePath -RelativeName $notice
+        }
+    }
 }
 
 $sortedRecords = @($records | Sort-Object Category, Package, Notice)

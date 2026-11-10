@@ -63,9 +63,9 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     }
     void setArrowTool() override {}
     void setLineTool() override {}
-    void setFreeDrawTool() override {}
+    void setBrushTool() override {}
     void setHighlightTool() override {}
-    void setPenHighlightTool() override {}
+    void setBrushHighlightTool() override {}
     void setEraserTool() override {
         ++elementEraserCount;
     }
@@ -81,7 +81,7 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
     void setTextTool() override {}
-    void setSerialNumberTool() override {}
+    void setSequenceNumberTool() override {}
     void setOcrTool() override {}
     void startScrollingScreenshot() override {}
     void splitScrollingScreenshot() override {
@@ -97,10 +97,10 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
-    void decrementSelectedSerialNumbers() override {}
-    void incrementSelectedSerialNumbers() override {}
-    void createTextForSelectedSerialNumber() override {}
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSequenceNumbers() override {}
+    void incrementSelectedSequenceNumbers() override {}
+    void createTextForSelectedSequenceNumber() override {}
     void repositionToolbarForContentChange() override {}
     void hideColorPickersForScreenshotUi() override {}
     void requestRecapture() override {
@@ -347,6 +347,22 @@ void selectionToolbarStateSurvivesEvictedMoveControls() {
             "the rebuilt visibility button must save and dispatch exactly one new action");
 }
 
+void repeatedToolsReachMoveCommand() {
+    using Tool = ScreenshotToolPalette::Tool;
+    RecordingToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    auto* palette = window.palette();
+    for (const Tool tool : {Tool::Select, Tool::Shape, Tool::Ocr, Tool::Move}) {
+        palette->setActiveTool(tool);
+        const int previousMoves = commands.moveToolCount;
+        const int previousSelects = commands.selectToolCount;
+        require(palette->activateToolShortcut(tool) && palette->activeTool() == Tool::Move &&
+                    commands.moveToolCount == previousMoves + 1 &&
+                    commands.selectToolCount == previousSelects,
+                "repeating a screenshot tool must route exactly once to Edit selection");
+    }
+}
+
 void eraserSubtoolsReachToolbarCommands() {
     using Tool = ScreenshotToolPalette::Tool;
     const storage::ScreenshotToolbarSettings settings;
@@ -496,7 +512,7 @@ void rememberedDrawingToolRestoresOncePerCapture() {
 }
 // Exercise production keyboard routing and toolbar signal connections together.
 // Only the command sink substitutes for external recognition/export services.
-void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
+void selectionShortcutsReachToolbarCommands(bool hiddenTools = false, bool captureAction = false) {
     using Tool = ScreenshotToolPalette::Tool;
     const storage::ScreenshotShortcutSettings screenshotSettings;
     const storage::DrawingShortcutSettings drawingSettings;
@@ -614,7 +630,9 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
         actions.activateScreenshotShortcut = [&](const QString& action) {
             return window.palette()->activateScreenshotShortcut(action);
         };
-        actions.prepareExplicitSelectionCommand = [&] {
+        actions.prepareSelection = [&](ScreenshotSelectionIntent intent) {
+            require(intent == ScreenshotSelectionIntent::SupersedeWithCommand,
+                    "toolbar commands supersede the launch action before restoring tools");
             ++preparations;
             window.suppressRememberedDrawingTool();
         };
@@ -625,7 +643,23 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
             if (hiddenTools)
                 window.show();
         };
-        actions.selectionConfirmed = [&] { ++confirmations; };
+        actions.updateOverlayState = [&] {
+            require(commands.calls == 1 && !interaction.moveToolActive(),
+                    "the first committed overlay must already use the requested tool");
+        };
+        actions.selectionConfirmed = [&] {
+            ++confirmations;
+            if (captureAction) {
+                if (drawing) {
+                    window.restoreRememberedDrawingTool();
+                } else {
+                    window.suppressRememberedDrawingTool();
+                    refreshAvailability();
+                    require(window.palette()->activateScreenshotShortcut(id),
+                            "pending capture action must activate its toolbar command");
+                }
+            }
+        };
         ScreenshotOverlayInputHandler handler(
             {capture, interaction, selection, intelligent, geometry, displays, actions});
         auto screenshot = originalScreenshot;
@@ -652,7 +686,7 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
             QCoreApplication::sendEvent(&receiver, &event);
             return event.isAccepted();
         };
-        if (recognition) {
+        if (recognition && !captureAction) {
             selection.setSelectionRect(QRectF(0, 0, 3841, 2160));
             require(!dispatch() && interaction.selecting() && preparations == 0 &&
                         commands.calls == 0 && presentations == 0,
@@ -660,9 +694,14 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
             selection.setSelectionRect(QRectF(10, 20, 80, 60));
         }
         intelligent.beginPress(QPointF(30, 40), selection.normalizedSelection());
-        require(dispatch() && commands.calls == 1 && preparations == 1,
-                "keyboard shortcut must reach its real toolbar command exactly once");
-        require(presentations == (completion ? 0 : 1) && confirmations == (completion ? 0 : 1),
+        if (captureAction)
+            handler.handleMouseRelease(nullptr, QPointF(30, 40));
+        else
+            require(dispatch(), "keyboard shortcut must be handled");
+        require(commands.calls == 1 && preparations == (captureAction ? 0 : 1),
+                "selection must reach its real toolbar command exactly once");
+        require(presentations == (completion ? 0 : 1) &&
+                    confirmations == (completion && !captureAction ? 0 : 1),
                 "completed captures must not be presented or confirmed again");
         handler.handleMouseRelease(nullptr, QPointF(300, 300));
         require(commands.calls == 1 && selection.pixelSelection() == QRect(10, 20, 80, 60),
@@ -691,9 +730,10 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
                     require(button->isHidden(), "capture hotkeys must not reveal hidden buttons");
             }
             if (!completion) {
-                require(dispatch() && commands.calls == 1 &&
-                            window.palette()->activeTool() == Tool::Select,
-                        "hidden tool hotkeys toggle back to Select after selection is committed");
+                require(
+                    dispatch() && commands.calls == 1 &&
+                        window.palette()->activeTool() == Tool::Move,
+                    "hidden tool hotkeys return to Edit selection after selection is committed");
             }
         }
     }
@@ -821,6 +861,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--edit-selection-toolbar-only"))) {
+        repeatedToolsReachMoveCommand();
         editSelectionToolbarFollowsSetting();
         moveOptionsCapabilityIsIndependentOfVisibility();
         applicationStorage.shutdown();
@@ -842,11 +883,13 @@ int main(int argc, char** argv) {
         return 0;
     }
     eraserSubtoolsReachToolbarCommands();
+    repeatedToolsReachMoveCommand();
     editSelectionToolbarFollowsSetting();
     moveOptionsCapabilityIsIndependentOfVisibility();
     selectionToolbarStateSurvivesEvictedMoveControls();
     rememberedDrawingToolRestoresOncePerCapture();
     selectionShortcutsReachToolbarCommands();
+    selectionShortcutsReachToolbarCommands(false, true);
     applicationStorage.shutdown();
     return 0;
 }

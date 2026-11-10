@@ -443,7 +443,7 @@ AdministratorResult withHelper(const QByteArray& operation, const std::function<
         QStringLiteral("snow-shot-admin-") + QUuid::createUuid().toString(QUuid::Id128);
     if (!server.listen(pipe))
         return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                              "Could not create the administrator handoff.")));
+                                              "Could not create the administrator handoff")));
     auto future = std::async(std::launch::async, [pipe] {
         ComApartment apartment;
         return launchHelper(pipe);
@@ -463,17 +463,17 @@ AdministratorResult withHelper(const QByteArray& operation, const std::function<
         return {false, launched.error == ERROR_CANCELLED,
                 launched.error == ERROR_CANCELLED
                     ? text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                             "Administrator authorization was declined."))
+                                             "Administrator authorization was declined"))
                     : text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                             "Could not start the administrator helper."))};
+                                             "Could not start the administrator helper"))};
     if (!server.hasPendingConnections() && !server.waitForNewConnection(30000))
         return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                              "The administrator helper did not become ready.")));
+                                              "The administrator helper did not become ready")));
     std::unique_ptr<QLocalSocket> socket(server.nextPendingConnection());
     if (!socket || !peerMatches(*socket, GetProcessId(child.value), false) ||
         !sameProcessIdentity(child.value))
         return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                              "The administrator handoff could not be verified.")));
+                                              "The administrator handoff could not be verified")));
     try {
         send(*socket, operation);
         const auto ready = receive(*socket);
@@ -488,7 +488,7 @@ AdministratorResult withHelper(const QByteArray& operation, const std::function<
             return failure(
                 text(QT_TRANSLATE_NOOP(
                     "AdministratorLaunch",
-                    "Settings could not be saved. The administrator operation was cancelled.")) +
+                    "Settings could not be saved. The administrator operation was cancelled")) +
                 (result == "done" ? QString() : u' ' + QString::fromUtf8(result)));
         if (result != "done")
             return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
@@ -588,12 +588,11 @@ AdministratorPresentation administratorPresentation(AdministratorState state, bo
                               ? text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Elevated"))
                               : text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Restart"));
     if (!allowed)
-        result.launchHint = text(
-            QT_TRANSLATE_NOOP("AdministratorLaunch",
-                              "This feature requires membership in the Administrators group."));
+        result.launchHint = text(QT_TRANSLATE_NOOP(
+            "AdministratorLaunch", "This feature requires membership in the Administrators group"));
     else if (!autoStart)
         result.launchHint =
-            text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Turn on Auto start at boot first."));
+            text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Turn on auto start at boot first"));
     if (!allowed && !result.elevated)
         result.restartHint = result.launchHint;
     return result;
@@ -658,7 +657,7 @@ AdministratorResult changeStartupMode(StartupMode mode, const std::function<bool
         if (mode == StartupMode::ElevatedTask)
             return failure(text(QT_TRANSLATE_NOOP(
                 "AdministratorLaunch",
-                "Administrator launch is unavailable in the Microsoft Store version.")));
+                "Administrator launch is unavailable in the Microsoft Store version")));
         const auto previous = AutoStartRegistration::snapshot();
         if (!previous.valid)
             return failure(previous.error);
@@ -669,11 +668,11 @@ AdministratorResult changeStartupMode(StartupMode mode, const std::function<bool
             return {true, false, {}};
         static_cast<void>(AutoStartRegistration::restore(previous, &error));
         return failure(
-            text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Settings could not be saved.")));
+            text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Settings could not be saved")));
     }
     if (operationPending)
         return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                              "Another administrator operation is in progress.")));
+                                              "Another administrator operation is in progress")));
     QScopedValueRollback<bool> pending(operationPending, true);
 #ifdef Q_OS_WIN
     try {
@@ -683,7 +682,7 @@ AdministratorResult changeStartupMode(StartupMode mode, const std::function<bool
             if (!state.valid || !state.member)
                 return failure(text(QT_TRANSLATE_NOOP(
                     "AdministratorLaunch",
-                    "This feature requires membership in the Administrators group.")));
+                    "This feature requires membership in the Administrators group")));
             // Even elevated callers use the same isolated transaction lifetime and protocol.
             return withHelper(QByteArray::number(static_cast<int>(mode)), persist);
         }
@@ -700,7 +699,7 @@ AdministratorResult changeStartupMode(StartupMode mode, const std::function<bool
                  if (persist())
                      return true;
                  *error =
-                     text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Settings could not be saved."));
+                     text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Settings could not be saved"));
                  return false;
              },
              [&previous](QString* error) {
@@ -715,30 +714,30 @@ AdministratorResult changeStartupMode(StartupMode mode, const std::function<bool
     Q_UNUSED(mode);
     Q_UNUSED(persist);
     return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                          "Administrator launch is only supported on Windows.")));
+                                          "Administrator launch is only supported on Windows")));
 #endif
 }
 AdministratorResult restartAsAdministrator(const std::function<bool()>& flush) {
     if (app::distribution::isStoreManaged())
         return failure(text(QT_TRANSLATE_NOOP(
             "AdministratorLaunch",
-            "Administrator launch is unavailable in the Microsoft Store version.")));
+            "Administrator launch is unavailable in the Microsoft Store version")));
     const auto state = administratorState();
     if (state.elevated)
         return {true, false, {}};
     if (!state.valid || !state.member)
         return failure(text(
             QT_TRANSLATE_NOOP("AdministratorLaunch",
-                              "This feature requires membership in the Administrators group.")));
+                              "This feature requires membership in the Administrators group")));
     if (operationPending)
         return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                              "Another administrator operation is in progress.")));
+                                              "Another administrator operation is in progress")));
     QScopedValueRollback<bool> pending(operationPending, true);
 #ifdef Q_OS_WIN
     if (restartGuard && !restartGuard())
         return failure(text(QT_TRANSLATE_NOOP(
             "AdministratorLaunch",
-            "Finish capturing, recording, exporting, or updating before restarting.")));
+            "Finish capturing, recording, exporting, or updating before restarting")));
     return runRestartTransaction(
         [](const std::function<bool()>& save) {
             return withHelper(QByteArrayLiteral("restart"), save);
@@ -748,7 +747,7 @@ AdministratorResult restartAsAdministrator(const std::function<bool()>& flush) {
 #else
     Q_UNUSED(flush);
     return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                          "Administrator launch is only supported on Windows.")));
+                                          "Administrator launch is only supported on Windows")));
 #endif
 }
 int dispatchAdministratorHelper(const QStringList& arguments) {
@@ -841,7 +840,7 @@ AdministratorResult reconcileStartupMode(StartupMode mode) {
         if (QFile::exists(journalPath()))
             return failure(text(QT_TRANSLATE_NOOP(
                 "AdministratorLaunch", "An interrupted startup change needs administrator "
-                                       "authorization. Reapply your startup setting.")));
+                                       "authorization. Reapply your startup setting")));
         if (mode == StartupMode::ElevatedTask) {
             QString error;
             if (!AutoStartRegistration::setEnabled(false, &error))
@@ -849,12 +848,12 @@ AdministratorResult reconcileStartupMode(StartupMode mode) {
             return task ? AdministratorResult{true, false, {}}
                         : failure(text(QT_TRANSLATE_NOOP(
                               "AdministratorLaunch", "Elevated auto-start needs repair. Turn "
-                                                     "Launch as administrator off and on again.")));
+                                                     "launch as administrator off and on again")));
         }
         if (task)
             return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                                  "Elevated auto-start needs repair. Turn Launch "
-                                                  "as administrator off and on again.")));
+                                                  "Elevated auto-start needs repair. Turn launch "
+                                                  "as administrator off and on again")));
         QString error;
         if (mode == StartupMode::Registry && AutoStartRegistration::matchesExpectedCommand())
             return {true, false, {}};

@@ -217,7 +217,7 @@ bool TextTranslationSettingsWidget::save(const TextTranslationConfigurations& mo
     m_error->setVisible(!success);
     if (!success) {
         m_error->setText(tr("Unable to save configurations. Check that configuration storage is "
-                            "writable and try again."));
+                            "writable and try again"));
     }
     return success;
 }
@@ -414,19 +414,19 @@ void TextTranslationSettingsWidget::submitEditor(bool saveChanges) {
     auto models = m_session.textTranslationConfigurations();
     std::array<QString, 4> errors;
     if (value.name.isEmpty()) {
-        errors[0] = tr("Enter a configuration name.");
+        errors[0] = tr("Enter a configuration name");
     } else if (std::any_of(models.cbegin(), models.cend(), [&value](const auto& model) {
                    return model.id != value.id &&
                           model.name.compare(value.name, Qt::CaseInsensitive) == 0;
                })) {
-        errors[0] = tr("A configuration with this name already exists.");
+        errors[0] = tr("A configuration with this name already exists");
     }
     if (!validTranslationEndpoint(value.endpoint)) {
         errors[1] =
-            tr("Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment.");
+            tr("Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment");
     }
     if (value.apiKey.contains(u'\r') || value.apiKey.contains(u'\n')) {
-        errors[2] = tr("The API key must not contain line breaks.");
+        errors[2] = tr("The API key must not contain line breaks");
     }
     QWidget* firstInvalid = nullptr;
     for (size_t i = 0; i < errors.size(); ++i) {
@@ -447,7 +447,7 @@ void TextTranslationSettingsWidget::submitEditor(bool saveChanges) {
     if (m_editing && it == models.end()) {
         m_modalError->setProperty("deletedModel", true);
         m_modalError->setText(
-            tr("This configuration was deleted. Close this form and create a new configuration."));
+            tr("This configuration was deleted. Close this form and create a new configuration"));
         m_modalError->show();
         return;
     }
@@ -469,43 +469,43 @@ void TextTranslationSettingsWidget::submitEditor(bool saveChanges) {
 
 void TextTranslationSettingsWidget::translateModal() {
     if (m_modal != nullptr) {
-        m_modal->setWindowTitle(m_editing ? tr("Edit Configuration") : tr("Add Configuration"));
+        m_modal->setWindowTitle(m_editing ? tr("Edit configuration") : tr("Add configuration"));
         m_modal->setAcceptText(tr("Save"));
         m_modal->setRejectText(tr("Cancel"));
         if (m_modalError != nullptr && !m_modalError->isHidden()) {
             m_modalError->setText(m_modalError->property("deletedModel").toBool()
                                       ? tr("This configuration was deleted. Close this form and "
-                                           "create a new configuration.")
+                                           "create a new configuration")
                                       : tr("Unable to save configurations. Check that "
                                            "configuration storage is writable and "
-                                           "try again."));
+                                           "try again"));
         }
         const QString provider = m_provider->currentValue().toString();
         const bool deepL = provider.isEmpty() || provider == QStringLiteral("deepl");
         const bool deepLX = provider == QStringLiteral("deeplx");
         const char* labels[] = {
-            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Configuration Name"),
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Configuration name"),
             QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "API URL"),
             (deepL || deepLX)
-                ? QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "API Key")
-                : QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Application Secret"),
+                ? QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "API key")
+                : QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Application secret"),
             QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Application ID"),
-            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Service Format"),
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Service format"),
             QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Concurrency")};
         const char* descriptions[] = {
             nullptr,
             QT_TRANSLATE_NOOP("TextTranslationSettingsWidget",
                               "The full translation endpoint. Its path and query are used as "
-                              "entered."),
+                              "entered"),
             deepLX ? QT_TRANSLATE_NOOP("TextTranslationSettingsWidget",
-                                       "Optional access token sent as a Bearer token.")
+                                       "Optional access token sent as a Bearer token")
                    : QT_TRANSLATE_NOOP("TextTranslationSettingsWidget",
-                                       "Optional for servers that do not require authentication."),
+                                       "Optional for servers that do not require authentication"),
             nullptr,
             nullptr,
             QT_TRANSLATE_NOOP("TextTranslationSettingsWidget",
                               "Maximum simultaneous requests for this configuration across "
-                              "translation jobs (1-16).")};
+                              "translation jobs (1-16)")};
         for (size_t i = 0; i < m_fields.size(); ++i) {
             auto metadata = m_formFields[i]->metadata();
             metadata.label = {"TextTranslationSettingsWidget", labels[i]};
@@ -530,13 +530,13 @@ void TextTranslationSettingsWidget::translateModal() {
         });
     }
     if (m_deleteModal != nullptr) {
-        m_deleteModal->setWindowTitle(tr("Delete Configuration"));
+        m_deleteModal->setWindowTitle(tr("Delete configuration"));
         m_deleteModal->setAcceptText(tr("Delete"));
         m_deleteModal->setRejectText(tr("Cancel"));
         for (const auto& model : m_session.textTranslationConfigurations()) {
             if (model.id == m_deleteId) {
                 m_deleteModal->setText(tr("Delete configuration \"%1\"? If selected, another "
-                                          "available service will be used.")
+                                          "available service will be used")
                                            .arg(model.name));
             }
         }
@@ -545,9 +545,9 @@ void TextTranslationSettingsWidget::translateModal() {
 
 void TextTranslationSettingsWidget::retranslateUi() {
     m_error->setText(tr("Unable to save configurations. Check that configuration storage is "
-                        "writable and try again."));
-    m_add->setText(tr("Add Configuration"));
-    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Translation Configurations"));
+                        "writable and try again"));
+    m_add->setText(tr("Add configuration"));
+    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Translation configurations"));
     rebuild(true);
     translateModal();
     if (m_modal != nullptr &&

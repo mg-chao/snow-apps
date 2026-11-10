@@ -24,7 +24,8 @@ impl Editor {
         } else {
             end
         };
-        let style = self.state.default_pen_highlight_style;
+        let mut style = self.state.default_pen_highlight_style;
+        style.stroke = self.creation_stroke(style.stroke);
         ArrowData::from_global_points(
             &[start, end],
             style.stroke,
@@ -282,6 +283,21 @@ impl Editor {
         )))
     }
 
+    pub(crate) fn serial_number_cursor_preview(
+        &self,
+        document: &DocumentModel,
+        view_position: Point<f64>,
+        modifiers: Modifiers,
+    ) -> Result<SerialNumberData, ErrorCode> {
+        if !view_position.x.is_finite() || !view_position.y.is_finite() {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        let canvas_point = view_to_canvas(view_position, &self.camera(), self.surface_size());
+        let (center, _) =
+            self.snap_serial_number_creation_center(document, canvas_point, modifiers);
+        self.serial_number_creation_preview(center)
+    }
+
     pub(crate) fn serial_number_creation_preview(
         &self,
         center: Point<f64>,
@@ -409,7 +425,9 @@ impl Editor {
         finalize: bool,
     ) -> Option<BoundArrowPreview> {
         let arrow = if self.state.active_tool == ActiveTool::Line {
-            let style = self.state.default_line_style;
+            let mut style = self.state.default_line_style;
+            style.stroke = self.creation_stroke(style.stroke);
+            style.fill = self.creation_fill(style.fill);
             preview_arrow_from_points(
                 points,
                 ArrowStyle {
@@ -429,7 +447,9 @@ impl Editor {
             )?
             .into_line(style.fill, style.fill_style)
         } else {
-            preview_arrow_from_points(points, self.state.default_arrow_style)?
+            let mut style = self.state.default_arrow_style;
+            style.stroke = self.creation_stroke(style.stroke);
+            preview_arrow_from_points(points, style)?
         };
         let arrow_id = document.peek_next_element_id();
         let bindables = self.bindable_elements(document, &[]);
@@ -575,6 +595,11 @@ impl Editor {
             current_canvas,
             event.modifiers,
         );
+        let magnifier = if self.active_tool() == ActiveTool::Magnifier {
+            preview.map(|rect| self.magnifier_creation_data(rect))
+        } else {
+            None
+        };
         self.cancel_interaction();
 
         if let Some(rect) = preview {
@@ -597,8 +622,7 @@ impl Editor {
                     cursor: CursorCommand::Set(self.tool_policy().default_cursor),
                 });
             }
-            if self.active_tool() == ActiveTool::Magnifier {
-                let value = self.magnifier_creation_data(rect);
+            if let Some(value) = magnifier {
                 snow_draw_engine_document::validate_magnifier(&value)?;
                 let mut transaction = Transaction::new("create magnifier");
                 transaction.insert_magnifier(
@@ -1043,6 +1067,11 @@ impl Editor {
             // toolbar's Create Text button uses, so both paths style and size
             // the bound label identically before the host measurement lands.
             let mut text = crate::text::new_serial_bound_label(&self.state.default_text)?;
+            if let Some(colors) = self.state.creation_colors {
+                text.color = colors.foreground;
+                text.stroke = colors.stroke;
+                text.fill = colors.fill;
+            }
             text.center = current_canvas;
             serial.text_element_id = Some(text_id);
             let mut transaction = Transaction::new("create serial number text");
@@ -1087,6 +1116,11 @@ impl Editor {
         };
         let text = state.text.clone();
         let serial_id = state.serial_id;
+        let cursor = if text.is_none() {
+            self.tool_policy().default_cursor
+        } else {
+            CursorStyle::Default
+        };
         self.cancel_interaction();
         // The badge is inserted on pointer down. Selecting it after the drag finishes
         // preserves the gesture that creates and positions its attached label.
@@ -1107,7 +1141,7 @@ impl Editor {
         Ok(InteractionOutput {
             consumed: true,
             capture: self.release_capture_command(),
-            cursor: CursorCommand::Set(CursorStyle::Default),
+            cursor: CursorCommand::Set(cursor),
         })
     }
 

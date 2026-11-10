@@ -2,6 +2,14 @@
 
 #include <QImage>
 #include <QRectF>
+#include <QTransform>
+#include <functional>
+
+class QPainter;
+
+// Called synchronously after the backdrop and before document drawing. The transform maps
+// canvas coordinates to the painter's output-pixel coordinates. False cancels the export.
+using SnowCanvasExportBackgroundOverlay = std::function<bool(QPainter&, const QTransform&)>;
 
 struct CanvasExportSource {
     QImage image;

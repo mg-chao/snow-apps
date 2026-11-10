@@ -16,6 +16,8 @@ struct ApplicationRestartResult {
 };
 
 struct ApplicationRestartTransactionOperations {
+    // Synchronous owner-thread operations; callbacks must not throw. Prepare/commit are required.
+    // Guard is checked before preparation, after preparation, and after flush before commitment.
     std::function<ApplicationRestartResult()> prepare;
     std::function<bool()> guard;
     std::function<bool()> flush;

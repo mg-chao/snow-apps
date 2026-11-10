@@ -218,7 +218,7 @@ asset as your normal desktop user:
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output install-snow-shot-macos.sh \
-  "https://github.com/mg-chao/snow-apps/releases/download/v<version>_snow-shot/install-snow-shot-macos.sh"
+  "https://github.com/mg-chao/snow-shot/releases/download/v<version>_snow-shot/install-snow-shot-macos.sh"
 bash install-snow-shot-macos.sh --lang en
 ```
 
@@ -654,6 +654,11 @@ the CPU OCR helper. Other changed Rust crates should be linted individually.
 scripts/package-snow-shot.sh snow-shot-macos-arm64-release
 ```
 
+Full and Mini DMGs use LZMA compression (`ULMO`) for the macOS 15+ deployment target.
+Compression changes the distribution image while preserving the signed app bundle.
+CPack signs and verifies each image before computing its SHA-256 checksum. Validate
+DMG mounting and app installation on the supported macOS versions before publishing.
+
 The release script builds and produces edition DMGs plus SHA-256 checksums under the
 preset's build directory. Pass `--parallel N` to control the build or
 `--skip-build` to package an already validated release cache. CPack installs only
@@ -866,6 +871,13 @@ registers itself with macOS on its first eligible normal launch, unless its save
 startup preference is disabled. Development bundles, disk images, translocated
 copies, and unsigned or invalidly signed apps cannot register. Moving an eligible
 signed copy into Applications allows its initial registration attempt.
+
+macOS 26 may report `SMAppServiceStatusNotFound` instead of `notRegistered` for a
+main app that has no login item record yet. Snow Shot treats both statuses as
+eligible for registration; the `register` call remains the authoritative signature
+and eligibility check. Affected users have no initialization marker, so the first
+launch of a fixed build follows the normal first-launch path and registers when the
+saved preference is enabled (the default).
 
 Use **Settings > System > General > Launch at login** to enable or disable it.
 If approval is required, choose **Open Login Items Settings** and allow Snow Shot

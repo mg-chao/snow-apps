@@ -19,7 +19,7 @@ inline const QVector<OcrTextOption>& ocrFormattingOptions() {
         {QStringLiteral("none"), QT_TRANSLATE_NOOP("OcrTextOptions", "None")},
         {QStringLiteral("keep"), QT_TRANSLATE_NOOP("OcrTextOptions", "Keep line breaks")},
         {QStringLiteral("remove"), QT_TRANSLATE_NOOP("OcrTextOptions", "Remove line breaks")},
-        {QStringLiteral("smart"), QT_TRANSLATE_NOOP("OcrTextOptions", "Smart Typesetting")},
+        {QStringLiteral("smart"), QT_TRANSLATE_NOOP("OcrTextOptions", "Smart typesetting")},
     };
     return options;
 }

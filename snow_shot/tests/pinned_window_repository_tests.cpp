@@ -93,6 +93,159 @@ storage::PinnedWindowRecord recordWithId(const QString& id, const QImage& image)
     return value;
 }
 
+void thumbnailSourcesAreBounded() {
+    const QImage original = patternedImage(QSize(1024, 512), 7);
+    for (auto format :
+         {snow::image::Format::png, snow::image::Format::jpeg, snow::image::Format::webp}) {
+        QByteArray bytes;
+        QBuffer buffer(&bytes);
+        require(buffer.open(QIODevice::WriteOnly) &&
+                    snow_shot::image_codec::encodeToDevice(original, &buffer, format, {}),
+                "encode thumbnail fixture");
+        QSize naturalSize;
+        const auto thumbnail =
+            snow_shot::image_codec::decodeThumbnail(bytes, format, QSize(80, 60), &naturalSize);
+        if (thumbnail.size() != QSize(80, 40) || naturalSize != original.size())
+            std::cerr << "thumbnail format=" << static_cast<int>(format)
+                      << " image=" << thumbnail.width() << 'x' << thumbnail.height()
+                      << " natural=" << naturalSize.width() << 'x' << naturalSize.height() << '\n';
+        require(thumbnail.size() == QSize(80, 40) && naturalSize == original.size(),
+                "native thumbnail decoding preserves natural size and aspect ratio");
+        require(snow_shot::image_codec::decodeThumbnail(bytes, format, QSize(80, 60), nullptr,
+                                                        [] { return true; })
+                    .isNull(),
+                "cancelled thumbnails must not decode");
+    }
+    QTemporaryDir directory;
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    require(repository.upsert(recordWithId(id, original)).success, "seed thumbnail source");
+    const auto resident = repository.loadThumbnailSource(id, QSize(120, 100));
+    require(resident && resident->naturalSize == original.size() &&
+                resident->image.size() == QSize(120, 60),
+            "resident source thumbnails are bounded without modifying the source");
+    require(repository.flush().success, "persist thumbnail source");
+    storage::PinnedWindowRepository reopened(directory.path());
+    const auto persisted = reopened.loadThumbnailSource(id, QSize(120, 100));
+    const auto full = reopened.loadPreviewSource(id);
+    require(persisted && persisted->naturalSize == original.size() &&
+                persisted->image.size() == QSize(120, 60) && full &&
+                full->image.size() == original.size(),
+            "persisted thumbnail requests leave full-resolution source loading intact");
+    require(!reopened.loadThumbnailSource(id, QSize(120, 100), [] { return true; }),
+            "cancelled source requests must not read payloads");
+}
+
+void editablePinCroppedImageRoundTrip() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(12, 6), 3));
+    record.canvasSession = QByteArrayLiteral("full session with undo and redo");
+    require(repository.upsert(record).success && repository.flush().success,
+            "write an editable pin with only its cropped background");
+    auto loaded = repository.loadRecord(id);
+    require(loaded && samePixels(loaded->image, record.image) &&
+                loaded->canvasSession == record.canvasSession,
+            "cropped background and editable session round trip independently");
+    loaded->canvasSession = QByteArrayLiteral("updated undo stack");
+    require(repository.updateState(*loaded).success && repository.flush().success,
+            "document-only updates retain the cropped background");
+    const auto sourcePath = repository.imagePath(id);
+    require(sourcePath.has_value(), "editable pin has a cropped source file");
+    const auto samplingPath =
+        QFileInfo(*sourcePath).dir().filePath(QStringLiteral("canvas_sampling.bin"));
+    require(!QFileInfo::exists(samplingPath), "editable pins do not write sampling images");
+
+    QFile manifest(directory.filePath(QStringLiteral("pinned_windows_v2/index.json")));
+    require(manifest.open(QIODevice::ReadOnly), "read editable pin manifest");
+    auto root = QJsonDocument::fromJson(manifest.readAll()).object();
+    manifest.close();
+    auto records = root.value(QStringLiteral("records")).toArray();
+    auto legacy = records.at(0).toObject();
+    auto payloads = legacy.value(QStringLiteral("payloads")).toObject();
+    require(!payloads.contains(QStringLiteral("canvas_sampling")),
+            "new manifests contain no sampling payload");
+    payloads.insert(QStringLiteral("canvas_sampling"), QStringLiteral("canvas_sampling.bin"));
+    legacy.insert(QStringLiteral("payloads"), payloads);
+    records.replace(0, legacy);
+    root.insert(QStringLiteral("records"), records);
+    require(manifest.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "write a legacy sampling descriptor");
+    const auto bytes = QJsonDocument(root).toJson();
+    require(manifest.write(bytes) == bytes.size(), "legacy fixture writes");
+    manifest.close();
+    for (const bool withObsoleteFile : {false, true}) {
+        if (withObsoleteFile) {
+            QFile obsolete(samplingPath);
+            require(obsolete.open(QIODevice::WriteOnly) && obsolete.write("invalid") == 7,
+                    "write an unreadable obsolete sampling payload");
+        }
+        storage::PinnedWindowRepository restarted(directory.path(), false);
+        loaded = restarted.loadRecord(id);
+        require(loaded && samePixels(loaded->image, record.image) &&
+                    loaded->canvasSession == QByteArrayLiteral("updated undo stack"),
+                "legacy pins restore without reading missing or corrupt sampling images");
+        require(!restarted.loadRecord(id, [](qint64) { return false; }),
+                "cropped background still obeys allocation admission");
+    }
+}
+
+void imagePathsResolveOnlyPersistedImages() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(12, 6), 3));
+    require(!repository.imagePath(id) && !repository.imagePath(QStringLiteral("../invalid")),
+            "unknown and invalid pins have no image file path");
+    require(repository.upsert(record).success && repository.flush().success,
+            "persist an image for path lookup");
+    const auto path = repository.imagePath(id);
+    require(path && QFileInfo(*path).isAbsolute() && QFileInfo(*path).isFile() &&
+                QFileInfo(*path).fileName() == QStringLiteral("source.png"),
+            "image path lookup returns the complete persisted image filename");
+    repository.suspendWrites(true);
+    require(!repository.imagePath(id), "storage relocation suspends image path resolution");
+    repository.suspendWrites(false);
+    require(repository.imagePath(id) == path, "image path lookup resumes after relocation");
+    require(QFile::remove(*path), "remove the image path fixture");
+    require(!repository.imagePath(id), "a missing image never resolves to its containing folder");
+
+    const auto textId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto text = recordWithId(textId, {});
+    text.sourceKind = storage::PinnedWindowSourceKind::ClipboardText;
+    text.originalText = QStringLiteral("Pinned text");
+    text.initialWindowSize = QSize(120, 60);
+    require(repository.create(text).success && repository.flush().success &&
+                !repository.imagePath(textId),
+            "text payloads cannot be copied as image file paths");
+
+    const QString originalPath = directory.filePath(QStringLiteral("selected image.png"));
+    require(record.image.save(originalPath), "write an imported image path fixture");
+    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    record.sourceKind = storage::PinnedWindowSourceKind::ClipboardImageFile;
+    record.originalFilePath = originalPath;
+    record.originalFileName = QFileInfo(originalPath).fileName();
+    require(repository.create(record).success && repository.flush().success &&
+                QFile::remove(originalPath),
+            "persist an imported image and remove its original file");
+    const auto importedPath = repository.imagePath(record.id);
+    require(importedPath && *importedPath != originalPath && QFileInfo(*importedPath).isFile(),
+            "imported image paths use the retained file after the original disappears");
+
+    const auto fixture = pinned_animation_fixtures::images().front();
+    const auto animation = snow_shot::image_codec::decodeAnimationSource(fixture.bytes);
+    require(animation && animation->isAnimated(), "decode an animated image path fixture");
+    auto animated =
+        recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), animation->firstFrame);
+    animated.animationSource = animation;
+    require(repository.create(animated).success && repository.flush().success,
+            "persist an animation for image path lookup");
+    const auto animatedPath = repository.imagePath(animated.id);
+    require(animatedPath && QFileInfo(*animatedPath).suffix() == animation->format,
+            "animated pins resolve the retained animation rather than a preview frame");
+}
+
 void pinnedTextStyleMetadataRoundTrips() {
     QTemporaryDir directory;
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -1239,6 +1392,55 @@ void missingOptionalPayloadDoesNotHideRestorableImage() {
 // Invariant: demotion must not corrupt payload identity. A metadata-only
 // update after a commit reuses the committed payload instead of re-encoding
 // and re-writing it.
+void textAnnotationsSurviveLazyUpdatesAndClear() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "text annotation temporary storage is unavailable");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(24, 12), 9));
+    record.canvasSession = QByteArrayLiteral("ordinary annotations");
+    record.textAnnotations = QByteArrayLiteral("first text annotations");
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        require(repository.upsert(record).success && repository.flush().success,
+                "text annotations commit with the source");
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textAnnotations == record.textAnnotations,
+                "committed text annotations reload after source demotion");
+        record.textAnnotations = QByteArrayLiteral("recoloured text annotations");
+        require(repository.updateState(record).success && repository.flush().success,
+                "changing text marks updates a demoted mutable payload");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textAnnotations == record.textAnnotations &&
+                    loaded->canvasSession == record.canvasSession,
+                "reopening retains text marks independently of ordinary drawing content");
+        loaded->opacityPercent = 83;
+        require(repository.updateState(*loaded).success && repository.flush().success,
+                "metadata-only saves retain text marks");
+        loaded->textAnnotations.clear();
+        require(repository.updateState(*loaded).success && repository.flush().success,
+                "clearing text marks removes the lazy payload descriptor");
+        const auto cleared = repository.loadRecord(id);
+        require(cleared && cleared->textAnnotations.isEmpty() &&
+                    cleared->canvasSession == record.canvasSession,
+                "clearing text marks retains the image and ordinary drawing document");
+        require(
+            !QFileInfo::exists(
+                QDir(directory.path())
+                    .filePath(
+                        QStringLiteral("pinned_windows_v2/pins/%1/text_annotations.bin").arg(id))),
+            "cleared text annotation payload files are pruned");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textAnnotations.isEmpty(),
+                "records without a text annotation payload remain restorable");
+    }
+}
+
 void metadataOnlyUpdatesDoNotRewriteCommittedPayloads() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -3048,6 +3250,21 @@ void closeRestoreAndRetentionRevealHiddenSiblings() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    thumbnailSourcesAreBounded();
+    if (application.arguments().contains(QStringLiteral("--thumbnail-only")))
+        return EXIT_SUCCESS;
+    if (application.arguments().contains(QStringLiteral("--editable-pin-only"))) {
+        editablePinCroppedImageRoundTrip();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--text-annotations-only"))) {
+        textAnnotationsSurviveLazyUpdatesAndClear();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--image-path-only"))) {
+        imagePathsResolveOnlyPersistedImages();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--source-limit-only"))) {
         persistedSourceLoadsShareTheDecodedRasterLimit();
         return 0;
@@ -3100,6 +3317,8 @@ int main(int argc, char* argv[]) {
         markdownFormatMetadataRoundTrips();
         return 0;
     }
+    editablePinCroppedImageRoundTrip();
+    imagePathsResolveOnlyPersistedImages();
     pinnedTextStyleMetadataRoundTrips();
     mislabeledImageFilesSurviveRestart();
     markdownFormatMetadataRoundTrips();
@@ -3145,6 +3364,7 @@ int main(int argc, char* argv[]) {
     sourceOnlyAdmissionAndCancellationExcludeDocumentPayloads();
     persistedSourceLoadsShareTheDecodedRasterLimit();
     metadataOnlyUpdatesDoNotRewriteCommittedPayloads();
+    textAnnotationsSurviveLazyUpdatesAndClear();
     changedPayloadsRecommitAndStayLazy();
     removedRecordsPruneTheirPayloads();
     specifiedGroupRemovalIsAtomicAndPersistent();

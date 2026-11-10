@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <list>
 #include <limits>
 #include <utility>
@@ -205,6 +206,88 @@ QPainterPath roundedHole(const QRectF& selectionBounds, qreal cornerRadius) {
         path.addRoundedRect(selectionBounds, radius, radius, Qt::AbsoluteSize);
     }
     return path;
+}
+
+bool pathCoversRect(const QPainterPath& path, const QRectF& rect) {
+    if (rect.isEmpty() || !path.boundingRect().contains(rect))
+        return false;
+    // QRectF containment can report false interiors for self-intersecting winding paths.
+    // A rectangle with no possible boundary crossing has one winding/parity throughout;
+    // only then is a single point sufficient to prove that masking can be skipped.
+    const auto boundaryMayTouch = [&rect](std::initializer_list<QPointF> points) {
+        qreal left = points.begin()->x(), right = left;
+        qreal top = points.begin()->y(), bottom = top;
+        for (const auto& point : points) {
+            if (!std::isfinite(point.x()) || !std::isfinite(point.y()))
+                return true;
+            left = std::min(left, point.x());
+            right = std::max(right, point.x());
+            top = std::min(top, point.y());
+            bottom = std::max(bottom, point.y());
+        }
+        // Inclusive comparisons also retain horizontal/vertical and degenerate boundaries.
+        return right >= rect.left() && left <= rect.right() && bottom >= rect.top() &&
+               top <= rect.bottom();
+    };
+    const auto lineMayTouch = [&rect, &boundaryMayTouch](QPointF from, QPointF to) {
+        if (!boundaryMayTouch({from, to}))
+            return false;
+        // Long diagonal edges have large bounds. A separating line proves they miss the
+        // rectangle without turning every interior polygon tile into a mask/blur job.
+        const QPointF direction = to - from;
+        bool positive = true, negative = true;
+        for (const auto corner :
+             {rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()}) {
+            const QPointF offset = corner - from;
+            const qreal firstProduct = direction.x() * offset.y();
+            const qreal secondProduct = direction.y() * offset.x();
+            const qreal cross = firstProduct - secondProduct;
+            const qreal uncertainty = (std::abs(firstProduct) + std::abs(secondProduct)) *
+                                      std::numeric_limits<qreal>::epsilon() * 8;
+            if (!std::isfinite(cross) || !std::isfinite(uncertainty))
+                return true;
+            positive = positive && cross > uncertainty;
+            negative = negative && cross < -uncertainty;
+        }
+        return !positive && !negative;
+    };
+    QPointF first;
+    QPointF previous;
+    bool hasSubpath = false;
+    for (int index = 0; index < path.elementCount(); ++index) {
+        const auto element = path.elementAt(index);
+        const QPointF point(element.x, element.y);
+        switch (element.type) {
+        case QPainterPath::MoveToElement:
+            // Filling implicitly closes open subpaths as well as explicit closed contours.
+            if (hasSubpath && lineMayTouch(previous, first))
+                return false;
+            first = previous = point;
+            hasSubpath = true;
+            break;
+        case QPainterPath::LineToElement:
+            if (lineMayTouch(previous, point))
+                return false;
+            previous = point;
+            break;
+        case QPainterPath::CurveToElement: {
+            if (index + 2 >= path.elementCount())
+                return false;
+            const auto control = path.elementAt(++index);
+            const auto end = path.elementAt(++index);
+            // A cubic stays within its control-point bounds. Rejecting their overlap is
+            // conservative and avoids flattening curves or changing their fill rule.
+            if (boundaryMayTouch(
+                    {previous, point, QPointF(control.x, control.y), QPointF(end.x, end.y)}))
+                return false;
+            previous = QPointF(end.x, end.y);
+            break;
+        }
+        case QPainterPath::CurveToDataElement:
+            return false;
+        }
+    }
+    return hasSubpath && !lineMayTouch(previous, first) && path.contains(rect.center());
 }
 
 void paintNineSlice(QPainter& painter, const QRectF& selectionBounds, qreal cornerRadius,
@@ -640,38 +723,49 @@ std::vector<RegionTile> sparseRegionTiles(const QPainterPath& path, const QRect&
 
 void paintTiledRegion(QPainter& painter, const QImage& content,
                       const ScreenshotResultLayout& layout, const ScreenshotResultStyle& style,
-                      const QPainterPath& path, const QRect& bounds);
+                      const QPainterPath& path, const QRect& bounds,
+                      std::optional<QRect> viewport = {}, QPoint contentOffset = {});
 
 QImage composeSparseRegion(const QImage& content, const ScreenshotResultLayout& layout,
                            const ScreenshotResultStyle& style, const std::vector<RegionTile>& tiles,
-                           qreal opacity) {
+                           qreal opacity, std::optional<QRect> viewport = {},
+                           QPoint contentOffset = {}) {
     ++g_diagnostics.selectionSizedTransientAllocations;
-    QImage output = snowCanvasAllocateZeroedImage(layout.outputRect.size(),
-                                                  QImage::Format_ARGB32_Premultiplied);
+    const QRect outputRect = viewport.value_or(layout.outputRect);
+    QImage output =
+        snowCanvasAllocateZeroedImage(outputRect.size(), QImage::Format_ARGB32_Premultiplied);
     output.setColorSpace(content.colorSpace());
     QPainter outputPainter(&output);
+    outputPainter.translate(-outputRect.topLeft());
+    outputPainter.setClipRect(layout.outputRect.intersected(outputRect));
     for (const auto& region : tiles) {
+        if (!region.bounds.intersects(outputRect))
+            continue;
         if (layout.effectInsets.left() > 0 &&
             qint64(region.bounds.width()) * region.bounds.height() > 1024 * 1024) {
-            paintTiledRegion(outputPainter, content, layout, style, region.path, region.bounds);
+            paintTiledRegion(outputPainter, content, layout, style, region.path, region.bounds,
+                             viewport, contentOffset);
             continue;
         }
         QPainterPath localPath = region.path.translated(-region.bounds.topLeft());
         const QImage mask = regionMask(region.bounds.size(), localPath);
-        QImage tile =
-            snowCanvasAllocateImage(region.bounds.size(), QImage::Format_ARGB32_Premultiplied);
+        const QRect visible = region.bounds.intersected(outputRect);
+        QImage tile = snowCanvasAllocateImage(visible.size(), QImage::Format_ARGB32_Premultiplied);
         tile.fill(Qt::transparent);
         QPainter painter(&tile);
-        painter.drawImage(layout.contentRect.topLeft() - region.bounds.topLeft(), content);
+        painter.drawImage((layout.contentRect.topLeft() + contentOffset) - visible.topLeft(),
+                          content);
         painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-        painter.drawImage(QPoint(), mask);
+        // Preserve canonical curve coverage while allocating color only for visible pixels.
+        const QPoint maskOrigin = region.bounds.topLeft() - visible.topLeft();
+        painter.drawImage(maskOrigin, mask);
         if (layout.effectInsets.left() > 0) {
             const QImage shadow = regionShadow(mask, layout.effectInsets.left(), style.shadowColor);
             painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-            painter.drawImage(QPoint(), shadow);
+            painter.drawImage(maskOrigin, shadow);
         }
         painter.end();
-        outputPainter.drawImage(region.bounds.topLeft(), tile);
+        outputPainter.drawImage(visible.topLeft(), tile);
     }
     outputPainter.end();
     return applyOutputOpacity(std::move(output), opacity);
@@ -679,7 +773,8 @@ QImage composeSparseRegion(const QImage& content, const ScreenshotResultLayout& 
 
 void paintTiledRegion(QPainter& painter, const QImage& content,
                       const ScreenshotResultLayout& layout, const ScreenshotResultStyle& style,
-                      const QPainterPath& path, const QRect& bounds) {
+                      const QPainterPath& path, const QRect& bounds, std::optional<QRect> viewport,
+                      QPoint contentOffset) {
     const int width = layout.effectInsets.left();
     // Each core owns its pixels; the halo supplies the complete finite blur
     // support. Grow cores with the support so wide shadows do not multiply work.
@@ -687,12 +782,15 @@ void paintTiledRegion(QPainter& painter, const QImage& content,
     for (int y = bounds.top(); y <= bounds.bottom(); y += side) {
         for (int x = bounds.left(); x <= bounds.right(); x += side) {
             const QRect core = QRect(x, y, side, side).intersected(bounds);
+            if (viewport && !core.intersects(*viewport))
+                continue;
             const QRect halo = core.adjusted(-width - 2, -width - 2, width + 2, width + 2)
                                    .intersected(layout.outputRect);
             if (!path.intersects(QRectF(halo)))
                 continue;
-            if (path.contains(QRectF(halo))) {
-                painter.drawImage(core, content, core.translated(-layout.contentRect.topLeft()));
+            if (pathCoversRect(path, QRectF(halo))) {
+                painter.drawImage(core, content,
+                                  core.translated(-(layout.contentRect.topLeft() + contentOffset)));
                 continue;
             }
             const auto localPath = path.translated(-halo.topLeft());
@@ -701,7 +799,8 @@ void paintTiledRegion(QPainter& painter, const QImage& content,
             tile.fill(Qt::transparent);
             {
                 QPainter tilePainter(&tile);
-                tilePainter.drawImage(layout.contentRect.topLeft() - halo.topLeft(), content);
+                tilePainter.drawImage(
+                    (layout.contentRect.topLeft() + contentOffset) - halo.topLeft(), content);
                 tilePainter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
                 tilePainter.drawImage(QPoint(), mask);
                 tilePainter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
@@ -714,32 +813,39 @@ void paintTiledRegion(QPainter& painter, const QImage& content,
 
 QImage composeTiledRegion(const QImage& content, const ScreenshotResultLayout& layout,
                           const ScreenshotResultStyle& style, const QPainterPath& path,
-                          qreal opacity) {
+                          qreal opacity, std::optional<QRect> viewport = {},
+                          QPoint contentOffset = {}) {
     ++g_diagnostics.selectionSizedTransientAllocations;
-    QImage output = snowCanvasAllocateZeroedImage(layout.outputRect.size(),
-                                                  QImage::Format_ARGB32_Premultiplied);
+    const QRect outputRect = viewport.value_or(layout.outputRect);
+    QImage output =
+        snowCanvasAllocateZeroedImage(outputRect.size(), QImage::Format_ARGB32_Premultiplied);
     output.setColorSpace(content.colorSpace());
     QPainter painter(&output);
-    paintTiledRegion(painter, content, layout, style, path, layout.outputRect);
+    painter.translate(-outputRect.topLeft());
+    painter.setClipRect(layout.outputRect.intersected(outputRect));
+    paintTiledRegion(painter, content, layout, style, path, layout.outputRect, viewport,
+                     contentOffset);
     painter.end();
     return applyOutputOpacity(std::move(output), opacity);
 }
 
 QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
-                     qreal devicePixelRatio, qreal opacity) {
-    const auto layout =
-        ScreenshotResultCompositor::layoutForContent(content.size(), style, devicePixelRatio);
+                     qreal devicePixelRatio, qreal opacity, std::optional<QRect> viewport = {},
+                     QPoint contentOffset = {}, QSize fullContentSize = {}) {
+    const auto layout = ScreenshotResultCompositor::layoutForContent(
+        fullContentSize.isEmpty() ? content.size() : fullContentSize, style, devicePixelRatio);
     const auto path =
         screenshotSelectionPath(layout.contentRect, style.region,
                                 style.cornerRadius * layout.devicePixelRatio, style.regionScale);
     const auto sparseTiles = sparseRegionTiles(path, layout.outputRect, layout.effectInsets.left());
     if (!sparseTiles.empty())
-        return composeSparseRegion(content, layout, style, sparseTiles, opacity);
+        return composeSparseRegion(content, layout, style, sparseTiles, opacity, viewport,
+                                   contentOffset);
     // Bound temporary blur storage independently of export dimensions. Interior
     // and exterior tiles need no blur; only boundary tiles allocate scratch.
     if (layout.effectInsets.left() > 0 &&
         qint64(layout.outputRect.width()) * layout.outputRect.height() > 1024 * 1024)
-        return composeTiledRegion(content, layout, style, path, opacity);
+        return composeTiledRegion(content, layout, style, path, opacity, viewport, contentOffset);
     auto& cache = g_regionCompositionCache;
     QImage mask;
     QImage shadow;
@@ -766,16 +872,91 @@ QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
             cache.shadow = shadow;
     }
     ++g_diagnostics.selectionSizedTransientAllocations;
-    QImage output = snowCanvasAllocateZeroedImage(layout.outputRect.size(),
-                                                  QImage::Format_ARGB32_Premultiplied);
+    const QRect outputRect = viewport.value_or(layout.outputRect);
+    QImage output =
+        snowCanvasAllocateZeroedImage(outputRect.size(), QImage::Format_ARGB32_Premultiplied);
     output.setColorSpace(content.colorSpace());
     QPainter painter(&output);
-    painter.drawImage(layout.contentRect.topLeft(), content);
+    painter.translate(-outputRect.topLeft());
+    painter.setClipRect(layout.outputRect.intersected(outputRect));
+    painter.drawImage((layout.contentRect.topLeft() + contentOffset), content);
     painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
     painter.drawImage(QPoint(), mask);
     if (!shadow.isNull()) {
         painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
         painter.drawImage(QPoint(), shadow);
+    }
+    painter.end();
+    return applyOutputOpacity(std::move(output), opacity);
+}
+
+QImage composeShapedViewport(const QImage& content, const ScreenshotResultStyle& style,
+                             const ScreenshotResultLayout& layout, const QRect& viewport,
+                             qreal opacity, QPoint contentOffset = {}) {
+    ++g_diagnostics.selectionSizedTransientAllocations;
+    QImage output =
+        snowCanvasAllocateZeroedImage(viewport.size(), QImage::Format_ARGB32_Premultiplied);
+    if (output.isNull())
+        return {};
+    output.setColorSpace(content.colorSpace());
+    if (!layout.outputRect.intersects(viewport))
+        return output;
+    QPainter painter(&output);
+    painter.translate(-viewport.topLeft());
+    painter.setClipRect(layout.outputRect.intersected(viewport));
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.drawImage(layout.contentRect.topLeft() + contentOffset, content);
+    const qreal physicalRadius = style.cornerRadius * layout.devicePixelRatio;
+    const auto path = screenshotSelectionPath(layout.contentRect, style.region, physicalRadius,
+                                              style.regionScale);
+    const bool interior = pathCoversRect(path, QRectF(viewport).adjusted(-1, -1, 1, 1));
+    if (!interior && (style.cornerRadius > 0 || style.region)) {
+        // Rectangular viewports include complete corners. Arbitrary region curves retain the
+        // canonical mask domain; their shadows already use fixed bounded halo tiles.
+        const QRect maskRect = style.region ? layout.outputRect : viewport;
+        const auto mask = regionMask(maskRect.size(), path.translated(-maskRect.topLeft()));
+        if (mask.isNull())
+            return {};
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        painter.drawImage(maskRect.topLeft(), mask);
+    }
+    if (!interior && style.effectWidth() > 0) {
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+        if (style.borderType == ScreenshotSelectionBorderType::Border) {
+            if (style.region && viewport != layout.outputRect) {
+                // Preserve Qt's full-domain curve rasterization in one byte per pixel. Tint only
+                // the requested pixels instead of allocating a full colored border surface.
+                QImage coverage =
+                    snowCanvasAllocateZeroedImage(layout.outputRect.size(), QImage::Format_Alpha8);
+                if (coverage.isNull())
+                    return {};
+                {
+                    QPainter coveragePainter(&coverage);
+                    ScreenshotSelectionShadowRenderer::renderBorder(
+                        coveragePainter, path, layout.effectInsets.left(), Qt::white);
+                }
+                const QRect visible = viewport.intersected(layout.outputRect);
+                QImage border =
+                    snowCanvasAllocateImage(visible.size(), QImage::Format_ARGB32_Premultiplied);
+                if (border.isNull())
+                    return {};
+                for (int y = 0; y < visible.height(); ++y) {
+                    const auto* alpha = coverage.constScanLine(visible.y() + y) + visible.x();
+                    auto* row = reinterpret_cast<QRgb*>(border.scanLine(y));
+                    for (int x = 0; x < visible.width(); ++x)
+                        row[x] =
+                            qPremultiply(qRgba(style.borderColor.red(), style.borderColor.green(),
+                                               style.borderColor.blue(), alpha[x]));
+                }
+                painter.drawImage(visible.topLeft(), border);
+            } else {
+                ScreenshotSelectionShadowRenderer::renderBorder(
+                    painter, path, layout.effectInsets.left(), style.borderColor);
+            }
+        } else {
+            renderShadow(painter, layout.contentRect, physicalRadius, layout.effectInsets.left(),
+                         style.shadowColor, 1.0, false);
+        }
     }
     painter.end();
     return applyOutputOpacity(std::move(output), opacity);
@@ -795,7 +976,7 @@ QImage backgroundOutsideSelection(QImage background, const QImage& content,
             const QRect outputTile = tile.translated(contentOffset);
             if (!path.intersects(QRectF(outputTile)))
                 continue;
-            const bool interior = path.contains(QRectF(outputTile));
+            const bool interior = pathCoversRect(path, QRectF(outputTile));
             QImage mask;
             QPoint maskOffset;
             for (int y = tile.top(); y <= tile.bottom(); ++y) {
@@ -1018,7 +1199,7 @@ struct ScreenshotRegionShadowRenderer::Cache {
             screenshotRegionPath(localRegion, radius).translated(width, width);
         const auto append = [&](const QPainterPath& tilePath, const QRect& core,
                                 const QRect& halo) {
-            if (!tilePath.intersects(QRectF(halo)) || tilePath.contains(QRectF(halo)))
+            if (!tilePath.intersects(QRectF(halo)) || pathCoversRect(tilePath, QRectF(halo)))
                 return;
             Tile tile;
             tile.core = core;
@@ -1411,39 +1592,67 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
         return composeRegion(normalizedContent, normalized, devicePixelRatio, outputOpacity);
     if (!normalized.region && normalized.cornerRadius == 0 && normalized.effectWidth() == 0)
         return applyOutputOpacity(std::move(normalizedContent), outputOpacity);
-    ++g_diagnostics.selectionSizedTransientAllocations;
-    QImage output =
-        snowCanvasAllocateImage(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
-    if (output.isNull())
-        return {};
-    output.setColorSpace(normalizedContent.colorSpace());
-    output.setDevicePixelRatio(1.0);
-    output.fill(Qt::transparent);
-    QPainter painter(&output);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.drawImage(layout.contentRect, normalizedContent);
+    return composeShapedViewport(normalizedContent, normalized, layout, layout.outputRect,
+                                 outputOpacity);
+}
 
-    const qreal physicalRadius = normalized.cornerRadius * layout.devicePixelRatio;
-    const auto path = screenshotSelectionPath(layout.contentRect, normalized.region, physicalRadius,
-                                              normalized.regionScale);
-    if (normalized.cornerRadius > 0 || normalized.region) {
-        const auto mask = regionMask(output.size(), path);
-        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-        painter.drawImage(QPoint(), mask);
+QImage ScreenshotResultCompositor::composeViewport(const QImage& content,
+                                                   const ScreenshotResultStyle& style,
+                                                   const QRect& viewport, qreal outputOpacity) {
+    return composeViewport(content, content.size(), {}, style, viewport, outputOpacity);
+}
+
+QImage ScreenshotResultCompositor::composeViewport(const QImage& content,
+                                                   const QSize& fullContentSize,
+                                                   QPoint contentOffset,
+                                                   const ScreenshotResultStyle& style,
+                                                   const QRect& viewport, qreal outputOpacity) {
+    if (viewport.isEmpty())
+        return {};
+    const QImage normalizedContent = normalizeImage(content);
+    if (normalizedContent.isNull())
+        return {};
+    const auto normalized = normalizedStyle(style);
+    const auto layout = layoutForContent(fullContentSize, normalized);
+    if (!layout.isValid())
+        return {};
+    if (normalized.region && normalized.borderType == ScreenshotSelectionBorderType::Shadow)
+        return composeRegion(normalizedContent, normalized, 1.0, outputOpacity, viewport,
+                             contentOffset, fullContentSize);
+    if (!normalized.region && normalized.cornerRadius == 0 && normalized.effectWidth() == 0)
+        return applyOutputOpacity(
+            snowCanvasCopyImage(normalizedContent, viewport.translated(-contentOffset)),
+            outputOpacity);
+    const QRect renderRect = viewportRenderRect(fullContentSize, normalized, viewport);
+    if (renderRect != viewport) {
+        auto composed = composeShapedViewport(normalizedContent, normalized, layout, renderRect,
+                                              outputOpacity, contentOffset);
+        return composed.isNull()
+                   ? QImage{}
+                   : snowCanvasCopyImage(composed, viewport.translated(-renderRect.topLeft()));
     }
-    if (normalized.effectWidth() > 0) {
-        painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-        if (normalized.borderType == ScreenshotSelectionBorderType::Border) {
-            ScreenshotSelectionShadowRenderer::renderBorder(
-                painter, path, layout.effectInsets.left(), normalized.borderColor);
-        } else {
-            // Composition draws this shadow once; retain assets only for live surfaces.
-            renderShadow(painter, layout.contentRect, physicalRadius, layout.effectInsets.left(),
-                         normalized.shadowColor, 1.0, false);
-        }
-    }
-    painter.end();
-    return applyOutputOpacity(std::move(output), outputOpacity);
+    return composeShapedViewport(normalizedContent, normalized, layout, viewport, outputOpacity,
+                                 contentOffset);
+}
+
+QRect ScreenshotResultCompositor::viewportRenderRect(const QSize& contentPixelSize,
+                                                     const ScreenshotResultStyle& style,
+                                                     const QRect& viewport) {
+    const auto normalized = normalizedStyle(style);
+    const auto layout = layoutForContent(contentPixelSize, normalized);
+    if (!layout.isValid() || normalized.region || !layout.outputRect.intersects(viewport))
+        return viewport;
+    const auto path = screenshotSelectionPath(layout.contentRect, {}, normalized.cornerRadius);
+    if (pathCoversRect(path, QRectF(viewport).adjusted(-1, -1, 1, 1)))
+        return viewport;
+    const int guard =
+        qCeil(std::min(qreal(normalized.cornerRadius),
+                       std::min(layout.contentRect.width(), layout.contentRect.height()) / 2.0)) +
+        layout.effectInsets.left() + 2;
+    return QRectF(viewport)
+        .adjusted(-guard, -guard, guard, guard)
+        .intersected(QRectF(layout.outputRect))
+        .toAlignedRect();
 }
 
 namespace {
@@ -1487,7 +1696,7 @@ void paintSelectionExterior(QPainter& painter, const QRectF& viewportBounds,
             for (int x = pixels.left(); x <= pixels.right(); x += side) {
                 const QRect tile = QRect(x, y, side, side).intersected(pixels);
                 const QRectF neighborhood = QRectF(tile).adjusted(-1, -1, 1, 1);
-                if (path.contains(neighborhood))
+                if (pathCoversRect(path, neighborhood))
                     continue;
                 if (!path.intersects(neighborhood)) {
                     painter.fillRect(tile, color);

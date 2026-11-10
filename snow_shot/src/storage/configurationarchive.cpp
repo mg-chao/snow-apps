@@ -29,6 +29,13 @@ constexpr int kConfigArchiveMaxEntries = 16;
 constexpr qint64 kConfigArchiveMaxManifestBytes = 64 * 1024;
 constexpr qint64 kConfigArchiveMaxConfigurationBytes = 8 * 1024 * 1024;
 
+const QStringList& configArchiveLocalDirectoryKeys() {
+    static const QStringList keys{QStringLiteral("screenshot/image_save_directory"),
+                                  QStringLiteral("screen_recording/video_save_directory"),
+                                  QStringLiteral("screenshot/last_manual_save_directory")};
+    return keys;
+}
+
 QString configArchiveTranslate(const char* source) {
     return QCoreApplication::translate("snow_shot::storage::ConfigurationArchive", source);
 }
@@ -89,9 +96,9 @@ QJsonObject configArchiveJsonObject(const QByteArray& payload, bool* ok) {
 QString ConfigurationArchive::write(const QString& archivePath,
                                     const QMap<QString, QJsonValue>& values, int schemaVersion,
                                     bool redactCredentials) {
-    const QString failure = configArchiveTranslate(
-        QT_TRANSLATE_NOOP("snow_shot::storage::ConfigurationArchive",
-                          "The configuration archive could not be created."));
+    const QString failure =
+        configArchiveTranslate(QT_TRANSLATE_NOOP("snow_shot::storage::ConfigurationArchive",
+                                                 "The configuration archive could not be created"));
     const QFileInfo target(archivePath);
     if (archivePath.isEmpty() || target.fileName().isEmpty() ||
         !QDir().mkpath(target.absolutePath())) {
@@ -114,7 +121,8 @@ QString ConfigurationArchive::write(const QString& archivePath,
     const QMap<QString, QJsonValue> currentValues =
         ConfigurationSchema::migrateLegacyValues(values);
     for (auto it = currentValues.cbegin(); it != currentValues.cend(); ++it) {
-        if (it.key() == QLatin1String("storage/schema_version")) {
+        if (it.key() == QLatin1String("storage/schema_version") ||
+            configArchiveLocalDirectoryKeys().contains(it.key())) {
             continue;
         }
         configuration.insert(it.key(), it.value());
@@ -206,7 +214,7 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
     ConfigurationArchiveReadResult result;
     const QString invalidArchive =
         configArchiveTranslate(QT_TRANSLATE_NOOP("snow_shot::storage::ConfigurationArchive",
-                                                 "The file is not a valid configuration archive."));
+                                                 "The file is not a valid configuration archive"));
     const auto fail = [&result](const QString& error) {
         result.error = error;
         return result;
@@ -286,7 +294,7 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
         QLatin1String("snow-shot-configuration")) {
         return fail(configArchiveTranslate(
             QT_TRANSLATE_NOOP("snow_shot::storage::ConfigurationArchive",
-                              "The file is not a Snow Shot configuration archive.")));
+                              "The file is not a Snow Shot configuration archive")));
     }
     int formatVersion = 0;
     if (!ConfigurationSchema::parseIntegerVersion(manifest.value(QStringLiteral("format_version")),
@@ -296,7 +304,7 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
     if (formatVersion > kConfigArchiveFormatVersion) {
         return fail(configArchiveTranslate(QT_TRANSLATE_NOOP(
             "snow_shot::storage::ConfigurationArchive",
-            "The configuration archive was created by a newer version of Snow Shot.")));
+            "The configuration archive was created by a newer version of Snow Shot")));
     }
     if (formatVersion != kConfigArchiveFormatVersion) {
         return fail(invalidArchive);
@@ -309,7 +317,7 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
     if (schemaVersion > ConfigurationSchema::currentVersion()) {
         return fail(configArchiveTranslate(QT_TRANSLATE_NOOP(
             "snow_shot::storage::ConfigurationArchive",
-            "The configuration archive was created by a newer version of Snow Shot.")));
+            "The configuration archive was created by a newer version of Snow Shot")));
     }
     result.schemaVersion = schemaVersion;
     for (const auto& id : manifest.value(QStringLiteral("redacted_credentials")).toArray()) {
@@ -342,9 +350,18 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
     if (result.values.isEmpty()) {
         return fail(configArchiveTranslate(
             QT_TRANSLATE_NOOP("snow_shot::storage::ConfigurationArchive",
-                              "The configuration archive contains no compatible settings.")));
+                              "The configuration archive contains no compatible settings")));
     }
     return result;
+}
+
+void ConfigurationArchiveReadResult::preserveOmittedDirectories(
+    const QMap<QString, QJsonValue>& current) {
+    for (const auto& key : configArchiveLocalDirectoryKeys()) {
+        if (!values.contains(key) && current.contains(key)) {
+            values.insert(key, current.value(key));
+        }
+    }
 }
 
 void ConfigurationArchiveReadResult::preserveOmittedCredentials(

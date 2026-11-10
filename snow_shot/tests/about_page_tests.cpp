@@ -225,8 +225,8 @@ void projectLinkSurfacesMatchStandardButtons() {
     for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
         manager.setThemeAppearance(appearance);
         flushEvents();
-        for (const char* name :
-             {"aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup3"}) {
+        for (const char* name : {"aboutWebsite", "aboutSourceCode", "aboutFeedback",
+                                 "aboutQqGroup3", "aboutQqGroup4"}) {
             auto* button = child<AdButton>(page, name);
             require(button->buttonStyle() == AdButton::ButtonStyle::Outline &&
                         button->accentRole() == AdButton::AccentRole::Neutral,
@@ -302,7 +302,7 @@ void storeUpdatesOpenMicrosoftStore() {
     auto* action = child<adqt::widgets::AdButton>(page, "aboutUpdateAction");
     require(action->isEnabled() && action->text() == QStringLiteral("Open Microsoft Store") &&
                 child<QLabel>(page, "aboutUpdateStatus")->text() ==
-                    QStringLiteral("Updates are managed by Microsoft Store.") &&
+                    QStringLiteral("Updates are managed by Microsoft Store") &&
                 !child<QProgressBar>(page, "aboutUpdateProgress")->isVisible() &&
                 !child<adqt::widgets::AdButton>(page, "aboutUpdateCancel")->isVisible(),
             "Store About exposes only the external update manager");
@@ -327,19 +327,24 @@ void projectLinksAreExplicitAccessibleAndRecoverable() {
     require(page.findChild<QAbstractButton*>(QStringLiteral("aboutQqGroup2")) == nullptr,
             "About no longer offers QQ Group 2");
     auto* group = child<QAbstractButton>(page, "aboutQqGroup3");
+    auto* group4 = child<QAbstractButton>(page, "aboutQqGroup4");
     auto* website = child<QAbstractButton>(page, "aboutWebsite");
     auto* feedback = child<QAbstractButton>(page, "aboutFeedback");
     require(group->geometry().left() == website->geometry().left() &&
-                group->geometry().right() == feedback->geometry().right(),
-            "the remaining QQ group spans the full project link row width");
+                group4->geometry().right() == feedback->geometry().right() &&
+                group->geometry().top() == group4->geometry().top() &&
+                group->geometry().right() < group4->geometry().left() &&
+                qAbs(group->width() - group4->width()) <= 1,
+            "both QQ groups share the second project link row equally");
     snapshot(page, QStringLiteral("about-actions"));
     const QString project = QStringLiteral(SNOW_SHOT_TEST_PROJECT_URL);
-    const std::array<std::pair<const char*, QUrl>, 7> links{{
+    const std::array<std::pair<const char*, QUrl>, 8> links{{
         {"aboutWebsite", QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
         {"aboutSourceCode", QUrl(project)},
         {"aboutFeedback", QUrl(project + QStringLiteral("/issues"))},
         {"aboutReleaseNotes", QUrl(project + QStringLiteral("/releases"))},
         {"aboutQqGroup3", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_3_URL))},
+        {"aboutQqGroup4", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_4_URL))},
         {"aboutPrivacyPolicy", QUrl(snow_shot::app::distribution::privacyPolicyUrl())},
         {"aboutUserAgreement", QUrl(QStringLiteral("https://snowshot.top/terms.html"))},
     }};
@@ -383,7 +388,7 @@ void projectLinksAreExplicitAccessibleAndRecoverable() {
         flushEvents();
         require(error->text() ==
                     expectedTranslation(translator, locale, "AboutPageWidget",
-                                        "Could not open the link. Open %1 in your browser.")
+                                        "Could not open the link. Open %1 in your browser")
                         .arg(links.front().second.toDisplayString()),
                 "an existing link error retranslates and preserves its destination");
         QCoreApplication::removeTranslator(&translator);
@@ -424,7 +429,7 @@ void largerTypeKeepsEveryActionReachable() {
             "artwork scales down to the available width with larger fonts");
     for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction",
                              "aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup3",
-                             "aboutPrivacyPolicy", "aboutUserAgreement"}) {
+                             "aboutQqGroup4", "aboutPrivacyPolicy", "aboutUserAgreement"}) {
         auto* button = child<QAbstractButton>(page, name);
         scroll->ensureWidgetVisible(button);
         flushEvents();
@@ -471,7 +476,7 @@ void updatePolicyAndUnavailableCopy() {
         {},
         0,
         0,
-        QUrl(QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"))};
+        QUrl(QStringLiteral("https://github.com/mg-chao/snow-shot/releases/tag/v2.0.0_snow-shot"))};
     updates.statusChanged();
     auto* action = child<adqt::widgets::AdButton>(page, "aboutUpdateAction");
     require(action->text() == QStringLiteral("Download from GitHub"),
@@ -503,7 +508,7 @@ void updatePolicyAndUnavailableCopy() {
     require(!child<adqt::widgets::AdButton>(page, "aboutUpdateAction")->isEnabled(),
             "development copies cannot overwrite themselves");
     require(child<QLabel>(page, "aboutUpdateStatus")->text() ==
-                QStringLiteral("Automatic updates are unavailable for this copy."),
+                QStringLiteral("Automatic updates are unavailable for this copy"),
             "unavailable update status explains the disabled action");
 #endif
 }
@@ -646,6 +651,13 @@ void updateStatesFitTheVersionPanel() {
                 label->palette().color(QPalette::WindowText) ==
                     styles::ThemeManager::instance().themeColorScheme().map.colorWarningText,
             "blocked restarts keep their action and show the reason in the warning color");
+#ifdef Q_OS_WIN
+    int restartRequests = 0;
+    QObject::connect(&updates, &UpdateService::restartRequested, &page, [&] { ++restartRequests; });
+    action->click();
+    require(restartRequests == 1 && QApplication::activeModalWidget() == nullptr,
+            "clicking restart and update immediately requests the update without a dialog");
+#endif
     page.hide();
     styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
 }
@@ -768,6 +780,7 @@ void traySettingsAndFunctionNavigation() {
     for (const auto& action :
          {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
           QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+          QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
           QStringLiteral("open_function_settings")}) {
         const auto previousMiddle = backend.selectValue(middle);
         require(backend.applySelectValue(left, action) && backend.selectValue(left) == action &&
@@ -972,7 +985,7 @@ void mainNavigationSearchThemesAndLanguages() {
         QCoreApplication::installTranslator(&translator);
         flushEvents();
         require(searchSelect->placeholder() ==
-                    expectedTranslation(translator, locale, "SidebarWidget", "Search Function"),
+                    expectedTranslation(translator, locale, "SidebarWidget", "Search function"),
                 "sidebar search retranslates with each application catalog");
         const QString translatedTitle =
             expectedTranslation(translator, locale, "AboutPageWidget", "About Snow Shot");
@@ -998,16 +1011,15 @@ void mainNavigationSearchThemesAndLanguages() {
         require(agreementRect.top() == privacyRect.top() &&
                     agreementRect.right() < privacyRect.left(),
                 "translated legal links share one row without overlap");
-        require(
-            child<QLabel>(*page, "aboutOpenSource")->text() ==
-                    expectedTranslation(translator, locale, "AboutPageWidget",
-                                        "Free · Open source") &&
-                child<QLabel>(*page, "aboutDescription")->text() ==
-                    expectedTranslation(
-                        translator, locale, "AboutPageWidget",
-                        "Capture, annotate, recognize text, and record your screen,\n"
-                        "so every moment on screen can be expressed clearly and shared easily."),
-            "the new hero copy retranslates immediately");
+        require(child<QLabel>(*page, "aboutOpenSource")->text() ==
+                        expectedTranslation(translator, locale, "AboutPageWidget",
+                                            "Free · open source") &&
+                    child<QLabel>(*page, "aboutDescription")->text() ==
+                        expectedTranslation(
+                            translator, locale, "AboutPageWidget",
+                            "Capture, annotate, recognize text, and record your screen,\n"
+                            "so every moment on screen can be expressed clearly and shared easily"),
+                "the new hero copy retranslates immediately");
         require(child<QLabel>(*page, "aboutTagline")
                     ->text()
                     .contains(expectedTranslation(translator, locale, "AboutPageWidget",
@@ -1015,7 +1027,7 @@ void mainNavigationSearchThemesAndLanguages() {
                 "the two-tone headline retranslates");
         require(child<QLabel>(*page, "aboutSlogan")->text() ==
                     expectedTranslation(translator, locale, "AboutPageWidget",
-                                        "Snow Shot · Make expression clearer"),
+                                        "Snow Shot · make expression clearer"),
                 "the footer slogan retranslates");
         const std::array<const char*, 6> features{"Screenshot capture", "Easy annotation",
                                                   "Text recognition",   "Screen recording",
@@ -1042,14 +1054,15 @@ void mainNavigationSearchThemesAndLanguages() {
             const char* title;
             const char* number;
         };
-        const std::array<QqGroupCopy, 1> qqGroups{{
-            {"aboutQqGroup3", "QQ Group 3", "1037819112"},
+        const std::array<QqGroupCopy, 2> qqGroups{{
+            {"aboutQqGroup3", "QQ group 3", "1037819112"},
+            {"aboutQqGroup4", "QQ group 4", "1131891935"},
         }};
         for (const auto& group : qqGroups) {
             const QString title =
                 expectedTranslation(translator, locale, "AboutPageWidget", group.title);
             const QString description = expectedTranslation(translator, locale, "AboutPageWidget",
-                                                            "Discussion and support · Group No. %1")
+                                                            "Discussion and support · group no. %1")
                                             .arg(QString::fromLatin1(group.number));
             auto* button = child<QAbstractButton>(*page, group.objectName);
             require(button->accessibleName() == title &&
@@ -1112,6 +1125,11 @@ int main(int argc, char** argv) {
     styles::ThemeManager::instance().initialize(application);
     if (application.arguments().contains(QStringLiteral("--tray-icon-color-only"))) {
         traySystemIconColorSettings();
+        storage.shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--tray-click-settings-only"))) {
+        traySettingsAndFunctionNavigation();
         storage.shutdown();
         return 0;
     }

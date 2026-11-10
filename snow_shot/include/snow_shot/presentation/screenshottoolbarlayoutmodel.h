@@ -47,12 +47,12 @@ enum class Item {
     Shape,
     Arrow,
     Line,
-    FreeDraw,
+    Brush,
     Highlighter,
     Spotlight,
     Magnifier,
     Text,
-    SerialNumber,
+    SequenceNumber,
     Filter,
     Eraser,
     Watermark,
@@ -65,16 +65,21 @@ enum class Item {
 enum class Icon {
     Screenshot,
     ScreenshotDelay,
+    ScreenshotHistory,
+    FullScreenCanvas,
+    ImageStitching,
+    ImageSplitting,
+    ImageEditing,
     Select,
     Shape,
     Arrow,
     Line,
-    FreeDraw,
+    Brush,
     Highlight,
     Spotlight,
     Magnifier,
     Text,
-    SerialNumber,
+    SequenceNumber,
     Filter,
     Eraser,
     Watermark,
@@ -134,7 +139,7 @@ struct EditorDescriptor {
         {Item::Shape, "shape", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Shape"),
          Icon::Shape},
         {Item::SpeechBubble, "speech-bubble",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Speech Bubble"),
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Speech bubble"),
          Icon::SpeechBubble},
         {Item::Arrow, "arrow", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Arrow"),
          Icon::Arrow},
@@ -148,8 +153,8 @@ struct EditorDescriptor {
          Icon::Bracket},
         {Item::Line, "line", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Line"),
          Icon::Line},
-        {Item::FreeDraw, "free-draw",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Pen"), Icon::FreeDraw},
+        {Item::Brush, "free-draw", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Brush"),
+         Icon::Brush},
         {Item::Highlighter, "highlighter",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Highlight"), Icon::Highlight},
         {Item::Spotlight, "spotlight",
@@ -158,9 +163,9 @@ struct EditorDescriptor {
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Magnifier"), Icon::Magnifier},
         {Item::Text, "text", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Text"),
          Icon::Text},
-        {Item::SerialNumber, "serial-number",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Serial number"),
-         Icon::SerialNumber},
+        {Item::SequenceNumber, "serial-number",
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Sequence number"),
+         Icon::SequenceNumber},
         {Item::Filter, "filter", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Filter"),
          Icon::Filter},
         {Item::Eraser, "eraser", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Eraser"),
@@ -214,7 +219,7 @@ struct EditorDescriptor {
              Icon::Markdown},
             {"latex-recognition", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget",
-                               "LaTeX Formula Recognition"),
+                               "LaTeX formula recognition"),
              Icon::Latex},
             {"convert-to-html", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Convert to HTML"),
@@ -226,7 +231,7 @@ struct EditorDescriptor {
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Pin to screen"),
              Icon::PinToScreen},
             {"pin-window-to-screen", "ScreenshotToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Pin Window to Screen"),
+             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Pin window to screen"),
              Icon::PinWindowToScreen},
             {"text-recognition", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Text recognition"),
@@ -245,7 +250,7 @@ struct EditorDescriptor {
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Quick save"),
              Icon::QuickSave},
             {"upload-to-cloud", "ScreenshotToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Upload to Cloud"),
+             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Upload to cloud"),
              Icon::UploadToCloud},
             {"save-as-file", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Save as file"),
@@ -277,13 +282,13 @@ struct EditorDescriptor {
             if (descriptor.item == Item::Select) {
                 result.push_back(
                     {"select-separator", "DrawingToolbarEditorSettingsWidget",
-                     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+                     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
                      Icon::Separator});
             }
         }
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         result.push_back({"undo", "DrawingToolbarEditorSettingsWidget",
                           QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Undo"),
@@ -314,7 +319,7 @@ struct EditorDescriptor {
          QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "System audio"),
          Icon::RecordingSystemAudio},
         {"separator", "RecordingToolbarEditorSettingsWidget",
-         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Separator Component"),
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Separator component"),
          Icon::Separator},
         {"open-folder", "RecordingToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Open recording folder"),
@@ -329,8 +334,7 @@ struct EditorDescriptor {
          QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Save recording"),
          Icon::SaveAsFile},
         {"copy", "RecordingToolbarEditorSettingsWidget",
-         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Copy recording content"),
-         Icon::Copy},
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Copy recording"), Icon::Copy},
     };
     return value;
 }
@@ -356,22 +360,31 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
             return !ids.contains(QString::fromLatin1(item.id));
         });
         for (auto& item : result) {
-            if (QLatin1String(item.id) == QLatin1String("barcode-recognition")) {
-                item.translationContext = "FloatingToolbar";
-                item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "QR code recognition");
-            } else if (QLatin1String(item.id) == QLatin1String("latex-recognition")) {
-                item.translationContext = "FloatingToolbar";
-                item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "Formula recognition");
-            } else if (QLatin1String(item.id) == QLatin1String("record-screen")) {
+            if (QLatin1String(item.id) == QLatin1String("record-screen")) {
                 item.translationContext = "FloatingToolbar";
                 item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "Screen recording");
             }
         }
         result.prepend({"screenshot-delay", "FloatingToolbar",
-                        QT_TRANSLATE_NOOP("FloatingToolbar", "Delay %1 seconds to execute"),
+                        QT_TRANSLATE_NOOP("FloatingToolbar", "Run after %1 seconds"),
                         Icon::ScreenshotDelay});
         result.prepend({"screenshot", "FloatingToolbar",
                         QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot"), Icon::Screenshot});
+        result.append({"screenshot-history", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot history"),
+                       Icon::ScreenshotHistory});
+        result.append({"global-canvas", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Full-screen canvas"),
+                       Icon::FullScreenCanvas});
+        result.append({"stitch-selected-images", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Stitch selected images"),
+                       Icon::ImageStitching});
+        result.append({"split-selected-images", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Split selected images"),
+                       Icon::ImageSplitting});
+        result.append({"edit-selected-images", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Edit selected images"),
+                       Icon::ImageEditing});
         return result;
     }
     if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
@@ -393,11 +406,11 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         }
         result.push_back(
             {"confirm-separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         return result;
     }
@@ -408,7 +421,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         });
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         return result;
     }
@@ -986,6 +999,16 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return snow_shot::presentation::icons::custom::twotone::ScreenshotFeature();
     case Icon::ScreenshotDelay:
         return custom::ScreenshotDelay();
+    case Icon::ScreenshotHistory:
+        return adqt::icons::antd::outlined::History();
+    case Icon::FullScreenCanvas:
+        return custom::FullScreenCanvas();
+    case Icon::ImageStitching:
+        return custom::ImageStitching();
+    case Icon::ImageSplitting:
+        return custom::ImageSplitting();
+    case Icon::ImageEditing:
+        return custom::ImageEditing();
     case Icon::Select:
         return custom::ToolSelect();
     case Icon::Shape:
@@ -1002,7 +1025,7 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::BracketAnnotation();
     case Icon::Line:
         return custom::ToolLine();
-    case Icon::FreeDraw:
+    case Icon::Brush:
         return custom::ToolFreeDraw();
     case Icon::Highlight:
         return custom::ToolHighlight();
@@ -1012,7 +1035,7 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ToolMagnifier();
     case Icon::Text:
         return custom::ToolText();
-    case Icon::SerialNumber:
+    case Icon::SequenceNumber:
         return custom::ToolSerialNumber();
     case Icon::Filter:
         return custom::ToolFilter();

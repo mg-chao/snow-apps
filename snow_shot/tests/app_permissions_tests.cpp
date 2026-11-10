@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/apppermissionservice.h"
-#include "snow_shot/app/featureavailability.h"
+#include "snow_shot/app/applicationactiongate.h"
+#include "snow_shot/presentation/globalactiontraits.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
@@ -271,10 +272,13 @@ void freshSettingsActions() {
 }
 void routingPolicy() {
     using A = GlobalShortcutAction;
+    require(globalActionTraits(A::ScreenshotScrolling)->family == GlobalActionFamily::Screenshot,
+            "scrolling screenshot must use the screenshot feature gate");
     for (auto action :
-         {A::Screenshot, A::ScreenshotDelay, A::ScreenshotFixed, A::ScreenshotOcr,
-          A::ScreenshotOcrCopy, A::ScreenshotTranslation, A::ScreenshotCopy, A::ScreenshotSave,
-          A::ScreenshotQuickSave, A::ScreenshotFullScreen, A::ScreenshotFocusedWindow})
+         {A::Screenshot, A::ScreenshotDelay, A::ScreenshotPinToScreen, A::ScreenshotOcr,
+          A::ScreenshotOcrCopy, A::ScreenshotTranslation, A::ScreenshotScrolling, A::ScreenshotCopy,
+          A::ScreenshotSave, A::ScreenshotQuickSave, A::ScreenshotFullScreen,
+          A::ScreenshotFocusedWindow})
         require(requiredPermissions(action, true) == AppPermissions{P::ScreenRecording},
                 "capture must not require optional smart-selection access");
     for (auto action : {A::ScreenRecord, A::ScreenRecordCopy}) {
@@ -288,12 +292,14 @@ void routingPolicy() {
             "selected text needs Accessibility");
     for (auto action :
          {A::OpenScreenRecordingFolder, A::OpenCaptureHistory, A::OpenPinToScreenManagement,
-          A::GlobalCanvas, A::StitchSelectedImages, A::SplitSelectedImages, A::OpenSettings,
-          A::PinClipboardContent, A::PinSelectedFiles, A::HideShowAllWindows})
+          A::GlobalCanvas, A::StitchSelectedImages, A::SplitSelectedImages, A::EditSelectedImages,
+          A::OpenSettings, A::PinClipboardContent, A::PinSelectedFiles, A::HideShowAllWindows,
+          A::RestoreLastClosedWindows, A::SwitchWindowGroup, A::ToggleGlobalShortcuts,
+          A::ToggleDisableOnFocusedFullscreenWindow, A::ToggleWindowUnderCursorAlwaysOnTop})
         require(requiredPermissions(action, true).isEmpty(),
                 "permission-free actions must remain usable");
     using M = settings::SettingsGlobalMouseAction;
-    for (auto action : {M::ScreenshotCopy, M::ScreenshotFixed, M::ScreenshotOcr,
+    for (auto action : {M::ScreenshotCopy, M::ScreenshotPinToScreen, M::ScreenshotOcr,
                         M::ScreenshotOcrCopy, M::ScreenshotTranslation, M::ScreenshotQuickSave,
                         M::ScreenshotSave, M::ScreenRecording}) {
         const auto required = requiredPermissions(action, true);
@@ -319,9 +325,7 @@ void routingPolicy() {
             "startup navigation happens once per service lifetime");
     int blocked = 0;
     int dispatched = 0;
-    int unavailable = 0;
-    snow_shot::app::FeatureActionRouter featureRouter(
-        [&](snow_shot::app::FeatureFamily) { ++unavailable; });
+    const snow_shot::app::ApplicationActionGate actionGate([] { return true; });
     for (int i = 0; i < 100; ++i) {
         if (service.allow(requiredPermissions(A::Screenshot, false),
                           [&](const AppPermissions& permissions) {
@@ -329,20 +333,18 @@ void routingPolicy() {
                                       "redirect identifies the missing permission");
                               ++blocked;
                           }))
-            static_cast<void>(featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot,
-                                                     [&] { ++dispatched; }));
+            static_cast<void>(actionGate.dispatch([&] { ++dispatched; }));
     }
-    require(blocked == 100 && dispatched == 0 && unavailable == 0 && native->queries == 101,
+    require(blocked == 100 && dispatched == 0 && native->queries == 101,
             "each action checks current permissions before feature dispatch");
     native->value.statuses[0] = S::Granted;
     service.refresh();
     flush();
     require(dispatched == 0, "granting access must not replay an action");
     require(service.allow({P::ScreenRecording}, {}),
-            "a fresh user action can proceed to the existing availability gate");
-    static_cast<void>(
-        featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot, [&] { ++dispatched; }));
-    require(unavailable == 0 && dispatched == 1,
+            "a fresh user action can proceed to feature dispatch");
+    static_cast<void>(actionGate.dispatch([&] { ++dispatched; }));
+    require(dispatched == 1,
             "granted screen access must allow capture on every supported platform");
 }
 class PermissionTranslator final : public QTranslator {
@@ -412,15 +414,15 @@ void pageAndAlerts() {
             const QVector<QStringList> expectedRows{
                 {QStringLiteral("screen-recording"),
                  QStringLiteral("Screen & System Audio Recording"),
-                 QStringLiteral("Capture screenshots and record your screen and system audio.")},
+                 QStringLiteral("Capture screenshots and record your screen and system audio")},
                 {QStringLiteral("accessibility"), QStringLiteral("Accessibility"),
                  QStringLiteral("Use global mouse gestures, select individual window elements, "
-                                "and translate selected text.")},
+                                "and translate selected text")},
                 {QStringLiteral("input-monitoring"), QStringLiteral("Input Monitoring"),
-                 QStringLiteral("Recognize global mouse gestures while you use other apps.")},
+                 QStringLiteral("Recognize global mouse gestures while you use other apps")},
                 {QStringLiteral("microphone"), QStringLiteral("Microphone"),
                  QStringLiteral("Optional. Record your microphone when microphone audio is "
-                                "enabled for recording.")}};
+                                "enabled for recording")}};
             for (const QStringList& expected : expectedRows) {
                 auto* row =
                     page.findChild<QWidget*>(QStringLiteral("settings-item-") + expected.at(0));
@@ -459,11 +461,11 @@ void pageAndAlerts() {
             service.refresh();
             flush();
             for (auto* button : {screen, accessibility, input}) {
-                require(button->text() == u"Go to Settings" &&
+                require(button->text() == u"Go to settings" &&
                             button->accentRole() == adqt::widgets::AdButton::AccentRole::Danger,
                         "unavailable core permissions use error actions");
             }
-            require(microphone->text() == u"Go to Settings" &&
+            require(microphone->text() == u"Go to settings" &&
                         microphone->accentRole() == adqt::widgets::AdButton::AccentRole::Orange,
                     "unavailable microphone uses a warning action");
             screen->click();
@@ -533,19 +535,20 @@ void pageAndAlerts() {
                     "recreating the window preserves the application snapshot without prompting");
         }
         require(!service.polling(), "recreated window releases observation on destruction");
-        SettingsPageWidget hotkeys(registry, QStringLiteral("global-hotkeys"), runtime);
+        SettingsPageWidget shortcuts(registry, QStringLiteral("global-hotkeys"), runtime);
         SettingsPageWidget mouse(registry, QStringLiteral("global-mouse"), runtime);
-        hotkeys.show();
+        shortcuts.show();
         mouse.show();
         flush();
-        auto* hotkeyAlert =
-            hotkeys.findChild<adqt::widgets::AdAlert*>(QStringLiteral("appPermissionsAlert"));
+        auto* shortcutAlert =
+            shortcuts.findChild<adqt::widgets::AdAlert*>(QStringLiteral("appPermissionsAlert"));
         auto* mouseAlert =
             mouse.findChild<adqt::widgets::AdAlert*>(QStringLiteral("appPermissionsAlert"));
-        require(hotkeyAlert && mouseAlert && !hotkeyAlert->isVisible() && !mouseAlert->isVisible(),
+        require(shortcutAlert && mouseAlert && !shortcutAlert->isVisible() &&
+                    !mouseAlert->isVisible(),
                 "granted permissions hide both alerts");
         const auto metric = styles::ThemeManager::instance().themeColorScheme().metricAlias;
-        for (SettingsPageWidget* currentPage : {&hotkeys, &mouse}) {
+        for (SettingsPageWidget* currentPage : {&shortcuts, &mouse}) {
             auto* content = currentPage->findChild<QWidget*>(QStringLiteral("settings-content-") +
                                                              currentPage->pageId());
             require(content != nullptr, "permission alert page content must be available");
@@ -558,14 +561,14 @@ void pageAndAlerts() {
         native->value.statuses[2] = S::Missing;
         service.refresh();
         flush();
-        require(!hotkeyAlert->isVisible() && mouseAlert->isVisible(),
+        require(!shortcutAlert->isVisible() && mouseAlert->isVisible(),
                 "input monitoring warning belongs to mouse page only");
         native->value.statuses[0] = S::Missing;
         service.refresh();
         flush();
-        require(hotkeyAlert->isVisible() && mouseAlert->isVisible(),
+        require(shortcutAlert->isVisible() && mouseAlert->isVisible(),
                 "screen capture access affects both pages");
-        for (SettingsPageWidget* currentPage : {&hotkeys, &mouse}) {
+        for (SettingsPageWidget* currentPage : {&shortcuts, &mouse}) {
             auto* content = currentPage->findChild<QWidget*>(QStringLiteral("settings-content-") +
                                                              currentPage->pageId());
             auto* alert = currentPage->findChild<adqt::widgets::AdAlert*>(
@@ -602,7 +605,7 @@ void pageAndAlerts() {
         native->value.statuses.fill(S::Granted);
         service.refresh();
         flush();
-        for (SettingsPageWidget* currentPage : {&hotkeys, &mouse}) {
+        for (SettingsPageWidget* currentPage : {&shortcuts, &mouse}) {
             auto* content = currentPage->findChild<QWidget*>(QStringLiteral("settings-content-") +
                                                              currentPage->pageId());
             auto* alert = currentPage->findChild<adqt::widgets::AdAlert*>(

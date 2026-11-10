@@ -23,6 +23,9 @@ criterion = "0.5"
 image.workspace = true
 proptest = "1.11.0"
 
+[build-dependencies]
+cc = "1.4.2"
+
 [target.'cfg(windows)'.dev-dependencies]
 windows = { workspace = true, features = ["Win32_UI_HiDpi"] }
 

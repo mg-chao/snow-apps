@@ -17,6 +17,8 @@
 #include "widgets/context_menu.h"
 #include "widgets/input_text_edit.h"
 #include "physical_key_test_support.h"
+#include "translation_test_support.h"
+#include "widgets/spin.h"
 
 #include <QApplication>
 #include <QAction>
@@ -879,10 +881,10 @@ void recognitionResizeConsumesRetiredEditorInput() {
     ScreenshotRecognitionWindow* window = nullptr;
     QMouseEvent* activePress = nullptr;
     ScreenshotRecognitionWindowActions actions;
-    actions.selectionResizeDragMode = [](const QPointF&) {
+    actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
         return ScreenshotSelectionDragMode::All;
     };
-    actions.beginSelectionResize = [&](const QPointF&) {
+    actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         require(activePress && activePress->isAccepted(),
                 "selection resize accepts input before entering the retirement callback");
         window->hideTextEditor();
@@ -2289,6 +2291,145 @@ void latexSessionRequestsAreIsolated() {
     requireNoPreview("an unavailable recognition provider cannot create a formula preview");
 }
 
+void latexVisionPublishesProvisionalSourceBeforeCompletion() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    const snow_shot::storage::ScreenshotRecognitionModelSettings settings;
+    const QString previousModel = settings.latexModel();
+    const auto restore = qScopeGuard([&] { settings.setLatexModel(previousModel); });
+    settings.setLatexModel(QStringLiteral("vision"));
+    translation_tests::Server server;
+    SnowShotApiClient api(server.url());
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&] { return &window; };
+    bool editingAvailable = false;
+    bool canUndo = false;
+    actions.setLatexEditingState = [&](bool available, bool undo, bool) {
+        editingAvailable = available;
+        canUndo = undo;
+    };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &api, actions);
+    session.setTarget({QStringLiteral("streaming-formula"), sampleImage(), QRectF(0, 0, 240, 120)});
+    session.activate(Mode::Latex);
+    translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                 "formula session starts a streaming vision request");
+    server.delta(0, QStringLiteral("`"));
+    server.delta(0, QStringLiteral("``la"));
+    server.delta(0, QStringLiteral("tex\r\nx"));
+    const auto editor = [&] {
+        return window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    };
+    until([&] { return editor() && editor()->toPlainText() == QStringLiteral("x"); },
+          "source appears before completion without a fragmented opening fence");
+    const QPointer<QTextDocument> streamingDocument = editor()->document();
+    auto* spin = window.findChild<adqt::widgets::AdSpin*>();
+    require(session.busy(Mode::Latex) && editor()->isReadOnly() && spin && spin->spinning() &&
+                !editingAvailable && !canUndo &&
+                session.cachedRecognitionResults().latexEntries.isEmpty() &&
+                session.workflowResult().isEmpty(),
+            "streamed source is read-only progress rather than an editable or persisted result");
+    server.delta(0, QStringLiteral("+\\frac{a}"));
+    until([&] { return editor()->toPlainText() == QStringLiteral("x+\\frac{a}"); },
+          "incomplete LaTeX source is displayed incrementally");
+    require(editor()->document() == streamingDocument,
+            "streaming updates mutate the bound document instead of replacing the editor");
+    server.delta(0, QStringLiteral("{b}\n`"));
+    until([&] { return editor()->toPlainText() == QStringLiteral("x+\\frac{a}{b}"); },
+          "a fragmented closing fence never enters the formula source");
+    server.delta(0, QStringLiteral("``"));
+    server.finish(0);
+    until([&] { return !session.busy(Mode::Latex); }, "formula streaming completes");
+    const QString finalSource = QStringLiteral("x+\\frac{a}{b}");
+    require(editor() && !editor()->isReadOnly() && editor()->toPlainText() == finalSource &&
+                editingAvailable && !canUndo && !spin->spinning() &&
+                session.cachedRecognitionResults().latexEntries.size() == 1 &&
+                session.workflowResult().value(QStringLiteral("text")) == finalSource,
+            "completion installs the normalized editable result with no generated undo steps");
+    require(streamingDocument.isNull(), "the editor safely releases its provisional document");
+    session.undoTextEdit();
+    require(session.latexDraft() == finalSource,
+            "undo after completion cannot restore an intermediate formula");
+    session.setTextDraft(QStringLiteral("edited"));
+    session.undoTextEdit();
+    require(session.latexDraft() == finalSource,
+            "the first user edit undoes to the complete recognized formula");
+}
+
+void latexVisionRetiresProvisionalOutput() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    const snow_shot::storage::ScreenshotRecognitionModelSettings settings;
+    const QString previousModel = settings.latexModel();
+    const auto restore = qScopeGuard([&] { settings.setLatexModel(previousModel); });
+    for (int variant = 0; variant < 7; ++variant) {
+        settings.setLatexModel(QStringLiteral("vision"));
+        translation_tests::Server server;
+        auto api = std::make_unique<SnowShotApiClient>(server.url());
+        ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+        ScreenshotRecognitionSessionActions actions;
+        actions.ensureContent = [&] { return &window; };
+        auto session = std::make_unique<ScreenshotRecognitionSessionController>(nullptr, nullptr,
+                                                                                api.get(), actions);
+        session->setTarget(
+            {QStringLiteral("retired-formula"), sampleImage(), QRectF(0, 0, 240, 120)});
+        session->activate(Mode::Latex);
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "retirement fixture starts a formula stream");
+        server.delta(0, QStringLiteral("x+\\frac{a}{"));
+        if (variant != 6) {
+            until(
+                [&] {
+                    auto* editor =
+                        window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+                    return editor && editor->toPlainText() == QStringLiteral("x+\\frac{a}{");
+                },
+                "retirement fixture displays provisional source");
+        }
+        const auto snapshot = session->cachedRecognitionResults();
+        require(snapshot.latexEntries.isEmpty(),
+                "partial formulas never enter recognition snapshots");
+        if (variant == 0)
+            server.fail(0);
+        else if (variant == 1)
+            server.finish(0); // Complete transport, incomplete formula.
+        else if (variant == 2)
+            session->setRecognitionModel(QStringLiteral("general"));
+        else if (variant == 3)
+            session->setTarget(
+                {QStringLiteral("new-target"), sampleImage(), QRectF(0, 0, 240, 120)});
+        else if (variant == 4)
+            api.reset();
+        else if (variant == 5)
+            session.reset();
+        else
+            session->deactivate(); // Retire a source flush that may still be queued.
+        translation_tests::waitUntil([&] { return server.disconnected(0); },
+                                     "retiring formula progress cancels its transport");
+        // The peer can disconnect before the client handles finished, and preview widgets
+        // deliberately use deleteLater when recognition tears down their event handlers.
+        const auto message =
+            QStringLiteral("retired formula variant %1 releases its editor and preview")
+                .arg(variant)
+                .toStdString();
+        until(
+            [&] {
+                return window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor")) ==
+                           nullptr &&
+                       window.findChild<ScreenshotOriginalImagePreviewWindow*>() == nullptr;
+            },
+            message.c_str());
+        if (session) {
+            require(session->cachedRecognitionResults().latexEntries.isEmpty(),
+                    "failure or cancellation never commits partial formula output");
+            if (variant == 0 || variant == 1 || variant == 4)
+                require(!session->busy(Mode::Latex) && !session->workflowState()
+                                                            .value(QStringLiteral("error"))
+                                                            .toString()
+                                                            .isEmpty(),
+                        "failed formula progress settles with the existing recognition error");
+        }
+    }
+}
+
 void latexPendingResultReplacesBorrowedDocumentSafely() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
     QTcpServer server;
@@ -2684,6 +2825,8 @@ void runLatexRecognitionTests() {
     latexRepeatedSeedingPreservesBaselineAndHistory();
     latexSourcePreservesWhitespace();
     latexKeyboardHistoryRoutesToSession();
+    latexVisionPublishesProvisionalSourceBeforeCompletion();
+    latexVisionRetiresProvisionalOutput();
     using Mode = ScreenshotRecognitionSessionController::Mode;
     namespace layout = snow_shot::presentation::toolbar_layout;
     using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;

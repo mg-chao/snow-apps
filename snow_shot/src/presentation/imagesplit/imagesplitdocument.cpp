@@ -563,15 +563,16 @@ ImageSplitLines::const_iterator::operator-=(difference_type offset) {
 
 namespace {
 [[maybe_unused]] constexpr const char* labels[] = {
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a positive whole number."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Each image must be at least one pixel wide or high."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter at least 16 pixels."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose pixels or percentage."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a percentage from 5% to 100%."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "The image is unavailable."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split type."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split direction."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "The split lines require too much memory."),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a positive whole number"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a non-negative integer"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Each image must be at least one pixel wide and high"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter at least 16 pixels"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose pixels or percentage"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a percentage from 5% to 100%"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "The image is unavailable"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split type"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split direction"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "The split lines require too much memory"),
 };
 QString splitText(const char* value) {
     return QCoreApplication::translate("ImageSplitDocument", value);
@@ -670,12 +671,12 @@ std::optional<int> percentageBoundary(const DecimalPercentage& percentage, int d
 bool equalLines(int dimension, int count, const QString& field, ImageSplitLayout& layout,
                 ImageSplitLines& destination) {
     if (count <= 0) {
-        layout.errors.insert(field, splitText("Enter a positive whole number."));
+        layout.errors.insert(field, splitText("Enter a positive whole number"));
         return false;
     }
     if (count > dimension) {
         layout.errors.insert(field,
-                             splitText("Each image must be at least one pixel wide or high."));
+                             splitText("Each image must be at least one pixel wide and high"));
         return false;
     }
     if (count == 1)
@@ -695,7 +696,7 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
                   ImageSplitLines& destination) {
     if (settings.unit == ImageSplitUnit::Pixels) {
         if (settings.pixels < 16) {
-            layout.errors.insert(QStringLiteral("pixels"), splitText("Enter at least 16 pixels."));
+            layout.errors.insert(QStringLiteral("pixels"), splitText("Enter at least 16 pixels"));
             return false;
         }
         return destination.appendArithmetic(settings.pixels, settings.pixels,
@@ -703,19 +704,19 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
     }
     if (settings.unit != ImageSplitUnit::Percentage) {
         layout.errors.insert(QStringLiteral("percentage"),
-                             splitText("Choose pixels or percentage."));
+                             splitText("Choose pixels or percentage"));
         return false;
     }
     const auto percentage = parsePercentage(settings.percentage);
     if (!percentage) {
         layout.errors.insert(QStringLiteral("percentage"),
-                             splitText("Enter a percentage from 5% to 100%."));
+                             splitText("Enter a percentage from 5% to 100%"));
         return false;
     }
     const QString denominator = percentage->denominator();
     if (compareDigits(multiplyDigits(percentage->digits, quint64(dimension)), denominator) < 0) {
         layout.errors.insert(QStringLiteral("percentage"),
-                             splitText("Each image must be at least one pixel wide or high."));
+                             splitText("Each image must be at least one pixel wide and high"));
         return false;
     }
     for (int multiple = 1; multiple <= 20; ++multiple) {
@@ -724,13 +725,13 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
         const auto boundary = percentageBoundary(*percentage, dimension, multiple);
         if (!boundary || *boundary >= dimension) {
             layout.errors.insert(QStringLiteral("percentage"),
-                                 splitText("Each image must be at least one pixel wide or high."));
+                                 splitText("Each image must be at least one pixel wide and high"));
             return false;
         }
         const int coordinate = *boundary;
         if (coordinate <= 0 || (!destination.isEmpty() && coordinate <= destination.last())) {
             layout.errors.insert(QStringLiteral("percentage"),
-                                 splitText("Each image must be at least one pixel wide or high."));
+                                 splitText("Each image must be at least one pixel wide and high"));
             return false;
         }
         destination.append(coordinate);
@@ -747,18 +748,18 @@ std::optional<int> imageSplitPercentagePixels(int dimension, const QString& perc
 }
 
 bool ImageSplitLayout::isValid() const {
-    return size.isValid() && !size.isEmpty() && errors.isEmpty() &&
+    return size.isValid() && !size.isEmpty() && errors.isEmpty() && overlapWidth >= 0 &&
            verticalLines.isValid(size.width()) && horizontalLines.isValid(size.height());
 }
 
 qint64 ImageSplitLayout::outputCount() const {
-    if (size.isEmpty() || !errors.isEmpty() || verticalLines.size() >= size.width() ||
-        horizontalLines.size() >= size.height())
+    if (size.isEmpty() || !errors.isEmpty() || overlapWidth < 0 ||
+        verticalLines.size() >= size.width() || horizontalLines.size() >= size.height())
         return 0;
     return (qint64(verticalLines.size()) + 1) * (qint64(horizontalLines.size()) + 1);
 }
 
-QRect ImageSplitLayout::regionAt(qint64 index) const {
+QRect ImageSplitLayout::baseRegionAt(qint64 index) const {
     if (index < 0 || index >= outputCount())
         return {};
     const qint64 columnCount = qint64(verticalLines.size()) + 1;
@@ -771,11 +772,28 @@ QRect ImageSplitLayout::regionAt(qint64 index) const {
     return QRect(left, top, right - left, bottom - top);
 }
 
+QRect ImageSplitLayout::regionAt(qint64 index) const {
+    const auto base = baseRegionAt(index);
+    if (base.isEmpty() || overlapWidth == 0)
+        return base;
+    const int left = static_cast<int>(std::max(qint64(0), qint64(base.x()) - overlapWidth));
+    const int top = static_cast<int>(std::max(qint64(0), qint64(base.y()) - overlapWidth));
+    const int right = static_cast<int>(
+        std::min(qint64(size.width()), qint64(base.x()) + base.width() + overlapWidth));
+    const int bottom = static_cast<int>(
+        std::min(qint64(size.height()), qint64(base.y()) + base.height() + overlapWidth));
+    return QRect(left, top, right - left, bottom - top);
+}
+
 ImageSplitLayout calculateImageSplitLayout(QSize size, const ImageSplitSettings& settings) {
     ImageSplitLayout layout;
     layout.size = size;
+    layout.overlapWidth = settings.overlapWidth;
+    if (settings.overlapWidth < 0)
+        layout.errors.insert(QStringLiteral("overlapWidth"),
+                             splitText("Enter a non-negative integer"));
     if (size.isEmpty()) {
-        layout.errors.insert(QStringLiteral("image"), splitText("The image is unavailable."));
+        layout.errors.insert(QStringLiteral("image"), splitText("The image is unavailable"));
         return layout;
     }
     try {
@@ -789,21 +807,21 @@ ImageSplitLayout calculateImageSplitLayout(QSize size, const ImageSplitSettings&
             const bool vertical = settings.direction == ImageSplitDirection::Vertical;
             const int dimension = vertical ? size.width() : size.height();
             auto& lines = vertical ? layout.verticalLines : layout.horizontalLines;
-            if (settings.type == ImageSplitType::Equal)
+            if (settings.type == ImageSplitType::Equal || settings.type == ImageSplitType::Smart)
                 equalLines(dimension, settings.count, QStringLiteral("count"), layout, lines);
             else if (settings.type == ImageSplitType::Precise)
                 preciseLines(dimension, settings, layout, lines);
             else
-                layout.errors.insert(QStringLiteral("type"), splitText("Choose a split type."));
+                layout.errors.insert(QStringLiteral("type"), splitText("Choose a split type"));
         } else {
             layout.errors.insert(QStringLiteral("direction"),
-                                 splitText("Choose a split direction."));
+                                 splitText("Choose a split direction"));
         }
     } catch (const std::bad_alloc&) {
         layout.verticalLines = {};
         layout.horizontalLines = {};
         layout.errors.insert(QStringLiteral("image"),
-                             splitText("The split lines require too much memory."));
+                             splitText("The split lines require too much memory"));
     }
     return layout;
 }
@@ -820,6 +838,8 @@ struct ImageSplitDocument::Impl final {
     ImageSplitLayout layout;
     QVector<HistoryEntry> history;
     qsizetype cursor = 0;
+    quint64 revision = 0;
+    std::optional<ImageSplitPreparedLayout> cachedSmart;
     std::optional<ImageSplitState> beforeDrag;
     bool dragVertical = true;
     int dragIndex = -1;
@@ -834,9 +854,11 @@ struct ImageSplitDocument::Impl final {
     void synchronizeLines() {
         layout.verticalLines = state.verticalLines;
         layout.horizontalLines = state.horizontalLines;
+        layout.overlapWidth = state.settings.overlapWidth;
     }
 
     void restoreHistory() {
+        ++revision;
         const auto& entry = history.at(cursor);
         state = entry.state;
         layout.size = image.size();
@@ -852,6 +874,7 @@ struct ImageSplitDocument::Impl final {
         history.append({next, layout.errors});
         cursor = history.size() - 1;
         state = std::move(next);
+        ++revision;
         synchronizeLines();
         return true;
     }
@@ -872,21 +895,32 @@ const QImage& ImageSplitDocument::preview() const {
 }
 void ImageSplitDocument::setImage(QImage image, QImage preview,
                                   ImageSplitSettings initialSettings) {
+    const auto prepared = prepareImageSplitLayout(image, initialSettings);
+    if (prepared)
+        setPreparedImage(std::move(image), std::move(preview), *prepared);
+}
+bool ImageSplitDocument::setPreparedImage(QImage image, QImage preview,
+                                          const ImageSplitPreparedLayout& prepared) {
+    if (prepared.sourceKey != image.cacheKey() || prepared.layout.size != image.size())
+        return false;
     auto& d = *m_impl;
     d.beforeDrag.reset();
     d.image = std::move(image);
     d.preview = preview.isNull() ? d.image : std::move(preview);
-    d.state = {};
-    d.state.settings = std::move(initialSettings);
-    d.layout = calculateImageSplitLayout(d.image.size(), d.state.settings);
-    d.state.verticalLines = d.layout.verticalLines;
-    d.state.horizontalLines = d.layout.horizontalLines;
-    // Initializer-list assignment reuses the old allocation. Source replacement also releases the
-    // entry capacity accumulated by the previous image's unlimited undo history.
+    d.state = {prepared.settings, prepared.layout.verticalLines, prepared.layout.horizontalLines,
+               false};
+    d.layout = prepared.layout;
+    d.cachedSmart.reset();
+    if (prepared.settings.type == ImageSplitType::Smart &&
+        prepared.settings.direction != ImageSplitDirection::Grid && prepared.layout.isValid())
+        d.cachedSmart = prepared;
+    // Source replacement releases the previous image's unlimited undo history.
     d.history = QVector<Impl::HistoryEntry>{{d.state, d.layout.errors}};
     d.cursor = 0;
+    ++d.revision;
     emit changed();
     emit historyChanged();
+    return true;
 }
 ImageSplitSettings ImageSplitDocument::settings() const {
     return m_impl->state.settings;
@@ -911,15 +945,69 @@ qsizetype ImageSplitDocument::historyStorageBytes() const {
         include(*m_impl->beforeDrag);
     return bytes;
 }
+quint64 ImageSplitDocument::revision() const {
+    return m_impl->revision;
+}
+std::optional<ImageSplitPreparedLayout>
+ImageSplitDocument::cachedLayout(const ImageSplitSettings& settings) const {
+    const auto& d = *m_impl;
+    const auto nominal = calculateImageSplitLayout(d.image.size(), settings);
+    if (!nominal.isValid())
+        return std::nullopt;
+    const bool horizontal = settings.direction == ImageSplitDirection::Horizontal;
+    const int dimension = horizontal ? d.image.height() : d.image.width();
+    const int length = horizontal ? d.image.width() : d.image.height();
+    if (settings.type != ImageSplitType::Smart || settings.direction == ImageSplitDirection::Grid ||
+        settings.count == 1 || settings.count == dimension || length == 1)
+        return ImageSplitPreparedLayout{d.image.cacheKey(), settings, nominal};
+    if (!d.cachedSmart || d.cachedSmart->sourceKey != d.image.cacheKey() ||
+        d.cachedSmart->settings.direction != settings.direction ||
+        d.cachedSmart->settings.count != settings.count)
+        return std::nullopt;
+    auto result = *d.cachedSmart;
+    result.settings = settings;
+    result.layout.overlapWidth = settings.overlapWidth;
+    return result;
+}
 bool ImageSplitDocument::setSettings(const ImageSplitSettings& settings) {
     if (settings == m_impl->state.settings)
         return false;
-    const auto next = calculateImageSplitLayout(m_impl->image.size(), settings);
-    if (!next.isValid())
+    auto previous = m_impl->state.settings;
+    previous.overlapWidth = settings.overlapWidth;
+    if (previous == settings) {
+        auto layout = m_impl->layout;
+        layout.overlapWidth = settings.overlapWidth;
+        return setPreparedSettings({m_impl->image.cacheKey(), settings, layout}, revision());
+    }
+    const auto cached = cachedLayout(settings);
+    const auto prepared = cached ? cached : prepareImageSplitLayout(m_impl->image, settings);
+    return prepared && setPreparedSettings(*prepared, revision());
+}
+bool ImageSplitDocument::setPreparedSettings(const ImageSplitPreparedLayout& prepared,
+                                             quint64 expectedRevision) {
+    auto& d = *m_impl;
+    const auto& settings = prepared.settings;
+    if (expectedRevision != d.revision || prepared.sourceKey != d.image.cacheKey() ||
+        prepared.layout.size != d.image.size() || !prepared.layout.isValid() ||
+        prepared.layout.overlapWidth != settings.overlapWidth || settings == d.state.settings ||
+        !calculateImageSplitLayout(d.image.size(), settings).isValid())
         return false;
     cancelLineDrag();
-    m_impl->layout = next;
-    if (!m_impl->commit({settings, next.verticalLines, next.horizontalLines, false}))
+    auto previousSettings = d.state.settings;
+    previousSettings.overlapWidth = settings.overlapWidth;
+    auto nextState = d.state;
+    if (!(previousSettings == settings)) {
+        d.layout = prepared.layout;
+        nextState = {settings, prepared.layout.verticalLines, prepared.layout.horizontalLines,
+                     false};
+        if (settings.type == ImageSplitType::Smart &&
+            settings.direction != ImageSplitDirection::Grid)
+            d.cachedSmart = prepared;
+    } else {
+        // Overlap changes crop margins, never the user's manually positioned guides.
+        nextState.settings = settings;
+    }
+    if (!d.commit(std::move(nextState)))
         return false;
     emit changed();
     emit historyChanged();
@@ -991,6 +1079,7 @@ bool ImageSplitDocument::beginLineDrag(bool vertical, int index) {
     if (index < 0 || index >= lines.size())
         return false;
     d.beforeDrag = d.state;
+    ++d.revision;
     d.dragVertical = vertical;
     d.dragIndex = index;
     d.dragStartIndex = index;
@@ -1030,6 +1119,7 @@ bool ImageSplitDocument::moveDraggedLine(int coordinate) {
         lines[d.dragIndex] = coordinate;
     }
     d.state.manuallyEdited = true;
+    ++d.revision;
     d.synchronizeLines();
     if (indexChanged)
         emit lineDragIndexChanged(d.dragIndex);
@@ -1045,6 +1135,7 @@ void ImageSplitDocument::endLineDrag() {
     const bool geometryChanged = next.verticalLines != d.beforeDrag->verticalLines ||
                                  next.horizontalLines != d.beforeDrag->horizontalLines;
     d.state = std::move(*d.beforeDrag);
+    ++d.revision;
     d.beforeDrag.reset();
     if (geometryChanged)
         d.commit(std::move(next));
@@ -1058,6 +1149,7 @@ void ImageSplitDocument::cancelLineDrag() {
     if (!d.beforeDrag)
         return;
     d.state = std::move(*d.beforeDrag);
+    ++d.revision;
     d.beforeDrag.reset();
     const bool indexChanged = d.dragIndex != d.dragStartIndex;
     d.dragIndex = d.dragStartIndex;

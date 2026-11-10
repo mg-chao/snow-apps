@@ -10,7 +10,7 @@
 #include "snow_shot/presentation/components/historyselectionbar.h"
 #include "snow_shot/presentation/components/historypagecommon.h"
 #include "snow_shot/presentation/components/historyentrycard.h"
-#include "snow_shot/presentation/components/thumbnailcache.h"
+#include "snow_shot/presentation/components/historyentryviewport.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
@@ -23,7 +23,6 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/settingsadapters.h"
-#include "snow_shot/storage/storageusagetracker.h"
 
 #include "antd_icons.h"
 #include "theme/theme_manager.h"
@@ -52,7 +51,6 @@
 #include <QHideEvent>
 #include <QLabel>
 #include <QSignalBlocker>
-#include <QStandardPaths>
 #include <QPalette>
 #include <QResizeEvent>
 #include <QScrollBar>
@@ -70,13 +68,11 @@
 #include <chrono>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <utility>
 
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
 namespace history_page = snow_shot::presentation::components::history_page;
-namespace thumbnail_cache = snow_shot::presentation::components::thumbnail_cache;
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 namespace storage = snow_shot::storage;
 namespace styles = snow_shot::presentation::styles;
@@ -106,38 +102,25 @@ class ScreenshotHistoryTaskExecutor final {
         m_pool.waitForDone();
     }
 
-    template <typename Function> void submit(Function&& function, bool persistence = false) {
+    template <typename Function> void submit(Function&& function) {
         if (m_stopped.load(std::memory_order_acquire)) {
             return;
         }
         m_pendingJobs.fetch_add(1, std::memory_order_relaxed);
-        if (persistence) {
-            m_pendingPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-            m_submittedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-        }
         try {
             m_pool.start(snow_shot::runtime::trackRuntimeWork(
-                [this, function = std::forward<Function>(function), persistence]() mutable {
+                [this, function = std::forward<Function>(function)]() mutable {
                     snow_shot::platform::applyApplicationQoSToCurrentThread();
                     struct Completion final {
                         ScreenshotHistoryTaskExecutor* executor;
-                        bool persistence;
                         ~Completion() {
-                            executor->complete(persistence);
+                            executor->m_pendingJobs.fetch_sub(1, std::memory_order_release);
                         }
-                    } completion{this, persistence};
-                    if (persistence) {
-                        m_activePersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-                    }
+                    } completion{this};
                     function();
                 }));
         } catch (...) {
-            // The runnable never started, so mirror complete()'s counter
-            // updates to keep pendingJobs() converging to zero.
-            if (persistence) {
-                m_pendingPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-                m_submittedPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-            }
+            // The runnable never started, so release its pending-job count.
             m_pendingJobs.fetch_sub(1, std::memory_order_release);
             throw;
         }
@@ -146,19 +129,6 @@ class ScreenshotHistoryTaskExecutor final {
     [[nodiscard]] int pendingJobs() const {
         return m_pendingJobs.load(std::memory_order_acquire);
     }
-    [[nodiscard]] int pendingPersistenceJobs() const {
-        return m_pendingPersistenceJobs.load(std::memory_order_relaxed);
-    }
-    [[nodiscard]] int queuedPersistenceJobs() const {
-        return std::max(0, pendingPersistenceJobs() -
-                               m_activePersistenceJobs.load(std::memory_order_relaxed));
-    }
-    [[nodiscard]] quint64 submittedPersistenceJobs() const {
-        return m_submittedPersistenceJobs.load(std::memory_order_relaxed);
-    }
-    [[nodiscard]] quint64 completedPersistenceJobs() const {
-        return m_completedPersistenceJobs.load(std::memory_order_relaxed);
-    }
     [[nodiscard]] int workerCount() const {
         return m_pool.maxThreadCount();
     }
@@ -166,74 +136,9 @@ class ScreenshotHistoryTaskExecutor final {
         return m_pool.expiryTimeout();
     }
 
-    void persist(const QString& key, QImage image, std::function<void(QImage)> function) {
-        const qint64 bytes = image.sizeInBytes();
-        {
-            std::lock_guard lock(m_persistenceMutex);
-            if (m_persistenceKeys.contains(key) || m_persistenceKeys.size() >= 32 ||
-                bytes > 16 * 1024 * 1024 - m_retainedBytes) {
-                ++m_skippedPersistenceJobs;
-                return;
-            }
-            m_persistenceKeys.insert(key);
-            m_retainedBytes += bytes;
-        }
-        try {
-            submit(
-                [this, key, bytes, image = std::move(image),
-                 function = std::move(function)]() mutable {
-                    struct Release {
-                        ScreenshotHistoryTaskExecutor* executor;
-                        QString key;
-                        qint64 bytes;
-                        ~Release() {
-                            std::lock_guard lock(executor->m_persistenceMutex);
-                            executor->m_persistenceKeys.remove(key);
-                            executor->m_retainedBytes -= bytes;
-                        }
-                    } release{this, key, bytes};
-                    function(std::move(image));
-                },
-                true);
-        } catch (...) {
-            // The job never started, so its reservation must not leak.
-            std::lock_guard lock(m_persistenceMutex);
-            m_persistenceKeys.remove(key);
-            m_retainedBytes -= bytes;
-            throw;
-        }
-    }
-
-    quint64 skippedPersistenceJobs() const {
-        return m_skippedPersistenceJobs.load();
-    }
-    qint64 retainedBytes() const {
-        std::lock_guard lock(m_persistenceMutex);
-        return m_retainedBytes;
-    }
-
   private:
-    void complete(bool persistence) {
-        if (persistence) {
-            m_activePersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-            m_pendingPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
-            m_completedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
-        }
-        // Publish aggregate completion last so a zero pending-job count also
-        // implies that the persistence-specific counters are settled.
-        m_pendingJobs.fetch_sub(1, std::memory_order_release);
-    }
-
     std::atomic_int m_pendingJobs{0};
-    std::atomic_int m_pendingPersistenceJobs{0};
-    std::atomic_int m_activePersistenceJobs{0};
-    std::atomic<quint64> m_submittedPersistenceJobs{0};
-    std::atomic<quint64> m_completedPersistenceJobs{0};
     std::atomic_bool m_stopped{false};
-    mutable std::mutex m_persistenceMutex;
-    QSet<QString> m_persistenceKeys;
-    qint64 m_retainedBytes = 0;
-    std::atomic<quint64> m_skippedPersistenceJobs{0};
     // Declare the pool last so it is destroyed first: shutdown() drains it
     // while the diagnostic counters are still alive, and process-exit
     // destruction then only has to join already-idle workers.
@@ -483,10 +388,9 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
         fail(reason);
     }
 
-    void attach(adqt::widgets::AdImageReply* source, std::function<void(QImage)> onSuccess,
-                std::function<void(const QString&)> onFailure = {}) {
+    void attach(adqt::widgets::AdImageReply* source,
+                std::function<void(const QString&)> onFailure) {
         sourceReply_ = source;
-        onSuccess_ = std::move(onSuccess);
         onFailure_ = std::move(onFailure);
         if (sourceReply_ == nullptr) {
             fail(QStringLiteral("Thumbnail source reply was unavailable"));
@@ -503,12 +407,7 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
             sourceReply_.clear();
             source->deleteLater();
             if (source->isSuccessful()) {
-                QImage image = source->image();
-                const QImage replyImage = image;
-                if (onSuccess_) {
-                    onSuccess_(std::move(image));
-                }
-                succeed(replyImage, source->naturalSize());
+                succeed(source->image(), source->naturalSize());
             } else {
                 auto onFailure = std::move(onFailure_);
                 if (onFailure)
@@ -532,7 +431,6 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
 
   private:
     QPointer<adqt::widgets::AdImageReply> sourceReply_;
-    std::function<void(QImage)> onSuccess_;
     std::function<void(const QString&)> onFailure_;
     bool aborted_ = false;
 };
@@ -541,72 +439,24 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
   public:
     HistoryThumbnailLoader(storage::CaptureHistoryRecord record,
                            ScreenshotHistoryPageDataSource* dataSource, QObject* parent)
-        : AdImageLoader(parent), m_record(std::move(record)), m_dataSource(dataSource),
-          m_cacheDirectory(
-              snow_shot::storage::StorageUsageTracker::defaultThumbnailCacheDirectory()) {}
+        : AdImageLoader(parent), m_record(std::move(record)), m_dataSource(dataSource) {}
 
     adqt::widgets::AdImageReply* load(const QUrl& source,
                                       const adqt::widgets::AdImageLoadOptions& options,
                                       QObject* parent = nullptr) override {
         auto* reply = new HistoryThumbnailReply(parent);
-        const QString cachePath = thumbnailPath(source, options);
-        const auto original = [this, reply, source, options, cachePath]() {
-            reply->attach(
-                adqt::widgets::defaultAdImageLoader()->load(source, options, reply),
-                [this, cachePath](QImage image) {
-                    if (!cachePath.isEmpty() && !image.isNull())
-                        persist(cachePath, std::move(image));
-                },
-                [this, reply](const QString& reason) {
-                    if (m_dataSource)
-                        m_dataSource->reportReadFailure(m_record, reason);
-                    reply->finishFailure(reason);
-                });
-        };
-        const QFileInfo cacheInfo(cachePath);
-        if (!cachePath.isEmpty() && cacheInfo.isFile() && !cacheInfo.isSymLink()) {
-            reply->attach(adqt::widgets::defaultAdImageLoader()->load(
-                              QUrl::fromLocalFile(cachePath), {}, reply),
-                          {}, [cachePath, original](const QString&) {
-                              QFile::remove(cachePath);
-                              original();
-                          });
-            return reply;
-        }
-        original();
+        reply->attach(adqt::widgets::defaultAdImageLoader()->load(source, options, reply),
+                      [record = m_record, dataSource = m_dataSource, reply](const QString& reason) {
+                          if (dataSource)
+                              dataSource->reportReadFailure(record, reason);
+                          reply->finishFailure(reason);
+                      });
         return reply;
     }
 
   private:
-    QString thumbnailPath(const QUrl& source,
-                          const adqt::widgets::AdImageLoadOptions& options) const {
-        if (m_cacheDirectory.isEmpty() || source.isEmpty() || options.targetPixelSize.isEmpty()) {
-            return {};
-        }
-        QString sourceKey;
-        if (source.isLocalFile()) {
-            sourceKey = m_record.id + u'|' + QDir::fromNativeSeparators(source.toLocalFile());
-        } else {
-            sourceKey = source.toString();
-        }
-        sourceKey += QStringLiteral("|%1x%2|%3|%4")
-                         .arg(options.targetPixelSize.width())
-                         .arg(options.targetPixelSize.height())
-                         .arg(static_cast<int>(options.aspectRatioMode))
-                         .arg(options.allowUpscale ? 1 : 0);
-        return thumbnail_cache::pathForKey(sourceKey, m_cacheDirectory);
-    }
-
-    void persist(const QString& path, QImage image) const {
-        historyTaskExecutor().persist(path, std::move(image), [path](QImage image) mutable {
-            thumbnail_cache::persist(path, std::move(image));
-        });
-    }
-
     storage::CaptureHistoryRecord m_record;
     QPointer<ScreenshotHistoryPageDataSource> m_dataSource;
-
-    QString m_cacheDirectory;
 };
 
 // Resolve only the image being viewed, including records outside the rendered page.
@@ -615,13 +465,16 @@ class HistoryPreviewLoader final : public adqt::widgets::AdImageLoader {
     HistoryPreviewLoader(ScreenshotHistoryPageDataSource* source, QObject* parent)
         : AdImageLoader(parent), m_source(source) {}
 
-    QHash<QString, storage::CaptureHistoryRecord> records;
+    QVector<storage::CaptureHistoryRecord> records;
 
     adqt::widgets::AdImageReply* load(const QUrl& source,
                                       const adqt::widgets::AdImageLoadOptions& options,
                                       QObject* parent) override {
         auto* reply = new HistoryThumbnailReply(parent);
-        const auto record = records.value(source.path());
+        const auto found = std::find_if(records.cbegin(), records.cend(), [&](const auto& record) {
+            return record.id == source.path();
+        });
+        const auto record = found == records.cend() ? storage::CaptureHistoryRecord{} : *found;
         const QPointer<ScreenshotHistoryPageDataSource> dataSource = m_source;
         const auto resolve = [reply, record, dataSource, source, options](
                                  const std::optional<storage::CaptureHistoryAssetSet>& assets) {
@@ -698,30 +551,6 @@ int screenshotHistoryPendingJobCount() {
     return historyTaskExecutor().pendingJobs();
 }
 
-int screenshotHistoryPendingPersistenceJobCount() {
-    return historyTaskExecutor().pendingPersistenceJobs();
-}
-
-int screenshotHistoryQueuedPersistenceJobCount() {
-    return historyTaskExecutor().queuedPersistenceJobs();
-}
-
-quint64 screenshotHistorySubmittedPersistenceJobCount() {
-    return historyTaskExecutor().submittedPersistenceJobs();
-}
-
-quint64 screenshotHistoryCompletedPersistenceJobCount() {
-    return historyTaskExecutor().completedPersistenceJobs();
-}
-
-quint64 screenshotHistorySkippedPersistenceJobCount() {
-    return historyTaskExecutor().skippedPersistenceJobs();
-}
-
-qint64 screenshotHistoryRetainedPersistenceBytes() {
-    return historyTaskExecutor().retainedBytes();
-}
-
 int screenshotHistoryWorkerCount() {
     return historyTaskExecutor().workerCount();
 }
@@ -749,14 +578,16 @@ class HistoryEntryWidget final : public HistoryEntryCard {
                        std::function<void()> pinRequested, std::function<void()> stitchRequested,
                        std::function<void()> splitRequested,
                        std::function<void()> imageEditingRequested,
-                       std::function<void()> revealRequested, std::function<void()> deleteRequested,
-                       QWidget* parent = nullptr)
+                       std::function<void()> copyImagePathRequested,
+                       std::function<void()> revealRequested,
+                       std::function<void(QWidget*)> deleteRequested, QWidget* parent = nullptr)
         : HistoryEntryCard(parent), m_record(record), m_assets(assets),
           m_selectionChanged(std::move(selectionChanged)),
           m_editRequested(std::move(editRequested)), m_copyRequested(std::move(copyRequested)),
           m_pinRequested(std::move(pinRequested)), m_stitchRequested(std::move(stitchRequested)),
           m_splitRequested(std::move(splitRequested)),
           m_imageEditingRequested(std::move(imageEditingRequested)),
+          m_copyImagePathRequested(std::move(copyImagePathRequested)),
           m_revealRequested(std::move(revealRequested)),
           m_deleteRequested(std::move(deleteRequested)) {
         setObjectName(QStringLiteral("screenshotHistoryEntry-%1").arg(record.id));
@@ -855,6 +686,7 @@ class HistoryEntryWidget final : public HistoryEntryCard {
                          : QStringLiteral("display:") +
                                assets->displays[index - (assets->result ? 1 : 0)].stableId);
             image->setProperty("historyPreviewSource", previewSource);
+            m_images.push_back(image);
             image->setPreferredImageSize(QSize(kPreviewWidth, kPreviewHeight));
             image->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
             image->setAltText(previewItems[index].altText);
@@ -876,16 +708,6 @@ class HistoryEntryWidget final : public HistoryEntryCard {
         m_carousel->setInfinite(multiple);
         setPreviewWidget(m_carousel);
 
-        m_deleteConfirmation = new adqt::widgets::AdPopconfirm(this);
-        m_deleteConfirmation->setObjectName(QStringLiteral("screenshotHistoryEntryDeleteConfirm"));
-        // More anchors the confirmation; only the Delete action may open it.
-        m_deleteConfirmation->setTriggers({});
-        m_deleteConfirmation->setSourceWidget(m_moreButton);
-        m_deleteConfirmation->setPlacement(adqt::widgets::AdPopconfirm::Placement::Top);
-        m_deleteConfirmation->setPopupLayerMode(
-            adqt::widgets::AdPopconfirm::PopupLayerMode::QtTool);
-        m_deleteConfirmation->setButtonAccentRole(adqt::widgets::AdPopconfirm::StandardButton::Ok,
-                                                  adqt::widgets::AdButton::AccentRole::Danger);
         connect(m_editButton, &QAbstractButton::clicked, this, [this]() {
             if (m_editRequested) {
                 m_editRequested();
@@ -900,11 +722,6 @@ class HistoryEntryWidget final : public HistoryEntryCard {
             if (m_copyRequested) {
                 m_copyButton->setEnabled(false);
                 m_copyRequested();
-            }
-        });
-        connect(m_deleteConfirmation, &adqt::widgets::AdPopconfirm::accepted, this, [this]() {
-            if (m_deleteRequested) {
-                m_deleteRequested();
             }
         });
 
@@ -925,6 +742,19 @@ class HistoryEntryWidget final : public HistoryEntryCard {
         }
         const QSignalBlocker blocker(m_selectionCheckbox);
         m_selectionCheckbox->setChecked(selected);
+    }
+
+    void updatePreviewRows(int firstRow) {
+        for (auto* image : m_images) {
+            const QString fragment = image->property("historyPreviewSource").toUrl().fragment();
+            int relative = -1;
+            if (fragment == QStringLiteral("result") && m_record.result)
+                relative = 0;
+            for (int index = 0; relative < 0 && index < m_record.displays.size(); ++index)
+                if (fragment == QStringLiteral("display:") + m_record.displays[index].stableId)
+                    relative = index + (m_record.result ? 1 : 0);
+            image->setPreviewRow(firstRow < 0 || relative < 0 ? -1 : firstRow + relative);
+        }
     }
 
     void setCopyEnabled(bool enabled) {
@@ -961,14 +791,6 @@ class HistoryEntryWidget final : public HistoryEntryCard {
         m_moreButton->setToolTip(HistoryEntryWidget::tr("More actions"));
         m_moreButton->setAccessibleName(HistoryEntryWidget::tr("More actions"));
         retranslateMoreActions();
-        m_deleteConfirmation->setText(
-            HistoryEntryWidget::tr("Delete this screenshot history entry?"));
-        m_deleteConfirmation->setInformativeText(
-            HistoryEntryWidget::tr("This action cannot be undone"));
-        m_deleteConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Ok,
-                                            HistoryEntryWidget::tr("Delete"));
-        m_deleteConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Cancel,
-                                            HistoryEntryWidget::tr("Cancel"));
         if (m_previewPlaceholder != nullptr) {
             m_previewPlaceholder->setText(m_assets.has_value()
                                               ? HistoryEntryWidget::tr("Preview unavailable")
@@ -1010,6 +832,10 @@ class HistoryEntryWidget final : public HistoryEntryCard {
 
   private:
     void retranslateMoreActions() {
+        if (m_copyImagePathAction != nullptr) {
+            m_copyImagePathAction->setText(history_page::copyImagePathActionText());
+            m_copyImagePathAction->setToolTip(m_copyImagePathAction->text());
+        }
         if (m_revealAction != nullptr) {
             m_revealAction->setText(history_page::revealActionText());
             m_revealAction->setToolTip(m_revealAction->text());
@@ -1022,16 +848,16 @@ class HistoryEntryWidget final : public HistoryEntryCard {
                     : HistoryEntryWidget::tr("This screenshot cannot be pinned"));
         }
         if (m_stitchAction != nullptr) {
-            m_stitchAction->setText(HistoryEntryWidget::tr("Stitch Image"));
-            m_stitchAction->setToolTip(HistoryEntryWidget::tr("Stitch Image"));
+            m_stitchAction->setText(HistoryEntryWidget::tr("Stitch images"));
+            m_stitchAction->setToolTip(HistoryEntryWidget::tr("Stitch images"));
         }
         if (m_imageEditingAction != nullptr) {
-            m_imageEditingAction->setText(HistoryEntryWidget::tr("Image Editing"));
+            m_imageEditingAction->setText(HistoryEntryWidget::tr("Image editing"));
             m_imageEditingAction->setToolTip(m_imageEditingAction->text());
         }
         if (m_splitAction != nullptr) {
             const QString label = QCoreApplication::translate(
-                "ImageSplitWindow", QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Splitting"));
+                "ImageSplitWindow", QT_TRANSLATE_NOOP("ImageSplitWindow", "Image splitting"));
             m_splitAction->setText(label);
             m_splitAction->setToolTip(label);
         }
@@ -1057,12 +883,19 @@ class HistoryEntryWidget final : public HistoryEntryCard {
         split->setObjectName(QStringLiteral("screenshotHistoryEntrySplit"));
         split->setEnabled(m_record.result.has_value());
         m_splitAction = split;
-        m_imageEditingAction = menu->addItem(HistoryEntryWidget::tr("Image Editing"),
+        m_imageEditingAction = menu->addItem(HistoryEntryWidget::tr("Image editing"),
                                              custom_outlined_icons::ImageEditing());
         m_imageEditingAction->setObjectName(QStringLiteral("screenshotHistoryEntryImageEditing"));
         connect(m_imageEditingAction, &QAction::triggered, this, [this] {
             if (m_imageEditingRequested)
                 m_imageEditingRequested();
+        });
+        m_copyImagePathAction = menu->addItem(QString(), outlined_icons::Copy());
+        m_copyImagePathAction->setObjectName(QStringLiteral("screenshotHistoryEntryCopyImagePath"));
+        m_copyImagePathAction->setEnabled(m_record.result.has_value());
+        connect(m_copyImagePathAction, &QAction::triggered, this, [this] {
+            if (m_copyImagePathRequested)
+                m_copyImagePathRequested();
         });
         auto* reveal = menu->addItem(QString(), custom_outlined_icons::RevealInFolder());
         reveal->setObjectName(QStringLiteral("screenshotHistoryEntryReveal"));
@@ -1089,9 +922,8 @@ class HistoryEntryWidget final : public HistoryEntryCard {
         });
         connect(remove, &QAction::triggered, this, [this]() {
             QTimer::singleShot(0, this, [this]() {
-                if (m_deleteConfirmation != nullptr) {
-                    m_deleteConfirmation->show();
-                }
+                if (m_deleteRequested)
+                    m_deleteRequested(m_moreButton);
             });
         });
         connect(reveal, &QAction::triggered, this, [this]() {
@@ -1111,8 +943,10 @@ class HistoryEntryWidget final : public HistoryEntryCard {
     std::function<void()> m_splitRequested;
     std::function<void()> m_imageEditingRequested;
     QPointer<QAction> m_imageEditingAction;
+    std::function<void()> m_copyImagePathRequested;
+    QPointer<QAction> m_copyImagePathAction;
     std::function<void()> m_revealRequested;
-    std::function<void()> m_deleteRequested;
+    std::function<void(QWidget*)> m_deleteRequested;
     adqt::widgets::AdCheckbox* m_selectionCheckbox = nullptr;
     QLabel* m_sourceLabel = nullptr;
     adqt::widgets::AdButton* m_editButton = nullptr;
@@ -1124,8 +958,8 @@ class HistoryEntryWidget final : public HistoryEntryCard {
     QPointer<QAction> m_stitchAction;
     QPointer<QAction> m_splitAction;
     QPointer<QAction> m_deleteAction;
-    adqt::widgets::AdPopconfirm* m_deleteConfirmation = nullptr;
     adqt::widgets::AdCarousel* m_carousel = nullptr;
+    QVector<adqt::widgets::AdImage*> m_images;
     QLabel* m_previewPlaceholder = nullptr;
 };
 } // namespace
@@ -1142,7 +976,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     m_previewViewer = new adqt::widgets::AdImageViewer(this);
     m_previewViewer->setOwnerWindow(this);
     m_previewViewer->setImageLoader(new HistoryPreviewLoader(m_dataSource, m_previewViewer));
-    m_previewModel = new adqt::widgets::AdImageListModel(m_previewViewer);
+    m_previewModel = new history_page::PreviewModel(m_previewViewer);
     m_previewViewer->setModel(m_previewModel);
     setObjectName(QStringLiteral("screenshotHistoryPage"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -1268,6 +1102,24 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
         QStringLiteral("screenshotHistoryDeleteSelectedConfirm"));
     m_deleteSelectedConfirmation->setSourceWidget(m_deleteSelectedButton);
     history_page::configureDeleteConfirmation(m_deleteSelectedConfirmation);
+    m_entryDeleteConfirmation = new adqt::widgets::AdPopconfirm(content);
+    m_entryDeleteConfirmation->setObjectName(QStringLiteral("screenshotHistoryEntryDeleteConfirm"));
+    // More anchors the shared confirmation; only a Delete action may open it.
+    m_entryDeleteConfirmation->setTriggers({});
+    m_entryDeleteConfirmation->setPlacement(adqt::widgets::AdPopconfirm::Placement::Top);
+    m_entryDeleteConfirmation->setPopupLayerMode(
+        adqt::widgets::AdPopconfirm::PopupLayerMode::QtTool);
+    history_page::configureDeleteConfirmation(m_entryDeleteConfirmation);
+    connect(m_entryDeleteConfirmation, &adqt::widgets::AdPopconfirm::accepted, this, [this] {
+        const QString id = std::exchange(m_pendingEntryDeleteId, {});
+        m_entryDeleteConfirmation->setSourceWidget(nullptr);
+        if (!id.isEmpty() && m_entryWidgetsById.contains(id))
+            removeEntry(id);
+    });
+    connect(m_entryDeleteConfirmation, &adqt::widgets::AdPopconfirm::rejected, this, [this] {
+        m_pendingEntryDeleteId.clear();
+        m_entryDeleteConfirmation->setSourceWidget(nullptr);
+    });
 
     m_entriesHost = new QWidget(content);
     m_entriesHost->setObjectName(QStringLiteral("screenshotHistoryEntries"));
@@ -1276,6 +1128,8 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     m_entriesLayout = new QVBoxLayout(m_entriesHost);
     m_entriesLayout->setContentsMargins(0, 0, 0, 0);
     m_entriesLayout->setSpacing(metric.marginSM);
+    m_entryViewport = new snow_shot::presentation::components::HistoryEntryViewport(
+        m_scrollArea, m_entriesHost, m_entriesLayout, [this] { rebuildEntries(); }, this);
     contentLayout->addWidget(m_entriesHost, 1);
 
     m_emptyIcon = new QLabel(m_entriesHost);
@@ -1340,7 +1194,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
                         selected.append(record);
                 }
                 if (!selected.isEmpty())
-                    emit collageRequested(selected);
+                    emit stitchImagesRequested(selected);
             });
             connect(m_batchPinAction, &QAction::triggered, this, [this] {
                 QStringList selected;
@@ -1360,6 +1214,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
             &ScreenshotHistoryPageWidget::clearSelection);
     connect(m_pagination, &adqt::widgets::AdPagination::currentPageChanged, this, [this](int) {
         if (!m_updatingPagination) {
+            m_entryViewport->resetScroll();
             rebuildEntries();
         }
     });
@@ -1367,6 +1222,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
             [this](int pageSize) {
                 storage::InterfaceSettings().setScreenshotHistoryPageSize(pageSize);
                 if (!m_updatingPagination) {
+                    m_entryViewport->resetScroll();
                     rebuildEntries();
                 }
             });
@@ -1423,6 +1279,9 @@ void ScreenshotHistoryPageWidget::refresh() {
 
 void ScreenshotHistoryPageWidget::setActive(bool active) {
     if (!active) {
+        m_entryDeleteConfirmation->hide();
+        m_entryDeleteConfirmation->setSourceWidget(nullptr);
+        m_pendingEntryDeleteId.clear();
         m_previewViewer->close();
         if (m_dataSource != nullptr) {
             m_dataSource->cancelPending();
@@ -1470,6 +1329,8 @@ void ScreenshotHistoryPageWidget::queueRefresh() {
 }
 
 void ScreenshotHistoryPageWidget::rebuildFilteredRecords(bool resetPage) {
+    if (resetPage)
+        m_entryViewport->resetScroll();
     m_filteredRecords.clear();
     const auto filter = history_page::currentFilter(m_sourceFilter, m_dateRangeFilter);
     for (const storage::CaptureHistoryRecord& record : m_records) {
@@ -1485,51 +1346,70 @@ void ScreenshotHistoryPageWidget::rebuildFilteredRecords(bool resetPage) {
 }
 
 void ScreenshotHistoryPageWidget::rebuildPreview() {
+    auto* loader = static_cast<HistoryPreviewLoader*>(m_previewViewer->imageLoader());
+    const QString resultText = HistoryEntryWidget::tr("Screenshot result");
+    const QString displayText = HistoryEntryWidget::tr("Screenshot display");
+    if (loader->records == m_filteredRecords && m_previewResultText == resultText &&
+        m_previewDisplayText == displayText)
+        return;
+    m_previewResultText = resultText;
+    m_previewDisplayText = displayText;
     m_previewViewer->close();
     m_previewRows.clear();
-    auto* loader = static_cast<HistoryPreviewLoader*>(m_previewViewer->imageLoader());
-    loader->records.clear();
-    adqt::widgets::AdImageItems items;
+    loader->records = m_filteredRecords;
+    QVector<int> ends;
+    ends.reserve(m_filteredRecords.size());
+    int count = 0;
     for (const auto& record : std::as_const(m_filteredRecords)) {
-        loader->records.insert(record.id, record);
+        m_previewRows.insert(record.id, count);
+        count += static_cast<int>(record.displays.size()) + (record.result ? 1 : 0);
+        ends.push_back(count);
+    }
+    m_previewModel->reset(count, [records = m_filteredRecords, ends = std::move(ends), resultText,
+                                  displayText](int row) {
+        const auto found = std::upper_bound(ends.cbegin(), ends.cend(), row);
+        const auto index = std::distance(ends.cbegin(), found);
+        const auto& record = records[index];
+        const int relative = row - (index == 0 ? 0 : ends[index - 1]);
         QUrl source;
         source.setScheme(QStringLiteral("history"));
         source.setPath(record.id);
-        const auto append = [&](const QString& key, const QString& text) {
-            source.setFragment(key);
-            m_previewRows.insert(source.toString(), static_cast<int>(items.size()));
-            items.push_back({source, text});
-        };
-        if (record.result)
-            append(QStringLiteral("result"), HistoryEntryWidget::tr("Screenshot result"));
-        for (const auto& display : record.displays) {
-            append(QStringLiteral("display:") + display.stableId,
-                   display.name.isEmpty() ? HistoryEntryWidget::tr("Screenshot display")
-                                          : display.name);
+        if (record.result && relative == 0) {
+            source.setFragment(QStringLiteral("result"));
+            return adqt::widgets::AdImageItem{source, resultText};
         }
-    }
-    m_previewModel->setItems(items);
+        const auto& display = record.displays[relative - (record.result ? 1 : 0)];
+        source.setFragment(QStringLiteral("display:") + display.stableId);
+        return adqt::widgets::AdImageItem{source,
+                                          display.name.isEmpty() ? displayText : display.name};
+    });
 }
 
 void ScreenshotHistoryPageWidget::rebuildEntries() {
     const auto updatePreviewRows = qScopeGuard([this]() {
-        for (auto* entry : std::as_const(m_entryWidgetsById)) {
-            for (auto* image : entry->findChildren<adqt::widgets::AdImage*>()) {
-                image->setPreviewRow(m_previewRows.value(
-                    image->property("historyPreviewSource").toUrl().toString(), -1));
-            }
-        }
+        for (auto it = m_entryWidgetsById.cbegin(); it != m_entryWidgetsById.cend(); ++it)
+            static_cast<HistoryEntryWidget*>(it.value())
+                ->updatePreviewRows(m_previewRows.value(it.key(), -1));
     });
     const auto [firstIndex, lastIndex] =
         history_page::pageRange(m_pagination, static_cast<int>(m_filteredRecords.size()));
+    m_pageRecordIds.clear();
+    for (int index = firstIndex; index < lastIndex; ++index)
+        m_pageRecordIds.push_back(m_filteredRecords[index].id);
+    int focusedRow = -1;
+    for (auto it = m_entryWidgetsById.cbegin(); it != m_entryWidgetsById.cend(); ++it)
+        if (it.value()->isAncestorOf(QApplication::focusWidget()))
+            focusedRow = static_cast<int>(m_pageRecordIds.indexOf(it.key()));
+    const auto wantedRows = m_entryViewport->wantedRows(lastIndex - firstIndex, focusedRow);
 
-    auto requestUnresolvedAssets = [this, firstIndex, lastIndex]() {
+    auto requestUnresolvedAssets = [this, firstIndex, lastIndex, &wantedRows]() {
         if (m_dataSource == nullptr || !m_dataSource->supportsAsyncDisplayAssets() ||
             firstIndex >= lastIndex) {
             return;
         }
         QVector<storage::CaptureHistoryRecord> unresolved;
-        for (int index = firstIndex; index < lastIndex; ++index) {
+        for (int row : wantedRows) {
+            const int index = firstIndex + row;
             const storage::CaptureHistoryRecord& record = m_filteredRecords[index];
             if (!m_resolvedAssets.contains(record.id)) {
                 unresolved.push_back(record);
@@ -1541,14 +1421,15 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
     };
 
     QVector<QString> desiredIds;
-    desiredIds.reserve(std::max(0, lastIndex - firstIndex));
-    for (int index = firstIndex; index < lastIndex; ++index) {
-        desiredIds.push_back(m_filteredRecords[index].id);
+    desiredIds.reserve(wantedRows.size());
+    for (int row : wantedRows) {
+        desiredIds.push_back(m_filteredRecords[firstIndex + row].id);
     }
     const QSet<QString> desiredIdSet(desiredIds.cbegin(), desiredIds.cend());
 
     bool layoutNeedsRebuild = desiredIds != m_entryLayoutIds;
-    for (int index = firstIndex; index < lastIndex; ++index) {
+    for (int row : wantedRows) {
+        const int index = firstIndex + row;
         const storage::CaptureHistoryRecord& record = m_filteredRecords[index];
         auto* entry =
             dynamic_cast<HistoryEntryWidget*>(m_entryWidgetsById.value(record.id, nullptr));
@@ -1565,11 +1446,17 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
             ++iterator;
             continue;
         }
+        if (m_pendingEntryDeleteId == iterator.key()) {
+            m_entryDeleteConfirmation->hide();
+            m_entryDeleteConfirmation->setSourceWidget(nullptr);
+            m_pendingEntryDeleteId.clear();
+        }
         delete iterator.value();
         iterator = m_entryWidgetsById.erase(iterator);
     }
 
     if (firstIndex >= lastIndex) {
+        m_entryViewport->clear();
         m_emptyIcon->show();
         m_emptyTitle->show();
         m_emptyDescription->show();
@@ -1601,6 +1488,10 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
     m_emptyDescription->hide();
 
     if (!layoutNeedsRebuild) {
+        QMap<int, QWidget*> rows;
+        for (int row : wantedRows)
+            rows.insert(row, m_entryWidgetsById.value(m_filteredRecords[firstIndex + row].id));
+        m_entryViewport->setRows(lastIndex - firstIndex, rows);
         for (const QString& id : std::as_const(desiredIds)) {
             if (auto* entry =
                     dynamic_cast<HistoryEntryWidget*>(m_entryWidgetsById.value(id, nullptr));
@@ -1622,7 +1513,9 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
         HistoryEntryCard::minimumHeightForWidth(m_entriesHost->width());
     m_entriesHost->setMinimumHeight(
         std::max(m_emptyStateMinimumHeight, responsiveEntryMinimumHeight));
-    for (int index = firstIndex; index < lastIndex; ++index) {
+    QMap<int, QWidget*> rows;
+    for (int row : wantedRows) {
+        const int index = firstIndex + row;
         const storage::CaptureHistoryRecord& record = m_filteredRecords[index];
         auto* entry =
             dynamic_cast<HistoryEntryWidget*>(m_entryWidgetsById.value(record.id, nullptr));
@@ -1634,12 +1527,18 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
                 assets = m_resolvedAssets.value(record.id);
             }
         } else if (m_dataSource != nullptr) {
-            assets = m_dataSource->displayAssets(record);
+            assets = m_resolvedAssets.contains(record.id) ? m_resolvedAssets.value(record.id)
+                                                          : m_dataSource->displayAssets(record);
             assetsResolved = true;
             m_resolvedAssets.insert(record.id, assets);
         }
         if (entry == nullptr || !entry->matchesRecord(record) ||
             (assetsResolved && !entry->matchesAssets(assets))) {
+            if (m_pendingEntryDeleteId == record.id) {
+                m_entryDeleteConfirmation->hide();
+                m_entryDeleteConfirmation->setSourceWidget(nullptr);
+                m_pendingEntryDeleteId.clear();
+            }
             delete entry;
             entry = new HistoryEntryWidget(
                 record, assets, m_dataSource, m_previewViewer,
@@ -1650,28 +1549,33 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
                 [this, id = record.id]() { emit editRequested(id); },
                 [this, record]() { copyEntry(record); },
                 [this, id = record.id]() { emit pinRequested(id); },
-                [this, record]() { emit collageRequested({record}); },
+                [this, record]() { emit stitchImagesRequested({record}); },
                 [this, record]() { emit splitRequested(record); },
                 [this, record]() { emit imageEditingRequested(record); },
+                [this, record]() {
+                    const auto resolvedAssets =
+                        m_dataSource ? m_dataSource->displayAssets(record) : std::nullopt;
+                    history_page::copyImagePath(
+                        resolvedAssets && resolvedAssets->result
+                            ? resolvedAssets->result->localFileUrl.toLocalFile()
+                            : QString(),
+                        this);
+                },
                 [this, id = record.id]() {
                     if (!m_dataSource || !m_dataSource->revealRecord(id))
                         history_page::showRevealFailure(this);
                 },
-                [this, id = record.id]() { removeEntry(id); }, m_entriesHost);
+                [this, id = record.id](QWidget* anchor) { requestEntryDeletion(id, anchor); },
+                m_entriesHost);
             entry->applyTheme(m_colorScheme);
             m_entryWidgetsById.insert(record.id, entry);
         }
-        m_entriesLayout->addWidget(entry);
+        rows.insert(row, entry);
     }
-    m_entriesLayout->addStretch(1);
+    m_entryViewport->setRows(lastIndex - firstIndex, rows);
     m_entryLayoutIds = desiredIds;
     updateSelectionBar();
     requestUnresolvedAssets();
-    QTimer::singleShot(0, this, [this]() {
-        if (m_scrollArea != nullptr && m_scrollArea->verticalScrollBar() != nullptr) {
-            m_scrollArea->verticalScrollBar()->setValue(0);
-        }
-    });
 }
 
 void ScreenshotHistoryPageWidget::handleDisplayAssetsReady(
@@ -1724,7 +1628,7 @@ void ScreenshotHistoryPageWidget::updateEmptyStateText() {
     }
     if (m_emptyDescription != nullptr) {
         m_emptyDescription->setText(
-            m_records.isEmpty() ? tr("Copied and pinned screenshots will appear here")
+            m_records.isEmpty() ? tr("Copied or pinned screenshots will appear here")
                                 : tr("Change the source or date range to see more history"));
     }
 }
@@ -1771,7 +1675,7 @@ void ScreenshotHistoryPageWidget::clearSelection() {
 }
 
 void ScreenshotHistoryPageWidget::selectCurrentPage() {
-    for (const QString& id : std::as_const(m_entryLayoutIds)) {
+    for (const QString& id : std::as_const(m_pageRecordIds)) {
         m_selectedRecordIds.insert(id);
         if (auto* entry = dynamic_cast<HistoryEntryWidget*>(m_entryWidgetsById.value(id, nullptr));
             entry != nullptr) {
@@ -1784,7 +1688,7 @@ void ScreenshotHistoryPageWidget::selectCurrentPage() {
 void ScreenshotHistoryPageWidget::updateBatchActions() {
     m_batchActionsButton->setEnabled(!m_selectedRecordIds.isEmpty());
     if (m_batchStitchAction) {
-        m_batchStitchAction->setText(tr("Stitch Image"));
+        m_batchStitchAction->setText(tr("Stitch images"));
         m_batchStitchAction->setToolTip(m_batchStitchAction->text());
         m_batchStitchAction->setEnabled(!m_selectedRecordIds.isEmpty());
     }
@@ -1811,7 +1715,7 @@ void ScreenshotHistoryPageWidget::updateSelectionBar() {
         {m_selectionBar, m_selectionBarLayout, m_selectionSummary, m_selectionActions,
          m_selectAllButton, m_deleteSelectedButton, m_deselectAllButton,
          m_deleteSelectedConfirmation},
-        m_selectedRecordIds, m_entryLayoutIds, m_dataSource != nullptr && status.writeAvailable,
+        m_selectedRecordIds, m_pageRecordIds, m_dataSource != nullptr && status.writeAvailable,
         availableWidth, tr("Selected %n item(s)", nullptr, selectionCount),
         tr("Delete %n selected item(s)?", nullptr, selectionCount));
 }
@@ -1854,6 +1758,13 @@ void ScreenshotHistoryPageWidget::requestDeleteAll() {
     }
 }
 
+void ScreenshotHistoryPageWidget::requestEntryDeletion(const QString& entryId, QWidget* anchor) {
+    m_entryDeleteConfirmation->hide();
+    m_pendingEntryDeleteId = entryId;
+    m_entryDeleteConfirmation->setSourceWidget(anchor);
+    m_entryDeleteConfirmation->show();
+}
+
 void ScreenshotHistoryPageWidget::removeEntry(const QString& entryId) {
     if (m_dataSource != nullptr) {
         m_dataSource->remove(entryId);
@@ -1861,6 +1772,14 @@ void ScreenshotHistoryPageWidget::removeEntry(const QString& entryId) {
 }
 
 void ScreenshotHistoryPageWidget::retranslateUi() {
+    m_entryDeleteConfirmation->setText(
+        HistoryEntryWidget::tr("Delete this screenshot history entry?"));
+    m_entryDeleteConfirmation->setInformativeText(
+        HistoryEntryWidget::tr("This action cannot be undone"));
+    m_entryDeleteConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Ok,
+                                             HistoryEntryWidget::tr("Delete"));
+    m_entryDeleteConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Cancel,
+                                             HistoryEntryWidget::tr("Cancel"));
     m_titleLabel->setText(tr("Screenshot history"));
     m_sourceFilter->setPlaceholder(tr("All sources"));
     const QVariantList selectedSources = m_sourceFilter->currentValues();
@@ -1881,9 +1800,9 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
     m_deleteSelectedButton->setToolTip(tr("Delete selected history entries"));
     m_deleteSelectedButton->setAccessibleName(tr("Delete selected history entries"));
     m_selectAllButton->setText(tr("Select all"));
-    m_batchActionsButton->setText(tr("Batch Actions"));
-    m_batchActionsButton->setToolTip(tr("Batch Actions"));
-    m_batchActionsButton->setAccessibleName(tr("Batch Actions"));
+    m_batchActionsButton->setText(tr("Batch actions"));
+    m_batchActionsButton->setToolTip(tr("Batch actions"));
+    m_batchActionsButton->setAccessibleName(tr("Batch actions"));
     updateBatchActions();
     m_selectAllButton->setToolTip(tr("Select all entries on this page"));
     m_selectAllButton->setAccessibleName(tr("Select all entries on this page"));

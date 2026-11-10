@@ -1,0 +1,94 @@
+Preserve variable-frame-rate decode timestamps with VideoToolbox reordering.
+
+The upstream reorder-depth correction (0057) fixes constant-rate H.264, but
+subtracting the initial time offset from every VideoToolbox DTS is still wrong
+when later input frame intervals grow. Delay the submitted presentation timeline
+by the encoder's reorder depth instead, using a FIFO of pending timestamps plus
+the reorder window.
+Only the initial decode prefix is extrapolated; presentation timestamps and
+compressed packets remain unchanged. Short clips without a complete reorder
+window use their submitted timestamps directly. Release the FIFO on every close,
+including failed initialization and cancellation.
+
+Covered by snow-recording-export/tests/videotoolbox_timing.rs for both H.264 and
+HEVC, including the increasing gaps that fail with only the upstream backport.
+
+--- a/libavcodec/videotoolboxenc.c
++++ b/libavcodec/videotoolboxenc.c
+@@ -28,6 +28,7 @@
+ 
+ #include "libavutil/attributes.h"
+ #include "libavutil/avassert.h"
++#include "libavutil/fifo.h"
+ #include "libavutil/imgutils.h"
+ #include "libavutil/mem.h"
+ #include "libavutil/opt.h"
+@@ -282,6 +283,7 @@
+ 
+     int64_t first_pts;
+     int64_t dts_delta;
++    AVFifo *dts_pts;
+ 
+     int profile;
+     int level;
+@@ -1818,6 +1820,12 @@
+     }
+     avctx->has_b_frames = vtctx->has_b_frames;
+ 
++    if (vtctx->has_b_frames) {
++        vtctx->dts_pts = av_fifo_alloc2(16, sizeof(int64_t), AV_FIFO_FLAG_AUTO_GROW);
++        if (!vtctx->dts_pts)
++            return AVERROR(ENOMEM);
++    }
++
+     return 0;
+ }
+ 
+@@ -2571,6 +2579,12 @@
+             goto end_nopkt;
+         }
+ 
++        if (vtctx->dts_pts) {
++            status = av_fifo_write(vtctx->dts_pts, &frame->pts, 1);
++            if (status < 0)
++                goto end_nopkt;
++        }
++
+         if (vtctx->frame_ct_in == 0) {
+             vtctx->first_pts = frame->pts;
+         } else if(vtctx->frame_ct_in == vtctx->has_b_frames) {
+@@ -2606,6 +2620,25 @@
+     av_free(sei.data);
+     CFRelease(buf);
+     if (status) goto end_nopkt;
++
++    if (vtctx->dts_pts) {
++        /* Delay the submitted timeline by frames, not by a constant time.
++         * VideoToolbox's decode clock minus the initial pts distance only
++         * works for constant-rate input. For sparse pictures a later gap
++         * can otherwise make dts exceed pts. Keep the initial negative
++         * prefix, then consume input timestamps in presentation order.
++         * A clip shorter than the reorder delay has no reordered pictures.
++         */
++        if (vtctx->dts_delta >= 0 && vtctx->frame_ct_out <= vtctx->has_b_frames) {
++            status = av_fifo_peek(vtctx->dts_pts, &pkt->dts, 1, vtctx->frame_ct_out - 1);
++            if (status >= 0)
++                pkt->dts -= vtctx->dts_delta;
++        } else {
++            status = av_fifo_read(vtctx->dts_pts, &pkt->dts, 1);
++        }
++        if (status < 0)
++            goto end_nopkt;
++    }
+ 
+     *got_packet = 1;
+     return 0;
+@@ -2721,6 +2754,8 @@
+ static av_cold int vtenc_close(AVCodecContext *avctx)
+ {
+     VTEncContext *vtctx = avctx->priv_data;
++
++    av_fifo_freep2(&vtctx->dts_pts);
+ 
+     if(!vtctx->session) {
+         pthread_cond_destroy(&vtctx->cv_sample_sent);

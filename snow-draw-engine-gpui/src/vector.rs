@@ -813,8 +813,22 @@ impl VectorContext {
     ) -> Result<String, CanvasError> {
         Ok(match item {
             SceneDisplayItem::Rectangle(item) => rectangle(item, ids),
-            SceneDisplayItem::Arrow(item) => arrow(item, self.clear_color, ids),
-            SceneDisplayItem::SpeechBubble(item) => arrow(&item.path, self.clear_color, ids),
+            SceneDisplayItem::Arrow(item) => {
+                if crate::gpu_geometry::arrow_outline_visible(item) {
+                    return Err(CanvasError::Unsupported(
+                        "vector serialization of arrow outlines",
+                    ));
+                }
+                arrow(item, self.clear_color, ids)
+            }
+            SceneDisplayItem::SpeechBubble(item) => {
+                if crate::gpu_geometry::arrow_outline_visible(&item.path) {
+                    return Err(CanvasError::Unsupported(
+                        "vector serialization of arrow outlines",
+                    ));
+                }
+                arrow(&item.path, self.clear_color, ids)
+            }
             SceneDisplayItem::Text(item) => self.text(item, ids),
             SceneDisplayItem::SerialNumber(item) => {
                 let square = matches!(

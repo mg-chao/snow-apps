@@ -18,7 +18,7 @@ snow_require_msvc_version()
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SnowWindowsArchitecture.cmake")
 snow_configure_windows_architecture()
 
-set(SNOW_SHOT_VERSION "1.4.4")
+set(SNOW_SHOT_VERSION "1.5.3")
 if(NOT SNOW_SHOT_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$")
     message(FATAL_ERROR "SNOW_SHOT_VERSION must be a semantic version such as 0.8.0-dev")
 endif()
@@ -132,6 +132,8 @@ endif()
 
 set(SNOW_APPS_API_BASE_URL "" CACHE STRING
     "Default Snow Shot API base URL. Set explicitly for reproducible builds.")
+set(SNOW_APPS_FREE_TRANSLATION_API_BASE_URL "" CACHE STRING
+    "Free translation API base URL. Set explicitly by the build preset.")
 set(SNOW_RUST_CARGO_TARGET_DIR
     "${CMAKE_BINARY_DIR}/cargo"
     CACHE PATH
@@ -170,7 +172,7 @@ if(NOT DEFINED SNOW_IMAGE_PROFILE OR SNOW_IMAGE_PROFILE STREQUAL "")
         "Snow Image codec profile used by the workspace." FORCE)
 endif()
 set(_snow_workspace_all_image_codecs
-    PNG JPEG GIF ICON XBITMAP SVG HEIF JXL EXR WEBP
+    PNG JPEG GIF ICON XBITMAP SVG HEIF JXL EXR WEBP TIFF
 )
 if(SNOW_IMAGE_PROFILE STREQUAL "full")
     set(_snow_workspace_image_codecs
@@ -179,7 +181,7 @@ if(SNOW_IMAGE_PROFILE STREQUAL "full")
 elseif(SNOW_APPS_BUILD_SNOW_SHOT)
     # Keep Snow Shot's raster export codecs and animated pin decoders in the
     # minimal workspace configuration as well as the full profile.
-    set(_snow_workspace_image_codecs PNG JPEG GIF HEIF JXL WEBP)
+    set(_snow_workspace_image_codecs PNG JPEG GIF HEIF JXL WEBP TIFF)
 else()
     set(_snow_workspace_image_codecs)
 endif()
@@ -319,6 +321,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
         "Link Snow Shot against a static Qt build." FORCE)
     set(SNOW_SHOT_API_BASE_URL "${SNOW_APPS_API_BASE_URL}" CACHE STRING
         "Snow Shot API base URL." FORCE)
+    set(SNOW_SHOT_FREE_TRANSLATION_API_BASE_URL "${SNOW_APPS_FREE_TRANSLATION_API_BASE_URL}" CACHE STRING
+        "Free translation API base URL." FORCE)
     set(SNOW_SHOT_LIBCLANG_DIR "${SNOW_LIBCLANG_BIN_DIR}" CACHE PATH
         "Directory containing libclang.dll for Rust bindgen." FORCE)
     set(SNOW_SHOT_FFMPEG_BIN_DIR "${SNOW_FFMPEG_ROOT}/bin" CACHE PATH
@@ -512,7 +516,18 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE AND
     set(CPACK_NSIS_CONTACT "${SNOW_SHOT_SUPPORT_EMAIL}")
     set(CPACK_VERBATIM_VARIABLES ON)
     include(cmake/SnowShotPackageCompression.cmake)
-    snow_shot_apply_nsis_compression()
+    option(SNOW_SHOT_USE_7Z_PAYLOAD "Use executable-aware 7z installer payload compression." ON)
+    if(SNOW_SHOT_USE_7Z_PAYLOAD)
+        include(cmake/SnowShotInstallerPayload.cmake)
+        snow_shot_add_installer_payload()
+        add_dependencies(snow_shot snow-shot-payload-extractor)
+        if(TARGET snow_shot_mini)
+            add_dependencies(snow_shot_mini snow-shot-payload-extractor)
+        endif()
+        snow_shot_apply_nsis_compression(PAYLOAD)
+    else()
+        snow_shot_apply_nsis_compression()
+    endif()
     include(cmake/SnowShotInstaller.cmake)
     include(CPack)
 endif()

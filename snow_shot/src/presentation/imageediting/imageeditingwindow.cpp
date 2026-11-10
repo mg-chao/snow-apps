@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/presentation/imageeditingwindow.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/presentation/canvasdrawingpreferences.h"
 #include "imageeditingexportcontroller.h"
 #include "snow_shot/presentation/imageeditingcanvas.h"
 #include "snow_shot/presentation/components/canvasactiontoolbar.h"
+#include "snow_shot/presentation/components/imagedropsurface.h"
+#include "snow_shot/presentation/collagedocument.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "antd_icons.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -13,6 +17,7 @@
 #include "widgets/color_picker.h"
 #include "widgets/select.h"
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QtMath>
 #include <QMouseEvent>
 #include "snow_shot/presentation/screenshotcanvasoperations.h"
@@ -35,11 +40,18 @@
 #include "icon_renderer.h"
 #include "widgets/button.h"
 #include <QApplication>
+#include <QClipboard>
 #include <QCursor>
 #include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QPainter>
 #include <QScreen>
 #include <QScopedValueRollback>
+#include <QScopeGuard>
+#include <QThread>
 #include <QStackedLayout>
 #include <QTextDocument>
 #include <QTimer>
@@ -60,13 +72,60 @@ using Session = ScreenshotRecognitionSessionController;
 using Tool = ScreenshotToolPalette::Tool;
 using ExportOperation = ImageEditingExportController::Operation;
 namespace {
+const char* selectedFileErrorSource(platform::SelectedFileError error) {
+    switch (error) {
+    case platform::SelectedFileError::PermissionDenied:
+        return QT_TRANSLATE_NOOP("ImageEditingWindow",
+                                 "Allow Snow Shot to access Finder in System Settings > Privacy & "
+                                 "Security > Automation, then try again");
+    case platform::SelectedFileError::Timeout:
+        return QT_TRANSLATE_NOOP("ImageEditingWindow",
+                                 "The file manager took too long to return the selected files. "
+                                 "Please try again");
+    case platform::SelectedFileError::Unavailable:
+        return QT_TRANSLATE_NOOP("ImageEditingWindow",
+                                 "The file manager is unavailable. Open it and try again");
+    case platform::SelectedFileError::QueryFailed:
+    case platform::SelectedFileError::None:
+        return QT_TRANSLATE_NOOP("ImageEditingWindow",
+                                 "Could not read the selected image files. Please try again");
+    }
+    return nullptr;
+}
+
+QStringList imageFilePaths(const QStringList& paths,
+                           const ScreenshotClipboardContentReader::CancellationCheck& cancelled) {
+    QStringList images;
+    const auto extensions = ScreenshotClipboardContentReader::supportedImageFileExtensions();
+    for (const auto& path : paths) {
+        if (extensions.contains(QFileInfo(path).suffix().toLower()))
+            images.append(path);
+    }
+    QStringList result;
+    for (const auto& file : ScreenshotClipboardContentReader::snapshotLocalFiles(
+             images, cancelled, ScreenshotClipboardContentReader::FilePurpose::ImageImport))
+        result.append(file.absolutePath);
+    return result;
+}
+
+QString imageFileFilter() {
+    QStringList patterns;
+    for (const auto& suffix : ScreenshotClipboardContentReader::supportedImageFileExtensions())
+        patterns.append(QStringLiteral("*.") + suffix);
+    return ImageEditingWindow::tr("Images") + QStringLiteral(" (%1)").arg(patterns.join(u' '));
+}
+
 class PreviewSurface final : public QWidget {
   public:
-    explicit PreviewSurface(QWidget* parent = nullptr) : QWidget(parent) {
+    explicit PreviewSurface(ImageEditingDocument& document, QWidget* parent = nullptr)
+        : QWidget(parent), m_document(document) {
         connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, this,
                 [this] { update(); });
+        connect(&document, &ImageEditingDocument::baseImageChanged, this, [this] { update(); });
     }
     void paintEvent(QPaintEvent*) override {
+        if (m_document.image().isNull())
+            return;
         QPainter painter(this);
         const auto theme = styles::ThemeManager::instance().themeColorScheme().map;
         constexpr int tile = 10;
@@ -86,6 +145,7 @@ class PreviewSurface final : public QWidget {
     }
 
   private:
+    const ImageEditingDocument& m_document;
     QBrush m_checkerboard;
     QColor m_background;
     QColor m_foreground;
@@ -111,6 +171,12 @@ struct ImageEditingWindow::Impl {
     ImageEditingCanvas* canvas;
     components::CanvasActionToolbar* zoomToolbar;
     QStackedLayout* stack;
+    components::ImageDropSurface* emptyState;
+    components::ImageDropSurface* dropHint;
+    AdButton* addImages;
+    QPointer<QFileDialog> fileDialog;
+    bool choosingFiles = false;
+    std::shared_ptr<ImageStitchingImportReservation> fileReservation;
     ScreenshotFloatingToolPaletteWindow* floating;
     QPointer<QWidget> editorWindow;
     ScreenshotToolPaletteHost* host;
@@ -146,10 +212,11 @@ struct ImageEditingWindow::Impl {
     quint64 loadGeneration = 0;
     enum class Notice { None, Loading, LoadError, Exporting, Exported };
     Notice notice = Notice::None;
+    const char* errorSource = nullptr;
 
     Impl(ImageEditingWindow& owner, ImageEditingServices service)
         : q(owner), services(std::move(service)), document(&q), modal(new AdModal(&q)),
-          surface(new PreviewSurface), canvas(new ImageEditingCanvas(document, surface)),
+          surface(new PreviewSurface(document)), canvas(new ImageEditingCanvas(document, surface)),
           zoomToolbar(new components::CanvasActionToolbar(canvas)),
           stack(new QStackedLayout(surface)),
           floating(new ScreenshotFloatingToolPaletteWindow(editorOptions())),
@@ -164,8 +231,31 @@ struct ImageEditingWindow::Impl {
         surface->setObjectName(QStringLiteral("imageEditingPreview"));
         surface->installEventFilter(&q);
         canvas->installEventFilter(&q);
+        surface->setAcceptDrops(true);
         stack->setContentsMargins(0, 0, 0, 0);
         stack->addWidget(canvas);
+        emptyState = new components::ImageDropSurface(false, surface);
+        emptyState->setObjectName(QStringLiteral("imageEditingEmptyState"));
+        addImages = new AdButton(emptyState);
+        addImages->setObjectName(QStringLiteral("imageEditingAddImages"));
+        addImages->setIconRef(adqt::icons::antd::outlined::Plus());
+        addImages->setButtonStyle(AdButton::ButtonStyle::Solid);
+        addImages->setAccentRole(AdButton::AccentRole::Primary);
+        addImages->setFocusPolicy(Qt::StrongFocus);
+        auto* emptyLayout = static_cast<QVBoxLayout*>(emptyState->layout());
+        emptyLayout->insertSpacing(emptyLayout->count() - 1, 8);
+        emptyLayout->insertWidget(emptyLayout->count() - 1, addImages, 0, Qt::AlignHCenter);
+        stack->addWidget(emptyState);
+        stack->setCurrentWidget(emptyState);
+        dropHint = new components::ImageDropSurface(true, surface);
+        dropHint->setObjectName(QStringLiteral("imageEditingDropHint"));
+        dropHint->hide();
+        QObject::connect(addImages, &AdButton::clicked, &q, [this] { chooseImages(); });
+        QObject::connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, &q,
+                         [this] {
+                             emptyState->refreshTheme();
+                             dropHint->refreshTheme();
+                         });
         zoomToolbar->setObjectName(QStringLiteral("imageEditingCanvasToolbar"));
         auto* overlay = new QVBoxLayout(canvas);
         overlay->setContentsMargins(16, 16, 16, 16);
@@ -292,7 +382,8 @@ struct ImageEditingWindow::Impl {
         new CanvasHistoryShortcuts(
             shortcuts, &q,
             [this](const auto&) {
-                return !loading && !cropBusy && !canvas->hasActiveTextEditing() &&
+                return !document.image().isNull() && !loading && !cropBusy &&
+                       !canvas->hasActiveTextEditing() &&
                        !(colorSampling && colorSampling->active());
             },
             [this](const QString& action) {
@@ -340,7 +431,63 @@ struct ImageEditingWindow::Impl {
                          [this] { exportContent(ExportOperation::Print); });
         QObject::connect(palette, &ScreenshotToolPalette::cloudUploadRequested, &q,
                          [this] { exportContent(ExportOperation::Upload); });
+        WindowShortcutManager::Binding paste;
+        paste.id = QStringLiteral("imageEditingPaste");
+        for (const auto& sequence : QKeySequence::keyBindings(QKeySequence::Paste)) {
+            if (sequence.count() == 1)
+                paste.keyCombinations.append(sequence[0]);
+        }
+        paste.priority = WindowShortcutManager::StandardPriority::WindowCommand;
+        paste.canActivate = [this](const auto& context) {
+            const auto* receiver = qobject_cast<QWidget*>(context.receiver);
+            return canPaste() && receiver &&
+                   (receiver->window() == editorWindow || receiver->window() == floating) &&
+                   !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
+                   !canvas->hasActiveTextEditing();
+        };
+        paste.activate = [this](const auto&) {
+            q.paste();
+            return true;
+        };
+        static_cast<void>(shortcuts.addBinding(&q, std::move(paste)));
         retranslate();
+    }
+    bool canPaste() const {
+        return modal->isOpen() && !closing && !loading && !choosingFiles && !cropBusy &&
+               !exporter.busy() && !confirmation && !shortcuts.inputSuspended() &&
+               !(colorSampling && colorSampling->active());
+    }
+    bool canImport() const {
+        return !closing && !loading && !choosingFiles && document.image().isNull();
+    }
+    void chooseImages() {
+        if (!canImport())
+            return;
+        choosingFiles = true;
+        const QPointer<ImageEditingWindow> guard(&q);
+        auto complete = [guard](QStringList paths) {
+            if (!guard || guard->m_impl->closing)
+                return;
+            guard->m_impl->choosingFiles = false;
+            guard->openFiles(paths);
+        };
+        if (services.chooseFiles) {
+            services.chooseFiles(surface->window(), std::move(complete));
+            return;
+        }
+        auto* dialog = new QFileDialog(surface->window());
+        fileDialog = dialog;
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setWindowTitle(ImageEditingWindow::tr("Add images"));
+        dialog->setFileMode(QFileDialog::ExistingFiles);
+        dialog->setNameFilter(imageFileFilter());
+        QObject::connect(dialog, &QFileDialog::finished, &q,
+                         [this, dialog, complete = std::move(complete)](int result) mutable {
+                             fileDialog.clear();
+                             complete(result == QDialog::Accepted ? dialog->selectedFiles()
+                                                                  : QStringList{});
+                         });
+        dialog->open();
     }
     ~Impl() {
         if (editorWindow)
@@ -383,7 +530,7 @@ struct ImageEditingWindow::Impl {
                     drawing ? WindowShortcutManager::StandardPriority::DrawingShortcut
                             : WindowShortcutManager::StandardPriority::ScreenshotShortcut;
                 binding.canActivate = [this](const auto& context) {
-                    return !loading && !cropBusy && !closing &&
+                    return !document.image().isNull() && !loading && !cropBusy && !closing &&
                            !(colorSampling && colorSampling->active()) &&
                            !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
                            !canvas->hasActiveTextEditing();
@@ -470,7 +617,7 @@ struct ImageEditingWindow::Impl {
             message(ImageEditingWindow::tr("Loading image…"), AdMessage::Type::Loading);
             break;
         case Notice::LoadError:
-            message(ImageEditingWindow::tr("The image could not be loaded."));
+            message(ImageEditingWindow::tr("The image could not be loaded"));
             break;
         case Notice::Exporting:
             message(ImageEditingWindow::tr("Exporting…"), AdMessage::Type::Loading);
@@ -485,20 +632,38 @@ struct ImageEditingWindow::Impl {
         notice = value;
     }
     void retranslate() {
-        modal->setWindowTitle(ImageEditingWindow::tr("Image Editing"));
+        modal->setWindowTitle(ImageEditingWindow::tr("Image editing"));
         floating->setWindowTitle(modal->windowTitle());
         fit->setToolTip(ImageEditingWindow::tr("Fit image to window"));
         fit->setAccessibleName(fit->toolTip());
         actual->setToolTip(ImageEditingWindow::tr("View at actual size (100%)"));
         actual->setAccessibleName(actual->toolTip());
+        emptyState->title->setText(ImageEditingWindow::tr("Add images to start image editing"));
+        emptyState->description->setText(
+            ImageEditingWindow::tr("Drag image files here, or choose add images"));
+        emptyState->setAccessibleName(emptyState->title->text());
+        emptyState->setAccessibleDescription(emptyState->description->text());
+        addImages->setText(ImageEditingWindow::tr("Add images"));
+        addImages->setAccessibleName(addImages->text());
+        dropHint->title->setText(ImageEditingWindow::tr("Drop images to edit"));
+        dropHint->description->setText(ImageEditingWindow::tr("Open each image in its own window"));
+        dropHint->setAccessibleName(dropHint->title->text());
+        dropHint->setAccessibleDescription(dropHint->description->text());
+        if (fileDialog) {
+            fileDialog->setWindowTitle(ImageEditingWindow::tr("Add images"));
+            fileDialog->setNameFilter(imageFileFilter());
+        }
         if (notice != Notice::None)
             showNotice(notice);
+        else if (errorSource)
+            sourceError(errorSource);
         if (confirmation)
             translateConfirmation();
         placeToolbar();
     }
     void message(QString text, AdMessage::Type type = AdMessage::Type::Error) {
         notice = Notice::None;
+        errorSource = nullptr;
         if (text.isEmpty()) {
             if (statusMessage)
                 statusMessage->close();
@@ -513,6 +678,10 @@ struct ImageEditingWindow::Impl {
             request.durationMs = 0;
         statusMessage = AdMessageService::instance(surface->window())->open(std::move(request));
     }
+    void sourceError(const char* source) {
+        message(QCoreApplication::translate("ImageEditingWindow", source));
+        errorSource = source;
+    }
     void cancelLoading() {
         loadJob.cancel();
         if (loadArtifact)
@@ -521,6 +690,7 @@ struct ImageEditingWindow::Impl {
     }
     void setLoading(bool value) {
         loading = value;
+        dropHint->hide();
         surface->setEnabled(!loading);
         floating->setEnabled(!loading && !cropBusy);
         // Keep the preview in the modal layout so loading never changes its geometry.
@@ -558,7 +728,8 @@ struct ImageEditingWindow::Impl {
         if (!editorWindow || closing || placingToolbar || windowInteractionActive)
             return;
         const QScopedValueRollback<bool> placing(placingToolbar, true);
-        if (!editorWindow->isVisible() || editorWindow->isMinimized()) {
+        if (!editorWindow->isVisible() || editorWindow->isMinimized() ||
+            document.image().isNull()) {
             floating->cancelDrag();
             floating->hide();
             return;
@@ -650,7 +821,7 @@ struct ImageEditingWindow::Impl {
         palette->setSpotlightConfig(canvas->canvasSpotlightConfig());
     }
     void drawing(ImageEditingCanvas::Mode mode) {
-        if (loading || cropBusy)
+        if (loading || cropBusy || document.image().isNull())
             return;
         cancelColorSampling();
         if (session)
@@ -754,6 +925,8 @@ struct ImageEditingWindow::Impl {
                 continue;
             }
             const auto retired = it->controller;
+            if (retired)
+                retired->retireContentAttachment();
             it = sessions.erase(it);
             if (retired) {
                 if (session == retired)
@@ -773,10 +946,10 @@ struct ImageEditingWindow::Impl {
     }
     void exportContent(ExportOperation operation);
     void translateConfirmation() {
-        confirmation->setWindowTitle(ImageEditingWindow::tr("Discard Changes?"));
-        confirmation->setText(ImageEditingWindow::tr("This editing window has unsaved changes."));
-        confirmation->setAcceptText(ImageEditingWindow::tr("Discard Changes"));
-        confirmation->setRejectText(ImageEditingWindow::tr("Continue Editing"));
+        confirmation->setWindowTitle(ImageEditingWindow::tr("Discard changes?"));
+        confirmation->setText(ImageEditingWindow::tr("This editing window has unsaved changes"));
+        confirmation->setAcceptText(ImageEditingWindow::tr("Discard changes"));
+        confirmation->setRejectText(ImageEditingWindow::tr("Continue editing"));
     }
 };
 
@@ -786,13 +959,13 @@ ScreenshotRecognitionWindow* ImageEditingWindow::Impl::ensureRecognitionView() {
         actions.handleCancel = [this] { drawing(ImageEditingCanvas::Mode::Pan); };
         actions.handleCopy = [this] { exportContent(ExportOperation::Copy); };
         actions.handleTextEdited = [this](const QString& text) {
-            if (session)
+            if (session && session->ownsContentAttachment())
                 session->setTextDraft(text);
         };
         actions.handleUndoTextEdit = [this] { undo(false); };
         actions.handleRedoTextEdit = [this] { undo(true); };
         actions.handleTableCommandStateChanged = [this](const auto& state) {
-            if (session)
+            if (session && session->ownsContentAttachment())
                 session->handleTableCommandState(state);
         };
         recognitionView = new ScreenshotRecognitionWindow(
@@ -826,11 +999,14 @@ Session* ImageEditingWindow::Impl::ensureSession() {
         return session;
     }
     ScreenshotRecognitionSessionActions actions;
+    const auto owner = std::make_shared<QPointer<Session>>();
+    actions.isCurrentSession = [this, owner] { return *owner && session == *owner; };
     actions.ensureContent = [this] { return ensureRecognitionView(); };
     actions.applyOcrPresentation = [](auto) {};
     actions.applyOcrBackground = [](auto) {};
     actions.applyFormattedText = [this](auto doc) {
-        ensureRecognitionView()->showFormattedText(std::move(doc));
+        if (recognitionView && session && session->ownsContentAttachment())
+            recognitionView->showFormattedText(std::move(doc));
     };
     actions.clearOcrBackground = [] {};
     actions.setRecognitionVisualState = [this](bool active) {
@@ -892,6 +1068,10 @@ Session* ImageEditingWindow::Impl::ensureSession() {
     actions.setTextTargetLanguage = [this](const QString& text) {
         palette->setTextTargetLanguage(text);
     };
+    actions.setTextTranslationServices = [this](const QVector<SnowShotChatModel>& models,
+                                                const QString& selection, bool modelsLoading) {
+        palette->setTextTranslationServices(models, selection, modelsLoading);
+    };
     actions.setShowOriginalImage = [this](bool) {
         palette->setShowOriginalImage(false);
         palette->setOriginalImageToggleEnabled(false);
@@ -907,6 +1087,7 @@ Session* ImageEditingWindow::Impl::ensureSession() {
     };
     session = new Session(providers.recognition, providers.qrRecognition,
                           providers.tableRecognition, std::move(actions), &q);
+    *owner = session;
     session->setIndependentEditing(true);
     session->setTarget(
         {QStringLiteral("image-editing:%1:%2").arg(quintptr(&q)).arg(document.baseState()),
@@ -988,6 +1169,7 @@ void ImageEditingWindow::Impl::bindRecognition() {
     SESSION_ACTION(textTranslateRequested, beginTextTranslation);
     SESSION_ACTION(textResetRequested, resetTextEditing);
     SESSION_ACTION(textSettingsRequested, openTranslationSettings);
+    SESSION_ACTION(textTranslationServicesRequested, requestTextTranslationServices);
     SESSION_ACTION(imageConversionSettingsRequested, openImageConversionSettings);
 #undef SESSION_ACTION
 #define SESSION_VALUE(signal, method)                                                              \
@@ -998,6 +1180,7 @@ void ImageEditingWindow::Impl::bindRecognition() {
     SESSION_VALUE(textFormattingRequested, applyTextFormatting);
     SESSION_VALUE(textPunctuationRequested, applyTextPunctuation);
     SESSION_VALUE(textTargetLanguageRequested, applyTextTargetLanguage);
+    SESSION_VALUE(textTranslationServiceRequested, applyTextTranslationService);
     SESSION_VALUE(recognitionModelChanged, setRecognitionModel);
 #undef SESSION_VALUE
     palette->setOriginalImageToggleEnabled(false);
@@ -1038,7 +1221,7 @@ void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
     if (recognition && operation == ExportOperation::Copy) {
         auto mime = recognition->recognitionClipboardMimeData();
         if (!mime) {
-            finish(false, ImageEditingWindow::tr("No recognition result is available to export."));
+            finish(false, ImageEditingWindow::tr("No recognition result is available to export"));
             return;
         }
         content = std::move(mime);
@@ -1055,7 +1238,7 @@ void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
 #endif
             {
                 finish(false,
-                       ImageEditingWindow::tr("No recognition result is available to export."));
+                       ImageEditingWindow::tr("No recognition result is available to export"));
                 return;
             }
         }
@@ -1086,10 +1269,246 @@ ImageEditingWindow::ImageEditingWindow(ImageEditingServices services, QObject* p
 ImageEditingWindow::~ImageEditingWindow() {
     shutdown();
 }
+void ImageEditingWindow::presentEmpty() {
+    auto& d = *m_impl;
+    if (d.closing || !d.document.image().isNull())
+        return;
+    ++d.loadGeneration;
+    d.cancelLoading();
+    d.errorSource = nullptr;
+    d.setLoading(false);
+    d.stack->setCurrentWidget(d.emptyState);
+    d.show();
+}
+void ImageEditingWindow::openFiles(const QStringList& paths) {
+    auto& d = *m_impl;
+    if (!d.canImport() || paths.isEmpty())
+        return;
+    const auto generation = ++d.loadGeneration;
+    d.cancelLoading();
+    d.errorSource = nullptr;
+    d.setLoading(true);
+    auto files = std::make_shared<QStringList>();
+    d.loadJob = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Background,
+        [paths, files](const auto& cancellation) {
+            *files = imageFilePaths(
+                paths, [&cancellation] { return cancellation.isCancellationRequested(); });
+            return ScreenshotExportTaskResult{};
+        },
+        [this, files, generation](auto result) {
+            auto& impl = *m_impl;
+            if (impl.closing || impl.loadGeneration != generation)
+                return;
+            impl.setLoading(false);
+            if (!result.succeeded()) {
+                impl.showNotice(Impl::Notice::LoadError);
+                return;
+            }
+            if (files->isEmpty())
+                return;
+            const QPointer<ImageEditingWindow> guard(this);
+            presentFile(files->first());
+            if (guard && !m_impl->closing && files->size() > 1)
+                emit additionalFilesRequested(files->mid(1));
+        });
+    if (!d.loadJob.isValid()) {
+        d.setLoading(false);
+        d.showNotice(Impl::Notice::LoadError);
+    }
+}
+void ImageEditingWindow::paste() {
+    auto& d = *m_impl;
+    if (!d.canPaste())
+        return;
+    auto* clipboard = QApplication::clipboard();
+    const auto paths = ScreenshotClipboardContentReader::localImageFilePaths(clipboard->mimeData());
+    struct PastedImage {
+        ImageEditingSource source;
+        QStringList additionalFiles;
+        std::shared_ptr<ImageStitchingImportReservation> reservation;
+        bool rejected = false;
+    };
+    auto pasted = std::make_shared<PastedImage>();
+    pasted->reservation = reserveImageStitchingImport(0);
+    pasted->rejected = !pasted->reservation;
+    std::optional<ScreenshotClipboardContentSnapshot> snapshot;
+    if (paths.isEmpty()) {
+        snapshot = ScreenshotClipboardContentReader::snapshotImage(
+            clipboard, d.surface->devicePixelRatioF(), [pasted](qint64 bytes) {
+                pasted->rejected = pasted->rejected || !pasted->reservation->resize(bytes);
+                return !pasted->rejected;
+            });
+        if (!snapshot && !pasted->rejected)
+            return;
+    }
+    const auto generation = ++d.loadGeneration;
+    d.cancelLoading();
+    d.errorSource = nullptr;
+    d.setLoading(true);
+    const auto finish = [this, pasted, generation](ScreenshotExportTaskResult result) {
+        auto& impl = *m_impl;
+        if (impl.closing || impl.loadGeneration != generation)
+            return;
+        const QPointer<ImageEditingWindow> guard(this);
+        if (!result.succeeded() || pasted->source.image.isNull()) {
+            impl.setLoading(false);
+            impl.sourceError(
+                pasted->rejected
+                    ? QT_TRANSLATE_NOOP(
+                          "ImageEditingWindow",
+                          "The image is too large or there is not enough memory to load it")
+                    : QT_TRANSLATE_NOOP("ImageEditingWindow", "The image could not be loaded"));
+            if (!guard)
+                return;
+            emit loaded(false);
+            if (guard && !impl.closing && impl.loadGeneration == generation &&
+                !pasted->additionalFiles.isEmpty())
+                emit additionalFilesRequested(pasted->additionalFiles);
+            return;
+        }
+        confirmDiscard([guard, pasted, generation](bool accepted) {
+            if (!guard || guard->m_impl->closing || guard->m_impl->loadGeneration != generation)
+                return;
+            if (!accepted) {
+                guard->m_impl->setLoading(false);
+                return;
+            }
+            guard->present(std::move(pasted->source));
+            if (!guard || guard->m_impl->closing || guard->m_impl->loadGeneration != generation + 1)
+                return;
+            guard->m_impl->fileReservation = std::move(pasted->reservation);
+            if (!pasted->additionalFiles.isEmpty())
+                emit guard->additionalFilesRequested(pasted->additionalFiles);
+        });
+    };
+    if (pasted->rejected) {
+        finish({});
+        return;
+    }
+    d.loadJob = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [paths, snapshot = std::move(snapshot), pasted](const auto& cancellation) mutable {
+            const auto cancelled = [&cancellation] {
+                return cancellation.isCancellationRequested();
+            };
+            const auto allocate = [pasted](qint64 bytes) {
+                pasted->rejected = pasted->rejected || !pasted->reservation->resize(bytes);
+                return !pasted->rejected;
+            };
+            if (snapshot) {
+                auto content = ScreenshotClipboardContentReader::decode(std::move(*snapshot),
+                                                                        cancelled, allocate);
+                if (content)
+                    pasted->source.image = std::move(content->image);
+            } else {
+                const auto files = imageFilePaths(paths, cancelled);
+                if (!files.isEmpty()) {
+                    const auto captured = ScreenshotClipboardContentReader::snapshotLocalFiles(
+                        {files.first()}, cancelled,
+                        ScreenshotClipboardContentReader::FilePurpose::ImageImport);
+                    if (!captured.isEmpty())
+                        pasted->source.image = ScreenshotClipboardContentReader::decodeImageFile(
+                            captured.first(), cancelled, allocate);
+                    pasted->source.originalFileName = QFileInfo(files.first()).fileName();
+                    pasted->additionalFiles = files.mid(1);
+                }
+            }
+            if (!pasted->source.image.isNull()) {
+                const auto bytes = imageStitchingImageImportBytes(pasted->source.image.size());
+                pasted->rejected =
+                    bytes == 0 || !allocate(std::max(bytes, pasted->source.image.sizeInBytes()));
+                if (pasted->rejected)
+                    pasted->source.image = {};
+            }
+            pasted->source.pixelSize = pasted->source.image.size();
+            pasted->source.canvasRect = QRectF(QPointF(), QSizeF(pasted->source.pixelSize));
+            pasted->source.flattened = true;
+            return ScreenshotExportTaskResult{};
+        },
+        finish);
+    if (!d.loadJob.isValid())
+        finish({});
+}
+void ImageEditingWindow::presentFile(QString path) {
+    auto& d = *m_impl;
+    if (d.closing)
+        return;
+    const auto generation = ++d.loadGeneration;
+    d.cancelLoading();
+    d.errorSource = nullptr;
+    d.setLoading(true);
+    struct FileImage {
+        ImageEditingSource source;
+        std::shared_ptr<ImageStitchingImportReservation> reservation;
+        bool rejected = false;
+    };
+    auto file = std::make_shared<FileImage>();
+    d.loadJob = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [path = std::move(path), file](const auto& cancellation) {
+            const auto cancelled = [&cancellation] {
+                return cancellation.isCancellationRequested();
+            };
+            file->source.originalFileName = QFileInfo(path).fileName();
+            file->reservation = reserveImageStitchingImport(0);
+            file->rejected = !file->reservation;
+            const auto files = ScreenshotClipboardContentReader::snapshotLocalFiles(
+                {path}, cancelled, ScreenshotClipboardContentReader::FilePurpose::ImageImport);
+            if (!file->rejected && !files.isEmpty()) {
+                file->source.image = ScreenshotClipboardContentReader::decodeImageFile(
+                    files.first(), cancelled, [file](qint64 bytes) {
+                        if (!file->reservation->resize(bytes)) {
+                            file->rejected = true;
+                            return false;
+                        }
+                        return true;
+                    });
+                if (!file->source.image.isNull()) {
+                    const auto bytes = imageStitchingImageImportBytes(file->source.image.size());
+                    file->rejected = bytes == 0 || !file->reservation->resize(std::max(
+                                                       bytes, file->source.image.sizeInBytes()));
+                    if (file->rejected)
+                        file->source.image = {};
+                }
+            }
+            file->source.pixelSize = file->source.image.size();
+            file->source.canvasRect = QRectF(QPointF(), QSizeF(file->source.pixelSize));
+            file->source.flattened = true;
+            return ScreenshotExportTaskResult{};
+        },
+        [this, file, generation](auto result) {
+            if (m_impl->closing || m_impl->loadGeneration != generation)
+                return;
+            if (!result.succeeded() || file->source.image.isNull()) {
+                file->source.error =
+                    file->rejected
+                        ? tr("The image is too large or there is not enough memory to load it")
+                        : tr("The image could not be loaded");
+            }
+            const bool success = result.succeeded() && !file->source.image.isNull();
+            const QPointer<ImageEditingWindow> guard(this);
+            present(std::move(file->source));
+            if (!guard || m_impl->closing || m_impl->loadGeneration != generation + 1)
+                return;
+            if (file->rejected)
+                m_impl->errorSource = QT_TRANSLATE_NOOP(
+                    "ImageEditingWindow",
+                    "The image is too large or there is not enough memory to load it");
+            if (success)
+                m_impl->fileReservation = std::move(file->reservation);
+        });
+    if (!d.loadJob.isValid()) {
+        ImageEditingSource failure;
+        failure.error = tr("The image could not be loaded");
+        present(std::move(failure));
+    }
+}
 void ImageEditingWindow::present(ImageEditingSource source) {
     auto& d = *m_impl;
     if (d.closing)
         return;
+    d.errorSource = nullptr;
     const auto generation = ++d.loadGeneration;
     d.cancelLoading();
     if (source.image.isNull() && source.layeredImage.isValid()) {
@@ -1111,6 +1530,30 @@ void ImageEditingWindow::present(ImageEditingSource source) {
         if (d.loadJob.isValid())
             return;
     }
+    if (!source.textAnnotations.empty() && source.error.isEmpty()) {
+        d.setLoading(true);
+        auto result = std::make_shared<ImageEditingSource>(std::move(source));
+        d.loadJob = ScreenshotExportCoordinator::shared().submit(
+            this, ScreenshotExportCoordinator::Priority::Foreground,
+            [result](const auto& cancel) {
+                if (!cancel.isCancellationRequested()) {
+                    result->image = renderScreenshotTextAnnotations(
+                        result->image, result->canvasRect, result->textAnnotations);
+                    if (result->image.isNull())
+                        result->error = ImageEditingWindow::tr("The image could not be loaded");
+                    result->textAnnotations = {};
+                }
+                return ScreenshotExportTaskResult{};
+            },
+            [this, result, generation](auto) {
+                if (!m_impl->closing && m_impl->loadGeneration == generation)
+                    present(std::move(*result));
+            });
+        if (d.loadJob.isValid())
+            return;
+        source = std::move(*result);
+        source.error = tr("The image could not be loaded");
+    }
     if (source.resultStyle && source.error.isEmpty()) {
         d.setLoading(true);
         d.loadArtifact =
@@ -1123,14 +1566,14 @@ void ImageEditingWindow::present(ImageEditingSource source) {
                 present(completeImageEditingComposite(std::move(source), std::move(result.image)));
             }))
             return;
-        source.error = tr("The image could not be loaded.");
+        source.error = tr("The image could not be loaded");
     }
     d.setLoading(false);
     d.show();
     if (!source.error.isEmpty() || !d.document.load(source)) {
-        if (source.error.isEmpty() || source.error == tr("The image could not be loaded.") ||
+        if (source.error.isEmpty() || source.error == tr("The image could not be loaded") ||
             source.error ==
-                QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded."))
+                QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded"))
             d.showNotice(Impl::Notice::LoadError);
         else
             d.message(source.error);
@@ -1138,13 +1581,15 @@ void ImageEditingWindow::present(ImageEditingSource source) {
         return;
     }
     d.pruneRecognitionSessions(true);
+    d.fileReservation.reset();
     d.initialRecognition = source.recognition;
     d.syncAvailability();
+    d.stack->setCurrentWidget(d.canvas);
     d.canvas->fit();
     d.drawing(ImageEditingCanvas::Mode::Pan);
     emit loaded(true);
 }
-void ImageEditingWindow::presentSource(ScreenshotExportSource source) {
+void ImageEditingWindow::presentSource(ScreenshotExportSource source, QString originalFileName) {
     auto& d = *m_impl;
     if (d.closing)
         return;
@@ -1152,21 +1597,25 @@ void ImageEditingWindow::presentSource(ScreenshotExportSource source) {
     d.cancelLoading();
     d.setLoading(true);
     d.loadArtifact = std::make_shared<ScreenshotExportArtifact>(std::move(source));
-    if (!d.loadArtifact->requestImage(this, [this, generation](ScreenshotExportImageResult result) {
-            if (m_impl->closing || m_impl->loadGeneration != generation)
-                return;
-            // Keep the artifact alive until its delivery callback returns.
-            [[maybe_unused]] const auto artifact = std::move(m_impl->loadArtifact);
-            ImageEditingSource editingSource;
-            editingSource.image = std::move(result.image);
-            editingSource.pixelSize = editingSource.image.size();
-            editingSource.canvasRect = QRectF(QPointF(), QSizeF(editingSource.pixelSize));
-            if (editingSource.image.isNull())
-                editingSource.error = tr("The image could not be loaded.");
-            present(std::move(editingSource));
-        })) {
+    if (!d.loadArtifact->requestImage(
+            this, [this, generation, originalFileName = std::move(originalFileName)](
+                      ScreenshotExportImageResult result) {
+                if (m_impl->closing || m_impl->loadGeneration != generation)
+                    return;
+                // Keep the artifact alive until its delivery callback returns.
+                [[maybe_unused]] const auto artifact = std::move(m_impl->loadArtifact);
+                ImageEditingSource editingSource;
+                editingSource.image = std::move(result.image);
+                editingSource.pixelSize = editingSource.image.size();
+                editingSource.canvasRect = QRectF(QPointF(), QSizeF(editingSource.pixelSize));
+                editingSource.originalFileName = originalFileName;
+                editingSource.flattened = true;
+                if (editingSource.image.isNull())
+                    editingSource.error = tr("The image could not be loaded");
+                present(std::move(editingSource));
+            })) {
         ImageEditingSource failure;
-        failure.error = tr("The image could not be loaded.");
+        failure.error = tr("The image could not be loaded");
         present(std::move(failure));
     }
 }
@@ -1192,7 +1641,7 @@ void ImageEditingWindow::presentHistory(storage::CaptureHistoryRecord record) {
         });
     if (!d.loadJob.isValid()) {
         ImageEditingSource failure;
-        failure.error = tr("The image could not be loaded.");
+        failure.error = tr("The image could not be loaded");
         present(std::move(failure));
     }
 }
@@ -1202,25 +1651,37 @@ void ImageEditingWindow::presentPinnedRecord(QString id) {
         return;
     const auto generation = ++d.loadGeneration;
     d.cancelLoading();
+    d.setLoading(true);
     if (d.services.pins)
         if (auto* pin = d.services.pins->liveWindow(id)) {
-            auto source = pin->imageEditingSnapshot();
-            if (!source.image.isNull() || source.layeredImage.isValid()) {
-                present(std::move(source));
-                return;
-            }
+            const QPointer<ImageEditingWindow> guard(this);
+            pin->requestRenderedImageSnapshot([guard,
+                                               generation](ScreenshotPinnedImageSnapshot snapshot) {
+                if (!guard || guard->m_impl->closing || guard->m_impl->loadGeneration != generation)
+                    return;
+                if (!snapshot.error.isEmpty() || !snapshot.source.isValid()) {
+                    ImageEditingSource failure;
+                    failure.error = snapshot.error.isEmpty()
+                                        ? ImageEditingWindow::tr("The image could not be loaded")
+                                        : std::move(snapshot.error);
+                    guard->present(std::move(failure));
+                    return;
+                }
+                guard->presentSource(std::move(snapshot.source),
+                                     std::move(snapshot.originalFileName));
+            });
+            return;
         }
-    d.setLoading(true);
-    const auto textPreparation = captureScreenshotPinnedTextPreparation();
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
     auto result = std::make_shared<ImageEditingSource>();
     d.loadJob = ScreenshotExportCoordinator::shared().submit(
         this, ScreenshotExportCoordinator::Priority::Foreground,
-        [id = std::move(id), result, textPreparation](const auto& cancel) {
+        [id = std::move(id), result, preparation](const auto& cancel) {
             if (!cancel.isCancellationRequested()) {
                 auto record =
                     storage::ApplicationStorage::instance().pinnedWindows().loadRecord(id);
                 if (record)
-                    *result = readImageEditingPinned(std::move(*record), textPreparation);
+                    *result = readImageEditingPinned(std::move(*record), preparation);
             }
             return ScreenshotExportTaskResult{};
         },
@@ -1230,7 +1691,7 @@ void ImageEditingWindow::presentPinnedRecord(QString id) {
         });
     if (!d.loadJob.isValid()) {
         ImageEditingSource failure;
-        failure.error = tr("The image could not be loaded.");
+        failure.error = tr("The image could not be loaded");
         present(std::move(failure));
     }
 }
@@ -1243,6 +1704,9 @@ bool ImageEditingWindow::dirty() const {
         if (state.controller && state.controller->contentCheckpoints() != state.saved)
             return true;
     return false;
+}
+bool ImageEditingWindow::loading() const {
+    return m_impl->loading;
 }
 QByteArray ImageEditingWindow::contentCheckpoint() const {
     QByteArray bytes;
@@ -1262,12 +1726,12 @@ QByteArray ImageEditingWindow::contentCheckpoint() const {
     }
     return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
 }
-bool ImageEditingWindow::preparePendingEdits() {
+bool ImageEditingWindow::preparePendingEdits(bool requireCanvasCommit) {
     if (m_impl->closing)
         return false;
     const QPointer<ImageEditingWindow> lifetime(this);
-    static_cast<void>(m_impl->canvas->resetEditingStatePreservingTool());
-    if (!lifetime || m_impl->closing)
+    const bool canvasPrepared = m_impl->canvas->resetEditingStatePreservingTool();
+    if (!lifetime || m_impl->closing || (requireCanvasCommit && !canvasPrepared))
         return false;
     if (m_impl->session && m_impl->session->active() && m_impl->session->tableModeActive() &&
         m_impl->recognitionView)
@@ -1331,6 +1795,12 @@ void ImageEditingWindow::shutdown() {
     auto& d = *m_impl;
     const QPointer<AdModal> confirmation = d.confirmation;
     d.closing = true;
+    d.dropHint->hide();
+    if (d.fileDialog) {
+        d.fileDialog->reject();
+        if (!lifetime)
+            return;
+    }
     d.showNotice(Impl::Notice::None);
     if (!lifetime)
         return;
@@ -1375,8 +1845,38 @@ bool ImageEditingWindow::eventFilter(QObject* object, QEvent* event) {
         return true;
     }
     if (m_impl && object == m_impl->surface) {
-        if (event->type() == QEvent::Resize)
-            m_impl->placeToolbar();
+        auto& d = *m_impl;
+        if (event->type() == QEvent::DragLeave) {
+            d.dropHint->hide();
+            event->accept();
+            return true;
+        }
+        if (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove ||
+            event->type() == QEvent::Drop) {
+            auto* drop = static_cast<QDropEvent*>(event);
+            const auto paths =
+                ScreenshotClipboardContentReader::localImageFilePaths(drop->mimeData());
+            if (!d.canImport() || !(drop->possibleActions() & Qt::CopyAction) || paths.isEmpty()) {
+                d.dropHint->hide();
+                event->ignore();
+                return true;
+            }
+            drop->setDropAction(Qt::CopyAction);
+            drop->accept();
+            if (event->type() == QEvent::Drop) {
+                d.dropHint->hide();
+                openFiles(paths);
+            } else {
+                d.dropHint->setGeometry(d.surface->rect());
+                d.dropHint->raise();
+                d.dropHint->show();
+            }
+            return true;
+        }
+        if (event->type() == QEvent::Resize) {
+            d.dropHint->setGeometry(d.surface->rect());
+            d.placeToolbar();
+        }
         if (event->type() == QEvent::LanguageChange)
             m_impl->retranslate();
         if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
@@ -1427,20 +1927,78 @@ ImageEditingWindowCoordinator::~ImageEditingWindowCoordinator() {
 ImageEditingWindow* ImageEditingWindowCoordinator::createWindow() {
     auto* window = new ImageEditingWindow(m_services, this);
     m_windows.append(window);
+    ++m_windowRevision;
     connect(window, &ImageEditingWindow::closed, this, [this, window] {
-        m_windows.removeAll(window);
+        if (m_windows.removeAll(window) != 0)
+            ++m_windowRevision;
         window->deleteLater();
     });
+    connect(window, &QObject::destroyed, this, [this, window] {
+        if (m_windows.removeIf(
+                [window](const auto& entry) { return !entry || entry.data() == window; }) != 0)
+            ++m_windowRevision;
+    });
+    connect(window, &ImageEditingWindow::additionalFilesRequested, this,
+            [this](const QStringList& paths) {
+                for (const auto& path : paths) {
+                    if (auto* receiving = createWindow())
+                        receiving->presentFile(path);
+                }
+            });
     return window;
 }
+void ImageEditingWindowCoordinator::presentFiles(const QStringList& paths) {
+    if (auto* window = createWindow()) {
+        window->presentEmpty();
+        window->openFiles(paths);
+    }
+}
+void ImageEditingWindowCoordinator::presentSelectedFiles(
+    std::shared_ptr<platform::SelectedFileBackend> backend, platform::SelectedFileTarget target) {
+    auto* window = createWindow();
+    if (!window)
+        return;
+    window->presentEmpty();
+    if (!backend || !backend->isValidTarget(target))
+        return;
+    auto& d = *window->m_impl;
+    const auto generation = ++d.loadGeneration;
+    d.setLoading(true);
+    auto selection = std::make_shared<platform::SelectedFileResult>();
+    d.loadJob = ScreenshotExportCoordinator::shared().submit(
+        window, ScreenshotExportCoordinator::Priority::Background,
+        [backend = std::move(backend), target, selection](const auto& cancellation) {
+            *selection = backend->selectedFiles(
+                target, [&cancellation] { return cancellation.isCancellationRequested(); });
+            return ScreenshotExportTaskResult{};
+        },
+        [window, selection, generation](auto result) {
+            auto& impl = *window->m_impl;
+            if (impl.closing || impl.loadGeneration != generation)
+                return;
+            impl.setLoading(false);
+            if (!result.succeeded() || selection->error != platform::SelectedFileError::None) {
+                impl.sourceError(selectedFileErrorSource(selection->error));
+                return;
+            }
+            window->openFiles(selection->paths);
+        });
+    if (!d.loadJob.isValid()) {
+        d.setLoading(false);
+        d.showNotice(ImageEditingWindow::Impl::Notice::LoadError);
+    }
+}
 void ImageEditingWindowCoordinator::presentHistory(const storage::CaptureHistoryRecord& record) {
-    createWindow()->presentHistory(record);
+    if (auto* window = createWindow())
+        window->presentHistory(record);
 }
 void ImageEditingWindowCoordinator::presentSource(ScreenshotExportSource source) {
-    createWindow()->presentSource(std::move(source));
+    if (auto* window = createWindow())
+        window->presentSource(std::move(source));
 }
 void ImageEditingWindowCoordinator::presentPinnedRecord(const QString& id) {
-    createWindow()->presentPinnedRecord(id);
+    if (auto* window = createWindow())
+        window->presentPinnedRecord(id);
 }
 void ImageEditingWindowCoordinator::confirmShutdown(std::function<void(bool)> done) {
     if (m_reviewPending) {
@@ -1494,8 +2052,33 @@ bool ImageEditingWindowCoordinator::hasUnsavedChanges() const {
     return std::any_of(m_windows.cbegin(), m_windows.cend(),
                        [](const auto& window) { return window && window->dirty(); });
 }
+bool ImageEditingWindowCoordinator::prepareForUpdateHandoff() {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (m_handoffPreparing || m_reviewPending)
+        return false;
+    const QPointer<ImageEditingWindowCoordinator> lifetime(this);
+    m_handoffPreparing = true;
+    const auto preparing = qScopeGuard([lifetime] {
+        if (lifetime)
+            lifetime->m_handoffPreparing = false;
+    });
+    const auto revision = m_windowRevision;
+    const auto windows = m_windows;
+    for (auto window : windows) {
+        if (!window)
+            return false;
+        const bool prepared = window->preparePendingEdits(true);
+        if (!lifetime || !window || !prepared)
+            return false;
+        if (m_windowRevision != revision || m_reviewPending || window->dirty())
+            return false;
+    }
+    return m_windowRevision == revision && !m_reviewPending && !hasUnsavedChanges();
+}
 void ImageEditingWindowCoordinator::shutdown() {
     const auto windows = std::exchange(m_windows, {});
+    if (!windows.isEmpty())
+        ++m_windowRevision;
     for (auto window : windows) {
         if (!window)
             continue;

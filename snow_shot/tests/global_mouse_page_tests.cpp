@@ -249,7 +249,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         status.writeAvailable = true;
         return status;
     }
-    bool resetSection(settings::SettingsSectionReset reset) override {
+    settings::SettingsResetResult
+    resetSectionWithResults(settings::SettingsSectionReset reset) override {
         if (reset == settings::SettingsSectionReset::GlobalMouse) {
             m_combinations.clear();
             return true;
@@ -271,7 +272,7 @@ class GlobalMouseTranslator final : public QTranslator {
                       int) const override {
         if (QString::fromLatin1(context) ==
                 QStringLiteral("snow_shot::presentation::GlobalMouseManager") &&
-            QString::fromUtf8(sourceText) == QStringLiteral("Global mouse gestures are ready.")) {
+            QString::fromUtf8(sourceText) == QStringLiteral("Global mouse gestures are ready")) {
             return QStringLiteral("Globale Mausgesten sind bereit.");
         }
         if (QString::fromLatin1(context) != QStringLiteral("GlobalMouseRow")) {
@@ -622,7 +623,7 @@ void noneClearsAssignedMouseBinding() {
             "clearing a binding must refresh its row");
 }
 
-void globalMouseAndGlobalHotkeyRowsSharePresentation() {
+void globalMouseAndGlobalShortcutRowsSharePresentation() {
     const auto& registry = settings::builtInSettingsRegistry();
     FakeSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
@@ -630,8 +631,8 @@ void globalMouseAndGlobalHotkeyRowsSharePresentation() {
     scheme.map.colorBgContainer = QColor(QStringLiteral("#e1eee5"));
     GlobalMouseRow mouse(QStringLiteral("Action"),
                          settings::SettingsGlobalMouseAction::ScreenshotCopy, session, scheme);
-    SettingsPageWidget globalHotkeysPage(registry, QStringLiteral("global-hotkeys"), session);
-    auto* quickRow = globalHotkeysPage.findChild<ShortcutKeyRow*>();
+    SettingsPageWidget globalShortcutsPage(registry, QStringLiteral("global-hotkeys"), session);
+    auto* quickRow = globalShortcutsPage.findChild<ShortcutKeyRow*>();
     require(quickRow != nullptr, "Quick Actions must provide an action row for comparison");
     // Isolate the real row from its page's layout and background during pixel comparison.
     quickRow->setParent(nullptr);
@@ -679,7 +680,7 @@ void globalMouseAndGlobalHotkeyRowsSharePresentation() {
     }
 }
 
-void globalMouseAndHotkeyTitlesRenderIdentically() {
+void globalMouseAndShortcutTitlesRenderIdentically() {
     const auto& registry = settings::builtInSettingsRegistry();
     FakeSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
@@ -950,21 +951,27 @@ void builtInGlobalMouseResetRestoresDefaults() {
                 "Save as file must persist through the built-in backend");
         require(backend.resetSection(settings::SettingsSectionReset::GlobalMouse),
                 "built-in global mouse reset must succeed");
-        require(backend.globalMouseCombination(Action::ScreenshotCopy) ==
-                        Combination{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
-                                    QStringLiteral("left_drag")} &&
-                    backend.globalMouseCombination(Action::ScreenshotFixed) ==
-                        Combination{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
-                                    QStringLiteral("wheel_drag")} &&
-                    backend.globalMouseCombination(Action::ScreenshotOcr) ==
-                        Combination{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
-                                    QStringLiteral("right_drag")} &&
+#ifdef Q_OS_MACOS
+        const Combination copyDefault;
+        const Combination fixedDefault;
+        const Combination ocrDefault;
+#else
+        const Combination copyDefault{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
+                                      QStringLiteral("left_drag")};
+        const Combination fixedDefault{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
+                                       QStringLiteral("wheel_drag")};
+        const Combination ocrDefault{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
+                                     QStringLiteral("right_drag")};
+#endif
+        require(backend.globalMouseCombination(Action::ScreenshotCopy) == copyDefault &&
+                    backend.globalMouseCombination(Action::ScreenshotPinToScreen) == fixedDefault &&
+                    backend.globalMouseCombination(Action::ScreenshotOcr) == ocrDefault &&
                     backend.globalMouseCombination(Action::ScreenshotOcrCopy).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenshotTranslation).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenshotSave).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenshotQuickSave).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenRecording).isUnset(),
-                "reset must restore the three Windows bindings and clear the other actions");
+                "reset must restore platform mouse defaults and clear the other actions");
     }
     applicationStorage.shutdown();
 }
@@ -1006,8 +1013,8 @@ int main(int argc, char** argv) {
     globalMousePermissionGuidance();
     globalMousePageRendersActionButtons();
     noneClearsAssignedMouseBinding();
-    globalMouseAndGlobalHotkeyRowsSharePresentation();
-    globalMouseAndHotkeyTitlesRenderIdentically();
+    globalMouseAndGlobalShortcutRowsSharePresentation();
+    globalMouseAndShortcutTitlesRenderIdentically();
     globalMouseModalEditsOnlyOnAcceptedUniquePairs();
     globalMouseLanguageAndThemeChangesRefreshOpenUi();
     globalMousePopupStaysAboveModalDuringLayout();

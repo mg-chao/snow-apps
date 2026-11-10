@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotpdfexport.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
+#include "snow_shot/presentation/screenshothidpiimagescaling.h"
 #include <QDateTime>
 #include <QImage>
 #include <QObject>
@@ -46,8 +47,11 @@ struct DirectCaptureRequest {
     bool restoreOriginalScreenColors = false;
     bool shutterSoundNotification = true;
     bool captureCursor = false;
+    quint8 captureBackend = 0;
     // Called on native capture threads with the fixed target's geometry before allocation.
     std::function<bool(QSize)> admitRaster;
+    QString hiDpiImageScaling = QStringLiteral("disabled");
+    QVector<ScreenshotHiDpiDisplay> scalingDisplays;
 };
 
 struct DirectCaptureFrame {
@@ -63,6 +67,13 @@ struct DirectCaptureFrame {
         return error.isEmpty() && !image.isNull() && physicalBounds.size() == image.size();
     }
 };
+
+[[nodiscard]] inline qreal directCaptureImageScale(const DirectCaptureRequest& request,
+                                                   const DirectCaptureFrame& frame) {
+    const QRect bounds = frame.logicalBounds.isEmpty() ? frame.physicalBounds : frame.logicalBounds;
+    return screenshotHiDpiImageScale(request.hiDpiImageScaling, QRectF(bounds),
+                                     request.scalingDisplays);
+}
 
 struct DirectCapturePorts {
     using Completion = std::function<void(QString)>;

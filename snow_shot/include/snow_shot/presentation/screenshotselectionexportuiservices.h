@@ -45,6 +45,7 @@ struct ScreenshotAutomaticSaveRequest final {
 namespace snow_shot::presentation {
 class LiveWindowSource;
 class PinnedWindowGroupManager;
+class PinnedWindowStackingCoordinator;
 class PinnedWindowSelectionController;
 } // namespace snow_shot::presentation
 
@@ -60,7 +61,10 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::function<void(const QVector<ScreenshotPinnedImageSnapshot>&)> imageStitchingRequested =
             {},
         std::function<void(const ScreenshotPinnedImageSnapshot&)> imageSplittingRequested = {},
-        std::function<void(const QString&)> imageEditingRequested = {});
+        std::function<void(const QString&)> imageEditingRequested = {},
+        // Hosts with application suspension route automatic visibility intent through their
+        // admission owner. Standalone hosts retain immediate automatic restoration.
+        std::function<void()> automaticRestoreRequested = {});
     ~ScreenshotSelectionExportUiServices() override;
 
     [[nodiscard]] bool publishClipboard(QObject* receiver, ScreenshotClipboardPayload payload,
@@ -71,6 +75,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void cancelClipboardPublication();
     // Prepares one hidden native shell for the next Pin to Screen presentation.
     void prewarmPinnedWindow(QScreen* screen = nullptr);
+    // Stop native shell acquisition and retain pool retry/replenishment intent until resume.
+    void setPresentationSuspended(bool suspended);
     [[nodiscard]] bool
     presentLiveWindow(std::shared_ptr<snow_shot::presentation::LiveWindowSource> source,
                       QScreen* screen, const QRect& nativeGeometry, const QSize& initialWindowSize,
@@ -110,10 +116,12 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                              const QRect& nativeGeometry,
                                              const ScreenshotHistoryEntry& entry,
                                              PinnedCompletion completion);
+    using PinnedArtifactCompletion =
+        std::function<void(bool, std::shared_ptr<ScreenshotExportArtifact>)>;
     [[nodiscard]] bool
     presentPinnedArtifact(const ScreenshotPinnedSelectionRequest& request,
                           std::shared_ptr<ScreenshotExportArtifact> artifact,
-                          PinnedCompletion completion = {},
+                          PinnedArtifactCompletion completion = {},
                           std::optional<ScreenshotAutomaticSaveRequest> automaticSave = {});
     [[nodiscard]] bool
     presentPinnedImageArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact, QScreen* screen,
@@ -121,6 +129,11 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                PinnedCompletion completion = {},
                                std::optional<ScreenshotAutomaticSaveRequest> automaticSave = {});
     void restorePersistedWindows();
+    // Accepted restoration owns its load and native presentation until settlement. A pause
+    // admission check must observe it even after the worker has posted its GUI completion.
+    [[nodiscard]] bool restoringWindows() const {
+        return !m_restoringIds.isEmpty();
+    }
     // Returns whether restoration was queued; completion and failures are asynchronous.
     bool restoreRecord(const QString& id, bool activateGroup = true);
     // Validates the whole selection before activating its common group once.
@@ -150,11 +163,18 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     [[nodiscard]] snow_shot::storage::StorageResult tryDestroyRecords(const QVector<QString>& ids);
 
   private:
+    [[nodiscard]] snow_shot::presentation::PinnedWindowStackingCoordinator*
+    stackingCoordinator() const;
+    bool restoreRecordImpl(const QString& id, bool activateGroup,
+                           ScreenshotPinnedWindow::PresentationPolicy policy, quint64 batch = 0);
     void configureVisibility(ScreenshotPinnedWindow::Config* config);
     bool persistHiddenWindow(const snow_shot::storage::PinnedWindowRecord& record);
     bool hideRecords(const QVector<QString>& ids);
-    [[nodiscard]] ScreenshotPinnedWindow::HideOtherWindowsResult
+    bool showRecords(const QString& group, const QVector<QString>& ids);
+    [[nodiscard]] ScreenshotPinnedWindow::OtherWindowsVisibilityResult
     hideOtherWindowsWithResult(const QString& exceptId);
+    [[nodiscard]] ScreenshotPinnedWindow::OtherWindowsVisibilityResult
+    toggleOtherWindowsForShake(const QString& exceptId);
     void cancelRestore(const QString& id);
     [[nodiscard]] ScreenshotPinnedWindow* liveWindow(const QString& id) const;
     [[nodiscard]] QString
@@ -190,6 +210,9 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         QDateTime createdUtc;
         bool attentionPending = false;
         quint64 generation = 0;
+        quint64 stackingBatch = 0;
+        ScreenshotPinnedWindow::PresentationPolicy presentationPolicy =
+            ScreenshotPinnedWindow::PresentationPolicy::Activate;
         QPointer<ScreenshotPinnedWindow> window;
     };
     QHash<QString, RestoringPin> m_restoringIds;
@@ -202,9 +225,11 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     std::function<void()> m_showMainWindowRequested;
     std::function<void(const ScreenshotPinnedImageSnapshot&)> m_imageSplittingRequested;
     std::function<void(const QString&)> m_imageEditingRequested;
+    std::function<void()> m_automaticRestoreRequested;
     std::function<void(const ScreenshotExportSource&)> m_liveImageEditingRequested;
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
+    std::unique_ptr<snow_shot::presentation::PinnedWindowStackingCoordinator> m_ownedStacking;
     std::unique_ptr<snow_shot::presentation::PinnedWindowSelectionController> m_selectionController;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     std::unique_ptr<ScreenshotPendingPinCoordinator> m_pendingPinCoordinator;

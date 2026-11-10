@@ -1,0 +1,67 @@
+diff --git a/source/CMakeLists.txt b/source/CMakeLists.txt
+--- a/source/CMakeLists.txt
++++ b/source/CMakeLists.txt
+@@ -583,6 +583,13 @@
++option(ENABLE_DYNAMIC_DEPTH "Load missing bit-depth encoders from dynamic libraries" ON)
++if(ENABLE_DYNAMIC_DEPTH)
++    add_definitions(-DENABLE_DYNAMIC_DEPTH=1)
++else()
++    add_definitions(-DENABLE_DYNAMIC_DEPTH=0)
++endif()
++
+ # this option can only be used when linking multiple libx265 libraries
+ # together, and some alternate API access method is implemented.
+ option(EXPORT_C_API "Implement public C programming interface" ON)
+ mark_as_advanced(EXPORT_C_API)
+ if(EXPORT_C_API)
+     set(X265_NS x265)
+diff --git a/source/encoder/api.cpp b/source/encoder/api.cpp
+--- a/source/encoder/api.cpp
++++ b/source/encoder/api.cpp
+@@ -1125,7 +1125,9 @@
+ #pragma GCC diagnostic ignored "-Wcast-function-type"
+ #endif
+ 
++#if ENABLE_DYNAMIC_DEPTH
+ static int g_recursion /* = 0 */;
++#endif
+ const x265_api* x265_api_get(int bitDepth)
+ {
+     if (bitDepth && bitDepth != X265_DEPTH)
+@@ -1140,6 +1142,9 @@
+         if (bitDepth == 12) return x265_12bit::x265_api_get(0);
+ #endif
+ 
++#if !ENABLE_DYNAMIC_DEPTH
++        return NULL;
++#else
+         const char* libname = NULL;
+         const char* method = "x265_api_get_" xstr(X265_BUILD);
+         const char* multilibname = "libx265" ext;
+@@ -1198,6 +1203,7 @@
+         }
+ 
+         return api;
++#endif
+     }
+ 
+     return &libapi;
+@@ -1226,6 +1232,10 @@
+         if (bitDepth == 12) return x265_12bit::x265_api_query(0, apiVersion, err);
+ #endif
+ 
++#if !ENABLE_DYNAMIC_DEPTH
++        if (err) *err = X265_API_QUERY_ERR_LIB_NOT_FOUND;
++        return NULL;
++#else
+         const char* libname = NULL;
+         const char* method = "x265_api_query";
+         const char* multilibname = "libx265" ext;
+@@ -1295,6 +1305,7 @@
+ 
+         if (err) *err = api ? X265_API_QUERY_ERR_NONE : e;
+         return api;
++#endif
+     }
+ 
+     return &libapi;

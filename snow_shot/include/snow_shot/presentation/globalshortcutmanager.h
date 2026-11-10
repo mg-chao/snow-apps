@@ -42,7 +42,8 @@ class GlobalShortcutManager final : public QObject {
     using RegistrationSuspensionHandle = quint64;
     explicit GlobalShortcutManager(QObject* parent = nullptr);
     GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend, QObject* parent = nullptr,
-                          std::function<bool()> focusedFullscreenDetector = {});
+                          std::function<bool()> focusedFullscreenDetector = {},
+                          std::function<bool()> focusedFullscreenGameDetector = {});
     ~GlobalShortcutManager() override;
 
     void initialize();
@@ -55,10 +56,10 @@ class GlobalShortcutManager final : public QObject {
                       const snow_shot::shortcuts::ShortcutBindingList& shortcuts);
     [[nodiscard]] RegistrationSuspensionHandle suspendRegistrations();
     void resumeRegistrations(RegistrationSuspensionHandle handle);
-    void setGlobalHotkeysEnabled(bool enabled);
+    void setGlobalShortcutsEnabled(bool enabled);
     void setGlobalCanvasActive(bool active);
     void refreshFocusedFullscreenState();
-    [[nodiscard]] bool globalHotkeysEnabled() const;
+    [[nodiscard]] bool globalShortcutsEnabled() const;
     [[nodiscard]] bool focusedFullscreenSuppressionActive() const;
     [[nodiscard]] std::optional<GlobalShortcutInputState> inputState(int registrationId) const;
 
@@ -68,7 +69,7 @@ class GlobalShortcutManager final : public QObject {
     void registrationsSuspended();
     void stateChanged(snow_shot::presentation::GlobalShortcutAction action,
                       const snow_shot::presentation::GlobalShortcutRegistrationState& state);
-    void globalHotkeysEnabledChanged(bool enabled);
+    void globalShortcutsEnabledChanged(bool enabled);
     void focusedFullscreenSuppressionChanged(bool active);
 
   private:

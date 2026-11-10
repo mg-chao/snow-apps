@@ -1,4 +1,5 @@
 #include "../../presentation/services/nativeprintbackend.h"
+#include "nativeprintimage.h"
 #include "../../presentation/services/screenshotprintdiagnostics.h"
 
 #include <QApplication>
@@ -8,7 +9,6 @@
 
 #import <AppKit/AppKit.h>
 
-#include <cstring>
 #include <utility>
 
 using snow_shot::print_detail::logPrintEvent;
@@ -107,18 +107,7 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                     return;
                 }
                 stage = "prepare_bitmap";
-                const auto rgba = image.convertToFormat(QImage::Format_RGBA8888);
-                NSBitmapImageRep* bitmap =
-                    [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr
-                                                            pixelsWide:rgba.width()
-                                                            pixelsHigh:rgba.height()
-                                                         bitsPerSample:8
-                                                       samplesPerPixel:4
-                                                              hasAlpha:YES
-                                                              isPlanar:NO
-                                                        colorSpaceName:NSDeviceRGBColorSpace
-                                                           bytesPerRow:rgba.bytesPerLine()
-                                                          bitsPerPixel:32];
+                CGImageRef bitmap = snow_shot::platform::macos::createPrintImage(image);
                 if (!bitmap) {
                     logPrintEvent("print.native_failed",
                                   {{QStringLiteral("backend"), QStringLiteral("macos_appkit")},
@@ -130,11 +119,14 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                                     "The image could not be prepared for printing")});
                     return;
                 }
-                std::memcpy(bitmap.bitmapData, rgba.constBits(),
-                            static_cast<size_t>(rgba.sizeInBytes()));
-                NSImage* nativeImage =
-                    [[NSImage alloc] initWithSize:NSMakeSize(image.width(), image.height())];
-                [nativeImage addRepresentation:bitmap];
+                NSImage* nativeImage = nil;
+                @try {
+                    nativeImage =
+                        [[NSImage alloc] initWithCGImage:bitmap
+                                                    size:NSMakeSize(image.width(), image.height())];
+                } @finally {
+                    CGImageRelease(bitmap);
+                }
                 stage = "create_print_operation";
                 NSPrintInfo* info = [NSPrintInfo.sharedPrintInfo copy];
                 info.horizontalPagination = NSPrintingPaginationModeFit;
@@ -171,11 +163,11 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                 stage = "run_print_operation";
                 logPrintEvent("print.native_ui_requested",
                               {{QStringLiteral("backend"), QStringLiteral("macos_appkit")}});
-                [operation runOperationModalForWindow:ownerWindow
-                                             delegate:delegate
-                                       didRunSelector:@selector(printOperationDidRun:
-                                                                             success:contextInfo:)
-                                          contextInfo:retainedDelegate];
+                [operation
+                    runOperationModalForWindow:ownerWindow
+                                      delegate:delegate
+                                didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
+                                   contextInfo:retainedDelegate];
             } @catch (NSException* exception) {
                 logPrintEvent("print.native_failed",
                               {{QStringLiteral("backend"), QStringLiteral("macos_appkit")},

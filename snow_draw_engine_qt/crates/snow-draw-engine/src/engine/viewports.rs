@@ -233,6 +233,11 @@ impl Engine {
     }
 
     pub(crate) fn refresh_all_viewports(&mut self) -> Result<MutationResult, ErrorCode> {
+        // Finishing an older text draft or replaying a style snapshot must not reintroduce
+        // independent creation colors. Document styles and active drafts stay untouched.
+        if let Some(color) = self.shared_creation_color {
+            self.editor.set_creation_color(color);
+        }
         let mut changed_viewports = Vec::new();
         for id in self.all_viewport_ids() {
             let result = self.refresh_single_viewport(id)?;

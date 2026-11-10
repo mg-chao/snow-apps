@@ -7,6 +7,7 @@
 
 #include <QApplication>
 #include <QColorSpace>
+#include <QPainter>
 #include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QLineEdit>
@@ -52,6 +53,142 @@ QImage image() {
     result.setDevicePixelRatio(2);
     return result;
 }
+QImage referencePrintImage(QImage source) {
+    if (source.colorSpace().isValid())
+        source.convertToColorSpace(QColorSpace::SRgb);
+    source.setDevicePixelRatio(1);
+    QImage result(source.size(), QImage::Format_RGB32);
+    result.fill(Qt::white);
+    {
+        QPainter painter(&result);
+        painter.drawImage(QPoint(), source);
+    }
+    result.setColorSpace(QColorSpace::SRgb);
+    return result;
+}
+
+QImage palettedImage(QImage::Format format, bool transparent) {
+    // Odd dimensions exercise padding and both monochrome bit orders.
+    QImage result(19, 7, format);
+    QList<QRgb> palette{qRgba(237, 43, 19, transparent ? 0 : 255),
+                        qRgba(23, 91, 217, transparent ? 128 : 255)};
+    if (format == QImage::Format_Indexed8)
+        palette.append({qRgb(37, 173, 59), qRgba(183, 57, 229, transparent ? 64 : 255)});
+    result.setColorTable(palette);
+    result.fill(0);
+    for (int y = 0; y < result.height(); ++y)
+        for (int x = 0; x < result.width(); ++x)
+            result.setPixel(x, y, static_cast<uint>((x + y) % result.colorCount()));
+    return result;
+}
+
+void printPreparationSharesOpaquePixelsAndPreservesFlattening() {
+    for (const auto format : {QImage::Format_RGB32, QImage::Format_ARGB32,
+                              QImage::Format_ARGB32_Premultiplied, QImage::Format_RGBA8888}) {
+        for (const bool transparent : {false, true}) {
+            for (const auto& space : {QColorSpace(), QColorSpace(QColorSpace::SRgb),
+                                      QColorSpace(QColorSpace::DisplayP3)}) {
+                QImage source(43, 29, format);
+                for (int y = 0; y < source.height(); ++y)
+                    for (int x = 0; x < source.width(); ++x)
+                        source.setPixelColor(x, y,
+                                             QColor((x * 7) % 256, (y * 11) % 256, (x + y) % 256,
+                                                    transparent ? (x * 3 + y * 5) % 256 : 255));
+                source.setColorSpace(space);
+                source.setDevicePixelRatio(2);
+                const QImage expected = referencePrintImage(source);
+                auto actual = Service::opaqueImage(source);
+                require(actual.size() == expected.size() &&
+                            actual.format() == QImage::Format_RGB32 &&
+                            actual.devicePixelRatio() == 1 &&
+                            actual.colorSpace() == QColorSpace(QColorSpace::SRgb),
+                        "native print format and metadata remain stable");
+                for (int y = 0; y < actual.height(); ++y)
+                    for (int x = 0; x < actual.width(); ++x)
+                        require(actual.pixel(x, y) == expected.pixel(x, y),
+                                "print preparation preserves every flattened color");
+                if ((format == QImage::Format_RGB32 ||
+                     (!transparent && format != QImage::Format_RGBA8888)) &&
+                    (!space.isValid() || space == QColorSpace(QColorSpace::SRgb)))
+                    require(actual.constBits() == source.constBits(),
+                            "native opaque print pixels are shared");
+                actual.fill(Qt::green);
+                require(source.pixelColor(0, 0) != QColor(Qt::green),
+                        "native print storage detaches on mutation");
+            }
+        }
+    }
+}
+
+void printPreparationPreservesPalettes() {
+    for (const auto format :
+         {QImage::Format_Indexed8, QImage::Format_Mono, QImage::Format_MonoLSB}) {
+        for (const bool transparent : {false, true}) {
+            for (const auto& space : {QColorSpace(), QColorSpace(QColorSpace::SRgb),
+                                      QColorSpace(QColorSpace::DisplayP3)}) {
+                for (const qreal dpr : {1.0, 1.5, 2.0}) {
+                    auto source = palettedImage(format, transparent);
+                    source.setColorSpace(space);
+                    source.setDevicePixelRatio(dpr);
+                    const auto palette = source.colorTable();
+                    const auto sourceKey = source.cacheKey();
+                    const auto expected = referencePrintImage(source);
+                    const auto actual = Service::opaqueImage(source);
+                    require(actual == expected && actual.format() == QImage::Format_RGB32 &&
+                                actual.devicePixelRatio() == 1 &&
+                                actual.colorSpace() == QColorSpace(QColorSpace::SRgb),
+                            "paletted print images preserve every flattened pixel and native "
+                            "output metadata at every source DPR");
+                    require(source.cacheKey() == sourceKey && source.colorTable() == palette &&
+                                source.format() == format && source.colorSpace() == space &&
+                                source.devicePixelRatio() == dpr,
+                            "print preparation must leave source pixels, palette and metadata "
+                            "unchanged");
+                    if (transparent && !space.isValid())
+                        require(actual.pixelColor(0, 0) == QColor(Qt::white) &&
+                                    actual.pixelColor(1, 0) == QColor(139, 173, 236),
+                                "palette alpha composites onto white rather than becoming opaque");
+                    source.setColor(0, qRgb(0, 0, 0));
+                    source.fill(0);
+                    require(actual == expected,
+                            "prepared print pixels survive later palette and index mutations");
+                }
+            }
+        }
+    }
+}
+
+void asynchronousPrintingFreezesPalettedPixels() {
+    for (const auto format :
+         {QImage::Format_Indexed8, QImage::Format_Mono, QImage::Format_MonoLSB}) {
+        auto source = palettedImage(format, true);
+        source.setDevicePixelRatio(2);
+        const auto expected = referencePrintImage(source);
+        QImage received;
+        QWidget owner;
+        Service service([&](QWidget* nativeOwner, QImage prepared, Service::Completion completion) {
+            require(nativeOwner == &owner && prepared == expected,
+                    "the print backend receives the complete frozen palette on white");
+            received = std::move(prepared);
+            completion({Service::Status::Submitted, {}});
+        });
+        int completions = 0;
+        require(service.printImage(&owner, &owner, source,
+                                   [&](auto result) {
+                                       require(result.status == Service::Status::Submitted,
+                                               "paletted printing submits successfully");
+                                       ++completions;
+                                   }),
+                "paletted print requests are accepted");
+        source.setColor(0, qRgb(0, 0, 0));
+        source.fill(0);
+        source = {};
+        processUntil([&] { return completions == 1; });
+        require(!service.busy() && received == expected,
+                "asynchronous printing retains the snapshot after the caller releases its image");
+    }
+}
+
 void immutableWhiteSnapshotAndDuplicateCompletion() {
     const auto idleCount =
         snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount;
@@ -524,6 +661,9 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    printPreparationSharesOpaquePixelsAndPreservesFlattening();
+    printPreparationPreservesPalettes();
+    asynchronousPrintingFreezesPalettedPixels();
     immutableWhiteSnapshotAndDuplicateCompletion();
     fallbackOnlyWhenUnavailable();
     recoveryRetainsSnapshotAndIgnoresLateModernCallbacks();

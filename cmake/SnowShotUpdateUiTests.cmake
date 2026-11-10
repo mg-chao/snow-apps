@@ -23,6 +23,7 @@ if(SNOW_SHOT_BUILD_UPDATE_TESTS AND NOT SNOW_SHOT_BUILD_TESTS)
         SNOW_SHOT_TEST_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
         SNOW_SHOT_TEST_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
         SNOW_SHOT_TEST_QQ_GROUP_3_URL="${SNOW_SHOT_QQ_GROUP_3_URL}"
+        SNOW_SHOT_TEST_QQ_GROUP_4_URL="${SNOW_SHOT_QQ_GROUP_4_URL}"
         SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     add_dependencies(snow-shot-update-about-tests snow_shot_release_translations)
     snow_shot_import_offscreen_platform(snow-shot-update-about-tests)

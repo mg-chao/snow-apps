@@ -6,8 +6,9 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, GWL_EXSTYLE, GetWindowLongPtrW, GetWindowRect, IsIconic,
-    IsWindowVisible, WINDOW_EX_STYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+    EnumChildWindows, EnumWindows, GWL_EXSTYLE, GetClassNameW, GetDesktopWindow, GetShellWindow,
+    GetWindowLongPtrW, GetWindowRect, IsIconic, IsWindowVisible, WINDOW_EX_STYLE, WS_EX_LAYERED,
+    WS_EX_TRANSPARENT,
 };
 use windows::core::{BOOL, Result};
 
@@ -66,6 +67,38 @@ fn is_click_through_layered_window(style: WINDOW_EX_STYLE) -> bool {
     // WS_EX_TRANSPARENT alone only specifies paint ordering, so keep those
     // windows, as well as ordinary interactive layered windows, selectable.
     style.contains(WS_EX_LAYERED | WS_EX_TRANSPARENT)
+}
+
+pub(crate) struct DesktopWindows {
+    desktop: HWND,
+    shell: HWND,
+}
+
+impl DesktopWindows {
+    pub(crate) fn new() -> Self {
+        Self {
+            desktop: unsafe { GetDesktopWindow() },
+            shell: unsafe { GetShellWindow() },
+        }
+    }
+
+    pub(crate) fn contains(&self, hwnd: HWND) -> bool {
+        if hwnd.0.is_null() {
+            return false;
+        }
+        if hwnd == self.desktop || hwnd == self.shell {
+            return true;
+        }
+        let mut name = [0u16; 256];
+        let length = unsafe { GetClassNameW(hwnd, &mut name) }.max(0) as usize;
+        is_desktop_class(&name[..length])
+    }
+}
+
+fn is_desktop_class(name: &[u16]) -> bool {
+    ["Progman", "WorkerW"]
+        .iter()
+        .any(|class| name.iter().copied().eq(class.encode_utf16()))
 }
 
 /// Desktop-space rectangle used for intelligent selection.
@@ -288,6 +321,21 @@ mod tests {
         assert!(!is_click_through_layered_window(WINDOW_EX_STYLE(0)));
         assert!(!is_click_through_layered_window(WS_EX_LAYERED));
         assert!(!is_click_through_layered_window(WS_EX_TRANSPARENT));
+    }
+
+    #[test]
+    fn desktop_hosts_are_distinguished_from_application_windows() {
+        let desktop_windows = DesktopWindows::new();
+        assert!(desktop_windows.contains(unsafe { GetDesktopWindow() }));
+        assert!(!desktop_windows.contains(HWND::default()));
+        for class in ["Progman", "WorkerW"] {
+            assert!(is_desktop_class(&class.encode_utf16().collect::<Vec<_>>()));
+        }
+        for class in ["", "Shell_TrayWnd", "CabinetWClass", "Qt691QWindowIcon"] {
+            assert!(!is_desktop_class(&class.encode_utf16().collect::<Vec<_>>()));
+        }
+        let window = TestWindow::new(WINDOW_EX_STYLE(0));
+        assert!(!desktop_windows.contains(window.0));
     }
 
     #[test]

@@ -4,6 +4,33 @@ use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
+// Shared with update/relaunchintent.h. Includes UTF-8 JSON escaping and array delimiters.
+pub const MAX_RELAUNCH_ARGUMENTS_BYTES: usize = 24 * 1024;
+
+pub fn validate_relaunch_commandline(arguments: &[String], executable: &str) -> crate::Result<()> {
+    // Conservatively quote every operand, counting UTF-16 units and the trailing NUL.
+    let mut units = executable.encode_utf16().count() + 3;
+    for argument in arguments {
+        units = units.saturating_add(argument.encode_utf16().count() + 3);
+        let mut backslashes = 0;
+        for character in argument.chars() {
+            if character == '\\' {
+                backslashes += 1;
+            } else {
+                if character == '"' {
+                    units = units.saturating_add(backslashes + 1);
+                }
+                backslashes = 0;
+            }
+        }
+        units = units.saturating_add(backslashes);
+    }
+    crate::error::require(
+        units <= 32767,
+        "protocol_frame_too_large",
+        "The update service sent an oversized protocol message",
+    )
+}
 
 #[derive(Default)]
 pub struct FrameDecoder {
@@ -56,6 +83,8 @@ pub struct Command {
     #[serde(default)]
     pub system_proxy: Option<bool>,
     #[serde(default)]
+    pub http_proxy: Option<String>,
+    #[serde(default)]
     pub proceed: Option<bool>,
     #[serde(default)]
     pub reason: Option<String>,
@@ -84,6 +113,18 @@ where
 }
 
 pub fn validate_relaunch_arguments(arguments: &[String]) -> crate::Result<()> {
+    let bytes = serde_json::to_vec(arguments).map_err(|error| {
+        UpdateError::new(
+            "invalid_updater_argument",
+            "Invalid updater command argument",
+        )
+        .detail(error)
+    })?;
+    crate::error::require(
+        bytes.len() <= MAX_RELAUNCH_ARGUMENTS_BYTES,
+        "protocol_frame_too_large",
+        "The update service sent an oversized protocol message",
+    )?;
     let mut seen = std::collections::HashSet::new();
     let mut arguments = arguments.iter();
     while let Some(argument) = arguments.next() {
@@ -314,5 +355,30 @@ mod tests {
         ] {
             assert!(validate_relaunch_arguments(&invalid).is_err());
         }
+    }
+
+    #[test]
+    fn relaunch_capacity_counts_serialized_utf8_and_native_commandline() {
+        let directory = tempfile::tempdir().unwrap();
+        let prefix = directory.path().display().to_string();
+        let mut arguments = vec![
+            "--edit-with-snow-shot".to_owned(),
+            format!("{prefix}/雪\\image"),
+        ];
+        let bytes = serde_json::to_vec(&arguments).unwrap().len();
+        let remaining = MAX_RELAUNCH_ARGUMENTS_BYTES - bytes;
+        arguments[1].push_str(&"\u{1f642}".repeat(remaining / 4));
+        arguments[1].push_str(&"x".repeat(remaining % 4));
+        assert_eq!(
+            serde_json::to_vec(&arguments).unwrap().len(),
+            MAX_RELAUNCH_ARGUMENTS_BYTES
+        );
+        validate_relaunch_arguments(&arguments).unwrap();
+        validate_relaunch_commandline(&arguments, "C:\\Snow Shot\\snow-shot.exe").unwrap();
+        arguments[1].push('x');
+        assert!(validate_relaunch_arguments(&arguments).is_err());
+        assert!(
+            validate_relaunch_commandline(&["--autostart".to_owned()], &"x".repeat(32751)).is_err()
+        );
     }
 }

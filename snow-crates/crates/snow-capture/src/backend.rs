@@ -57,6 +57,13 @@ pub enum CaptureBackendKind {
     ScreenCaptureKit,
 }
 
+/// Resource-free automatic selection, scoped to the display topology that produced it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CaptureBackendSelection {
+    pub kind: CaptureBackendKind,
+    pub display_generation: Option<u64>,
+}
+
 impl CaptureBackendKind {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -102,8 +109,8 @@ impl Default for AutoBackendPolicy {
 
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_AUTO_BACKEND_PRIORITY: [CaptureBackendKind; 3] = [
-    CaptureBackendKind::DxgiDuplication,
     CaptureBackendKind::WindowsGraphicsCapture,
+    CaptureBackendKind::DxgiDuplication,
     CaptureBackendKind::Gdi,
 ];
 
@@ -183,6 +190,15 @@ pub(crate) trait MonitorCapturer: Send {
     fn backend_kind(&self) -> CaptureBackendKind {
         CaptureBackendKind::Auto
     }
+
+    /// Remember only a successful automatic choice when the capturer is dropped.
+    /// Preparing a candidate alone must not establish a successful selection.
+    fn backend_selection(&self) -> Option<CaptureBackendSelection> {
+        None
+    }
+
+    /// Try the remembered choice first, retaining the normal fallback policy.
+    fn restore_backend_selection(&mut self, _selection: CaptureBackendSelection) {}
 
     /// Prepare resources that are safe to retain while no capture is active.
     /// Implementations must not leave DXGI duplication or a WGC capture

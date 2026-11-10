@@ -2,6 +2,8 @@
 
 #include "snow_canvas_display_item.h"
 #include "snow_canvas_render_geometry.h"
+#include "snow_canvas_type_conversions.h"
+#include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 
 #include <QLineF>
 #include <QPainterPathStroker>
@@ -797,3 +799,19 @@ QTransform localToCanvas(double centerX, double centerY, double rotation) {
 }
 
 } // namespace snow_canvas_stroke_rendering
+
+QPainterPath snowCanvasStrokeCoverage(const QPainterPath& path, qreal width,
+                                      SnowCanvasStrokeStyle pattern,
+                                      SnowCanvasStrokeRenderingStyle rendering, quint32 seed) {
+    snow_canvas_stroke_rendering::Cache coverage;
+    const snow_canvas_stroke_rendering::Options options{
+        snow_canvas_types::toEngineStrokeRenderingStyle(rendering),
+        snow_canvas_types::toEngineStrokeStyle(pattern), seed, width};
+    snow_canvas_stroke_rendering::addStroke(coverage, path, options);
+    return coverage.ink;
+}
+
+qreal snowCanvasStrokeRenderingOutset(SnowCanvasStrokeRenderingStyle rendering) {
+    return snow_stroke_rendering_outset(snow_canvas_types::toEngineStrokeRenderingStyle(rendering),
+                                        std::numeric_limits<double>::infinity());
+}

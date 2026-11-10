@@ -595,7 +595,7 @@ fn deferred_progress_holds_repeated_pixel_widths_and_preserves_the_final_fill() 
 }
 
 #[test]
-fn deferred_hdr_static_output_holds_pq_images_and_keeps_the_exact_endpoint() {
+fn deferred_hdr_static_output_applies_color_policy_and_keeps_the_exact_endpoint() {
     let fixture = fixture(
         crate::ExportFormat::Mp4,
         crate::VideoCodec::H265,
@@ -616,10 +616,11 @@ fn deferred_hdr_static_output_holds_pq_images_and_keeps_the_exact_endpoint() {
     let (frames, _, _, duration) = decode_frames(&result.output_path);
     assert_eq!(frames.len(), 2);
     assert!((duration - 1.001).abs() < 0.002);
-    assert!(
+    assert_eq!(
         crate::clip::ClipSource::open(&result.output_path, Some(fixture.config))
             .unwrap()
-            .hdr
+            .hdr,
+        cfg!(feature = "hdr-encoding")
     );
 }
 
@@ -1282,7 +1283,7 @@ fn clip_preview_reads_normalized_source_times_without_rendering_effects() {
 }
 
 #[test]
-fn hdr_trim_preserves_transfer_function_and_retains_original_bundle() {
+fn hdr_trim_applies_output_color_policy_and_retains_original_bundle() {
     let fixture = fixture(
         crate::ExportFormat::Mp4,
         crate::VideoCodec::H265,
@@ -1301,7 +1302,7 @@ fn hdr_trim_preserves_transfer_function_and_retains_original_bundle() {
         )
         .unwrap();
     let trimmed = crate::clip::ClipSource::open(&path, Some(fixture.config.clone())).unwrap();
-    assert!(trimmed.hdr);
+    assert_eq!(trimmed.hdr, cfg!(feature = "hdr-encoding"));
     let path2 = fixture.bundle.parent().unwrap().join("hdr-again.mp4");
     trimmed
         .export(
@@ -1311,10 +1312,11 @@ fn hdr_trim_preserves_transfer_function_and_retains_original_bundle() {
             |_| {},
         )
         .unwrap();
-    assert!(
+    assert_eq!(
         crate::clip::ClipSource::open(&path2, Some(fixture.config.clone()))
             .unwrap()
-            .hdr
+            .hdr,
+        cfg!(feature = "hdr-encoding")
     );
     assert!(fixture.bundle.exists() && path.exists());
     for percent in [25, 300] {
@@ -1334,7 +1336,7 @@ fn hdr_trim_preserves_transfer_function_and_retains_original_bundle() {
             )
             .unwrap();
         let output = crate::clip::ClipSource::open(&path, Some(fixture.config.clone())).unwrap();
-        assert!(output.hdr);
+        assert_eq!(output.hdr, cfg!(feature = "hdr-encoding"));
         assert!(
             output
                 .duration_us
@@ -1451,44 +1453,21 @@ fn fixture_with_source_timing(
         crate::VideoCodec::H264
     };
     let source_codec = source.codec;
-    let mut builder = StreamingEncoder::builder(source).recording_source();
+    let first_ms = slots.0 * 1000 / u64::from(fps);
+    let second_ms = slots.1 * 1000 / u64::from(fps);
     if hdr {
-        builder = builder.hdr10_cpu_input();
-    }
-    let mut encoder = builder.create().unwrap();
-    for (pts, color) in [(slots.0, [20u8, 30, 40, 255]), (slots.1, [40, 50, 60, 255])] {
-        if hdr {
-            let mut rgb =
-                ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB48LE, coded.0, coded.1);
-            let stride = rgb.stride(0);
-            for y in 0..coded.1 as usize {
-                for x in 0..coded.0 as usize {
-                    let start = y * stride + x * 6;
-                    for c in 0..3 {
-                        rgb.data_mut(0)[start + c * 2..start + c * 2 + 2]
-                            .copy_from_slice(&(35000u16 + pts as u16 * 200).to_le_bytes());
-                    }
-                }
-            }
-            crate::hdr::frame(&mut rgb, true);
-            let mut conversion = ffmpeg::software::scaling::Context::get(
-                rgb.format(),
-                coded.0,
-                coded.1,
-                encoder.input_pixel_format(),
-                coded.0,
-                coded.1,
-                ffmpeg::software::scaling::Flags::BICUBIC,
-            )
+        assert_eq!((coded, fps, slots), ((32, 24), 30, (0, 15)));
+        std::fs::write(
+            &source_path,
+            include_bytes!("../../tests/fixtures/hdr10-two-frame.mp4"),
+        )
+        .unwrap();
+    } else {
+        let mut encoder = StreamingEncoder::builder(source)
+            .recording_source()
+            .create()
             .unwrap();
-            crate::hdr::scaler_colors(&mut conversion, true, false).unwrap();
-            let mut converted =
-                ffmpeg::frame::Video::new(encoder.input_pixel_format(), coded.0, coded.1);
-            conversion.run(&rgb, &mut converted).unwrap();
-            encoder
-                .push_prepared_video_frame_at_pts(pts - slots.0, converted)
-                .unwrap();
-        } else {
+        for (pts, color) in [(slots.0, [20u8, 30, 40, 255]), (slots.1, [40, 50, 60, 255])] {
             let pixels: Vec<_> = (0..coded.0 * coded.1)
                 .flat_map(|pixel| {
                     let x = pixel % coded.0;
@@ -1504,10 +1483,8 @@ fn fixture_with_source_timing(
                 .push_rgba_frame_at_pts(pts - slots.0, &pixels)
                 .unwrap();
         }
+        encoder.finish_at_duration_ms(duration - first_ms).unwrap();
     }
-    let first_ms = slots.0 * 1000 / u64::from(fps);
-    let second_ms = slots.1 * 1000 / u64::from(fps);
-    encoder.finish_at_duration_ms(duration - first_ms).unwrap();
     let inputs = root.join("input.bin");
     let mut writer = InputStoreWriter::new(&inputs).unwrap();
     for event in [

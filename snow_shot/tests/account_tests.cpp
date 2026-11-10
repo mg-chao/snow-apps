@@ -342,7 +342,7 @@ void registrationEnforcesPasswordLength() {
         } else {
             require(!service.busy() &&
                         service.fieldError(QStringLiteral("password")) ==
-                            u"Use a password between 8 and 16 characters." &&
+                            u"Use a password between 8 and 16 characters" &&
                         service.error().isEmpty(),
                     "invalid password lengths fail locally with the current limits");
             QApplication::processEvents();
@@ -798,7 +798,7 @@ void registrationRequiresExplicitAgreement() {
                 "load translated registration consent");
         QApplication::installTranslator(&translator);
         QApplication::processEvents();
-        const QString expected = AccountPageWidget::tr("I have read and agree to the %1 and %2.")
+        const QString expected = AccountPageWidget::tr("I have read and agree to the %1 and %2")
                                      .arg(AccountPageWidget::tr("User agreement"),
                                           AccountPageWidget::tr("Privacy policy"));
         QTextDocument document;
@@ -1048,21 +1048,35 @@ void tokenRefreshPreservesQueuedOfficialCalls() {
     await([&] { return completions == 1; });
 }
 
-void accountRequestsFollowSystemProxyPreference() {
+void accountRequestsFollowProxyConfiguration() {
     Api api;
     SnowShotApiClient client(api.origin());
     client.setUseSystemProxy(true);
-    AccountSessionService service(client, options());
+    AccountSessionService service(client, options(), &client);
     service.loadCaptcha();
     auto* network = service.findChild<QNetworkAccessManager*>();
     require(network && network->proxyFactory(), "account requests honor system proxy resolution");
     // Do not depend on the machine's configured proxy reaching the local fixture.
+    service.signOut();
+    client.setProxyConfiguration(QStringLiteral("manual"), QStringLiteral("127.0.0.1:18080"));
+    service.loadCaptcha();
+    require(network->proxyFactory() == nullptr &&
+                network->proxy().type() == QNetworkProxy::HttpProxy &&
+                network->proxy().hostName() == QStringLiteral("127.0.0.1") &&
+                network->proxy().port() == 18080,
+            "account requests honor the configured manual HTTP proxy");
     service.signOut();
     client.setUseSystemProxy(false);
     service.loadCaptcha();
     require(network->proxyFactory() == nullptr && network->proxy().type() == QNetworkProxy::NoProxy,
             "disabling system proxy returns account requests to direct connections");
     await([&] { return !service.captcha().isEmpty(); });
+    const auto token = client.fetchChatModels(QStringLiteral("en"), &client, [](const auto&) {});
+    auto* officialNetwork =
+        client.findChild<QNetworkAccessManager*>(QString(), Qt::FindDirectChildrenOnly);
+    require(officialNetwork && officialNetwork != network,
+            "official calls own their manager independently of the child account service");
+    client.cancel(token);
 }
 
 void accountUiAndCredits() {
@@ -1388,7 +1402,7 @@ void emptyAccountTransactionsMatchScreenshotHistory() {
         require(page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmpty"))->text() !=
                         u"No transactions yet" &&
                     page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmptyDescription"))
-                            ->text() != u"Top-ups, usage charges, and refunds appear here.",
+                            ->text() != u"Top-ups, usage charges, and refunds appear here",
                 "language changes retranslate both empty account state labels");
         QApplication::removeTranslator(&translator);
     }
@@ -1426,7 +1440,7 @@ void languageChangeRetranslatesCachedErrors() {
     const QString longPassword(17, u'x');
     service.registerAccount(QStringLiteral("TestUser"), longPassword, longPassword,
                             QStringLiteral("abcd"));
-    require(service.fieldError(QStringLiteral("password")) == u"密码长度须为 8–16 个字符。" &&
+    require(service.fieldError(QStringLiteral("password")) == u"密码长度须为 8–16 个字符" &&
                 page.findChild<QLineEdit*>(QStringLiteral("accountPassword"))->placeholderText() ==
                     u"8–16 个字符",
             "translated password errors and input hints use the current limits");
@@ -2033,7 +2047,7 @@ int main(int argc, char** argv) {
     uncertainPollingBacksOffAndManualRefreshRecovers();
     registrationProofSurvivesRestartAndDoesNotOverrideStoredSession();
     tokenRefreshPreservesQueuedOfficialCalls();
-    accountRequestsFollowSystemProxyPreference();
+    accountRequestsFollowProxyConfiguration();
     accountUiAndCredits();
     accountTransactionsRemainReadableWhenResized();
     emptyAccountTransactionsMatchScreenshotHistory();

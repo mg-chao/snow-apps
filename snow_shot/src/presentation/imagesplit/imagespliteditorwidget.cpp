@@ -32,6 +32,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPaintEvent>
 #include <QRegion>
 #include <QRegularExpression>
@@ -64,6 +65,16 @@ constexpr qreal kGuideSpacing = 2;
 // Match snow-draw-engine-editor's selection color in geometry/handles.rs.
 const QColor kSplitLineColor{0x40, 0x96, 0xff};
 
+class OverlapWidthTextPolicy final : public adqt::widgets::AdInputNumberTextPolicy {
+  public:
+    explicit OverlapWidthTextPolicy(QObject* parent) : AdInputNumberTextPolicy(parent) {}
+
+    QString formatText(const QString& canonicalText, bool, const QString&) const override {
+        // Group separators inserted by the numeric control would invalidate whole-number drafts.
+        return canonicalText;
+    }
+};
+
 QString editorText(const char* source) {
     return QCoreApplication::translate("ImageSplitEditorWidget", source);
 }
@@ -76,38 +87,43 @@ QString canvasText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Horizontal"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Grid"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Split type"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Equal Split"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Precise Split"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Number of Images"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Overlap width"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget",
+                      "Each image extends this many pixels past each split line"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Smart split"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Equal split"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Precise split"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Number of images"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Rows"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Columns"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Width per Image"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Height per Image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Width per image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Height per image"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Pixels"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Percentage"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", " px"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Split size unit"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter a positive integer."),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter an integer of at least 16 pixels."),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter a positive integer"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter a non-negative integer"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter an integer of at least 16 pixels"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Undo"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Redo"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Fit to Canvas"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Fit to canvas"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Reload"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "%1 × %2 px"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Total: %1 images"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Select an image to split"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drag an image file here, or choose Select Image"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Select Image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drag an image file here, or choose select image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Select image"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image to split"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image to replace the current image"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image file at a time."),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image file at a time"),
 };
 [[maybe_unused]] constexpr std::array kCanvasTranslations{
     QT_TRANSLATE_NOOP("ImageSplitPreviewCanvas", "Image splitting preview"),
     QT_TRANSLATE_NOOP(
         "ImageSplitPreviewCanvas",
         "Click a ruler to add a split line; drag a line to move it. Select a line and press Delete "
-        "to remove it. Drag with the middle mouse button to pan; scroll to zoom."),
+        "to remove it. Drag with the middle mouse button to pan; scroll to zoom"),
     QT_TRANSLATE_NOOP("ImageSplitPreviewCanvas", "X: %1 px"),
     QT_TRANSLATE_NOOP("ImageSplitPreviewCanvas", "Y: %1 px"),
 };
@@ -172,13 +188,8 @@ struct ImageSplitPreviewCanvas::Impl {
     QObject callbackContext;
 
     QRectF viewport() const {
-        // Reserve room for the complete Y hint even when the image is panned past the left edge.
-        const qreal gutter = std::max(
-            kRulerWidth,
-            positionBadgeSize(owner, canvasText("Y: %1 px").arg(document->image().height()))
-                    .width() +
-                kPositionBadgeSpacing);
-        return QRectF(gutter, kRulerHeight, std::max(1.0, owner->width() - gutter),
+        // Coordinate hints clamp to the canvas edge instead of reserving an extra gutter.
+        return QRectF(kRulerWidth, kRulerHeight, std::max(1.0, owner->width() - kRulerWidth),
                       std::max(1.0, owner->height() - kRulerHeight));
     }
     QRectF imageRect() const {
@@ -254,7 +265,7 @@ struct ImageSplitPreviewCanvas::Impl {
         if (!ruler.contains(center))
             return {};
         const auto badge = positionBadgeSize(owner, positionText(line));
-        // Painting and overlay damage share the same bounds outside the visible image.
+        // Painting and overlay damage share the same bounds, clamped to the canvas.
         const qreal left = vertical ? center.x() - badge.width() / 2
                                     : ruler.right() - kPositionBadgeSpacing - badge.width();
         const qreal top = vertical ? ruler.bottom() - kPositionBadgeSpacing - badge.height()
@@ -414,7 +425,7 @@ void ImageSplitPreviewCanvas::retranslateUi() {
     setAccessibleName(canvasText("Image splitting preview"));
     setAccessibleDescription(canvasText(
         "Click a ruler to add a split line; drag a line to move it. Select a line and press Delete "
-        "to remove it. Drag with the middle mouse button to pan; scroll to zoom."));
+        "to remove it. Drag with the middle mouse button to pan; scroll to zoom"));
     if (m_impl->automaticFit)
         fitToCanvas();
     update();
@@ -466,6 +477,61 @@ void ImageSplitPreviewCanvas::paintEvent(QPaintEvent* event) {
                                            visiblePixels.size() * d.zoom);
                 painter.drawImage(visibleTarget, d.document->image(), visiblePixels);
             }
+        }
+        if (layout.overlapWidth > 0) {
+            const auto visible = imageRect.intersected(viewport);
+            QPainterPath bands;
+            bands.setFillRule(Qt::WindingFill);
+            const auto appendBands = [&](bool vertical) {
+                const auto& boundaries = d.lines(layout, vertical);
+                if (boundaries.isEmpty() || visible.isEmpty())
+                    return;
+                const qreal first = vertical ? visible.left() : visible.top();
+                const qreal last = vertical ? visible.right() : visible.bottom();
+                const qreal origin = vertical ? d.offset.x() : d.offset.y();
+                const auto transform = painter.deviceTransform();
+                const qreal scale =
+                    std::max(1.0, std::abs(vertical ? transform.m11() : transform.m22()));
+                const int firstPixel = static_cast<int>(std::floor(first * scale));
+                const int lastPixel = static_cast<int>(std::ceil(last * scale));
+                std::optional<qreal> start;
+                const auto append = [&](qreal end) {
+                    if (!start)
+                        return;
+                    bands.addRect(
+                        vertical ? QRectF(*start, visible.top(), end - *start, visible.height())
+                                 : QRectF(visible.left(), *start, visible.width(), end - *start));
+                    start.reset();
+                };
+                // Rasterize the union at display-pixel resolution. Binary searches keep even
+                // millions of dense or overlapping guides bounded by the visible canvas size.
+                // Outward rounding retains bands narrower than a display pixel when zoomed out.
+                for (int pixel = firstPixel; pixel < lastPixel; ++pixel) {
+                    const qreal begin = std::max(first, pixel / scale);
+                    const qreal end = std::min(last, (pixel + 1) / scale);
+                    const qreal sourceBegin = (begin - origin) / d.zoom;
+                    const qreal sourceEnd = (end - origin) / d.zoom;
+                    const auto index =
+                        boundaries.coordinateUpperBound(sourceBegin - layout.overlapWidth);
+                    const bool covered = index < boundaries.size() &&
+                                         boundaries[index] < sourceEnd + layout.overlapWidth;
+                    if (covered) {
+                        if (!start)
+                            start = begin;
+                    } else {
+                        append(begin);
+                    }
+                }
+                append(last);
+            };
+            appendBands(true);
+            appendBands(false);
+            auto color = kSplitLineColor;
+            color.setAlphaF(0.2F);
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, false);
+            painter.fillPath(bands, color);
+            painter.restore();
         }
         painter.setPen(QPen(theme.colorBorder, 1));
         painter.drawRect(imageRect);
@@ -562,7 +628,7 @@ void ImageSplitPreviewCanvas::paintEvent(QPaintEvent* event) {
         for (const int row : readableRows) {
             for (const int column : readableColumns) {
                 const auto index = row * columns + column;
-                const auto region = layout.regionAt(index);
+                const auto region = layout.baseRegionAt(index);
                 const QRectF target(imageToViewport(region.topLeft()),
                                     QSizeF(region.size()) * d.zoom);
                 // An ordinal stays at the top of its cell. Avoid preparing text for badges that
@@ -829,11 +895,13 @@ struct ImageSplitEditorWidget::Impl {
     AdSegmented* unit = nullptr;
     AdFormItem* directionField = nullptr;
     AdFormItem* typeField = nullptr;
+    AdFormItem* overlapField = nullptr;
     AdFormItem* countField = nullptr;
     AdFormItem* rowsField = nullptr;
     AdFormItem* columnsField = nullptr;
     AdFormItem* sizeField = nullptr;
     AdInputNumber* count = nullptr;
+    AdInputNumber* overlap = nullptr;
     AdInputNumber* rows = nullptr;
     AdInputNumber* columns = nullptr;
     AdInputNumber* size = nullptr;
@@ -848,6 +916,8 @@ struct ImageSplitEditorWidget::Impl {
     bool syncing = false;
     bool loading = false;
     bool exporting = false;
+    bool calculating = false;
+    std::function<void(const ImageSplitSettings&)> settingsCommitter;
     bool valid = false;
     qint64 imageKey = 0;
     ImageSplitSettings lastSettings;
@@ -881,8 +951,10 @@ struct ImageSplitEditorWidget::Impl {
                              : direction->currentValue() == QStringLiteral("grid")
                                  ? ImageSplitDirection::Grid
                                  : ImageSplitDirection::Vertical;
-        settings.type = type->currentValue() == QStringLiteral("precise") ? ImageSplitType::Precise
-                                                                          : ImageSplitType::Equal;
+        settings.type = type->currentValue() == QStringLiteral("smart") ? ImageSplitType::Smart
+                        : type->currentValue() == QStringLiteral("precise")
+                            ? ImageSplitType::Precise
+                            : ImageSplitType::Equal;
         settings.unit = unit->currentValue() == QStringLiteral("pixels")
                             ? ImageSplitUnit::Pixels
                             : ImageSplitUnit::Percentage;
@@ -894,17 +966,19 @@ struct ImageSplitEditorWidget::Impl {
             const qlonglong value = draft.toLongLong(&ok);
             if (!pattern.match(draft).hasMatch() || !ok || value < minimum ||
                 value > std::numeric_limits<int>::max()) {
-                errors.insert(key, minimum == 16
-                                       ? editorText("Enter an integer of at least 16 pixels.")
-                                       : editorText("Enter a positive integer."));
+                errors.insert(key, minimum == 0 ? editorText("Enter a non-negative integer")
+                                   : minimum == 16
+                                       ? editorText("Enter an integer of at least 16 pixels")
+                                       : editorText("Enter a positive integer"));
             } else {
                 destination = static_cast<int>(value);
             }
         };
+        integer(QStringLiteral("overlapWidth"), settings.overlapWidth, 0);
         if (settings.direction == ImageSplitDirection::Grid) {
             integer(QStringLiteral("rows"), settings.rows, 1);
             integer(QStringLiteral("columns"), settings.columns, 1);
-        } else if (settings.type == ImageSplitType::Equal) {
+        } else if (settings.type != ImageSplitType::Precise) {
             integer(QStringLiteral("count"), settings.count, 1);
         } else if (settings.unit == ImageSplitUnit::Pixels) {
             integer(QStringLiteral("pixels"), settings.pixels, 16);
@@ -937,6 +1011,7 @@ struct ImageSplitEditorWidget::Impl {
         const auto [settings, errors] = draftSettings();
         Q_UNUSED(settings);
         displayError(countField, count, QStringLiteral("count"), errors);
+        displayError(overlapField, overlap, QStringLiteral("overlapWidth"), errors);
         displayError(rowsField, rows, QStringLiteral("rows"), errors);
         displayError(columnsField, columns, QStringLiteral("columns"), errors);
         displayError(sizeField, size, sizeKey(), errors);
@@ -951,12 +1026,16 @@ struct ImageSplitEditorWidget::Impl {
         if (syncing || busy())
             return;
         const auto [settings, errors] = draftSettings();
-        if (errors.isEmpty() && !(settings == document->settings()))
-            document->setSettings(settings);
+        if (errors.isEmpty() && (!(settings == document->settings()) || calculating)) {
+            if (settingsCommitter)
+                settingsCommitter(settings);
+            else
+                document->setSettings(settings);
+        }
         validate();
     }
     void updateActions() {
-        const bool available = !busy() && !document->image().isNull();
+        const bool available = !busy() && !calculating && !document->image().isNull();
         actions[0]->setEnabled(available && document->canUndo());
         actions[1]->setEnabled(available && document->canRedo());
         actions[2]->setEnabled(!document->image().isNull());
@@ -976,15 +1055,15 @@ struct ImageSplitEditorWidget::Impl {
     }
     void updateVisibility() {
         const bool grid = direction->currentValue() == QStringLiteral("grid");
-        const bool equal = type->currentValue() == QStringLiteral("equal");
+        const bool equal = type->currentValue() != QStringLiteral("precise");
         typeField->setItemHidden(grid);
         countField->setItemHidden(grid || !equal);
         sizeField->setItemHidden(grid || equal);
         rowsField->setItemHidden(!grid);
         columnsField->setItemHidden(!grid);
         sizeField->setLabel(direction->currentValue() == QStringLiteral("horizontal")
-                                ? editorText("Height per Image")
-                                : editorText("Width per Image"));
+                                ? editorText("Height per image")
+                                : editorText("Width per image"));
         size->setAccessibleName(sizeField->label());
     }
     void sync() {
@@ -994,12 +1073,14 @@ struct ImageSplitEditorWidget::Impl {
             settings.direction == ImageSplitDirection::Vertical     ? QStringLiteral("vertical")
             : settings.direction == ImageSplitDirection::Horizontal ? QStringLiteral("horizontal")
                                                                     : QStringLiteral("grid"));
-        type->setCurrentValue(settings.type == ImageSplitType::Equal ? QStringLiteral("equal")
-                                                                     : QStringLiteral("precise"));
+        type->setCurrentValue(settings.type == ImageSplitType::Smart   ? QStringLiteral("smart")
+                              : settings.type == ImageSplitType::Equal ? QStringLiteral("equal")
+                                                                       : QStringLiteral("precise"));
         unit->setCurrentValue(settings.unit == ImageSplitUnit::Pixels
                                   ? QStringLiteral("pixels")
                                   : QStringLiteral("percentage"));
         count->setValue(settings.count);
+        overlap->setValue(settings.overlapWidth);
         rows->setValue(settings.rows);
         columns->setValue(settings.columns);
         size->setDecimals(-1);
@@ -1016,6 +1097,7 @@ struct ImageSplitEditorWidget::Impl {
         else
             size->setExactValue(settings.percentage);
         drafts.insert(QStringLiteral("count"), QString::number(settings.count));
+        drafts.insert(QStringLiteral("overlapWidth"), QString::number(settings.overlapWidth));
         drafts.insert(QStringLiteral("rows"), QString::number(settings.rows));
         drafts.insert(QStringLiteral("columns"), QString::number(settings.columns));
         drafts.insert(QStringLiteral("pixels"), QString::number(settings.pixels));
@@ -1175,7 +1257,8 @@ ImageSplitEditorWidget::ImageSplitEditorWidget(ImageSplitDocument* document, QWi
         segmented("imageSplitDirection", {QStringLiteral("vertical"), QStringLiteral("horizontal"),
                                           QStringLiteral("grid")});
     d.directionField = d.form->addField({}, d.direction, QStringLiteral("direction"));
-    d.type = segmented("imageSplitType", {QStringLiteral("equal"), QStringLiteral("precise")});
+    d.type = segmented("imageSplitType", {QStringLiteral("smart"), QStringLiteral("equal"),
+                                          QStringLiteral("precise")});
     d.typeField = d.form->addField({}, d.type, QStringLiteral("type"));
     const auto number = [&d](const char* name) {
         auto* input = new AdInputNumber(d.form);
@@ -1193,6 +1276,10 @@ ImageSplitEditorWidget::ImageSplitEditorWidget(ImageSplitDocument* document, QWi
         input->setLocale(QLocale::c());
         return input;
     };
+    d.overlap = number("imageSplitOverlapWidth");
+    d.overlap->setTextPolicy(new OverlapWidthTextPolicy(d.overlap));
+    d.overlap->setRange(0, std::numeric_limits<int>::max());
+    d.overlapField = d.form->addField({}, d.overlap, QStringLiteral("overlapWidth"));
     d.count = number("imageSplitCount");
     d.countField = d.form->addField({}, d.count, QStringLiteral("count"));
     d.rows = number("imageSplitRows");
@@ -1254,6 +1341,7 @@ ImageSplitEditorWidget::ImageSplitEditorWidget(ImageSplitDocument* document, QWi
         connect(input, &QAbstractSpinBox::editingFinished, context, [this] { m_impl->commit(); });
     };
     wireNumber(d.count, QStringLiteral("count"));
+    wireNumber(d.overlap, QStringLiteral("overlapWidth"));
     wireNumber(d.rows, QStringLiteral("rows"));
     wireNumber(d.columns, QStringLiteral("columns"));
     wireNumber(d.size, {});
@@ -1298,7 +1386,7 @@ ImageSplitEditorWidget::ImageSplitEditorWidget(ImageSplitDocument* document, QWi
         }
         binding.priority = WindowShortcutManager::StandardPriority::WindowCommand;
         binding.canActivate = [this, undo](const auto& context) {
-            return !m_impl->busy() &&
+            return !m_impl->busy() && !m_impl->calculating &&
                    !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
                    (undo ? m_impl->document->canUndo() : m_impl->document->canRedo());
         };
@@ -1336,8 +1424,14 @@ bool ImageSplitEditorWidget::configurationValid() const {
 bool ImageSplitEditorWidget::commitPendingSettings() {
     if (m_impl->busy())
         return false;
+    const auto [requested, errors] = m_impl->draftSettings();
+    if (!errors.isEmpty())
+        return false;
     m_impl->commit();
-    return m_impl->valid && m_impl->draftSettings().first == m_impl->document->settings();
+    // A failed committer can synchronously restore the previous controls. Readiness must refer
+    // to the original request, never to that restored draft or an unfinished calculation.
+    return !m_impl->calculating && m_impl->valid && requested == m_impl->document->settings() &&
+           matchesDraft(requested);
 }
 QWidget* ImageSplitEditorWidget::outputDescriptionWidget() const {
     return m_impl->description;
@@ -1350,6 +1444,27 @@ void ImageSplitEditorWidget::setExportBusy(bool busy) {
     m_impl->exporting = busy;
     m_impl->updateActions();
 }
+void ImageSplitEditorWidget::setSettingsCommitter(
+    std::function<void(const ImageSplitSettings&)> committer) {
+    m_impl->settingsCommitter = std::move(committer);
+}
+void ImageSplitEditorWidget::setCalculating(bool calculating) {
+    if (m_impl->calculating == calculating)
+        return;
+    m_impl->calculating = calculating;
+    m_impl->validate();
+}
+bool ImageSplitEditorWidget::calculating() const {
+    return m_impl->calculating;
+}
+bool ImageSplitEditorWidget::matchesDraft(const ImageSplitSettings& settings) const {
+    const auto [draft, errors] = m_impl->draftSettings();
+    return errors.isEmpty() && draft == settings;
+}
+void ImageSplitEditorWidget::restoreCommittedSettings() {
+    m_impl->sync();
+    m_impl->validate();
+}
 void ImageSplitEditorWidget::retranslateUi() {
     auto& d = *m_impl;
     d.validatedSettings.reset();
@@ -1358,13 +1473,21 @@ void ImageSplitEditorWidget::retranslateUi() {
         d.direction->setOptionLabel(static_cast<int>(i), editorText(directions[i]));
     d.directionField->setLabel(editorText("Split direction"));
     d.direction->setAccessibleName(d.directionField->label());
-    d.type->setOptionLabel(0, editorText("Equal Split"));
-    d.type->setOptionLabel(1, editorText("Precise Split"));
+    d.type->setOptionLabel(0, editorText("Smart split"));
+    d.type->setOptionLabel(1, editorText("Equal split"));
+    d.type->setOptionLabel(2, editorText("Precise split"));
     d.typeField->setLabel(editorText("Split type"));
     d.type->setAccessibleName(d.typeField->label());
+    d.overlapField->setLabel(editorText("Overlap width"));
+    d.overlap->setAccessibleName(d.overlapField->label());
+    d.overlap->setSuffixText(editorText(" px"));
+    const auto overlapDescription =
+        editorText("Each image extends this many pixels past each split line");
+    d.overlap->setToolTip(overlapDescription);
+    d.overlap->setAccessibleDescription(overlapDescription);
     for (const auto& item : {std::pair{d.countField, d.count}, std::pair{d.rowsField, d.rows},
                              std::pair{d.columnsField, d.columns}}) {
-        const auto source = item.first == d.countField  ? "Number of Images"
+        const auto source = item.first == d.countField  ? "Number of images"
                             : item.first == d.rowsField ? "Rows"
                                                         : "Columns";
         item.first->setLabel(editorText(source));
@@ -1376,7 +1499,7 @@ void ImageSplitEditorWidget::retranslateUi() {
     d.size->setSuffixText(d.sizeKey() == QStringLiteral("pixels") ? editorText(" px")
                                                                   : QStringLiteral("%"));
     d.updateVisibility();
-    const std::array<const char*, 4> actions{"Undo", "Redo", "Fit to Canvas", "Reload"};
+    const std::array<const char*, 4> actions{"Undo", "Redo", "Fit to canvas", "Reload"};
     for (std::size_t i = 0; i < actions.size(); ++i) {
         const auto label = editorText(actions[i]);
         d.actions[i]->setToolTip(label);
@@ -1384,12 +1507,12 @@ void ImageSplitEditorWidget::retranslateUi() {
     }
     d.emptyState->title->setText(editorText("Select an image to split"));
     d.emptyState->description->setText(
-        editorText("Drag an image file here, or choose Select Image"));
+        editorText("Drag an image file here, or choose select image"));
     d.emptyState->setAccessibleName(d.emptyState->title->text());
     d.emptyState->setAccessibleDescription(d.emptyState->description->text());
-    d.emptySelect->setText(editorText("Select Image"));
+    d.emptySelect->setText(editorText("Select image"));
     d.emptySelect->setAccessibleName(d.emptySelect->text());
-    d.dropHint->description->setText(editorText("Drop one image file at a time."));
+    d.dropHint->description->setText(editorText("Drop one image file at a time"));
     d.dropHint->setAccessibleDescription(d.dropHint->description->text());
     d.canvas->retranslateUi();
     d.refresh();

@@ -272,7 +272,7 @@ class FakeNativeMonitor final : public NativeWindowMonitor {
         return {state, QRect(100, 200, sourceWidth, sourceHeight),
                 state == LiveWindowState::Unavailable
                     ? QCoreApplication::translate("LiveWindowSource",
-                                                  "The selected window is no longer available.")
+                                                  "The selected window is no longer available")
                     : QString()};
     }
 };
@@ -628,7 +628,7 @@ int main(int argc, char** argv) {
     require(waitFor([&] { return first->state() == LiveWindowState::Minimized; }),
             "Minimized state is independent of capture-frame delivery.");
     stateMessagesFollowLanguageChanges(
-        *first, "The window is minimized. The latest content cannot be displayed.");
+        *first, "The window is minimized. The latest content cannot be displayed");
     bool refused = false;
     first->requestFrame([&](const QImage& image, const QString& error) {
         refused = image.isNull() && !error.isEmpty();
@@ -654,7 +654,7 @@ int main(int argc, char** argv) {
     sourceState = LiveWindowState::Unavailable;
     require(waitFor([&] { return first->state() == LiveWindowState::Unavailable; }),
             "Native inspection errors retain their translated status message.");
-    stateMessagesFollowLanguageChanges(*first, "The selected window is no longer available.");
+    stateMessagesFollowLanguageChanges(*first, "The selected window is no longer available");
     sourceState = LiveWindowState::Live;
     require(waitFor([&] { return first->state() == LiveWindowState::Live; }),
             "A native inspection error resumes through the existing retry path.");
@@ -674,7 +674,7 @@ int main(int argc, char** argv) {
     require(second->windowTitle() == target.title,
             "A closed source retains its title for the pinned error heading.");
     stateMessagesFollowLanguageChanges(
-        *second, "The window is closed. The latest content cannot be displayed.");
+        *second, "The window is closed. The latest content cannot be displayed");
     sourceState = LiveWindowState::Live;
     QApplication::processEvents();
     require(second->state() == LiveWindowState::Closed,

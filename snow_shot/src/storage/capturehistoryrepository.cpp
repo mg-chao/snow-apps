@@ -405,9 +405,15 @@ QByteArray indexBytes(const Snapshot& snapshot) {
         .toJson(QJsonDocument::Compact);
 }
 
-bool writeFile(const QString& path, const QByteArray& bytes) {
+StorageResult writeFile(const QString& path, const QByteArray& bytes) {
     QSaveFile file(path);
-    return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() && file.commit();
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
+        return StorageResult::failure(
+            QCoreApplication::translate("CaptureHistoryRepository",
+                                        "Unable to write screenshot history file %1: %2")
+                .arg(QFileInfo(path).fileName(), file.errorString()));
+    }
+    return StorageResult::ok();
 }
 
 // Called only at an actual I/O boundary, never to resolve metadata or URLs.
@@ -716,16 +722,6 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::optional<CaptureHistoryPayload> load(const CaptureHistoryRecord& record) const override {
-        return loadPayload(record, false);
-    }
-
-    std::optional<CaptureHistoryPayload>
-    loadPreservingRecord(const CaptureHistoryRecord& record) const override {
-        return loadPayload(record, true);
-    }
-
-    std::optional<CaptureHistoryPayload> loadPayload(const CaptureHistoryRecord& record,
-                                                     bool preserve) const {
         std::shared_lock access(m_relocationMutex);
         const auto stored = find(record);
         if (!stored)
@@ -736,8 +732,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         QFile canvas(canvasPath);
         CaptureHistoryPayload payload;
         if (!containedPath(m_root, canvasPath) || !canvas.open(QIODevice::ReadOnly)) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         payload.canvasHistory = canvas.read(kMaximumCanvasBytes + 1);
@@ -745,13 +740,12 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         canvas.close();
         if (readError || payload.canvasHistory.size() != record.canvasBytes ||
             !validCanvas(payload.canvasHistory)) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         for (qsizetype i = 0; i < stored->displayFileNames.size(); ++i) {
             const auto image = readImage(record, directory.filePath(stored->displayFileNames[i]),
-                                         record.displays[i].imageSize, -1, preserve);
+                                         record.displays[i].imageSize);
             if (!image)
                 return std::nullopt;
             payload.displayImages.append(*image);
@@ -760,7 +754,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                 const auto loaded =
                     readImage(record, directory.filePath(QStringLiteral("cursor_%1.png").arg(i)),
                               record.displays[i].cursor->pixelRect.size(),
-                              record.displays[i].cursor->encodedBytes, preserve);
+                              record.displays[i].cursor->encodedBytes);
                 if (!loaded)
                     return std::nullopt;
                 patch = *loaded;
@@ -925,19 +919,16 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::optional<QImage> readImage(const CaptureHistoryRecord& record, const QString& path,
-                                    const QSize& size, qint64 encodedBytes = -1,
-                                    bool preserve = false) const {
+                                    const QSize& size, qint64 encodedBytes = -1) const {
         observe(CaptureHistoryOperation::PayloadRead);
         if (!containedPath(m_root, path) ||
             (encodedBytes >= 0 && QFileInfo(path).size() != encodedBytes)) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         const QImage image = decodeImage(path);
         if (image.isNull() || image.size() != size) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         return image;
@@ -997,9 +988,12 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     bool commit(Snapshot next, bool recordsChanged) {
         const QByteArray bytes = indexBytes(next);
         observe(CaptureHistoryOperation::IndexWrite);
-        if (!QDir().mkpath(m_root) || !containedPath(m_configurationDirectory, m_root) ||
-            !writeFile(m_indexPath, bytes)) {
+        if (!QDir().mkpath(m_root) || !containedPath(m_configurationDirectory, m_root)) {
             fail(QStringLiteral("Unable to commit the capture-history index"));
+            return false;
+        }
+        if (const auto write = writeFile(m_indexPath, bytes); !write.success) {
+            fail(write.error);
             return false;
         }
         install(std::move(next), bytes.size(), recordsChanged);
@@ -1148,26 +1142,28 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             !containedPath(m_configurationDirectory, m_recordsRoot)) {
             return {fail(QStringLiteral("Unable to create the capture-history directory")), {}};
         }
-        const QString temporary =
-            QStringLiteral(".tmp-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
-        QDir root(m_recordsRoot);
-        if (root.exists(draft.id) || !root.mkdir(temporary)) {
-            return {fail(QStringLiteral("Unable to create a temporary history record")), {}};
+        // The index publishes the record. Renaming a populated directory here would fail on
+        // Windows if another process opened one of its payloads without delete sharing.
+        if (!QDir(m_recordsRoot).mkdir(draft.id)) {
+            return {fail(QCoreApplication::translate(
+                        "CaptureHistoryRepository",
+                        "Unable to create the screenshot history entry folder")),
+                    {}};
         }
-        const QString temporaryPath = root.filePath(temporary);
-        bool wrote = true;
-        for (auto it = encoded.files.cbegin(); wrote && it != encoded.files.cend(); ++it) {
-            wrote = writeFile(QDir(temporaryPath).filePath(it.key()), it.value());
-        }
-        if (!wrote || !root.rename(temporary, draft.id)) {
-            QDir(temporaryPath).removeRecursively();
-            return {fail(QStringLiteral("Unable to write a capture-history record")), {}};
+        QDir directory(recordPath(draft.id));
+        for (auto it = encoded.files.cbegin(); it != encoded.files.cend(); ++it) {
+            const auto write = writeFile(directory.filePath(it.key()), it.value());
+            if (!write.success) {
+                directory.removeRecursively();
+                return {fail(write.error), {}};
+            }
+            observe(CaptureHistoryOperation::PayloadWritten);
         }
         next.records.append(encoded.stored);
         sortRecords(next.records);
         prune(next, true, draft.id);
         if (!commit(std::move(next), true)) {
-            QDir(recordPath(draft.id)).removeRecursively();
+            directory.removeRecursively();
             return {StorageResult::failure(lastError()), {}};
         }
         changed();

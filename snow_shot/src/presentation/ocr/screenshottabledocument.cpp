@@ -1,10 +1,10 @@
 #include "snow_shot/presentation/screenshottabledocument.h"
+#include "snow_shot/presentation/screenshotdocumentformatting.h"
 
 #include <QRegularExpression>
 #include <QCryptographicHash>
 #include <QBitArray>
 #include <QMimeData>
-#include <QSet>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextDocumentFragment>
@@ -67,120 +67,170 @@ quint64 coordinateKey(int row, int column) {
     return (static_cast<quint64>(static_cast<quint32>(row)) << 32U) | static_cast<quint32>(column);
 }
 
-bool completeTableHtml(const QString& source, QBitArray& cellHeaders) {
-    // QTextDocument repairs incomplete HTML. Extraction must be complete before that tolerant
-    // parser runs, and spans must be bounded before it allocates its table grid.
+QString boundedTableHtml(const QString& source, QBitArray& cellHeaders) {
+    // Normalize only table structure. Missing end tags, wrappers and unrelated markup do not
+    // invalidate a usable table. Bound the expanded grid before Qt allocates any table cells.
     static const QRegularExpression markup(QStringLiteral(
         "<!--[\\s\\S]*?-->|</?([A-Za-z][A-Za-z0-9]*)\\b(?:[^<>\"']|\"[^\"]*\"|'[^']*')*/?>"));
     static const QRegularExpression span(
         QStringLiteral("\\b(rowspan|colspan)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))"),
         QRegularExpression::CaseInsensitiveOption);
-    static const QSet<QString> inlineTags{
-        QStringLiteral("b"),    QStringLiteral("strong"), QStringLiteral("i"),
-        QStringLiteral("em"),   QStringLiteral("u"),      QStringLiteral("s"),
-        QStringLiteral("sub"),  QStringLiteral("sup"),    QStringLiteral("span"),
-        QStringLiteral("code"), QStringLiteral("p"),      QStringLiteral("div")};
-    QStringList stack;
-    qsizetype position = 0;
-    int tables = 0;
-    int rows = 0;
-    int cells = 0;
-    int nextColumn = 0;
-    int gridRows = 0;
-    int gridColumns = 0;
     QBitArray occupied(maximumTableDimension * maximumTableDimension);
     cellHeaders.resize(occupied.size());
+    QString output;
+    QString cellTag;
+    int depth = 0;
+    int row = -1;
+    int column = 0;
+    int gridRows = 0;
+    int gridColumns = 0;
+    int cells = 0;
+    bool inRow = false;
+    QString ignored;
+    qsizetype position = 0;
+    const auto appendText = [&](QStringView text) {
+        // Leave entities for Qt to decode, but never let an unmatched/incomplete tag in
+        // cell text bypass the allocation bounds enforced on structural tokens below.
+        output += text.toString()
+                      .replace(u'<', QStringLiteral("&lt;"))
+                      .replace(u'>', QStringLiteral("&gt;"));
+    };
+    const auto closeCell = [&] {
+        if (!cellTag.isEmpty()) {
+            output += QStringLiteral("</") + cellTag + u'>';
+            cellTag.clear();
+        }
+    };
+    const auto closeRow = [&] {
+        closeCell();
+        if (inRow)
+            output += QStringLiteral("</tr>");
+        inRow = false;
+    };
+    const auto startRow = [&] {
+        closeRow();
+        ++row;
+        column = 0;
+        inRow = true;
+        output += QStringLiteral("<tr>");
+    };
     auto matches = markup.globalMatch(source);
     while (matches.hasNext()) {
         const auto match = matches.next();
-        const auto text = QStringView(source).mid(position, match.capturedStart() - position);
-        const bool inCell =
-            stack.contains(QStringLiteral("td")) || stack.contains(QStringLiteral("th"));
-        if (text.contains(u'<') || (!inCell && !text.trimmed().isEmpty()))
-            return false;
+        if (!cellTag.isEmpty() && ignored.isEmpty())
+            appendText(QStringView(source).mid(position, match.capturedStart() - position));
         position = match.capturedEnd();
         const QString tag = match.captured(1).toLower();
-        if (tag.isEmpty())
-            continue;
-        const QString token = match.captured();
-        if (token.startsWith(QStringLiteral("</"))) {
-            if (stack.isEmpty() || stack.last() != tag)
-                return false;
-            stack.removeLast();
+        const bool closing = match.capturedView().startsWith(u"</");
+        if (!ignored.isEmpty()) {
+            if (closing && tag == ignored)
+                ignored.clear();
             continue;
         }
-        const QString parent = stack.isEmpty() ? QString() : stack.last();
-        if (tag == QStringLiteral("table")) {
-            if (!stack.isEmpty() || ++tables != 1)
-                return false;
-        } else if (tag == QStringLiteral("thead") || tag == QStringLiteral("tbody") ||
-                   tag == QStringLiteral("tfoot")) {
-            if (parent != QStringLiteral("table"))
-                return false;
-        } else if (tag == QStringLiteral("tr")) {
-            if ((parent != QStringLiteral("table") && parent != QStringLiteral("thead") &&
-                 parent != QStringLiteral("tbody") && parent != QStringLiteral("tfoot")) ||
-                ++rows > maximumTableDimension)
-                return false;
-            nextColumn = 0;
-        } else if (tag == QStringLiteral("td") || tag == QStringLiteral("th")) {
-            if (parent != QStringLiteral("tr") || ++cells > maximumTableCells)
-                return false;
+        if (tag == u"script" || tag == u"style") {
+            if (!closing)
+                ignored = tag;
+            continue;
+        }
+        if (tag == u"table") {
+            if (!closing) {
+                if (++depth == 1)
+                    output += QStringLiteral("<table>");
+                if (depth > 32)
+                    return {};
+            } else if (depth > 0 && --depth == 0) {
+                if (cells > 0)
+                    break;
+                output.clear();
+                inRow = false;
+                row = -1;
+            }
+            continue;
+        }
+        if (depth == 0)
+            continue;
+        if (depth > 1) {
+            if (!cellTag.isEmpty() && (tag == u"tr" || tag == u"td" || tag == u"th"))
+                output += QStringLiteral("<br>");
+            continue;
+        }
+        if (tag == u"tr") {
+            if (closing)
+                closeRow();
+            else
+                startRow();
+            if (row >= maximumTableDimension)
+                return {};
+        } else if (tag == u"td" || tag == u"th") {
+            closeCell();
+            if (closing)
+                continue;
+            if (!inRow)
+                startRow();
+            if (row >= maximumTableDimension || ++cells > maximumTableCells)
+                return {};
             int rowSpan = 1;
             int columnSpan = 1;
-            QSet<QString> attributes;
-            auto spans = span.globalMatch(token);
+            auto spans = span.globalMatch(match.captured());
             while (spans.hasNext()) {
                 const auto attribute = spans.next();
-                const QString name = attribute.captured(1).toLower();
-                if (attributes.contains(name))
-                    return false;
-                attributes.insert(name);
                 const QString value = attribute.captured(2).isNull()
                                           ? (attribute.captured(3).isNull() ? attribute.captured(4)
                                                                             : attribute.captured(3))
                                           : attribute.captured(2);
                 bool valid = false;
-                const int count = value.toInt(&valid);
-                if (!valid || count < 1 || count > maximumTableDimension)
-                    return false;
-                (name == QStringLiteral("rowspan") ? rowSpan : columnSpan) = count;
+                const qlonglong count = value.toLongLong(&valid);
+                // Invalid/zero spans use HTML's default; excessive spans are a resource limit.
+                if ((valid && count > maximumTableDimension) ||
+                    (!valid && value.size() > 9 &&
+                     std::all_of(value.cbegin(), value.cend(),
+                                 [](QChar c) { return c.isDigit(); })))
+                    return {};
+                const int bounded = valid && count > 0 ? static_cast<int>(count) : 1;
+                (attribute.captured(1).compare(u"rowspan", Qt::CaseInsensitive) == 0 ? rowSpan
+                                                                                     : columnSpan) =
+                    bounded;
             }
-            const int row = rows - 1;
-            while (nextColumn < maximumTableDimension &&
-                   occupied.testBit(row * maximumTableDimension + nextColumn))
-                ++nextColumn;
+            while (column + columnSpan <= maximumTableDimension) {
+                bool available = true;
+                for (int c = column; c < column + columnSpan; ++c)
+                    available = available && !occupied.testBit(row * maximumTableDimension + c);
+                if (available)
+                    break;
+                if (!occupied.testBit(row * maximumTableDimension + column))
+                    output += QStringLiteral("<td></td>");
+                ++column;
+            }
             if (row + rowSpan > maximumTableDimension ||
-                nextColumn + columnSpan > maximumTableDimension)
-                return false;
+                column + columnSpan > maximumTableDimension)
+                return {};
             gridRows = std::max(gridRows, row + rowSpan);
-            gridColumns = std::max(gridColumns, nextColumn + columnSpan);
+            gridColumns = std::max(gridColumns, column + columnSpan);
             if (gridRows * gridColumns > maximumTableCells)
-                return false;
-            cellHeaders.setBit(row * maximumTableDimension + nextColumn,
-                               tag == QStringLiteral("th"));
-            for (int coveredRow = row; coveredRow < row + rowSpan; ++coveredRow) {
-                for (int column = nextColumn; column < nextColumn + columnSpan; ++column) {
-                    const int slot = coveredRow * maximumTableDimension + column;
-                    if (occupied.testBit(slot))
-                        return false;
-                    occupied.setBit(slot);
-                }
-            }
-            nextColumn += columnSpan;
-        } else if (tag == QStringLiteral("br")) {
-            if (!inCell)
-                return false;
-            continue;
-        } else if (!inCell || !inlineTags.contains(tag)) {
-            return false;
+                return {};
+            cellHeaders.setBit(row * maximumTableDimension + column, tag == u"th");
+            for (int r = row; r < row + rowSpan; ++r)
+                for (int c = column; c < column + columnSpan; ++c)
+                    occupied.setBit(r * maximumTableDimension + c);
+            column += columnSpan;
+            cellTag = tag;
+            output += QStringLiteral("<%1 rowspan=\"%2\" colspan=\"%3\">")
+                          .arg(tag)
+                          .arg(rowSpan)
+                          .arg(columnSpan);
+        } else if (!cellTag.isEmpty() && tag == u"br") {
+            output += QStringLiteral("<br>");
+        } else if (!cellTag.isEmpty() && (tag == u"p" || tag == u"div")) {
+            // Keep block semantics without attributes so Qt treats adjacent closing/opening
+            // tags as one paragraph boundary, while explicit br elements retain blank lines.
+            output += closing ? QStringLiteral("</%1>").arg(tag) : QStringLiteral("<%1>").arg(tag);
         }
-        if (token.endsWith(QStringLiteral("/>")) || stack.size() >= 32)
-            return false;
-        stack.append(tag);
     }
-    return tables == 1 && rows > 0 && cells > 0 && gridRows <= rows && stack.isEmpty() &&
-           QStringView(source).mid(position).trimmed().isEmpty();
+    if (!cellTag.isEmpty() && depth > 0 && ignored.isEmpty())
+        appendText(QStringView(source).mid(position));
+    closeRow();
+    output += QStringLiteral("</table>");
+    return cells > 0 ? output : QString{};
 }
 } // namespace
 
@@ -191,16 +241,13 @@ ScreenshotTableDocument::ScreenshotTableDocument(int rows, int columns, bool fir
 ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source,
                                                           bool requireTable) {
     QBitArray cellHeaders;
-    if (requireTable &&
-        (source.size() > 4 * 1024 * 1024 || !completeTableHtml(source, cellHeaders)))
+    if (requireTable && source.size() > 4 * 1024 * 1024)
         return {};
-    class ResourceFreeDocument final : public QTextDocument {
-        QVariant loadResource(int, const QUrl&) override {
-            return {};
-        }
-    };
-    ResourceFreeDocument htmlDocument;
-    htmlDocument.setHtml(source);
+    const QString html = requireTable ? boundedTableHtml(source, cellHeaders) : source;
+    if (requireTable && html.isEmpty())
+        return {};
+    snow_shot::presentation::ScreenshotInertDocument htmlDocument;
+    htmlDocument.setHtml(html);
 
     QVector<QTextTable*> tables;
     collectTables(htmlDocument.rootFrame(), &tables);
@@ -234,6 +281,53 @@ ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source,
             result.applySpan(row, column);
         }
     }
+    return result;
+}
+
+ScreenshotTableDocument ScreenshotTableDocument::fromModelOutput(const QString& source) {
+    if (source.size() > 4 * 1024 * 1024)
+        return {};
+    static const QRegularExpression table(QStringLiteral("<table\\b"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    if (table.match(source).hasMatch())
+        return fromHtml(source, true);
+    // Markdown tables can arrive inside a code fence. Only strip fence delimiter lines;
+    // never interpret arbitrary prose as a single-cell table.
+    static const QRegularExpression fence(QStringLiteral("^\\s*(?:`{3,}|~{3,})[^\\n]*$"));
+    QString markdown;
+    int rows = 0;
+    int cells = 0;
+    int columns = 0;
+    for (const auto& line : QStringView(source).split(u'\n')) {
+        if (fence.matchView(line).hasMatch())
+            continue;
+        const int pipes = static_cast<int>(line.count(u'|'));
+        if (pipes > 0) {
+            if (++rows > maximumTableDimension || pipes > maximumTableDimension + 1)
+                return {};
+            const auto trimmed = line.trimmed();
+            columns = std::max(columns, pipes + 1 - int(trimmed.startsWith(u'|')) -
+                                            int(trimmed.endsWith(u'|')));
+            cells += pipes;
+            // Ragged Markdown rows are padded to the widest row by Qt. Bound that
+            // expansion before setMarkdown(), not just the source's explicit cells.
+            if (columns > maximumTableDimension || rows * columns > maximumTableCells ||
+                cells > maximumTableCells + 2 * maximumTableDimension)
+                return {};
+        }
+        markdown += line;
+        markdown += u'\n';
+    }
+    if (rows < 2)
+        return {};
+    snow_shot::presentation::ScreenshotInertDocument document;
+    document.setMarkdown(markdown, QTextDocument::MarkdownDialectGitHub);
+    auto result = fromHtml(document.toHtml(), true);
+    // Qt's HTML exporter represents Markdown headers as styled td elements. Preserve the
+    // GFM header semantics independently of those presentation styles.
+    if (!result.empty())
+        for (auto& slot : result.m_slots[0])
+            slot.cell.header = true;
     return result;
 }
 

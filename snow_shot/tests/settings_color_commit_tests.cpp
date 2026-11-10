@@ -40,6 +40,10 @@ class PresetTranslator final : public QTranslator {
             QString::fromUtf8(source) == QStringLiteral("Stroke color preset %1")) {
             return QStringLiteral("Localized stroke preset %1");
         }
+        if (QString::fromLatin1(context) == QStringLiteral("SettingsCatalog") &&
+            QString::fromUtf8(source) == QStringLiteral("Highlight color preset %1")) {
+            return QStringLiteral("Localized highlight preset %1");
+        }
         return {};
     }
 };
@@ -99,7 +103,8 @@ void settingsColorsMatchPersistedRgba(QApplication& application) {
         QObject::disconnect(connection);
     }
     for (const auto binding : {settings::SettingsColorPaletteBinding::StrokeColors,
-                               settings::SettingsColorPaletteBinding::FillColors}) {
+                               settings::SettingsColorPaletteBinding::FillColors,
+                               settings::SettingsColorPaletteBinding::HighlightColors}) {
         const auto* descriptor = registry.fieldForColorPalette(binding);
         auto colors = samples;
         QVector<QColor> persisted;
@@ -163,7 +168,8 @@ void settingsColorPalettesCommitOnPopupClose(QApplication& application) {
     QString pageId;
     std::unique_ptr<SettingsPageWidget> page;
     for (const auto binding : {settings::SettingsColorPaletteBinding::StrokeColors,
-                               settings::SettingsColorPaletteBinding::FillColors}) {
+                               settings::SettingsColorPaletteBinding::FillColors,
+                               settings::SettingsColorPaletteBinding::HighlightColors}) {
         const auto* descriptor = registry.fieldForColorPalette(binding);
         require(descriptor != nullptr &&
                     descriptor->kind == settings::SettingsFieldKind::ColorPalette &&
@@ -240,13 +246,18 @@ void settingsColorPalettesCommitOnPopupClose(QApplication& application) {
         require(pickers.at(0)->value().solidColor == expected.at(0) &&
                     pickers.at(2)->value().solidColor == finalColor,
                 "settings picker buttons react to external palette changes");
-        if (binding == settings::SettingsColorPaletteBinding::StrokeColors) {
+        if (binding == settings::SettingsColorPaletteBinding::StrokeColors ||
+            binding == settings::SettingsColorPaletteBinding::HighlightColors) {
             PresetTranslator translator;
             application.installTranslator(&translator);
             QEvent languageChange(QEvent::LanguageChange);
             application.sendEvent(page.get(), &languageChange);
             application.processEvents();
-            require(pickers.at(0)->accessibleName() == QStringLiteral("Localized stroke preset 1"),
+            const QString expectedLabel =
+                binding == settings::SettingsColorPaletteBinding::HighlightColors
+                    ? QStringLiteral("Localized highlight preset 1")
+                    : QStringLiteral("Localized stroke preset 1");
+            require(pickers.at(0)->accessibleName() == expectedLabel,
                     "preset slot accessible names retranslate on language changes");
             application.removeTranslator(&translator);
             application.sendEvent(page.get(), &languageChange);
@@ -259,7 +270,8 @@ void settingsColorPalettesCommitOnPopupClose(QApplication& application) {
     page->resize(880, 760);
     page->show();
     for (const auto binding : {settings::SettingsColorPaletteBinding::StrokeColors,
-                               settings::SettingsColorPaletteBinding::FillColors}) {
+                               settings::SettingsColorPaletteBinding::FillColors,
+                               settings::SettingsColorPaletteBinding::HighlightColors}) {
         const auto* descriptor = registry.fieldForColorPalette(binding);
         page->reveal({descriptor->pageId, descriptor->sectionId, descriptor->id});
         application.processEvents();
@@ -275,7 +287,8 @@ void settingsColorPalettesCommitOnPopupClose(QApplication& application) {
             "reset the annotation settings including custom palettes");
     application.processEvents();
     for (const auto binding : {settings::SettingsColorPaletteBinding::StrokeColors,
-                               settings::SettingsColorPaletteBinding::FillColors}) {
+                               settings::SettingsColorPaletteBinding::FillColors,
+                               settings::SettingsColorPaletteBinding::HighlightColors}) {
         const auto* descriptor = registry.fieldForColorPalette(binding);
         require(configuration.value(descriptor->configurationKey) == descriptor->defaultValue,
                 "section reset restores all five original quick-set colors");

@@ -13,23 +13,23 @@ namespace snow_shot::presentation {
 
 // Read once when a window opens. Persist only the edited field so an older window
 // cannot overwrite more recent choices made in another independent window.
-class CollageSettingsStore final {
+class ImageStitchingSettingsStore final {
   public:
-    explicit CollageSettingsStore(storage::ConfigurationStore& configuration)
+    explicit ImageStitchingSettingsStore(storage::ConfigurationStore& configuration)
         : m_configuration(configuration) {}
 
-    [[nodiscard]] CollageSettings read() const {
-        CollageSettings result;
+    [[nodiscard]] ImageStitchingSettings read() const {
+        ImageStitchingSettings result;
         const QString direction =
             m_configuration.value(QStringLiteral("collage/direction")).toString();
         if (direction == QStringLiteral("custom"))
-            result.direction = CollageDirection::Custom;
+            result.direction = ImageStitchingDirection::Custom;
         else if (direction == QStringLiteral("horizontal"))
-            result.direction = CollageDirection::Horizontal;
+            result.direction = ImageStitchingDirection::Horizontal;
         result.sizing = m_configuration.value(QStringLiteral("collage/sizing_mode")).toString() ==
                                 QStringLiteral("original")
-                            ? CollageSizing::Original
-                            : CollageSizing::Uniform;
+                            ? ImageStitchingSizing::Original
+                            : ImageStitchingSizing::Uniform;
         result.border = m_configuration.value(QStringLiteral("collage/border_px")).toInt();
         result.spacing = m_configuration.value(QStringLiteral("collage/spacing_px")).toInt();
         result.rows = m_configuration.value(QStringLiteral("collage/rows")).toInt();
@@ -43,29 +43,30 @@ class CollageSettingsStore final {
         return result;
     }
 
-    bool write(const QString& field, const CollageSettings& settings) const {
+    bool write(const QString& field, const ImageStitchingSettings& settings) const {
         return write(QStringList{field}, settings);
     }
 
-    bool write(const QStringList& fields, const CollageSettings& settings) const {
+    bool write(const QStringList& fields, const ImageStitchingSettings& settings) const {
         QMap<QString, QJsonValue> values;
         for (const QString& field : fields) {
             QJsonValue value;
             if (field == QStringLiteral("direction")) {
                 switch (settings.direction) {
-                case CollageDirection::Vertical:
+                case ImageStitchingDirection::Vertical:
                     value = QStringLiteral("vertical");
                     break;
-                case CollageDirection::Horizontal:
+                case ImageStitchingDirection::Horizontal:
                     value = QStringLiteral("horizontal");
                     break;
-                case CollageDirection::Custom:
+                case ImageStitchingDirection::Custom:
                     value = QStringLiteral("custom");
                     break;
                 }
             } else if (field == QStringLiteral("sizing_mode"))
-                value = settings.sizing == CollageSizing::Uniform ? QStringLiteral("uniform")
-                                                                  : QStringLiteral("original");
+                value = settings.sizing == ImageStitchingSizing::Uniform
+                            ? QStringLiteral("uniform")
+                            : QStringLiteral("original");
             else if (field == QStringLiteral("border_px"))
                 value = settings.border;
             else if (field == QStringLiteral("spacing_px"))
@@ -85,30 +86,44 @@ class CollageSettingsStore final {
         return m_configuration.setValues(values);
     }
 
-    [[nodiscard]] CollagePdfSettings readPdf() const {
-        CollagePdfSettings result;
+    [[nodiscard]] ImageStitchingPdfSettings readPdf() const {
+        ImageStitchingPdfSettings result;
         const auto value = [&](const QString& field) {
             return m_configuration.value(QStringLiteral("collage/pdf_") + field);
         };
+        result.stitchingMethod =
+            value(QStringLiteral("stitching_method")).toString() == QStringLiteral("template_based")
+                ? ImageStitchingPdfStitchingMethod::TemplateBased
+                : ImageStitchingPdfStitchingMethod::PageBased;
+        const QString selectedTemplate = value(QStringLiteral("template_type")).toString();
+        const QStringList templates{QStringLiteral("two_images"),   QStringLiteral("id_card"),
+                                    QStringLiteral("three_images"), QStringLiteral("four_images"),
+                                    QStringLiteral("five_images"),  QStringLiteral("six_images"),
+                                    QStringLiteral("seven_images"), QStringLiteral("eight_images"),
+                                    QStringLiteral("nine_images")};
+        const auto templateIndex = templates.indexOf(selectedTemplate);
+        if (templateIndex >= 0)
+            result.templateType = static_cast<ImageStitchingPdfTemplateType>(templateIndex);
+        result.imageSpacingMm = value(QStringLiteral("image_spacing_mm")).toDouble(5);
         const QString paper = value(QStringLiteral("paper_size")).toString();
         if (paper == QStringLiteral("a3"))
-            result.paperSize = CollagePdfPaperSize::A3;
+            result.paperSize = ImageStitchingPdfPaperSize::A3;
         else if (paper == QStringLiteral("a5"))
-            result.paperSize = CollagePdfPaperSize::A5;
+            result.paperSize = ImageStitchingPdfPaperSize::A5;
         else if (paper == QStringLiteral("b5"))
-            result.paperSize = CollagePdfPaperSize::B5;
+            result.paperSize = ImageStitchingPdfPaperSize::B5;
         else if (paper == QStringLiteral("letter"))
-            result.paperSize = CollagePdfPaperSize::Letter;
+            result.paperSize = ImageStitchingPdfPaperSize::Letter;
         else if (paper == QStringLiteral("legal"))
-            result.paperSize = CollagePdfPaperSize::Legal;
+            result.paperSize = ImageStitchingPdfPaperSize::Legal;
         else if (paper == QStringLiteral("custom"))
-            result.paperSize = CollagePdfPaperSize::Custom;
+            result.paperSize = ImageStitchingPdfPaperSize::Custom;
         else if (paper == QStringLiteral("image_size"))
-            result.paperSize = CollagePdfPaperSize::ImageSize;
+            result.paperSize = ImageStitchingPdfPaperSize::ImageSize;
         result.orientation =
             value(QStringLiteral("orientation")).toString() == QStringLiteral("landscape")
-                ? CollagePdfOrientation::Landscape
-                : CollagePdfOrientation::Portrait;
+                ? ImageStitchingPdfOrientation::Landscape
+                : ImageStitchingPdfOrientation::Portrait;
         result.customWidthMm = value(QStringLiteral("custom_width_mm")).toDouble(210);
         result.customHeightMm = value(QStringLiteral("custom_height_mm")).toDouble(297);
         result.marginTopMm = value(QStringLiteral("margin_top_mm")).toDouble(10);
@@ -118,21 +133,22 @@ class CollageSettingsStore final {
         result.marginRightMm = result.marginTopMm;
         result.exportMode =
             value(QStringLiteral("export_mode")).toString() == QStringLiteral("per_page")
-                ? CollagePdfExportMode::PerPage
-                : CollagePdfExportMode::Combined;
+                ? ImageStitchingPdfExportMode::PerPage
+                : ImageStitchingPdfExportMode::Combined;
         // Individual values can be valid while a hand-edited configuration or edits from
         // independent windows produce an unusable combination. Start with a usable form.
-        return validateCollagePdfSettings(result).isEmpty() ? result : CollagePdfSettings{};
+        return validateImageStitchingPdfSettings(result).isEmpty() ? result
+                                                                   : ImageStitchingPdfSettings{};
     }
 
-    bool writePdf(const QString& field, const CollagePdfSettings& settings) const {
+    bool writePdf(const QString& field, const ImageStitchingPdfSettings& settings) const {
         return writePdf(QStringList{field}, settings);
     }
 
     // Active page validation may ignore hidden drafts. Keep their edits pending until their
     // values can be stored, without blocking independent preferences that are ready to persist.
-    [[nodiscard]] static QStringList persistablePdfFields(const QStringList& fields,
-                                                          const CollagePdfSettings& settings) {
+    [[nodiscard]] static QStringList
+    persistablePdfFields(const QStringList& fields, const ImageStitchingPdfSettings& settings) {
         QStringList result;
         for (const auto& field : fields)
             if (!pdfFieldValues(field, settings).isEmpty())
@@ -140,8 +156,8 @@ class CollageSettingsStore final {
         return result;
     }
 
-    bool writePdf(const QStringList& fields, const CollagePdfSettings& settings) const {
-        if (!validateCollagePdfSettings(settings).isEmpty())
+    bool writePdf(const QStringList& fields, const ImageStitchingPdfSettings& settings) const {
+        if (!validateImageStitchingPdfSettings(settings).isEmpty())
             return false;
         QMap<QString, QJsonValue> values;
         for (const QString& field : fields) {
@@ -155,7 +171,7 @@ class CollageSettingsStore final {
 
   private:
     [[nodiscard]] static QMap<QString, QJsonValue>
-    pdfFieldValues(const QString& field, const CollagePdfSettings& settings) {
+    pdfFieldValues(const QString& field, const ImageStitchingPdfSettings& settings) {
         QMap<QString, QJsonValue> values;
         if (field == QStringLiteral("margin_mm")) {
             const double margin = settings.marginTopMm;
@@ -167,45 +183,65 @@ class CollageSettingsStore final {
                 values.insert(QStringLiteral("collage/pdf_") + QString::fromLatin1(key), margin);
         } else {
             QJsonValue value;
-            if (field == QStringLiteral("paper_size")) {
+            if (field == QStringLiteral("stitching_method")) {
+                if (settings.stitchingMethod != ImageStitchingPdfStitchingMethod::PageBased &&
+                    settings.stitchingMethod != ImageStitchingPdfStitchingMethod::TemplateBased)
+                    return {};
+                value = settings.stitchingMethod == ImageStitchingPdfStitchingMethod::PageBased
+                            ? QStringLiteral("page_based")
+                            : QStringLiteral("template_based");
+            } else if (field == QStringLiteral("template_type")) {
+                const QStringList templates{
+                    QStringLiteral("two_images"),   QStringLiteral("id_card"),
+                    QStringLiteral("three_images"), QStringLiteral("four_images"),
+                    QStringLiteral("five_images"),  QStringLiteral("six_images"),
+                    QStringLiteral("seven_images"), QStringLiteral("eight_images"),
+                    QStringLiteral("nine_images")};
+                const auto index = static_cast<int>(settings.templateType);
+                if (index < 0 || index >= templates.size())
+                    return {};
+                value = templates.at(index);
+            } else if (field == QStringLiteral("image_spacing_mm"))
+                value = settings.imageSpacingMm;
+            else if (field == QStringLiteral("paper_size")) {
                 switch (settings.paperSize) {
-                case CollagePdfPaperSize::A3:
+                case ImageStitchingPdfPaperSize::A3:
                     value = QStringLiteral("a3");
                     break;
-                case CollagePdfPaperSize::A4:
+                case ImageStitchingPdfPaperSize::A4:
                     value = QStringLiteral("a4");
                     break;
-                case CollagePdfPaperSize::A5:
+                case ImageStitchingPdfPaperSize::A5:
                     value = QStringLiteral("a5");
                     break;
-                case CollagePdfPaperSize::B5:
+                case ImageStitchingPdfPaperSize::B5:
                     value = QStringLiteral("b5");
                     break;
-                case CollagePdfPaperSize::Letter:
+                case ImageStitchingPdfPaperSize::Letter:
                     value = QStringLiteral("letter");
                     break;
-                case CollagePdfPaperSize::Legal:
+                case ImageStitchingPdfPaperSize::Legal:
                     value = QStringLiteral("legal");
                     break;
-                case CollagePdfPaperSize::Custom:
+                case ImageStitchingPdfPaperSize::Custom:
                     value = QStringLiteral("custom");
                     break;
-                case CollagePdfPaperSize::ImageSize:
+                case ImageStitchingPdfPaperSize::ImageSize:
                     value = QStringLiteral("image_size");
                     break;
                 }
             } else if (field == QStringLiteral("orientation")) {
-                if (settings.orientation != CollagePdfOrientation::Portrait &&
-                    settings.orientation != CollagePdfOrientation::Landscape)
+                if (settings.orientation != ImageStitchingPdfOrientation::Portrait &&
+                    settings.orientation != ImageStitchingPdfOrientation::Landscape)
                     return {};
-                value = settings.orientation == CollagePdfOrientation::Portrait
+                value = settings.orientation == ImageStitchingPdfOrientation::Portrait
                             ? QStringLiteral("portrait")
                             : QStringLiteral("landscape");
             } else if (field == QStringLiteral("export_mode")) {
-                if (settings.exportMode != CollagePdfExportMode::Combined &&
-                    settings.exportMode != CollagePdfExportMode::PerPage)
+                if (settings.exportMode != ImageStitchingPdfExportMode::Combined &&
+                    settings.exportMode != ImageStitchingPdfExportMode::PerPage)
                     return {};
-                value = settings.exportMode == CollagePdfExportMode::Combined
+                value = settings.exportMode == ImageStitchingPdfExportMode::Combined
                             ? QStringLiteral("combined")
                             : QStringLiteral("per_page");
             } else if (field == QStringLiteral("custom_width_mm"))

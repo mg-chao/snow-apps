@@ -24,8 +24,8 @@
             <translation>Remove line breaks</translation>
         </message>
         <message>
-            <source>Smart Typesetting</source>
-            <translation>Smart Typesetting</translation>
+            <source>Smart typesetting</source>
+            <translation>Smart typesetting</translation>
         </message>
     </context>
     <context>
@@ -43,8 +43,8 @@
             <translation>Image conversion settings</translation>
         </message>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>Model configuration changed. Retry to use the updated settings.</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>Model configuration changed. Retry to use the updated settings</translation>
         </message>
         <message>
             <source>No vision models are available</source>
@@ -75,8 +75,8 @@
             <translation>Unable to load vision models</translation>
         </message>
         <message>
-            <source>Vision Model</source>
-            <translation>Vision Model</translation>
+            <source>Vision model</source>
+            <translation>Vision model</translation>
         </message>
     </context>
     <context>
@@ -102,8 +102,8 @@
             <translation>Retry</translation>
         </message>
         <message>
-            <source>Select All</source>
-            <translation>Select All</translation>
+            <source>Select all</source>
+            <translation>Select all</translation>
         </message>
     </context>
     <context>
@@ -129,12 +129,12 @@
             <translation>Text recognition failed</translation>
         </message>
         <message>
-            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac.</source>
-            <translation>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac.</translation>
+            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac</source>
+            <translation>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for this Mac</translation>
         </message>
         <message>
-            <source>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store.</source>
-            <translation>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store.</translation>
+            <source>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store</source>
+            <translation>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store</translation>
         </message>
         <message>
             <source>The text recognition component could not be started: %1</source>
@@ -156,12 +156,12 @@
             <translation>Barcode recognition failed</translation>
         </message>
         <message>
-            <source>Barcode recognition is unavailable</source>
-            <translation>Barcode recognition is unavailable</translation>
-        </message>
-        <message>
             <source>Barcode recognition request could not be prepared</source>
             <translation>Barcode recognition request could not be prepared</translation>
+        </message>
+        <message>
+            <source>Barcode recognition service is unavailable</source>
+            <translation>Barcode recognition service is unavailable</translation>
         </message>
         <message>
             <source>Converting to HTML</source>
@@ -188,8 +188,8 @@
             <translation>LaTeX recognition service is unavailable</translation>
         </message>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>Model configuration changed. Retry to use the updated settings.</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>Model configuration changed. Retry to use the updated settings</translation>
         </message>
         <message>
             <source>No barcode was recognized</source>
@@ -208,8 +208,8 @@
             <translation>Preparing text recognition components (%1%)</translation>
         </message>
         <message>
-            <source>Recognition service changed. Retry to use the updated settings.</source>
-            <translation>Recognition service changed. Retry to use the updated settings.</translation>
+            <source>Recognition service changed. Retry to use the updated settings</source>
+            <translation>Recognition service changed. Retry to use the updated settings</translation>
         </message>
         <message>
             <source>Recognizing LaTeX formula</source>
@@ -228,8 +228,8 @@
             <translation>Recognizing text</translation>
         </message>
         <message>
-            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry.</source>
-            <translation>Snow Shot's visual understanding model is unavailable. Choose another model or retry.</translation>
+            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry</source>
+            <translation>Snow Shot's visual understanding model is unavailable. Choose another model or retry</translation>
         </message>
         <message>
             <source>Some text could not be translated</source>
@@ -268,8 +268,8 @@
             <translation>Text recognition request could not be prepared</translation>
         </message>
         <message>
-            <source>The selected recognition model is unavailable. Choose another model or retry.</source>
-            <translation>The selected recognition model is unavailable. Choose another model or retry.</translation>
+            <source>The selected recognition model is unavailable. Choose another model or retry</source>
+            <translation>The selected recognition model is unavailable. Choose another model or retry</translation>
         </message>
         <message>
             <source>Translation failed</source>
@@ -311,12 +311,12 @@
             <translation>Delete</translation>
         </message>
         <message>
-            <source>Formula preview limit exceeded.</source>
-            <translation>Formula preview limit exceeded.</translation>
+            <source>Formula preview limit exceeded</source>
+            <translation>Formula preview limit exceeded</translation>
         </message>
         <message>
-            <source>Formula renderer is unavailable.</source>
-            <translation>Formula renderer is unavailable.</translation>
+            <source>Formula renderer is unavailable</source>
+            <translation>Formula renderer is unavailable</translation>
         </message>
         <message>
             <source>LaTeX formula preview</source>
@@ -351,12 +351,35 @@
             <translation>Retry recognition</translation>
         </message>
         <message>
-            <source>Select All</source>
-            <translation>Select All</translation>
+            <source>Select all</source>
+            <translation>Select all</translation>
         </message>
         <message>
-            <source>Unable to preview this formula. Check the LaTeX source.</source>
-            <translation>Unable to preview this formula. Check the LaTeX source.</translation>
+            <source>Unable to preview this formula. Check the LaTeX source</source>
+            <translation>Unable to preview this formula. Check the LaTeX source</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotTableConversionController</name>
+        <message>
+            <source>No table cells were recognized</source>
+            <translation>No table cells were recognized</translation>
+        </message>
+        <message>
+            <source>Table recognition failed</source>
+            <translation>Table recognition failed</translation>
+        </message>
+        <message>
+            <source>Table recognition request could not be prepared</source>
+            <translation>Table recognition request could not be prepared</translation>
+        </message>
+        <message>
+            <source>Table recognition service is unavailable</source>
+            <translation>Table recognition service is unavailable</translation>
+        </message>
+        <message>
+            <source>The model returned no usable table after correction</source>
+            <translation>The model returned no usable table after correction</translation>
         </message>
     </context>
     <context>
@@ -406,8 +429,8 @@
             <translation>Reset table</translation>
         </message>
         <message>
-            <source>Select All</source>
-            <translation>Select All</translation>
+            <source>Select all</source>
+            <translation>Select all</translation>
         </message>
         <message>
             <source>Select the complete merged cell before pasting into this area</source>

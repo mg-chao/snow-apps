@@ -41,6 +41,10 @@ class SingleInstanceCoordinator final : public QObject {
     [[nodiscard]] bool isPrimary() const;
     [[nodiscard]] QString lockFilePath() const;
     void setLaunchRequestHandler(std::function<void(const QStringList&)> handler);
+    // Synchronous inspection before dispatch/receipt; must not dispatch or pump events.
+    // Rejected intent is never queued or remembered.
+    // Legacy senders remain one-way and cannot observe a refusal.
+    void setLaunchRequestAdmission(std::function<bool(const QStringList&)> admission);
     // Reject new requests before the event loop stops, while retaining storage ownership
     // until destruction. Receipt-capable senders retry against the replacement.
     void stopAcceptingLaunchRequests();
@@ -66,6 +70,7 @@ class SingleInstanceCoordinator final : public QObject {
     std::unique_ptr<QLocalServer> m_receiptServer;
     std::unique_ptr<QLocalServer> m_legacyServer;
     std::function<void(const QStringList&)> m_handler;
+    std::function<bool(const QStringList&)> m_admission;
     QVector<QStringList> m_pendingRequests;
     QSet<QLocalSocket*> m_clients;
     QSet<QString> m_receivedRequestIds;

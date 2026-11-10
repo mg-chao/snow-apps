@@ -3,7 +3,7 @@ use crate::error::{RecordingExportError, Result};
 use ffmpeg_next as ffmpeg;
 use rayon::prelude::*;
 
-/// Whether the selected output retains HDR rather than requiring SDR pixels.
+/// Whether this build and the selected output retain HDR rather than requiring SDR pixels.
 /// Native capture capability checks remain separate: live HDR capture currently
 /// requires this policy to be true; decoded exports can also tone-map SDR.
 pub fn preserves_hdr_output(
@@ -11,7 +11,10 @@ pub fn preserves_hdr_output(
     format: crate::ExportFormat,
     codec: crate::VideoCodec,
 ) -> bool {
-    source_hdr && format == crate::ExportFormat::Mp4 && codec == crate::VideoCodec::H265
+    cfg!(feature = "hdr-encoding")
+        && source_hdr
+        && format == crate::ExportFormat::Mp4
+        && codec == crate::VideoCodec::H265
 }
 
 pub(crate) fn pixel_format(codec: ffmpeg::codec::Video) -> Result<ffmpeg::format::Pixel> {
@@ -205,7 +208,9 @@ mod tests {
                 assert!(!preserves_hdr_output(false, format, codec));
                 assert_eq!(
                     preserves_hdr_output(true, format, codec),
-                    format == crate::ExportFormat::Mp4 && codec == crate::VideoCodec::H265
+                    cfg!(feature = "hdr-encoding")
+                        && format == crate::ExportFormat::Mp4
+                        && codec == crate::VideoCodec::H265
                 );
             }
         }

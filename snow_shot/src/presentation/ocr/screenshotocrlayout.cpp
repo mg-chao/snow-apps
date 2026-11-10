@@ -13,7 +13,14 @@ struct Segment {
     ScreenshotOcrLine line;
     QRectF bounds;
     int peers = 1;
+    QVector<int> sourceIndices{};
 };
+
+void appendSourceIndices(QVector<int>& destination, const QVector<int>& source) {
+    for (const int index : source)
+        if (!destination.contains(index))
+            destination.push_back(index);
+}
 struct Group {
     QVector<Segment> lines;
     QRectF bounds;
@@ -300,8 +307,11 @@ QVector<Segment> lineSegments(const QVector<Segment>& items) {
         for (const auto& group : groups) {
             Segment segment = group.lines.front();
             segment.line.sourceLineQuads.clear();
-            for (const auto& source : group.lines)
+            segment.sourceIndices.clear();
+            for (const auto& source : group.lines) {
                 segment.line.sourceLineQuads.push_back(source.line.quad);
+                appendSourceIndices(segment.sourceIndices, source.sourceIndices);
+            }
             segment.bounds = group.bounds;
             segment.peers = static_cast<int>(groups.size());
             for (int i = 1; i < group.lines.size(); ++i)
@@ -483,7 +493,8 @@ qreal appendConfidence(const Group& paragraph, const Segment& current, qreal hei
                                        0.0, 1.0);
     return confidence >= 0.48 ? confidence : -1;
 }
-QVector<ScreenshotOcrLine> paragraphs(const Group& region, qreal height) {
+QVector<ScreenshotOcrLine> paragraphs(const Group& region, qreal height,
+                                      QVector<QVector<int>>* sourceIndices) {
     const auto normal = normalGap(region.lines, height);
     int columns = 1;
     for (const auto& line : region.lines)
@@ -525,14 +536,18 @@ QVector<ScreenshotOcrLine> paragraphs(const Group& region, qreal height) {
         auto output = group.lines.front().line;
         output.paragraph = group.lines.size() > 1 || output.text.contains(QLatin1Char('\n'));
         output.sourceLineQuads.clear();
+        QVector<int> indices;
         for (int i = 0; i < group.lines.size(); ++i) {
             if (i > 0)
                 output.text = join(output.text, group.lines[i].line.text, true);
             output.sourceLineQuads += group.lines[i].line.sourceLineQuads;
+            appendSourceIndices(indices, group.lines[i].sourceIndices);
         }
         if (group.lines.size() > 1)
             output.quad = quad(group.bounds);
         result.push_back(output);
+        if (sourceIndices)
+            sourceIndices->push_back(std::move(indices));
     }
     return result;
 }
@@ -552,15 +567,21 @@ bool mergeable(const ScreenshotOcrLine& line) {
 } // namespace
 
 QVector<ScreenshotOcrLine> mergeOcrLayout(const QVector<ScreenshotOcrLine>& lines,
-                                          const QPointF& imageOrigin) {
+                                          const QPointF& imageOrigin,
+                                          QVector<QVector<int>>* sourceIndices) {
+    if (sourceIndices)
+        sourceIndices->clear();
     QVector<Segment> items;
     QVector<ScreenshotOcrLine> preserved;
-    for (const auto& line : lines) {
+    QVector<QVector<int>> preservedIndices;
+    for (int index = 0; index < lines.size(); ++index) {
+        const auto& line = lines[index];
         if (!mergeable(line)) {
             preserved.push_back(line);
+            preservedIndices.push_back({index});
             continue;
         }
-        Segment item{line, line.quad.boundingRect()};
+        Segment item{line, line.quad.boundingRect(), 1, {index}};
         // Upstream uses image coordinates; Snow Shot canvas coordinates can be negative.
         item.line.quad.translate(-imageOrigin);
         item.bounds.translate(-imageOrigin);
@@ -574,13 +595,41 @@ QVector<ScreenshotOcrLine> mergeOcrLayout(const QVector<ScreenshotOcrLine>& line
     const auto height = std::max<qreal>(1, median(heights));
     QVector<ScreenshotOcrLine> result;
     for (const auto& region : regions(segments, height))
-        result += paragraphs(region, height);
+        result += paragraphs(region, height, sourceIndices);
     for (auto& line : result) {
         line.quad.translate(imageOrigin);
         for (auto& sourceQuad : line.sourceLineQuads)
             sourceQuad.translate(imageOrigin);
     }
     result += preserved;
+    if (sourceIndices)
+        *sourceIndices += preservedIndices;
     return result;
+}
+
+std::optional<QVector<QVector<int>>>
+ocrTranslationSourceIndices(const ScreenshotOcrPresentation& translation,
+                            const ScreenshotOcrPresentation& source) {
+    if (translation.selection != source.selection)
+        return std::nullopt;
+    const auto matches = [&translation](const QVector<ScreenshotOcrLine>& lines) {
+        return translation.lines.size() == lines.size() &&
+               std::equal(
+                   lines.cbegin(), lines.cend(), translation.lines.cbegin(),
+                   [](const ScreenshotOcrLine& original, const ScreenshotOcrLine& translated) {
+                       return original.quad == translated.quad &&
+                              original.direction == translated.direction &&
+                              original.paragraph == translated.paragraph &&
+                              original.sourceLineQuads == translated.sourceLineQuads;
+                   });
+    };
+    QVector<QVector<int>> indices;
+    if (matches(source.lines)) {
+        for (int index = 0; index < source.lines.size(); ++index)
+            indices.push_back({index});
+        return indices;
+    }
+    const auto merged = mergeOcrLayout(source.lines, source.selection.topLeft(), &indices);
+    return matches(merged) ? std::optional{indices} : std::nullopt;
 }
 } // namespace snow_shot::presentation

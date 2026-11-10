@@ -256,6 +256,9 @@ void builtInConcurrencyUsesEightRequests(const QString& directory) {
     Server server;
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/concurrency.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     auto& service = TranslationService::forClient(client, settings, QLocale::English);
     service.refreshModels();
     waitUntil([&] { return !service.loadingModels(); }, "load built-in models for concurrency");
@@ -304,6 +307,9 @@ void aiModelSelectionMigratesOnlyAfterDiscovery(const QString& directory) {
         SnowShotApiClient client(server.url());
         ConfigurationStore settings(directory + QLatin1Char('/') + legacy + QStringLiteral(".json"),
                                     true, true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("general")),
+                "select the server fixture");
         require(settings.setValue(QStringLiteral("screenshot_translation/model"), legacy),
                 "save legacy translation selection");
         auto& service = TranslationService::forClient(client, settings, QLocale::English);
@@ -378,8 +384,8 @@ void discoverySharesRequestsAndCancellation(const QString& directory) {
     waitUntil([&] { return !service->loadingModels(); },
               "translation finishes after recognition subscriber cancellation");
     require(server.modelRequests == 1 && cancelledCompletions == 0 &&
-                service->preferences().modelId == QStringLiteral("general") &&
-                service->models() == client.cachedChatModels(),
+                service->preferences().modelId == QStringLiteral("free-translation") &&
+                service->models().size() == client.cachedChatModels().size() + 1,
             "translation and recognition share one independently cancellable catalog request");
 
     service->refreshModels();
@@ -401,7 +407,7 @@ void discoverySharesRequestsAndCancellation(const QString& directory) {
     server.respondModels();
     waitUntil([&] { return !service->loadingModels(); }, "translation receives refreshed models");
     require(server.modelRequests == 2 && cancelledCompletions == 0 &&
-                service->preferences().modelId == QStringLiteral("updated"),
+                service->preferences().modelId == QStringLiteral("free-translation"),
             "shared refresh updates translation selection after the other subscriber cancels");
 
     service->refreshModels(true);
@@ -433,6 +439,9 @@ void additionalLanguagesPersistAndTranslate(const QString& directory) {
         SnowShotApiClient client(server.url());
         const QString path = directory + QStringLiteral("/language-%1.json").arg(code);
         ConfigurationStore settings(path, true, true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("general")),
+                "select the server fixture");
         auto& service = TranslationService::forClient(client, settings, QLocale(code));
         require(service.preferences().targetLanguage == code,
                 "additional native locales default to their own translation language");
@@ -492,6 +501,9 @@ void secondaryTargetsPersistAndReachEveryUnit(const QString& directory) {
     Server server;
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/secondary.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     require(settings.setValue(QStringLiteral("screenshot_translation/target_language"),
                               QStringLiteral("zh-Hant")),
             "save an existing primary target");
@@ -544,6 +556,9 @@ void detectionIsDeferredUntilRoutingNeedsIt(const QString& directory) {
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/lazy-detection.json"), true, true,
                                 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     const QStringList texts{QStringLiteral("Bonjour"),
                             QStringLiteral("The remaining source text is written in English.")};
     int detectionCalls = 0;
@@ -624,6 +639,9 @@ void completeInputRoutingReachesEveryProviderAndRetries(const QString& directory
         SnowShotApiClient client(builtIn.url());
         ConfigurationStore settings(directory + QStringLiteral("/routing-%1.json").arg(provider),
                                     true, true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("general")),
+                "select the server fixture");
         QString model = provider;
         if (provider == QStringLiteral("custom")) {
             const snow_shot::CustomAiModelConfiguration configuration{
@@ -748,6 +766,9 @@ void failedUnitRetryKeepsCompletedInputContext(const QString& directory) {
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/routing-partial-retry.json"), true,
                                 true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     const QStringList texts{QStringLiteral("Bonjour"),
                             QStringLiteral("The completed block contains the English context "
                                            "that determines the target for the entire input.")};
@@ -803,6 +824,9 @@ void duplicateUnitsShareRequestsAndRetryByOriginalPosition(const QString& direct
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/duplicate-units.json"), true, true,
                                 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     auto& service = TranslationService::forClient(client, settings, QLocale::English);
     QObject owner;
     const QString repeated = QStringLiteral("repeat");
@@ -869,6 +893,9 @@ void duplicateDeltaObserversMayCancelOrDestroyTheJob(const QString& directory) {
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/duplicate-lifetime.json"), true, true,
                                 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     auto& service = TranslationService::forClient(client, settings, QLocale::English);
     std::unique_ptr<TranslationJob> job(
         service.createJob({QStringLiteral("same"), QStringLiteral("same")}, nullptr));
@@ -907,6 +934,9 @@ void terminalNotificationsRespectReentrantTransitions(const QString& directory) 
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/terminal-transitions.json"), true,
                                 true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     auto& service = TranslationService::forClient(client, settings, QLocale::English);
     enum class Action { Retry, Cancel, Destroy };
     for (const auto action : {Action::Retry, Action::Cancel, Action::Destroy}) {
@@ -964,6 +994,9 @@ void failedNotificationsRespectReentrantRetry(const QString& directory) {
     auto client = std::make_unique<SnowShotApiClient>(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/terminal-failure.json"), true, true,
                                 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     auto& service = TranslationService::forClient(*client, settings, QLocale::English);
     QObject owner;
     auto* job = service.createJob({QStringLiteral("source")}, &owner);
@@ -988,6 +1021,9 @@ void invalidationNotificationsRespectReentrantRetry(const QString& directory) {
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/terminal-invalidation.json"), true,
                                 true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     snow_shot::CustomAiModelConfiguration model{
         QStringLiteral("11111111-1111-4111-8111-111111111111"),
         QStringLiteral("Invalidation fixture"),
@@ -998,6 +1034,8 @@ void invalidationNotificationsRespectReentrantRetry(const QString& directory) {
     const QString key = QStringLiteral("api_configuration/custom_models");
     require(settings.setValue(key, snow_shot::customAiModelsToJson({model})),
             "configure terminal invalidation fixture");
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"), model.selectionId()),
+            "select the invalidation fixture");
     auto& service = TranslationService::forClient(client, settings, QLocale::English);
     QObject owner;
     auto* job = service.createJob({QStringLiteral(" ")}, &owner);
@@ -1040,14 +1078,19 @@ void customModelsStayAvailableAndInvalidateTogether(const QString& directory) {
         QStringLiteral("provider-model"),
         true};
     ConfigurationStore settings(directory + QStringLiteral("/custom.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     const QString key = QStringLiteral("api_configuration/custom_models");
     require(settings.setValue(key, snow_shot::customAiModelsToJson({model})),
             "save custom configuration");
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"), model.selectionId()),
+            "select the configured custom model");
     SnowShotApiClient client(builtIn.url());
     auto& service = TranslationService::forClient(client, settings, QLocale::English);
     require(&service == &TranslationService::forClient(client, settings, QLocale::English),
             "consumers share the catalog and settings owner");
-    require(service.models().size() == 1 && service.models().first().supportsVision &&
+    require(service.models().size() == 2 && service.models().first().supportsVision &&
                 service.preferences().modelId == model.selectionId(),
             "custom vision model is immediately eligible");
     {
@@ -1138,7 +1181,7 @@ void customModelsStayAvailableAndInvalidateTogether(const QString& directory) {
     waitUntil([&] { return !service.loadingModels(); }, "finish builtin discovery");
     require(settings.setValue(key, QJsonArray{}), "delete selected custom model");
     require(second->state() == TranslationJob::State::Invalidated &&
-                service.preferences().modelId == QStringLiteral("general") &&
+                service.preferences().modelId == QStringLiteral("free-translation") &&
                 custom.streams.size() == 5 && builtIn.streams.isEmpty(),
             "deletion selects shared fallback without sending another translation");
 }
@@ -1146,6 +1189,9 @@ void customModelsStayAvailableAndInvalidateTogether(const QString& directory) {
 void failuresAndOwnerLifetimes(const QString& directory) {
     Server server;
     ConfigurationStore settings(directory + QStringLiteral("/lifecycle.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     auto client = std::make_unique<SnowShotApiClient>(server.url());
     auto& service = TranslationService::forClient(*client, settings, QLocale::English);
     QObject owner;
@@ -1179,6 +1225,9 @@ void serverChangesRefreshModelsAndPreserveStreams(const QString& directory) {
     second.holdModels = true;
     custom.streamPath = QByteArrayLiteral("/v1/chat/completions");
     ConfigurationStore settings(directory + QStringLiteral("/servers.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     const QString serverKey = QStringLiteral("api_configuration/server_url");
     const snow_shot::CustomAiModelConfiguration customModel{
         QStringLiteral("11111111-1111-4111-8111-111111111111"),
@@ -1255,6 +1304,9 @@ void preferenceAndCatalogPublicationPermitServiceDeletion(const QString& directo
         ConfigurationStore settings(
             directory + QStringLiteral("/save-lifetime-%1.json").arg(removeFromPersistence), true,
             true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("general")),
+                "select the server fixture");
         QPointer<TranslationService> service =
             &TranslationService::forClient(client, settings, QLocale::English);
         int notifications = 0;
@@ -1285,6 +1337,9 @@ void preferenceAndCatalogPublicationPermitServiceDeletion(const QString& directo
         ConfigurationStore settings(
             directory + QStringLiteral("/catalog-lifetime-%1.json").arg(removeFromPersistence),
             true, true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("general")),
+                "select the server fixture");
         QPointer<TranslationService> service =
             &TranslationService::forClient(client, settings, QLocale::English);
         int notifications = 0;
@@ -1320,6 +1375,9 @@ void nestedPreferenceSaveSupersedesPublication(const QString& directory) {
     SnowShotApiClient client(QStringLiteral("http://127.0.0.1:1"));
     ConfigurationStore settings(directory + QStringLiteral("/nested-preferences.json"), true, true,
                                 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     auto& service = TranslationService::forClient(client, settings, QLocale::English);
     bool nested = false;
     int catalogNotifications = 0;
@@ -1352,6 +1410,9 @@ void catalogMetadataChangesPreservePreferenceWrites(const QString& directory) {
         ConfigurationStore settings(
             directory + QStringLiteral("/catalog-during-save-%1.json").arg(fromPersistence), true,
             true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("general")),
+                "select the server fixture");
         auto& service = TranslationService::forClient(client, settings, QLocale::English);
         snow_shot::CustomAiModelConfiguration model{
             QStringLiteral("33333333-3333-4333-8333-333333333333"),
@@ -1361,6 +1422,9 @@ void catalogMetadataChangesPreservePreferenceWrites(const QString& directory) {
             QStringLiteral("local-model"),
             true};
         client.setCustomModels({model});
+        require(
+            settings.setValue(QStringLiteral("screenshot_translation/model"), model.selectionId()),
+            "select custom metadata fixture");
         require(service.preferences().modelId == model.selectionId(),
                 "catalog metadata fixture starts with a selected custom model");
         bool refreshed = false;
@@ -1404,6 +1468,9 @@ void catalogSelectionWritesRespectNestedUpdates(const QString& directory) {
             directory +
                 QStringLiteral("/catalog-selection-write-%1.json").arg(saveNestedPreferences),
             true, true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("custom:removed")),
+                "select a missing custom fixture");
         auto& service = TranslationService::forClient(client, settings, QLocale::English);
         snow_shot::CustomAiModelConfiguration model{
             QStringLiteral("33333333-3333-4333-8333-333333333333"),
@@ -1412,6 +1479,11 @@ void catalogSelectionWritesRespectNestedUpdates(const QString& directory) {
             QStringLiteral("test-key"),
             QStringLiteral("local-model"),
             true};
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("custom:removed")),
+                "select missing model");
+        const QString expected =
+            saveNestedPreferences ? model.selectionId() : QStringLiteral("free-translation");
         bool nested = false;
         int preferenceNotifications = 0;
         TranslationService::ChangeReason reason = TranslationService::ChangeReason::Catalog;
@@ -1437,9 +1509,8 @@ void catalogSelectionWritesRespectNestedUpdates(const QString& directory) {
                              }
                          });
         client.setCustomModels({model});
-        require(nested && service.preferences().modelId == model.selectionId() &&
-                    settings.value(QStringLiteral("screenshot_translation/model")) ==
-                        model.selectionId() &&
+        require(nested && service.preferences().modelId == expected &&
+                    settings.value(QStringLiteral("screenshot_translation/model")) == expected &&
                     preferenceNotifications == 1,
                 "catalog selection uses the persisted model while its cache awaits publication");
         require(reason == (saveNestedPreferences ? TranslationService::ChangeReason::UserPreferences

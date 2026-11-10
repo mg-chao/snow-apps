@@ -21,3 +21,5 @@ LangString SnowShotDesktopLaunchFailed 2052 "无法在您的桌面上启动 ${SN
 LangString SnowShotStartupCleanupFailed 2052 "无法完成 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 清理。请关闭 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 并使用管理员权限重试。"
 LangString SnowShotArm64Required 2052 "此安装程序需要 ARM64 版 Windows 11 或更高版本。"
 LangString SnowShot64BitRequired 2052 "此安装程序需要 64 位 Windows。"
+LangString SnowShotExtractingPayload 2052 "正在解压安装文件..."
+LangString SnowShotPayloadExtractionFailed 2052 "无法解压安装文件。请重新运行安装程序。"

@@ -1,11 +1,15 @@
 #ifndef SNOW_SHOT_PRESENTATION_CAPTURE_SCREENSHOTCAPTUREPOLICY_P_H
 #define SNOW_SHOT_PRESENTATION_CAPTURE_SCREENSHOTCAPTUREPOLICY_P_H
 
+#include "snow_shot/presentation/capture/screenshotcapturepolicy.h"
+
 #include <windows.h>
 
 namespace snow_shot::presentation::capture::detail {
 
 using DisplayColorInfoQuery = LONG(WINAPI*)(DISPLAYCONFIG_DEVICE_INFO_HEADER*);
+
+[[nodiscard]] ScreenshotApiMode autoScreenshotApiMode(bool anyActiveHdr) noexcept;
 
 [[nodiscard]] bool
 displayHdrEnabled(const DISPLAYCONFIG_PATH_TARGET_INFO& target,

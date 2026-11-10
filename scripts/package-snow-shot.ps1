@@ -38,6 +38,8 @@ Write-Host "MSVC toolset: $($buildEnvironment.MsvcToolset)"
 Write-Host "PE dependency inspector: $script:DumpbinPath"
 . (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
 . (Join-Path $PSScriptRoot 'snow-shot-ocr-native-validation.ps1')
+. (Join-Path $PSScriptRoot 'snow-shot-nsis-payload.ps1')
+. (Join-Path $PSScriptRoot 'snow-shot-codec-profile.ps1')
 $nativeTarget = $windowsTarget.HostArchitecture -ceq $Architecture
 $nativeProbesPassed = $false
 
@@ -297,7 +299,7 @@ function Get-SnowShotExpectedFfmpegComponents {
     $expectedFfmpegComponents = [ordered]@{
         BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "HEVC_MP4TOANNEXB", "VP9_SUPERFRAME")
         DECODER = @("AAC", "APNG", "GIF", "H264", "HEVC", "PCM_F32LE", "PCM_S16LE", "PNG", "VP8", "WEBP", "WEBP_ANIM")
-        ENCODER = @("AAC", "APNG", "GIF", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "HEVC_MF", "HEVC_AMF", "HEVC_NVENC", "HEVC_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265")
+        ENCODER = @("AAC", "APNG", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "HEVC_MF", "HEVC_AMF", "HEVC_NVENC", "HEVC_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265")
         HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2", "HEVC_D3D11VA", "HEVC_D3D11VA2", "HEVC_DXVA2")
         PARSER = @("AAC", "AC3", "GIF", "H264", "HEVC")
         DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
@@ -347,17 +349,7 @@ function Assert-SnowShotStaticDependencies {
             -Expected $entry.Value -Actual $actual
     }
 
-    $main10CapabilityPath = Join-Path $Prefix "share\x265\snow-main10-capability.json"
-    if (-not (Test-Path -LiteralPath $main10CapabilityPath -PathType Leaf)) {
-        throw "The audited x265 Main10 capability metadata was not found: $main10CapabilityPath"
-    }
-    $main10Capability = Get-Content -LiteralPath $main10CapabilityPath -Raw | ConvertFrom-Json
-    if ($main10Capability.schemaVersion -ne 1 -or
-        $main10Capability.bitDepth8 -ne $true -or
-        $main10Capability.bitDepth10 -ne $true -or
-        $main10Capability.singlePublicApi -ne $true) {
-        throw "The Snow Shot x265 build must provide both 8-bit and Main10 encoding."
-    }
+    Assert-SnowShotX265Profile -Prefix $Prefix
 
     $libraryDirectory = Join-Path $Prefix "lib"
 
@@ -1446,6 +1438,9 @@ foreach ($variant in @("online", "offline")) {
     $baseConfigPath = $cpackConfig.Replace('\', '/')
     $stagePath = $variantStages[$variant].Replace('\', '/')
     $packageDirectory = $nsisWorkDirectory.Replace('\', '/')
+    $nsisPayload = New-SnowShotNsisPayload -BuildDirectory $buildDirectory `
+        -Stage $variantStages[$variant] -Archive (Join-Path $nsisWorkDirectory "$packageBaseName.7z") `
+        -Architecture $Architecture
     @"
 include("$baseConfigPath")
 set(CPACK_INSTALL_CMAKE_PROJECTS "")
@@ -1454,6 +1449,7 @@ set(CPACK_PACKAGE_DIRECTORY "$packageDirectory")
 set(CPACK_PACKAGE_FILE_NAME "$packageBaseName")
 string(REPLACE "snow-shot-$packageVersion-$ocrPlatform.exe" "$packageBaseName.exe" CPACK_NSIS_DEFINES "`${CPACK_NSIS_DEFINES}")
 "@ | Set-Content -LiteralPath $variantConfig -Encoding utf8
+    Add-Content -LiteralPath $variantConfig -Value $nsisPayload.CPackDefinitions -Encoding utf8
     $packagePath = Join-Path $buildDirectory "$packageBaseName.exe"
     if (Test-Path -LiteralPath $packagePath) { Remove-Item -LiteralPath $packagePath -Force }
     if (Test-Path -LiteralPath "$packagePath.sha256") { Remove-Item -LiteralPath "$packagePath.sha256" -Force }
@@ -1511,6 +1507,7 @@ string(REPLACE "snow-shot-$packageVersion-$ocrPlatform.exe" "$packageBaseName.ex
         Qt = $qtStamp
         InstallTreeBytes = [long](($stageFileManifest | Measure-Object -Property Bytes -Sum).Sum)
         InstallFiles = $stageFileManifest
+        InstallerPayload = $nsisPayload.Report
         Installer = [ordered]@{
             Path = (Split-Path -Leaf $packagePath)
             Bytes = (Get-Item -LiteralPath $packagePath).Length

@@ -1220,7 +1220,7 @@ void shortcutHintsFollowRegionOperationTransitions() {
         fixture.flushFrame();
         const QString regionHints = hints->accessibleName();
         require(!regionHints.contains(QStringLiteral("Move entire selection")) &&
-                    !regionHints.contains(QStringLiteral("Selection Aspect Ratio Snap")) &&
+                    !regionHints.contains(QStringLiteral("Selection aspect ratio snap")) &&
                     !regionHints.contains(QStringLiteral("Copy color")) &&
                     !regionHints.contains(QStringLiteral("Switch screenshot history")) &&
                     regionHints.contains(QStringLiteral("Duplicate latest region")),
@@ -1245,8 +1245,8 @@ void shortcutHintsFollowRegionOperationTransitions() {
             hints->accessibleName().contains(QStringLiteral("Copy color")) &&
                 hints->accessibleName().contains(QStringLiteral("Move entire selection")) &&
                 !hints->accessibleName().contains(
-                    QStringLiteral("Keep selection width and height consistent")) &&
-                !hints->accessibleName().contains(QStringLiteral("Selection Aspect Ratio Snap")),
+                    QStringLiteral("Maintain selection aspect ratio")) &&
+                !hints->accessibleName().contains(QStringLiteral("Selection aspect ratio snap")),
             "committing an operation must restore whole-selection movement without resize hints");
         fixture.selection.setSelectionRect(QRect(700, 100, 200, 150));
         fixture.services->updateOverlayState();

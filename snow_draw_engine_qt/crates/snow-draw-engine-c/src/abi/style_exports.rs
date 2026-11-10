@@ -4,6 +4,64 @@ use crate::abi::raw_enum::SnowRawEnum;
 use crate::abi::types::*;
 
 /// # Safety
+/// The runtime must be live and the output pointer must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_set_creation_color_ex(
+    runtime: SnowRuntime,
+    enabled: u8,
+    color: SnowColorRgba8,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() || enabled > 1 {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let result = state
+                .runtime
+                .set_creation_color((enabled != 0).then(|| color.into()))
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
+#[cfg(test)]
+mod shared_creation_color_tests {
+    use super::*;
+
+    #[test]
+    fn shared_creation_color_export_validates_output_before_mutation() {
+        let mut state = SnowRuntimeImpl {
+            runtime: snow_draw_engine::Runtime::new(snow_draw_engine::RuntimeConfig::default()),
+        };
+        let before = state.runtime.serialize_document_session().unwrap();
+        let color = SnowColorRgba8 {
+            r: 19,
+            g: 47,
+            b: 83,
+            a: 0,
+        };
+        unsafe {
+            assert_eq!(
+                snow_runtime_set_creation_color_ex(&mut state, 1, color, std::ptr::null_mut()),
+                SnowError::InvalidArgument
+            );
+            assert_eq!(state.runtime.serialize_document_session().unwrap(), before);
+            let mut changed = std::ptr::null_mut();
+            assert_eq!(
+                snow_runtime_set_creation_color_ex(&mut state, 1, color, &mut changed),
+                SnowError::Ok
+            );
+            assert!(!changed.is_null());
+            assert!(!state.runtime.history_state().can_undo);
+            crate::abi::exports::snow_changed_viewports_destroy(changed);
+        }
+    }
+}
+
+/// # Safety
 /// Handles must be live and pointers must be readable/writable as indicated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_set_distance_style_patch_ex(

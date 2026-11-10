@@ -1,4 +1,6 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/pinnedwindowstackingcoordinator.h"
+#include <QScopeGuard>
 #include "snow_shot/presentation/automationrevision.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
@@ -80,6 +82,7 @@ PinnedWindowGroupManager::PinnedWindowGroupManager(storage::PinnedWindowReposito
             m_repository = &storage.pinnedWindows();
         }
     }
+    m_stacking = new PinnedWindowStackingCoordinator(m_repository, this);
     m_groups =
         m_repository != nullptr ? m_repository->groups() : QVector<storage::PinnedWindowGroup>{};
     if (m_groups.isEmpty()) {
@@ -276,9 +279,12 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
     if (!contains(groupId) || m_activeGroupId == groupId) {
         return contains(groupId);
     }
+    m_stacking->beginMutation();
+    auto mutation = qScopeGuard([this] { m_stacking->endMutation(); });
     if (m_repository != nullptr && !m_repository->setActiveGroup(groupId).success) {
         return false;
     }
+    m_stacking->cancelGroup(m_activeGroupId);
     m_activeGroupId = groupId;
     m_automationRevision = nextAutomationRevision();
     for (auto it = m_windows.begin(); it != m_windows.end();) {
@@ -297,6 +303,8 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
         }
         ++it;
     }
+    m_stacking->endMutation();
+    mutation.dismiss();
     emit activeGroupChanged(m_activeGroupId);
     restoreActiveGroupWindows();
     return true;
@@ -381,9 +389,12 @@ bool PinnedWindowGroupManager::deleteSpecifiedGroup(const QString& groupId) {
     if (!contains(groupId)) {
         return false;
     }
+    m_stacking->beginMutation();
+    auto mutation = qScopeGuard([this] { m_stacking->endMutation(); });
     if (m_repository != nullptr && !m_repository->removeGroupAndRecords(groupId).success) {
         return false;
     }
+    m_stacking->cancelGroup(groupId);
 
     const bool removesGroup = groupId != QString::fromLatin1(kDefaultGroupId);
     const bool activeRemoved = removesGroup && m_activeGroupId == groupId;
@@ -406,6 +417,8 @@ bool PinnedWindowGroupManager::deleteSpecifiedGroup(const QString& groupId) {
 
     emit groupDeletionRequested(groupId);
     scheduleGroupsChanged();
+    m_stacking->endMutation();
+    mutation.dismiss();
     if (activeRemoved) {
         emit activeGroupChanged(m_activeGroupId);
         restoreActiveGroupWindows();
@@ -428,7 +441,7 @@ void PinnedWindowGroupManager::openDeleteEmptyGroupsConfirmation(QWidget* owner)
         modal->setText(
             tr("Delete every group with no pinned windows other than closed ones? Closed pinned "
                "windows saved in those groups will also be permanently deleted. This "
-               "action cannot be undone."));
+               "action cannot be undone"));
         modal->setAcceptText(tr("Delete groups"));
         modal->setRejectText(tr("Cancel"));
     };
@@ -454,14 +467,14 @@ void PinnedWindowGroupManager::openDeleteSpecifiedGroupConfirmation(const QStrin
     auto* modal =
         createDeletionModal(owner, this, QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
     const auto updateText = [this, modal, groupId, isDefault]() {
-        modal->setWindowTitle(isDefault ? tr("Clear Default group") : tr("Delete group"));
+        modal->setWindowTitle(isDefault ? tr("Clear default group") : tr("Delete group"));
         modal->setText(
             isDefault
-                ? tr("Delete all pinned windows in \"%1\", including closed windows? The Default "
-                     "group will remain. This action cannot be undone.")
+                ? tr("Delete all pinned windows in \"%1\", including closed windows? The default "
+                     "group will remain. This action cannot be undone")
                       .arg(displayName(groupId))
                 : tr("Delete \"%1\" and all its pinned windows, including closed windows? This "
-                     "action cannot be undone.")
+                     "action cannot be undone")
                       .arg(displayName(groupId)));
         modal->setAcceptText(isDefault ? tr("Clear group") : tr("Delete group"));
         modal->setRejectText(tr("Cancel"));
@@ -489,6 +502,7 @@ bool PinnedWindowGroupManager::showWindow(const QString& id) {
 }
 
 void PinnedWindowGroupManager::markWindowClosing(ScreenshotPinnedWindow* window) {
+    m_stacking->retiring(window);
     const auto key = windowKey(window);
     m_inactiveClosing.insert(key);
     m_pendingGroups.remove(key);
@@ -546,6 +560,8 @@ bool PinnedWindowGroupManager::moveWindows(
     }
     if (targets.isEmpty())
         return false;
+    m_stacking->beginMutation();
+    const auto mutation = qScopeGuard([this] { m_stacking->endMutation(); });
     if (m_repository != nullptr && !persistenceIds.isEmpty() &&
         !m_repository->setRecordsGroup(persistenceIds, groupId).success)
         return false;
@@ -596,6 +612,8 @@ void PinnedWindowGroupManager::registerWindow(::ScreenshotPinnedWindow* window,
         return;
     }
     const QString key = windowKey(window);
+    if (!window->isLiveWindow())
+        m_stacking->track(window, window->persistenceId(), groupId);
     if (m_windows.value(key) == window) {
         return;
     }
@@ -702,7 +720,7 @@ void PinnedWindowGroupManager::openCreateGroupModal(
         if (!managerGuard) {
             result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
             result.errors.push_back(
-                tr("Unable to create the group or move the selected windows. Try again."));
+                tr("Unable to create the group or move the selected windows. Try again"));
             return result;
         }
         const QString name = value.toString().trimmed();
@@ -732,7 +750,7 @@ void PinnedWindowGroupManager::openCreateGroupModal(
         modal->setWindowScreen(screen != nullptr ? screen : QApplication::primaryScreen());
     }
     modal->setWindowModality(Qt::ApplicationModal);
-    modal->setWindowTitle(tr("New Group"));
+    modal->setWindowTitle(tr("New group"));
     modal->setCentered(true);
     modal->setPreferredWidth(400);
     modal->setMaskVisible(false);
@@ -751,14 +769,14 @@ void PinnedWindowGroupManager::openCreateGroupModal(
             [managerGuard, modal, itemGuard](const QString&, const QLocale&) {
                 if (!managerGuard || !itemGuard)
                     return;
-                modal->setWindowTitle(tr("New Group"));
+                modal->setWindowTitle(tr("New group"));
                 modal->setAcceptText(tr("Add"));
                 modal->setRejectText(tr("Cancel"));
                 itemGuard->setLabel(tr("Group name"));
                 itemGuard->setRequiredMessage(tr("Please enter a group name"));
                 if (itemGuard->property(kGroupCreateAssignmentFailureProperty).toBool())
-                    itemGuard->setErrorMessages({tr(
-                        "Unable to create the group or move the selected windows. Try again.")});
+                    itemGuard->setErrorMessages(
+                        {tr("Unable to create the group or move the selected windows. Try again")});
             });
     QVector<QString> persistenceIds;
     persistenceIds.reserve(currentWindows.size());
@@ -797,8 +815,8 @@ void PinnedWindowGroupManager::openCreateGroupModal(
                 if (itemGuard) {
                     itemGuard->setProperty(kGroupCreateAssignmentFailureProperty, true);
                     itemGuard->setValidateStatus(adqt::widgets::AdFormItem::ValidateStatus::Error);
-                    itemGuard->setErrorMessages({tr(
-                        "Unable to create the group or move the selected windows. Try again.")});
+                    itemGuard->setErrorMessages(
+                        {tr("Unable to create the group or move the selected windows. Try again")});
                 }
                 return;
             }

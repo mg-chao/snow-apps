@@ -1,5 +1,4 @@
 #include "snow_shot/app/edition.h"
-#include "snow_shot/app/updateconfirmationdialog.h"
 #include "snow_shot/presentation/components/aboutpagewidget.h"
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
@@ -16,7 +15,6 @@
 #include "widgets/input_text_edit.h"
 #include "icon_renderer.h"
 
-#include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
 #include <QEvent>
@@ -26,12 +24,9 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QImage>
-#include <QMessageBox>
 #include <QPainter>
-#include <QPushButton>
 #include <QStandardPaths>
 #include <QTemporaryDir>
-#include <QTimer>
 #include <QTranslator>
 
 #include <cstdlib>
@@ -209,9 +204,9 @@ void brandingRetranslatesWithoutChangingIdentifiers() {
         const char* mcpHelpSource =
             edition::isMini
                 ? "Add this configuration to your MCP client, then restart the client to connect. "
-                  "Keep %1 running while using MCP."
+                  "Keep %1 running while using MCP"
                 : "Add this configuration to your MCP client, then restart the client to connect. "
-                  "Keep Snow Shot running while using MCP.";
+                  "Keep Snow Shot running while using MCP";
         const QString translatedMcpHelp = translatedText("ScreenshotMcpSettings", mcpHelpSource);
         require(!translatedMcpHelp.isEmpty(), "all catalogs include edition-specific MCP help");
         require(mcpHelp->text() ==
@@ -251,28 +246,6 @@ void brandingRetranslatesWithoutChangingIdentifiers() {
         }
         require(card->currentRoute() == QStringLiteral("/about"),
                 "language changes preserve the stable About route");
-
-        bool inspected = false;
-        QTimer::singleShot(0, qApp, [&] {
-            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
-            require(dialog != nullptr, "update confirmation opens its testable Qt dialog");
-            const char* source =
-                edition::isMini
-                    ? "%1 will close and restart to install the update. Continue?"
-                    : "Snow Shot will close and restart to install the update. Continue?";
-            const QString translated =
-                translatedText("snow_shot::app::ApplicationController", source);
-            require(!translated.isEmpty(), "update confirmation branding exists in every catalog");
-            const QString expected = edition::isMini ? translated.arg(product) : translated;
-            require(dialog->text() == expected && dialog->text().contains(product),
-                    "update confirmation names the selected product in every language");
-            require(dialog->defaultButton() == dialog->button(QMessageBox::Cancel),
-                    "update confirmation preserves its cancel default");
-            inspected = true;
-            dialog->button(QMessageBox::Cancel)->click();
-        });
-        require(!snow_shot::app::confirmRestartAndUpdate(&window) && inspected,
-                "branding inspection cancels without applying an update");
 
         QCoreApplication::removeTranslator(&translator);
         flushEvents();

@@ -1,4 +1,5 @@
 #include "snow_shot/app/distribution.h"
+#include "snow_shot/app/mcp/mcpstartuperror.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -23,6 +24,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
+#include <QVariant>
 
 #include <cstdlib>
 #include <iostream>
@@ -30,6 +32,7 @@
 
 namespace settings = snow_shot::presentation::settings;
 namespace styles = snow_shot::presentation::styles;
+using snow_shot::app::mcp::McpStartupError;
 
 namespace {
 void require(bool condition, const char* message) {
@@ -45,7 +48,8 @@ class McpTranslator final : public QTranslator {
         return false;
     }
     QString translate(const char* context, const char* source, const char*, int) const override {
-        if (qstrcmp(context, "ScreenshotMcpSettings") == 0) {
+        if (qstrcmp(context, "ScreenshotMcpSettings") == 0 ||
+            qstrcmp(context, "snow_shot::app::mcp::ScreenshotMcpServer") == 0) {
             return QStringLiteral("Translated: %1").arg(QString::fromUtf8(source));
         }
         return {};
@@ -62,6 +66,7 @@ void mcpSettingsWidget() {
     require(field != nullptr, "MCP field exists in the built-in registry");
     qApp->setProperty("snowShotMcpRunning", false);
     qApp->setProperty("snowShotMcpConnections", 0);
+    qApp->setProperty("snowShotMcpStartError", QVariant::fromValue(McpStartupError::None));
     std::unique_ptr<SettingsCustomWidget> widget(
         createSettingsCustomWidget(renderer, registry, *field->definition, session));
     auto* status = widget->findChild<adqt::widgets::AdTag*>(QStringLiteral("settings-mcp-status"));
@@ -177,8 +182,64 @@ void mcpSettingsWidget() {
     qApp->setProperty("snowShotMcpRunning", false);
     QMetaObject::invokeMethod(timers.front(), "timeout", Qt::DirectConnection);
     require(status->colorScheme() == adqt::widgets::AdTag::ColorScheme::Default &&
-                clients->text() == QStringLiteral("MCP is disabled or unavailable."),
+                clients->text() == QStringLiteral("MCP is disabled or unavailable"),
             "stopping the service clears the connected state");
+    struct FailureCase {
+        McpStartupError error;
+        const char* source;
+    };
+    const FailureCase failures[] = {
+        {McpStartupError::RuntimeDirectory, "Could not secure the MCP runtime directory"},
+        {McpStartupError::EndpointOwned, "Another Snow Shot instance owns the MCP endpoint"},
+        {McpStartupError::LocalEndpoint, "Could not open the local MCP endpoint"},
+        {McpStartupError::Descriptor, "Could not write the private MCP descriptor"},
+    };
+    for (const auto& failure : failures) {
+        qApp->setProperty("snowShotMcpStartError", QVariant::fromValue(failure.error));
+        QMetaObject::invokeMethod(timers.front(), "timeout", Qt::DirectConnection);
+        const QString source = QString::fromUtf8(failure.source);
+        require(status->text() == QStringLiteral("Unavailable") && clients->text() == source,
+                "failed startup exposes its specific reason before a language change");
+
+        require(QCoreApplication::installTranslator(&translator),
+                "install a new language after the startup failure");
+        QApplication::sendEvent(widget.get(), &languageChange);
+        const QString translated = QStringLiteral("Translated: %1").arg(source);
+        require(status->text() == QStringLiteral("Translated: Unavailable") &&
+                    clients->text() == translated,
+                "language changes retranslate an existing startup failure");
+        require(qApp->property("snowShotMcpStartError").value<McpStartupError>() == failure.error,
+                "retranslation preserves the language-independent failure identity");
+
+        std::unique_ptr<SettingsCustomWidget> reopened(
+            createSettingsCustomWidget(renderer, registry, *field->definition, session));
+        auto* reopenedStatus =
+            reopened->findChild<adqt::widgets::AdTag*>(QStringLiteral("settings-mcp-status"));
+        auto* reopenedClients =
+            reopened->findChild<QLabel*>(QStringLiteral("settings-mcp-clients"));
+        require(reopenedStatus && reopenedClients &&
+                    reopenedStatus->text() == QStringLiteral("Translated: Unavailable") &&
+                    reopenedClients->text() == translated,
+                "opening settings after failure uses the current language immediately");
+
+        QCoreApplication::removeTranslator(&translator);
+        QApplication::sendEvent(widget.get(), &languageChange);
+        QApplication::sendEvent(reopened.get(), &languageChange);
+        require(clients->text() == source && reopenedClients->text() == source &&
+                    qApp->property("snowShotMcpStartError").value<McpStartupError>() ==
+                        failure.error,
+                "switching back restores the original language without replacing the failure");
+    }
+    qApp->setProperty("snowShotMcpStartError", QVariant::fromValue(McpStartupError::None));
+    QMetaObject::invokeMethod(timers.front(), "timeout", Qt::DirectConnection);
+    require(clients->text() == QStringLiteral("MCP is disabled or unavailable"),
+            "clearing startup failure restores the disabled-state explanation");
+    qApp->setProperty("snowShotMcpRunning", true);
+    QMetaObject::invokeMethod(timers.front(), "timeout", Qt::DirectConnection);
+    require(status->text() == QStringLiteral("Running") &&
+                clients->text() == QStringLiteral("Connected clients: 3"),
+            "recovery replaces the startup error with the live connection status");
+    qApp->setProperty("snowShotMcpRunning", false);
 }
 } // namespace
 

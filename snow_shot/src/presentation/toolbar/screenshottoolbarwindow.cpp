@@ -31,7 +31,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showLineTool = true;
     options.showDistanceTool = true;
     options.showAngleTool = true;
-    options.showFreeDrawTool = true;
+    options.showBrushTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
     options.showMagnifierTool = true;
@@ -39,7 +39,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showFilterTool = true;
     options.showWatermarkTool = true;
     options.showTextTool = true;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showOcrTool = true;
     options.showTextTranslationTool = true;
     options.showTableTool = true;
@@ -157,7 +157,7 @@ void ScreenshotToolbarWindow::initializePalette() {
     connectToolCommands(*toolPalette);
     connectActionCommands(*toolPalette);
     connectStyleCommands(*toolPalette);
-    connectSerialNumberCommands(*toolPalette);
+    connectSequenceNumberCommands(*toolPalette);
     connectScrollingScreenshotCommands(*toolPalette);
     connect(toolPalette, &ScreenshotToolPalette::cursorVisibilityToggled, this,
             [this](bool visible) {
@@ -234,9 +234,9 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
         m_commands.setTextTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Text);
     });
-    connect(&toolPalette, &ScreenshotToolPalette::serialNumberRequested, this, [this]() {
-        m_commands.setSerialNumberTool();
-        setActiveToolAndReposition(ScreenshotToolPalette::Tool::SerialNumber);
+    connect(&toolPalette, &ScreenshotToolPalette::sequenceNumberRequested, this, [this]() {
+        m_commands.setSequenceNumberTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::SequenceNumber);
     });
     connect(&toolPalette, &ScreenshotToolPalette::ocrRequested, this, [this]() {
         m_commands.setOcrTool();
@@ -308,6 +308,10 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
             [this](const QString& value) { m_commands.applyTextPunctuation(value); });
     connect(&toolPalette, &ScreenshotToolPalette::textTargetLanguageRequested, this,
             [this](const QString& language) { m_commands.applyTextTargetLanguage(language); });
+    connect(&toolPalette, &ScreenshotToolPalette::textTranslationServicesRequested, this,
+            [this] { m_commands.requestTextTranslationServices(); });
+    connect(&toolPalette, &ScreenshotToolPalette::textTranslationServiceRequested, this,
+            [this](const QString& service) { m_commands.applyTextTranslationService(service); });
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     connect(&toolPalette, &ScreenshotToolPalette::tableMergeRequested, this,
             [this]() { m_commands.mergeTableSelection(); });
@@ -419,17 +423,17 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
         m_commands.setLineTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Line);
     });
-    connect(&toolPalette, &ScreenshotToolPalette::freeDrawRequested, this, [this]() {
-        m_commands.setFreeDrawTool();
-        setActiveToolAndReposition(ScreenshotToolPalette::Tool::FreeDraw);
+    connect(&toolPalette, &ScreenshotToolPalette::brushRequested, this, [this]() {
+        m_commands.setBrushTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::Brush);
     });
     connect(&toolPalette, &ScreenshotToolPalette::highlightRequested, this, [this]() {
         m_commands.setHighlightTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::RectangleHighlight);
     });
-    connect(&toolPalette, &ScreenshotToolPalette::penHighlightRequested, this, [this]() {
-        m_commands.setPenHighlightTool();
-        setActiveToolAndReposition(ScreenshotToolPalette::Tool::PenHighlight);
+    connect(&toolPalette, &ScreenshotToolPalette::brushHighlightRequested, this, [this]() {
+        m_commands.setBrushHighlightTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::BrushHighlight);
     });
     connect(&toolPalette, &ScreenshotToolPalette::rectangleEraserRequested, this, [this]() {
         m_commands.setRectangleEraserTool();
@@ -465,9 +469,9 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     });
     connect(&toolPalette, &ScreenshotToolPalette::autoFilterCategoryRequested, this,
             [this](const QString& category) { m_commands.fillAutoFilterCategory(category); });
-    connect(&toolPalette, &ScreenshotToolPalette::penFilterRequested, this, [this]() {
-        m_commands.setPenFilterTool();
-        setActiveToolAndReposition(ScreenshotToolPalette::Tool::PenFilter);
+    connect(&toolPalette, &ScreenshotToolPalette::brushFilterRequested, this, [this]() {
+        m_commands.setBrushFilterTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::BrushFilter);
     });
 
     connect(&toolPalette, &ScreenshotToolPalette::watermarkRequested, this, [this]() {
@@ -498,13 +502,13 @@ void ScreenshotToolbarWindow::setActiveToolAndReposition(ScreenshotToolPalette::
     }
 }
 
-void ScreenshotToolbarWindow::connectSerialNumberCommands(ScreenshotToolPalette& toolPalette) {
-    connect(&toolPalette, &ScreenshotToolPalette::serialNumberDecrementRequested, this,
-            [this]() { m_commands.decrementSelectedSerialNumbers(); });
-    connect(&toolPalette, &ScreenshotToolPalette::serialNumberIncrementRequested, this,
-            [this]() { m_commands.incrementSelectedSerialNumbers(); });
-    connect(&toolPalette, &ScreenshotToolPalette::serialNumberCreateTextRequested, this,
-            [this]() { m_commands.createTextForSelectedSerialNumber(); });
+void ScreenshotToolbarWindow::connectSequenceNumberCommands(ScreenshotToolPalette& toolPalette) {
+    connect(&toolPalette, &ScreenshotToolPalette::sequenceNumberDecrementRequested, this,
+            [this]() { m_commands.decrementSelectedSequenceNumbers(); });
+    connect(&toolPalette, &ScreenshotToolPalette::sequenceNumberIncrementRequested, this,
+            [this]() { m_commands.incrementSelectedSequenceNumbers(); });
+    connect(&toolPalette, &ScreenshotToolPalette::sequenceNumberCreateTextRequested, this,
+            [this]() { m_commands.createTextForSelectedSequenceNumber(); });
 }
 
 void ScreenshotToolbarWindow::connectScrollingScreenshotCommands(

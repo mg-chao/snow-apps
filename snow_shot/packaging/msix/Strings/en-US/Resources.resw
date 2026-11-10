@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
   <data name="DisplayName" xml:space="preserve"><value>Snow Shot</value></data>
-  <data name="Description" xml:space="preserve"><value>Capture, annotate, pin, and recognize screen content.</value></data>
+  <data name="Description" xml:space="preserve"><value>Capture, annotate, and recognize screen content, and pin it to the screen.</value></data>
   <data name="FileTypesDisplayName" xml:space="preserve"><value>Images and text documents</value></data>
   <data name="EditVerb" xml:space="preserve"><value>Edit with Snow Shot</value></data>
 </root>

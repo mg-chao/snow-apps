@@ -1,6 +1,9 @@
 # Shake pinned windows
 
 The switch lives in **Settings > Pin to screen > Interaction** and defaults on.
+Its label is **Shake a window to hide/show other windows.** A shake shows hidden
+pins in the current group, including manually hidden pins. If no peers are hidden,
+it hides the other pins. Closed history and other groups do not affect the toggle.
 A shake is six alternating legs of at least 48 logical pixels on either axis,
 with five reversals, a maximum of 250 ms per leg, and 700 ms for the sequence.
 This requires three rapid round trips; short back-and-forth adjustments and two
@@ -28,9 +31,13 @@ hidden to the top edge among the peers.
    hidden.** for three seconds. Continue dragging: capture, position, focus, and
    cursor behavior must remain correct. Additional shaking during the same drag
    does nothing.
-2. Use Show All. Hidden peers return with their contents, placement, and modes
-   intact. Other groups and closed history must not change. A second shake hides
-   peers again; it does not restore them.
+2. Release, then shake again. Hidden peers return with their contents, placement,
+   stacking, and modes intact. The grabbed pin shows **Other windows shown.**
+   for three seconds and keeps its focus and drag capture; continue dragging it.
+   Release and shake a third time to hide peers again. Manually hide one peer
+   while leaving another visible, then shake: the hidden peer returns and the
+   visible peer stays visible. Other groups and closed history must not change.
+   Verify that the explicit Show All and Hide Others commands retain their behavior.
 3. Ordinary dragging, small jitter, slow zigzags, resizing, drawing, selecting
    text, exporting by drag, keyboard cursor movement, and dragging a multi-window
    selection must not hide peers. The existing duplicate-content attention
@@ -39,14 +46,16 @@ hidden to the top edge among the peers.
    during an existing drag requires a new press. Interaction reset enables it;
    appearance reset preserves the preference. Restart to confirm persistence.
 5. Cancel an incomplete shake with Escape or interrupt capture. It must not carry
-   into the next drag. Cancellation before a queued hide executes discards it;
-   normal release after recognition preserves it. Cancellation after peers have
-   disappeared does not restore them.
+   into the next drag. Cancellation before a queued visibility change executes
+   discards it; normal release after recognition preserves it. Cancellation after
+   a visibility change does not reverse it. With large saved pins, shake to show
+   them and shake again in a fresh drag before loading finishes: the later hide
+   must win without a late window reappearing.
 6. On mixed-DPI monitors (Windows) or Retina/non-Retina displays (macOS), move a
    pin across the display boundary during an incomplete gesture. Crossing must
    not trigger hiding; a fresh complete shake on either display must work at the
    same logical amplitude. Check fractional Windows scaling as well.
-7. Switch languages while the success message is open. The text must update in
+7. Switch languages while each success message is open. The text must update in
    place without extending its deadline. Check a small pin and ensure the message
    remains scoped to its owner without taking keyboard focus.
 
@@ -65,6 +74,21 @@ test targets in `windows-msvc-debug`, then run:
 ctest --preset test-windows-msvc-debug -R '^snow-shot-pinned-shake-(detector|window|settings|settings-catalog)-tests$' --output-on-failure
 ctest --test-dir build/windows-msvc-debug -C Debug -R '^snow-shot-pinned-shake-native-tests$' --output-on-failure
 ```
+
+On macOS, build the same focused targets with `snow-shot-macos-arm64-debug`
+(or the x64 preset), then run the corresponding unit checks and the native focus
+regression separately:
+
+```sh
+ctest --preset test-snow-shot-macos-arm64-debug -R '^snow-shot-pinned-shake-(window|settings|settings-catalog)-tests$' --output-on-failure
+ctest --test-dir build/snow-shot-macos-arm64-debug -R '^snow-shot-pinned-shake-focus-native-tests$' --output-on-failure
+```
+
+The native focus regression posts real mouse input. It checks hide → show → hide
+across separate drags, continued movement with capture and focus intact, and
+shaking a restored pin. Run it in an otherwise idle desktop session with input
+automation access. Qt's offscreen plugin activates passive windows, so offscreen
+checks verify the activation hint and visibility while native checks verify focus.
 
 For performance, build `snow-shot-pinned-shake-performance-benchmark` and
 `snow-shot-pinned-window-tests` with **windows-msvc-performance / Release**.

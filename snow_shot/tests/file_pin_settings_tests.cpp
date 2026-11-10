@@ -293,6 +293,10 @@ void textSelectionSettings() {
     settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
     require(stored.textSelectionOnRecognitionResults() == QStringLiteral("always"),
             "recognition result text selection defaults to always");
+    const auto quickBinding = settings::SettingsSwitchBinding::PinQuickAnnotationForSelectedText;
+    require(stored.quickAnnotationForSelectedText() && session.switchValue(quickBinding) &&
+                session.switchEnabled(quickBinding),
+            "quick annotation defaults on and is available with Always selection");
     const auto* field = settings::builtInSettingsRegistry().fieldForSelect(binding);
     require(field &&
                 field->id ==
@@ -317,15 +321,28 @@ void textSelectionSettings() {
     require(index > 0 && section->items[index - 1].id ==
                              QStringLiteral("pin-to-screen.automatic-text-recognition"),
             "selection setting follows automatic recognition");
+    const auto* quickField = settings::builtInSettingsRegistry().fieldForSwitch(quickBinding);
+    require(quickField &&
+                quickField->reset == settings::SettingsSectionReset::PinToScreenBehavior &&
+                index + 1 < section->items.size() && section->items[index + 1].id == quickField->id,
+            "quick annotation switch follows the text selection policy");
+    require(session.applySwitchValue(quickBinding, false) &&
+                !stored.quickAnnotationForSelectedText(),
+            "quick annotation switch persists its own preference");
+    require(session.applySwitchValue(quickBinding, true), "restore quick annotation preference");
     require(session.applySelectValue(binding, QStringLiteral("only_when_displayed")) &&
                 stored.textSelectionOnRecognitionResults() == QStringLiteral("only_when_displayed"),
             "settings session writes selection policy through backend");
+    require(!session.switchEnabled(quickBinding) && stored.quickAnnotationForSelectedText() &&
+                !backend.applySwitchValue(quickBinding, false),
+            "Only when displayed disables the switch without forgetting its preference");
     require(!stored.setTextSelectionOnRecognitionResults(QStringLiteral("invalid")) &&
                 stored.textSelectionOnRecognitionResults() == QStringLiteral("only_when_displayed"),
             "schema rejects unsupported selection modes");
     require(backend.resetSection(settings::SettingsSectionReset::PinToScreenBehavior) &&
-                stored.textSelectionOnRecognitionResults() == QStringLiteral("always"),
-            "pin behavior reset restores default selection policy");
+                stored.textSelectionOnRecognitionResults() == QStringLiteral("always") &&
+                stored.quickAnnotationForSelectedText() && session.switchEnabled(quickBinding),
+            "pin behavior reset restores selection and quick annotation defaults");
 }
 
 void clipboardSourceIdentity() {
@@ -362,9 +379,9 @@ void duplicateContentSettings() {
     const QStringList values{QStringLiteral("none"), QStringLiteral("shake_window"),
                              QStringLiteral("restore_last_closed_window"),
                              QStringLiteral("repeat_action")};
-    const QStringList labels{QStringLiteral("None"), QStringLiteral("Shake Window"),
-                             QStringLiteral("Restore Last Closed Window"),
-                             QStringLiteral("Repeat Action")};
+    const QStringList labels{QStringLiteral("None"), QStringLiteral("Shake window"),
+                             QStringLiteral("Restore last closed window"),
+                             QStringLiteral("Repeat action")};
     require(select.options.size() == values.size(), "duplicate policy has four choices");
     for (int i = 0; i < values.size(); ++i) {
         require(select.options[i].value == values[i] &&
@@ -563,6 +580,13 @@ int main(int argc, char** argv) {
     require(
         storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path()}).success,
         "temporary storage must initialize");
+    if (app.arguments().contains(QStringLiteral("--quick-text-annotation-only"))) {
+        textSelectionSettings();
+        require(settings::builtInSettingsRegistry().catalog().validationErrors().isEmpty(),
+                "quick annotation settings preserve catalog validity");
+        storage.shutdown();
+        return 0;
+    }
     pinnedTextStyleSettings();
     windowButtonSettings();
     exitAnnotationModeBeforeClosingSettings();

@@ -55,9 +55,9 @@ class ScreenshotToolbarCommandSink {
     virtual void setDistanceTool() {}
     virtual void setAngleTool() {}
     virtual void setBracketTool() {}
-    virtual void setFreeDrawTool() = 0;
+    virtual void setBrushTool() = 0;
     virtual void setHighlightTool() = 0;
-    virtual void setPenHighlightTool() = 0;
+    virtual void setBrushHighlightTool() = 0;
     virtual void setSpotlightTool() {}
     virtual void setMagnifierTool() {}
     virtual void setEraserTool() = 0;
@@ -67,7 +67,7 @@ class ScreenshotToolbarCommandSink {
     virtual void setRectangleFilterTool() {
         setFilterTool();
     }
-    virtual void setPenFilterTool() {}
+    virtual void setBrushFilterTool() {}
     virtual void setAutoFilterTool() {}
     virtual void fillAutoFilterCategory(const QString&) {}
     virtual void setWatermarkTool() = 0;
@@ -78,7 +78,7 @@ class ScreenshotToolbarCommandSink {
     virtual void setFilterStyleFromToolbar(const SnowCanvasFilterStyle& style,
                                            quint32 properties) = 0;
     virtual void setTextTool() = 0;
-    virtual void setSerialNumberTool() = 0;
+    virtual void setSequenceNumberTool() = 0;
     virtual void setOcrTool() = 0;
     virtual void setTextTranslationTool() {
         setOcrTool();
@@ -109,6 +109,8 @@ class ScreenshotToolbarCommandSink {
     virtual void applyTextFormatting(const QString&) {}
     virtual void applyTextPunctuation(const QString&) {}
     virtual void applyTextTargetLanguage(const QString&) {}
+    virtual void requestTextTranslationServices() {}
+    virtual void applyTextTranslationService(const QString&) {}
     virtual void startScrollingScreenshot() = 0;
     virtual void restartScrollingScreenshot() {}
     virtual void splitScrollingScreenshot() {}
@@ -132,10 +134,10 @@ class ScreenshotToolbarCommandSink {
     virtual void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                           SnowCanvasShapeKind kind) = 0;
     virtual void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties) = 0;
-    virtual void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style) = 0;
-    virtual void decrementSelectedSerialNumbers() = 0;
-    virtual void incrementSelectedSerialNumbers() = 0;
-    virtual void createTextForSelectedSerialNumber() = 0;
+    virtual void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style) = 0;
+    virtual void decrementSelectedSequenceNumbers() = 0;
+    virtual void incrementSelectedSequenceNumbers() = 0;
+    virtual void createTextForSelectedSequenceNumber() = 0;
     virtual void reorderSelectedElements(SnowCanvasSelectionOrder) {}
     virtual void alignSelectedElements(SnowCanvasSelectionAlignment) {}
     virtual void setSelectedElementsOpacity(qreal) {}

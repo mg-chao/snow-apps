@@ -19,12 +19,12 @@ SCRIPT = Path(__file__).resolve().with_name('install-snow-shot-macos.sh')
 PREFLIGHT = SCRIPT.with_name('prepare-snow-shot-homebrew.sh')
 FINGERPRINT = 'A' * 40
 REQUIREMENT = 'identifier "com.snowshot.snow_shot" and anchor = H"' + FINGERPRINT + '"'
-API = 'https://api.github.com/repos/mg-chao/snow-apps/releases?per_page=100&page=1'
+API = 'https://api.github.com/repos/mg-chao/snow-shot/releases?per_page=100&page=1'
 GITEE_API = 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1'
 GITEE_ATTACH = 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/123/attach_files?per_page=100'
 ASSET = 'snow-shot-1.2.3-macos-arm64.dmg'
 TAG = 'v1.2.3_snow-shot'
-GITHUB = 'https://github.com/mg-chao/snow-apps/releases/download/' + TAG + '/' + ASSET
+GITHUB = 'https://github.com/mg-chao/snow-shot/releases/download/' + TAG + '/' + ASSET
 GITEE = 'https://gitee.com/mg-chao/snow-apps/releases/download/' + TAG + '/' + ASSET
 
 MOCK = r'''#!/usr/bin/env python3
@@ -159,7 +159,7 @@ class InstallerTests(unittest.TestCase):
         self.gitee_metadata['id'] = 123
         attachments = self.gitee_metadata.pop('assets')
         for asset in attachments:
-            asset['browser_download_url'] = asset['browser_download_url'].replace('github.com', 'gitee.com')
+            asset['browser_download_url'] = asset['browser_download_url'].replace(GITHUB, GITEE)
         self.gitee_release.write_text(json.dumps([self.gitee_metadata]))
         self.gitee_attachments = self.root / 'gitee-attachments.json'
         self.gitee_attachments.write_text(json.dumps(attachments))

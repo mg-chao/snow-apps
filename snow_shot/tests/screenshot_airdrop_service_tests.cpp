@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/presentation/screenshotairdropservice.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "../src/presentation/services/screenshotairdropcompletion.h"
 
 #include <QApplication>
@@ -7,10 +8,13 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QThread>
+#include <QSemaphore>
+#include <QScopeGuard>
 #include <QWidget>
 
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <thread>
 #include <utility>
 
@@ -58,6 +62,8 @@ void pngLifetimeAndTerminalOutcomes() {
         });
         int completions = 0;
         QImage source = snapshot();
+        if (status == Service::Status::Shared)
+            source.setColorSpace(QColorSpace::DisplayP3);
         const QImage expected = source;
         require(service.shareImage(&owner, &owner, source, QStringLiteral("capture.png"),
                                    [&](Service::Result result) {
@@ -153,6 +159,39 @@ void unavailableAndEarlyDestruction() {
     wait([&] { return service.findChildren<QObject*>().isEmpty(); });
     require(starts == 0 && completions == 1, "destroyed receiver gets no native UI or callback");
 }
+void cancelledPreparationWaitingForMemoryNeverStartsSharing() {
+    QObject receiver;
+    QSemaphore release;
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    bool blockerCompleted = false;
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    const auto blocker = coordinator.submit(
+        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [&](const ScreenshotExportCancellation&) {
+            release.acquire();
+            return ScreenshotExportTaskResult{};
+        },
+        [&](auto) { blockerCompleted = true; }, std::numeric_limits<qint64>::max());
+    require(blocker.isValid(), "reserve preparation memory before sharing");
+    auto owner = std::make_unique<QWidget>();
+    int starts = 0;
+    int completions = 0;
+    Service service([&](QWidget*, QString, auto) { ++starts; });
+    require(service.shareImage(&receiver, owner.get(), snapshot(), {},
+                               [&](auto result) {
+                                   require(result.status == Service::Status::Cancelled,
+                                           "destroying queued share owner reports cancellation");
+                                   ++completions;
+                               }),
+            "sharing waits for preparation memory");
+    owner.reset();
+    require(completions == 1 && !service.busy(), "queued cancellation releases caller immediately");
+    release.release();
+    wait([&] { return blockerCompleted && coordinator.pendingJobCount() == 0; });
+    require(starts == 0 && completions == 1,
+            "cancelled queued preparation never opens native sharing or completes twice");
+}
+
 void screenshotCompletionPolicy() {
     for (const auto status :
          {Service::Status::Shared, Service::Status::Cancelled, Service::Status::Failed,
@@ -185,6 +224,7 @@ int main(int argc, char** argv) {
     pngLifetimeAndTerminalOutcomes();
     destructionKeepsInFlightFileAlive();
     unavailableAndEarlyDestruction();
+    cancelledPreparationWaitingForMemoryNeverStartsSharing();
     screenshotCompletionPolicy();
     return 0;
 }

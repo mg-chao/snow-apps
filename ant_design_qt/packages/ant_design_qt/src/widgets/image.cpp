@@ -50,6 +50,7 @@
 #include <memory>
 #include <limits>
 #include <new>
+#include <stop_token>
 #include <string>
 #include <utility>
 #include <vector>
@@ -269,26 +270,28 @@ QImage imageFromSnow(const snow::image::Image& source, QString* error) {
     }
     return {};
   }
-  QImage image(static_cast<int>(source.width()), static_cast<int>(source.height()),
-               QImage::Format_RGBA8888);
+  // Share the immutable decoder buffer until the final thumbnail has been scaled.
+  // In particular, PNG previews need no second full-resolution pixel allocation.
+  auto owner = std::make_unique<snow::image::Image>(source);
+  QImage image(
+      reinterpret_cast<const uchar*>(owner->pixels().data()), static_cast<int>(owner->width()),
+      static_cast<int>(owner->height()), static_cast<qsizetype>(owner->row_stride()),
+      QImage::Format_RGBA8888, [](void* value) { delete static_cast<snow::image::Image*>(value); },
+      owner.get());
   if (image.isNull()) {
     if (error) {
       *error = QStringLiteral("Could not allocate the decoded image.");
     }
     return {};
   }
-  for (std::uint32_t row = 0; row < source.height(); ++row) {
-    std::memcpy(image.scanLine(static_cast<int>(row)),
-                source.pixels().data() + static_cast<std::size_t>(row) * source.row_stride(),
-                rowBytes);
-  }
-  image.setColorSpace(QColorSpace(QColorSpace::SRgb));
+  static_cast<void>(owner.release());
   return image;
 }
 
 DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
-                         const AdImageLoadOptions& options) {
+                         const AdImageLoadOptions& options, std::stop_token stop) {
   try {
+    if (stop.stop_requested()) return {};
     const auto input = makeSnowInput(source, suppliedBytes);
     if (!input) {
       return {QImage(), QSize(), snowStatusText(input.error())};
@@ -304,7 +307,7 @@ DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
 
     QSize naturalSize;
     if (options.targetPixelSize.isValid() && !options.targetPixelSize.isEmpty()) {
-      const auto inspected = service.inspect(input.value(), decodeOptions);
+      const auto inspected = service.inspect(input.value(), decodeOptions, stop);
       if (!inspected) {
         return {QImage(), QSize(), snowStatusText(inspected.error())};
       }
@@ -320,10 +323,16 @@ DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
       if (target.isValid() && !target.isEmpty()) {
         decodeOptions.maximum_extent =
             static_cast<std::uint32_t>(std::max(target.width(), target.height()));
+        if (inspected.value().format == snow::image::Format::jpeg) {
+          decodeOptions.maximum_extent = std::max(
+              *decodeOptions.maximum_extent,
+              (std::max(inspected.value().canvas_width, inspected.value().canvas_height) + 7U) /
+                  8U);
+        }
       }
     }
 
-    const auto decoded = service.decode(input.value(), decodeOptions);
+    const auto decoded = service.decode(input.value(), decodeOptions, stop);
     if (!decoded) {
       return {QImage(), QSize(), snowStatusText(decoded.error())};
     }
@@ -331,6 +340,7 @@ DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
       return {QImage(), naturalSize,
               QStringLiteral("The image document contains no display frame.")};
     }
+    if (stop.stop_requested()) return {};
     if (!naturalSize.isValid() &&
         decoded.value().canvas_width <=
             static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
@@ -353,6 +363,8 @@ DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
         image = image.scaled(target, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
       }
     }
+    image.setColorSpace(QColorSpace(QColorSpace::SRgb));
+    if (stop.stop_requested()) return {};
     return {std::move(image), naturalSize, {}};
   } catch (const std::bad_alloc&) {
     return {QImage(), QSize(), QStringLiteral("Image decoding ran out of memory")};
@@ -506,6 +518,7 @@ class DefaultImageLoader final : public AdImageLoader {
   explicit DefaultImageLoader(QObject* parent = nullptr) : AdImageLoader(parent) {}
 
   ~DefaultImageLoader() override {
+    for (const auto& operation : operations_) operation->stop.request_stop();
     if (decodePool_) {
       decodePool_->waitForDone();
       decodePool_.reset();
@@ -574,6 +587,7 @@ class DefaultImageLoader final : public AdImageLoader {
     AdImageLoadOptions options;
     QVector<QPointer<DefaultImageReply>> subscribers;
     QPointer<QNetworkReply> networkReply;
+    std::stop_source stop;
   };
 
   void startDecode(const std::shared_ptr<Operation>& operation, QByteArray bytes) {
@@ -587,7 +601,8 @@ class DefaultImageLoader final : public AdImageLoader {
     const std::uint64_t poolGeneration = poolGeneration_;
     decodePool_->start(
         [guardedLoader, operation, bytes = std::move(bytes), poolGeneration]() mutable {
-          const DecodedImage decoded = decodeImage(operation->source, bytes, operation->options);
+          const DecodedImage decoded = decodeImage(operation->source, bytes, operation->options,
+                                                   operation->stop.get_token());
           if (!guardedLoader) {
             return;
           }
@@ -602,7 +617,8 @@ class DefaultImageLoader final : public AdImageLoader {
                 guardedLoader->finishDecodeTask(poolGeneration);
               },
               Qt::QueuedConnection);
-        });
+        },
+        nextDecodePriority());
   }
 
   void finishOperation(const std::shared_ptr<Operation>& operation, const DecodedImage& decoded,
@@ -643,6 +659,7 @@ class DefaultImageLoader final : public AdImageLoader {
       return;
     }
     operations_.remove(key);
+    operation->stop.request_stop();
     if (operation->networkReply) {
       operation->networkReply->disconnect(this);
       if (operation->networkReply->isRunning()) {
@@ -658,7 +675,14 @@ class DefaultImageLoader final : public AdImageLoader {
     return manager;
   }
 
+  int nextDecodePriority() {
+    if (activeDecodeTasks_ == 1) decodePriority_ = 0;
+    if (decodePriority_ < std::numeric_limits<int>::max()) ++decodePriority_;
+    return decodePriority_;
+  }
+
   QHash<QString, std::shared_ptr<Operation>> operations_;
+  int decodePriority_ = 0;
   std::unique_ptr<QThreadPool> decodePool_;
   int activeDecodeTasks_ = 0;
   std::uint64_t poolGeneration_ = 0;

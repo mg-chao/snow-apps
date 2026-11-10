@@ -30,7 +30,7 @@ struct GlobalMouseManager::Impl {
         using Action = settings::SettingsGlobalMouseAction;
         const std::array pairs{
             std::pair{Action::ScreenshotCopy, "global_mouse/screenshot_copy"},
-            std::pair{Action::ScreenshotFixed, "global_mouse/screenshot_fixed"},
+            std::pair{Action::ScreenshotPinToScreen, "global_mouse/screenshot_fixed"},
             std::pair{Action::ScreenshotOcr, "global_mouse/screenshot_ocr"},
             std::pair{Action::ScreenshotOcrCopy, "global_mouse/screenshot_ocr_copy"},
             std::pair{Action::ScreenshotTranslation, "global_mouse/screenshot_translation"},
@@ -215,7 +215,7 @@ void GlobalMouseManager::initialize() {
                     if (m_impl->started && epoch == m_impl->generation) {
                         qWarning("Global mouse input initialization failed: %u", code);
                         emit operationFailed(
-                            tr("Global mouse input is unavailable (error %1).").arg(code));
+                            tr("Global mouse input is unavailable (error %1)").arg(code));
                     }
                 },
                 Qt::QueuedConnection);
@@ -294,19 +294,19 @@ QString globalMousePermissionMessage(const GlobalMousePermissionState& state) {
     using Status = GlobalMousePermissionState::Status;
     switch (state.status) {
     case Status::Ready:
-        return GlobalMouseManager::tr("Global mouse gestures are ready.");
+        return GlobalMouseManager::tr("Global mouse gestures are ready");
     case Status::ListenRequired:
         return GlobalMouseManager::tr("Allow Snow Shot in System Settings > Privacy & Security > "
-                                      "Input Monitoring to use global mouse gestures.");
+                                      "Input Monitoring to use global mouse gestures");
     case Status::AccessibilityRequired:
         return GlobalMouseManager::tr("Allow Snow Shot in System Settings > Privacy & Security > "
-                                      "Accessibility to use global mouse gestures.");
+                                      "Accessibility to use global mouse gestures");
     case Status::Unavailable:
         return GlobalMouseManager::tr(
-            "Global mouse input is unavailable. Check permissions and retry.");
+            "Global mouse input is unavailable. Check permissions and retry");
     case Status::Suspended:
         return GlobalMouseManager::tr(
-            "Global mouse gestures are paused while this session is inactive.");
+            "Global mouse gestures are paused while this session is inactive");
     case Status::Unknown:
         return GlobalMouseManager::tr("Checking global mouse permissions...");
     }

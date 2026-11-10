@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -7,8 +8,10 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "widgets/image.h"
+#include "legacy_thumbnail_test_support.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -16,7 +19,9 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QSet>
+#include <QJsonArray>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QUuid>
@@ -137,11 +142,125 @@ QJsonObject readBaseline() {
     return error.error == QJsonParseError::NoError && document.isObject() ? document.object()
                                                                           : QJsonObject{};
 }
+
+int benchmarkPageSizes() {
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    for (int index = 0; index < 55; ++index) {
+        if (!applicationStorage.captureHistory()
+                 .publish(benchmarkDraft(index))
+                 .get()
+                 .storage.success)
+            return 1;
+        snow_shot::storage::PinnedWindowRecord pin;
+        pin.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        pin.image = QImage(kImageSize, QImage::Format_RGB32);
+        pin.image.fill(QColor::fromHsv(index * 31 % 360, 180, 210));
+        pin.nativeGeometry = QRect(QPoint(), pin.image.size());
+        pin.canvasSourceRect = QRectF(pin.nativeGeometry);
+        pin.contentCanvasRect = pin.canvasSourceRect;
+        pin.surfaceCanvasRect = pin.canvasSourceRect;
+        pin.initialWindowSize = pin.image.size();
+        pin.createdUtc = QDateTime::currentDateTimeUtc().addSecs(-index);
+        if (index % 3 == 0) {
+            pin.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardText;
+            pin.originalText =
+                QStringLiteral("Pinned text preview, measured at its original layout.\n")
+                    .repeated(100);
+            pin.firstCreationTextDpi = 2.0;
+        }
+        if (!applicationStorage.pinnedWindows().upsert(pin).success ||
+            !applicationStorage.pinnedWindows().flush().success)
+            return 1;
+    }
+    QJsonArray samples;
+    bool passed = true;
+    for (const int pageSize : {10, 20, 50}) {
+        snow_shot::storage::InterfaceSettings settings;
+        settings.setScreenshotHistoryPageSize(pageSize);
+        settings.setPinnedWindowManagementPageSize(pageSize);
+        for (int run = 0; run < 3; ++run) {
+            for (bool history : {true, false}) {
+                QElapsedTimer timer;
+                timer.start();
+                std::unique_ptr<QWidget> page;
+                if (history) {
+                    auto* widget = new ScreenshotHistoryPageWidget;
+                    page.reset(widget);
+                    widget->setActive(true);
+                } else {
+                    page = std::make_unique<PinnedWindowManagementPageWidget>();
+                }
+                const qint64 constructionMs = timer.elapsed();
+                page->resize(980, 640);
+                page->show();
+                qint64 firstReadyMs = -1;
+                const auto visibleReady = [&] {
+                    int visible = 0;
+                    int ready = 0;
+                    for (auto* image : page->findChildren<adqt::widgets::AdImage*>()) {
+                        if (image->visibleRegion().isEmpty())
+                            continue;
+                        // WhenVisible starts on paint; force it before treating idle as loaded.
+                        static_cast<void>(image->grab());
+                        ++visible;
+                        if (!image->source().isEmpty() && !image->loading() && !image->loadFailed())
+                            ++ready;
+                    }
+                    if (ready && firstReadyMs < 0)
+                        firstReadyMs = timer.elapsed();
+                    return visible > 0 && visible == ready;
+                };
+                QApplication::processEvents();
+                processUntil(visibleReady, 10000);
+                const qint64 visibleReadyMs = timer.elapsed();
+                int cards = 0;
+                for (auto* widget : page->findChildren<QWidget*>())
+                    if (widget->objectName() == QStringLiteral("pinnedManagementRecord") ||
+                        widget->objectName().startsWith(QStringLiteral("screenshotHistoryEntry-")))
+                        ++cards;
+                passed &= visibleReady() && cards > 0 && cards <= 8;
+                auto* area = page->findChild<QScrollArea*>();
+                timer.restart();
+                area->verticalScrollBar()->setValue(area->verticalScrollBar()->maximum());
+                // Deliver the viewport's queued row update before checking the newly visible rows.
+                for (int turn = 0; turn < 3; ++turn)
+                    QApplication::processEvents();
+                processUntil(visibleReady, 10000);
+                passed &= visibleReady();
+                samples.push_back(
+                    QJsonObject{{QStringLiteral("page"),
+                                 history ? QStringLiteral("history") : QStringLiteral("pins")},
+                                {QStringLiteral("page_size"), pageSize},
+                                {QStringLiteral("run"), run + 1},
+                                {QStringLiteral("construction_ms"), constructionMs},
+                                {QStringLiteral("first_visible_ready_ms"), firstReadyMs},
+                                {QStringLiteral("all_visible_ready_ms"), visibleReadyMs},
+                                {QStringLiteral("scroll_to_bottom_ready_ms"), timer.elapsed()},
+                                {QStringLiteral("materialized_cards"), cards}});
+                page.reset();
+                applicationStorage.pinnedPreviewPool().waitForDone();
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                QApplication::processEvents();
+            }
+        }
+    }
+    std::cout << QJsonDocument(QJsonObject{{QStringLiteral("samples"), samples},
+                                           {QStringLiteral("passed"), passed},
+                                           {QStringLiteral("fixture_records_per_page_type"), 55}})
+                     .toJson(QJsonDocument::Indented)
+                     .constData();
+    return passed ? 0 : 2;
+}
 } // namespace
 
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication application(argc, argv);
+    thumbnail_tests::CacheEnvironment cacheEnvironment;
+    if (!cacheEnvironment.isValid()) {
+        std::cerr << "Unable to isolate benchmark thumbnail cache\n";
+        return 1;
+    }
     snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
 
     QTemporaryDir storageDirectory;
@@ -151,6 +270,12 @@ int main(int argc, char** argv) {
              .success) {
         std::cerr << "Unable to initialize benchmark storage\n";
         return 1;
+    }
+
+    if (application.arguments().contains(QStringLiteral("--page-sizes"))) {
+        const int result = benchmarkPageSizes();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return result;
     }
 
     auto& repository = snow_shot::storage::ApplicationStorage::instance().captureHistory();
@@ -193,40 +318,30 @@ int main(int argc, char** argv) {
     QElapsedTimer assetTimer;
     assetTimer.start();
     qint64 peakBytes = processMetrics().privateCommitBytes;
-    processUntil(
-        [&]() {
-            return page->findChildren<adqt::widgets::AdImage*>().size() >=
-                   kRecordCount * kDisplayCount;
-        },
-        30000, &peakBytes);
+    processUntil([&]() { return !page->findChildren<adqt::widgets::AdImage*>().isEmpty(); }, 30000,
+                 &peakBytes);
     const qint64 assetPreparationMs = assetTimer.elapsed();
 
     const QList<adqt::widgets::AdImage*> images = page->findChildren<adqt::widgets::AdImage*>();
-    QSet<adqt::widgets::AdImage*> completed;
     qint64 firstThumbnailMs = -1;
     QElapsedTimer thumbnailTimer;
     thumbnailTimer.start();
-    for (adqt::widgets::AdImage* image : images) {
-        QObject::connect(image, &adqt::widgets::AdImage::loadingChanged, page,
-                         [image, &completed, &firstThumbnailMs, &thumbnailTimer](bool loading) {
-                             if (!loading && image->isVisible()) {
-                                 completed.insert(image);
-                                 if (firstThumbnailMs < 0) {
-                                     firstThumbnailMs = thumbnailTimer.elapsed();
-                                 }
-                             }
-                         });
-    }
-
+    // Poll current state so completions during asset preparation are included.
+    // QWidget visibility alone also includes rows clipped below the scroll viewport.
     processUntil(
         [&]() {
             int visibleCount = 0;
+            int completedCount = 0;
             for (adqt::widgets::AdImage* image : images) {
-                if (image->isVisibleTo(page)) {
-                    ++visibleCount;
-                }
+                if (image->visibleRegion().isEmpty())
+                    continue;
+                ++visibleCount;
+                if (!image->source().isEmpty() && !image->loading() && !image->loadFailed())
+                    ++completedCount;
             }
-            return visibleCount > 0 && completed.size() >= visibleCount;
+            if (completedCount > 0 && firstThumbnailMs < 0)
+                firstThumbnailMs = thumbnailTimer.elapsed();
+            return visibleCount > 0 && completedCount == visibleCount;
         },
         30000, &peakBytes);
     const qint64 completeThumbnailMs = thumbnailTimer.elapsed();
@@ -260,34 +375,26 @@ int main(int argc, char** argv) {
     }
     const qint64 postCyclePrivateCommitBytes = processMetrics().privateCommitBytes;
     const int pendingHistoryJobsBeforeDrain = screenshotHistoryPendingJobCount();
-    const int pendingPersistenceJobsBeforeDrain = screenshotHistoryPendingPersistenceJobCount();
-    const int queuedPersistenceJobsBeforeDrain = screenshotHistoryQueuedPersistenceJobCount();
-
-    const quint64 submittedPersistenceJobsBeforeDrain =
-        screenshotHistorySubmittedPersistenceJobCount();
-    // Navigation does not wait for cache writes. Evaluate steady-state memory
-    // only after the intentionally unbounded persistence queue has drained.
+    // Drain asset reads and image decodes after rapid navigation. The image
+    // loader has its own workers, independent of the history executor.
     for (int drainPass = 0; drainPass < 3; ++drainPass) {
         QApplication::processEvents(QEventLoop::AllEvents, 10);
-        processUntil([]() { return screenshotHistoryPendingJobCount() == 0; }, 30000, &peakBytes);
+        processUntil(
+            [page]() {
+                const auto previews = page->findChildren<adqt::widgets::AdImage*>();
+                return screenshotHistoryPendingJobCount() == 0 &&
+                       std::none_of(previews.cbegin(), previews.cend(),
+                                    [](const auto* preview) { return preview->loading(); });
+            },
+            30000, &peakBytes);
     }
     const ProcessMetrics drainedMetrics = processMetrics();
     QThread::msleep(100);
     QApplication::processEvents(QEventLoop::AllEvents, 10);
     const ProcessMetrics idleMetrics = processMetrics();
-    const quint64 completedPersistenceJobsAfterDrain =
-        screenshotHistoryCompletedPersistenceJobCount();
-    const quint64 submittedPersistenceJobsAfterDrain =
-        screenshotHistorySubmittedPersistenceJobCount();
-    const bool executorContractPassed =
-        screenshotHistoryWorkerCount() == 2 && screenshotHistoryWorkerExpiryTimeout() == 0 &&
-        screenshotHistoryPendingPersistenceJobCount() == 0 &&
-        screenshotHistoryQueuedPersistenceJobCount() == 0 &&
-        screenshotHistoryPendingJobCount() == 0 &&
-        submittedPersistenceJobsAfterDrain == completedPersistenceJobsAfterDrain &&
-        submittedPersistenceJobsAfterDrain >= submittedPersistenceJobsBeforeDrain;
-    const bool allAcceptedPersistenceWritesCompleted =
-        submittedPersistenceJobsAfterDrain == completedPersistenceJobsAfterDrain;
+    const bool executorContractPassed = screenshotHistoryWorkerCount() == 2 &&
+                                        screenshotHistoryWorkerExpiryTimeout() == 0 &&
+                                        screenshotHistoryPendingJobCount() == 0;
     const bool timingAndMemoryThresholdsPassed =
         activationMs <= kActivationLimitMs && firstThumbnailMs >= 0 &&
         firstThumbnailMs <= kFirstThumbnailLimitMs &&
@@ -307,11 +414,9 @@ int main(int argc, char** argv) {
         {QStringLiteral("decode_worker_limit"), 2},
         {QStringLiteral("decoded_cache_limit_bytes"), 64 * 1024 * 1024},
         {QStringLiteral("gui_thread_payload_io"), false},
-        {QStringLiteral("persistent_thumbnail_cache"), true},
+        {QStringLiteral("persistent_thumbnail_cache"), false},
         {QStringLiteral("history_worker_limit"), 2},
         {QStringLiteral("history_worker_expiry_timeout_ms"), 0},
-        {QStringLiteral("thumbnail_persistence_queue_bounded"), false},
-        {QStringLiteral("thumbnail_persistence_drops"), 0},
     };
     const QJsonObject baseline = readBaseline();
     const bool baselineFixtureMatches =
@@ -361,22 +466,7 @@ int main(int argc, char** argv) {
         {QStringLiteral("ad_image_count_idle"),
          page->findChildren<adqt::widgets::AdImage*>().size()},
         {QStringLiteral("pending_history_jobs_before_drain"), pendingHistoryJobsBeforeDrain},
-        {QStringLiteral("pending_persistence_jobs_before_drain"),
-         pendingPersistenceJobsBeforeDrain},
-        {QStringLiteral("queued_persistence_jobs_before_drain"), queuedPersistenceJobsBeforeDrain},
-        {QStringLiteral("submitted_persistence_jobs_before_drain"),
-         static_cast<qint64>(submittedPersistenceJobsBeforeDrain)},
         {QStringLiteral("pending_history_jobs_after_drain"), screenshotHistoryPendingJobCount()},
-        {QStringLiteral("pending_persistence_jobs_after_drain"),
-         screenshotHistoryPendingPersistenceJobCount()},
-        {QStringLiteral("queued_persistence_jobs_after_drain"),
-         screenshotHistoryQueuedPersistenceJobCount()},
-        {QStringLiteral("submitted_persistence_jobs_after_drain"),
-         static_cast<qint64>(submittedPersistenceJobsAfterDrain)},
-        {QStringLiteral("completed_persistence_jobs_after_drain"),
-         static_cast<qint64>(completedPersistenceJobsAfterDrain)},
-        {QStringLiteral("all_accepted_persistence_writes_completed"),
-         allAcceptedPersistenceWritesCompleted},
         {QStringLiteral("executor_contract_passed"), executorContractPassed},
         {QStringLiteral("decode_worker_limit"), 2},
         {QStringLiteral("decoded_cache_limit_bytes"), 64 * 1024 * 1024},

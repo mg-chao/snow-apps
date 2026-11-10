@@ -86,7 +86,7 @@ class SkinStatusBackend final : public settings::SettingsBackend {
             return QCoreApplication::translate("MainWindowSkin", "Loading skin...");
         case Status::Error:
             return QCoreApplication::translate("MainWindowSkin",
-                                               "The skin image could not be opened.");
+                                               "The skin image could not be opened");
         }
         return {};
     }
@@ -208,8 +208,9 @@ class SkinStatusBackend final : public settings::SettingsBackend {
     storage::StorageStatus storageStatus() const override {
         return m_backend.storageStatus();
     }
-    bool resetSection(settings::SettingsSectionReset reset) override {
-        return m_backend.resetSection(reset);
+    settings::SettingsResetResult
+    resetSectionWithResults(settings::SettingsSectionReset reset) override {
+        return m_backend.resetSectionWithResults(reset);
     }
 
   private:
@@ -819,7 +820,7 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
         const auto* pathField = registry.field(pathId);
         require(pathField->definition->title.translated() ==
                     (language == QStringLiteral("en_US")
-                         ? QStringLiteral("Main Interface Skin Path")
+                         ? QStringLiteral("Main interface skin path")
                      : language == QStringLiteral("zh_CN") ? QStringLiteral("主界面皮肤路径")
                                                            : QStringLiteral("主介面皮膚路徑")),
                 "the layout checks must use the real English, Simplified and Traditional copy");

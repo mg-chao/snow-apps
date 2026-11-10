@@ -10,6 +10,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/floatingtoolbarsettings.h"
 #include "widgets/button.h"
 #include "widgets/context_menu.h"
@@ -31,6 +32,7 @@
 #include <QEnterEvent>
 #include <QHoverEvent>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QMenu>
 #include <QPointer>
 #include <QMimeData>
@@ -54,6 +56,18 @@ using namespace snow_shot::presentation;
 namespace storage = snow_shot::storage;
 namespace geometry = snow_shot::presentation::floating_toolbar;
 namespace {
+struct OptionalAction {
+    const char* id;
+    const char* label;
+};
+const QVector<OptionalAction> kOptionalActions{
+    {"screenshot-history", "Screenshot history"},
+    {"global-canvas", "Full-screen canvas"},
+    {"stitch-selected-images", "Stitch selected images"},
+    {"split-selected-images", "Split selected images"},
+    {"edit-selected-images", "Edit selected images"},
+};
+
 void require(bool result, const char* message) {
     if (!result) {
         std::cerr << message << '\n';
@@ -109,6 +123,53 @@ void verifySettings() {
                 defaults.positions.back().back() == QStringLiteral("text-recognition"),
             "default row contains four positions with OCR as group entry");
     require(defaults.hidden.contains(QStringLiteral("save-as-file")), "save-as-file starts hidden");
+    for (const auto& action : kOptionalActions) {
+        const QString id = QString::fromLatin1(action.id);
+        require(defaults.hidden.count(id) == 1 &&
+                    std::none_of(defaults.positions.cbegin(), defaults.positions.cend(),
+                                 [&id](const auto& position) { return position.contains(id); }),
+                "optional desktop actions start hidden exactly once");
+        const auto exposed = toolbar_layout::moveItemToPosition(
+            defaults, storage::ScreenshotToolbarLayoutKind::FloatingTools, id, 0);
+        require(exposed.positions.front() == QStringList{id} && !exposed.hidden.contains(id),
+                "the floating editor can expose each optional action");
+        const auto hiddenAgain = toolbar_layout::moveItemToHidden(
+            exposed, storage::ScreenshotToolbarLayoutKind::FloatingTools, id,
+            static_cast<int>(defaults.hidden.indexOf(id)));
+        require(hiddenAgain == defaults, "hiding an optional action restores its original layout");
+    }
+    // A configuration from before these actions existed must keep its custom positions.
+    auto legacy = defaults;
+    legacy.positions.swapItemsAt(0, 1);
+    for (const auto& action : kOptionalActions)
+        legacy.hidden.removeAll(QString::fromLatin1(action.id));
+    require(toolbar_layout::normalizedLayout(legacy,
+                                             storage::ScreenshotToolbarLayoutKind::FloatingTools)
+                    .positions == legacy.positions,
+            "editor normalization preserves legacy custom positions");
+    QJsonArray legacyPositions;
+    for (const auto& position : legacy.positions)
+        legacyPositions.append(QJsonArray::fromStringList(position));
+    auto document = storage::ConfigurationSchema::completeDefaultDocument();
+    document.insert(QStringLiteral("floating_toolbar"),
+                    QJsonObject{{QStringLiteral("layout"),
+                                 QJsonObject{{QStringLiteral("positions"), legacyPositions},
+                                             {QStringLiteral("hidden"),
+                                              QJsonArray::fromStringList(legacy.hidden)}}}});
+    QTemporaryDir legacyDirectory;
+    const QString legacyPath = legacyDirectory.filePath(QStringLiteral("configuration.json"));
+    {
+        QFile file(legacyPath);
+        require(file.open(QIODevice::WriteOnly) && file.write(QJsonDocument(document).toJson()) > 0,
+                "write a configuration predating optional desktop actions");
+    }
+    storage::ConfigurationStore upgraded(legacyPath, true, true);
+    const auto upgradedLayout =
+        upgraded.value(QStringLiteral("floating_toolbar/layout")).toObject();
+    require(upgradedLayout.value(QStringLiteral("positions")) == legacyPositions &&
+                upgradedLayout.value(QStringLiteral("hidden")) ==
+                    QJsonArray::fromStringList(defaults.hidden),
+            "loading an older layout appends new actions to hidden tools without reordering it");
     auto hidden = toolbar_layout::moveItemToHidden(
         defaults, storage::ScreenshotToolbarLayoutKind::FloatingTools, QStringLiteral("screenshot"),
         0);
@@ -552,9 +613,11 @@ void verifyCustomizedActions() {
         auto* content = popovers.front()->contentWidget();
         require(content, "group options materialize on open");
         auto* item = content->findChild<adqt::widgets::AdButton*>(id);
-        require(item, "every configured capture tool is reachable in its group");
+        require(item && item->iconRef().isValid() && !item->toolTip().isEmpty() &&
+                    item->accessibleName() == item->toolTip(),
+                "every configured tool has a labeled accessible icon in its group");
         item->click();
-        require(selected == id, "group dispatches its selected capture workflow");
+        require(selected == id, "group dispatches its selected workflow");
         bool repeats = false;
         for (auto* button : toolbar->findChildren<adqt::widgets::AdButton*>())
             repeats |= button->property("floatingToolbarAction").toString() == id;
@@ -579,6 +642,70 @@ void verifyCustomizedActions() {
     storage::ScreenshotToolbarSettings().setLayout(
         storage::ScreenshotToolbarLayoutKind::FloatingTools,
         storage::defaultFloatingToolbarLayout());
+}
+void verifyOptionalActions() {
+    constexpr auto kind = storage::ScreenshotToolbarLayoutKind::FloatingTools;
+    const storage::FloatingToolbarSettings stored;
+    stored.setHideInFullscreen(false);
+    storage::ScreenshotToolbarLayout layout = storage::defaultFloatingToolbarLayout();
+    for (const auto& action : kOptionalActions)
+        layout =
+            toolbar_layout::moveItemToPosition(layout, kind, QString::fromLatin1(action.id), 0);
+    require(storage::ScreenshotToolbarSettings().setLayout(kind, layout),
+            "expose optional actions as individual buttons");
+    FloatingToolbarController controller(nullptr, [](QScreen*) { return false; });
+    QStringList requested;
+    QObject::connect(&controller, &FloatingToolbarController::actionRequested, &controller,
+                     [&](const QString& id) { requested.append(id); });
+    stored.setToolbarMode(true);
+    stored.setEnabled(true);
+    pump();
+    const auto verifyButtons = [&] {
+        auto* toolbar = window("floatingToolbarWindow");
+        require(toolbar && toolbar->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
+                    toolbar->testAttribute(Qt::WA_ShowWithoutActivating),
+                "desktop action buttons retain a non-activating toolbar surface");
+        for (const auto& action : kOptionalActions) {
+            const QString id = QString::fromLatin1(action.id);
+            const QString label = QCoreApplication::translate("FloatingToolbar", action.label);
+            adqt::widgets::AdButton* button = nullptr;
+            for (auto* candidate : toolbar->findChildren<adqt::widgets::AdButton*>())
+                if (candidate->property("floatingToolbarAction").toString() == id)
+                    button = candidate;
+            require(
+                button && button->iconRef().isValid() && button->toolTip() == label &&
+                    button->accessibleName() == label,
+                "optional buttons have translated tooltips, accessible names and feature icons");
+            requested.clear();
+            button->click();
+            require(requested == QStringList{id}, "an optional button dispatches exactly once");
+        }
+    };
+    verifyButtons();
+#ifdef SNOW_FLOATING_TEST_TRANSLATIONS_DIR
+    for (const auto& language :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        QTranslator catalog;
+        require(catalog.load(QDir(QStringLiteral(SNOW_FLOATING_TEST_TRANSLATIONS_DIR))
+                                 .filePath(QStringLiteral("snow_shot_%1.qm").arg(language))),
+                "compiled optional action language catalog loads");
+        QApplication::installTranslator(&catalog);
+        pump();
+        // English identity entries are intentionally removed from the compiled catalog.
+        if (language != QStringLiteral("en_US"))
+            for (const auto& action : kOptionalActions)
+                require(!catalog.translate("FloatingToolbar", action.label).isEmpty(),
+                        "each non-English catalog translates every optional action");
+        verifyButtons();
+        QApplication::removeTranslator(&catalog);
+        pump();
+    }
+#endif
+    stored.setEnabled(false);
+    require(storage::ScreenshotToolbarSettings().setLayout(kind,
+                                                           storage::defaultFloatingToolbarLayout()),
+            "restore hidden optional actions after button checks");
+    pump();
 }
 void nativeProbe() {
     auto* screen = QGuiApplication::primaryScreen();
@@ -769,6 +896,23 @@ void verifyMenuLifecycle() {
         require(!popup && !action && toolbar->findChildren<QMenu*>().isEmpty(),
                 "overflow dismissal releases actions and popup resources");
     }
+    QStringList requested;
+    QObject::connect(&controller, &FloatingToolbarController::actionRequested, &controller,
+                     [&](const QString& id) { requested.append(id); });
+    for (const auto& action : kOptionalActions) {
+        reveal(controller);
+        overflow->click();
+        auto* popup = overflow->findChild<adqt::widgets::AdContextMenu*>();
+        require(popup && popup->isPopupVisible(), "overflow opens for optional actions");
+        auto* item = popup->findChild<QAction*>(QString::fromLatin1(action.id));
+        require(item && item->text() == QString::fromUtf8(action.label),
+                "optional actions have their labels in the overflow menu");
+        requested.clear();
+        item->trigger();
+        require(requested == QStringList{QString::fromLatin1(action.id)},
+                "overflow dispatches each optional action exactly once");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
     stored.setEnabled(false);
     pump();
 }
@@ -783,71 +927,95 @@ void verifyHoverPlacement() {
     for (const auto& size : {QStringLiteral("normal"), QStringLiteral("small")}) {
         configuration.setValue(QStringLiteral("screenshot_ui/toolbar_size"), size);
         for (const double x : {0.7, 0.3, 1.0, 0.0}) {
-            stored.setPlacement({{QStringLiteral("x"), x}, {QStringLiteral("y"), 0.5}});
-            FloatingToolbarController controller(nullptr, [](QScreen*) { return false; });
-            stored.setEnabled(true);
-            pump();
-            auto* iconWindow = window("floatingToolbarIconWindow");
-            require(iconWindow, "placement fixture creates an icon window");
-            auto* icon =
-                iconWindow->findChild<QAbstractButton*>(QStringLiteral("floatingToolbarSnowflake"));
-            require(icon, "placement fixture creates an icon");
-            const QPoint anchor = geometry::restore({x, 0.5}, icon->size(), bounds);
-            const QPoint shown = geometry::tucked(anchor, icon->size(), bounds);
-            // The concealed child origin can cross onto a monitor with another DPR.
-            // Keep this placement comparison in the owning window's logical coordinate space.
-            const auto iconPosition = [&] {
-                return iconWindow->pos() + icon->mapTo(iconWindow, QPoint());
-            };
-            require(iconPosition() == shown,
-                    "first icon show respects saved placement and edge clipping");
-            const QRect iconFrame = iconWindow->geometry();
-            for (int iteration = 0; iteration < 4; ++iteration) {
-                if (iteration == 1 || iteration == 2) {
-                    auto layout = storage::defaultFloatingToolbarLayout();
-                    if (iteration == 1)
-                        layout = toolbar_layout::moveItemToHidden(
-                            layout, storage::ScreenshotToolbarLayoutKind::FloatingTools,
-                            QStringLiteral("screenshot"), 0);
-                    storage::ScreenshotToolbarSettings().setLayout(
-                        storage::ScreenshotToolbarLayoutKind::FloatingTools, layout);
+            for (const double y : {0.5, 0.0, 1.0, 0.01, 0.99}) {
+                FloatingToolbarController controller(nullptr, [](QScreen*) { return false; });
+                // Settle the configured scale before restoring saved placement fractions.
+                pump();
+                stored.setPlacement({{QStringLiteral("x"), x}, {QStringLiteral("y"), y}});
+                stored.setEnabled(true);
+                pump();
+                auto* iconWindow = window("floatingToolbarIconWindow");
+                require(iconWindow, "placement fixture creates an icon window");
+                auto* icon = iconWindow->findChild<QAbstractButton*>(
+                    QStringLiteral("floatingToolbarSnowflake"));
+                require(icon, "placement fixture creates an icon");
+                const QPoint anchor = geometry::restore({x, y}, icon->size(), bounds);
+                const QPoint shown = geometry::tucked(anchor, icon->size(), bounds);
+                // The concealed child origin can cross onto a monitor with another DPR.
+                // Keep this placement comparison in the owning window's logical coordinate space.
+                const auto iconPosition = [&] {
+                    return iconWindow->pos() + icon->mapTo(iconWindow, QPoint());
+                };
+                require(iconPosition() == shown,
+                        "first icon show respects saved placement and edge clipping");
+                const QRect iconFrame = iconWindow->geometry();
+                for (int iteration = 0; iteration < 4; ++iteration) {
+                    if (iteration == 1 || iteration == 2) {
+                        auto layout = storage::defaultFloatingToolbarLayout();
+                        if (iteration == 1)
+                            layout = toolbar_layout::moveItemToHidden(
+                                layout, storage::ScreenshotToolbarLayoutKind::FloatingTools,
+                                QStringLiteral("screenshot"), 0);
+                        storage::ScreenshotToolbarSettings().setLayout(
+                            storage::ScreenshotToolbarLayoutKind::FloatingTools, layout);
+                        pump();
+                    }
+                    reveal(controller);
+                    auto* toolbar = window("floatingToolbarWindow");
+                    require(toolbar && toolbar->isVisible(), "hover shows the toolbar");
+                    ScreenshotToolbarMainPanel* panel = nullptr;
+                    for (auto* child : toolbar->findChildren<QWidget*>())
+                        if (auto* candidate = dynamic_cast<ScreenshotToolbarMainPanel*>(child))
+                            panel = candidate;
+                    require(panel, "hover toolbar has a main panel");
+                    const QPoint panelPosition = toolbar->pos() + panel->mapTo(toolbar, QPoint());
+                    require(
+                        panelPosition.y() == shown.y() + (icon->height() - panel->height()) / 2,
+                        "hover toolbar stays vertically centered on the icon near screen edges");
+                    require(panelPosition.x() == (geometry::rightSide(anchor, icon->size(), bounds)
+                                                      ? shown.x() - panel->width() - 4
+                                                      : shown.x() + icon->width() + 4),
+                            "first and repeated reveals align the settled panel beside the icon");
+                    const QRect panelFrame(panelPosition, panel->size());
+                    require(
+                        bounds.contains(panelFrame) && bounds.contains(toolbar->geometry()),
+                        "hover toolbar surface and shadow allocation stay on the owning screen");
+                    require(toolbar->geometry() ==
+                                panelFrame.marginsAdded(ScreenshotToolbarMainPanel::shadowMargins())
+                                    .intersected(bounds),
+                            "only the hover toolbar shadow is clipped at screen edges");
+                    require(iconPosition() == shown && iconWindow->geometry() == iconFrame,
+                            "hover preserves icon position and partial clipping at either edge");
+                    const QRect toolbarFrame = toolbar->geometry();
+                    QPointer<adqt::widgets::AdContextMenu> menu = context(icon);
+                    require(menu && menu->isVisible(), "icon context menu opens");
+                    require(iconPosition() == shown && iconWindow->geometry() == iconFrame &&
+                                toolbar->geometry() == toolbarFrame,
+                            "opening a menu preserves the icon and hover toolbar placement");
+                    menu->close();
+                    if (iteration == 2 && y != 0.5) {
+                        stored.setPlacement(
+                            {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}});
+                        pump();
+                        const QMargins shadow = ScreenshotToolbarMainPanel::shadowMargins();
+                        require(panel->pos() == QPoint(shadow.left(), shadow.top()) &&
+                                    toolbar->size() ==
+                                        panel->size() + QSize(shadow.left() + shadow.right(),
+                                                              shadow.top() + shadow.bottom()),
+                                "moving the hover toolbar inside restores the complete shadow");
+                        stored.setPlacement({{QStringLiteral("x"), x}, {QStringLiteral("y"), y}});
+                        pump();
+                        require(iconPosition() == shown && iconWindow->geometry() == iconFrame &&
+                                    toolbar->geometry() == toolbarFrame,
+                                "returning to the edge restores the aligned hover toolbar");
+                    }
+                    controller.setCaptureActive(QStringLiteral("placement-test"), true);
+                    controller.setCaptureActive(QStringLiteral("placement-test"), false);
                     pump();
                 }
-                reveal(controller);
-                auto* toolbar = window("floatingToolbarWindow");
-                require(toolbar && toolbar->isVisible(), "hover shows the toolbar");
-                ScreenshotToolbarMainPanel* panel = nullptr;
-                for (auto* child : toolbar->findChildren<QWidget*>())
-                    if (auto* candidate = dynamic_cast<ScreenshotToolbarMainPanel*>(child))
-                        panel = candidate;
-                require(panel, "hover toolbar has a main panel");
-                const QPoint desired(geometry::rightSide(anchor, icon->size(), bounds)
-                                         ? shown.x() - panel->x() - panel->width() - 4
-                                         : shown.x() + icon->width() + 4 - panel->x(),
-                                     shown.y() + (icon->height() - panel->height()) / 2 -
-                                         panel->y());
-                if (toolbar->pos() != geometry::constrain(desired, toolbar->size(), bounds))
-                    std::cerr << "Hover placement: actual=" << toolbar->x() << ',' << toolbar->y()
-                              << " desired=" << desired.x() << ',' << desired.y()
-                              << " panel=" << panel->x() << ',' << panel->y() << ','
-                              << panel->width() << ',' << panel->height() << '\n';
-                require(toolbar->pos() == geometry::constrain(desired, toolbar->size(), bounds),
-                        "first and repeated reveals align the settled panel beside the icon");
-                require(iconPosition() == shown && iconWindow->geometry() == iconFrame,
-                        "hover preserves icon position and partial clipping at either edge");
-                const QRect toolbarFrame = toolbar->geometry();
-                QPointer<adqt::widgets::AdContextMenu> menu = context(icon);
-                require(menu && menu->isVisible(), "icon context menu opens");
-                require(iconPosition() == shown && iconWindow->geometry() == iconFrame &&
-                            toolbar->geometry() == toolbarFrame,
-                        "opening a menu preserves the icon and hover toolbar placement");
-                menu->close();
-                controller.setCaptureActive(QStringLiteral("placement-test"), true);
-                controller.setCaptureActive(QStringLiteral("placement-test"), false);
+                stored.setEnabled(false);
                 pump();
             }
-            stored.setEnabled(false);
-            pump();
         }
     }
     configuration.setValue(QStringLiteral("screenshot_ui/toolbar_size"), QStringLiteral("normal"));
@@ -1591,6 +1759,8 @@ int main(int argc, char** argv) {
         nativeProbe();
     } else if (app.arguments().contains(QStringLiteral("--toolbar-edge-placement-only"))) {
         verifyToolbarEdgePlacement();
+    } else if (app.arguments().contains(QStringLiteral("--hover-placement-only"))) {
+        verifyHoverPlacement();
     } else if (app.arguments().contains(QStringLiteral("--content-drops-only"))) {
         verifyDropIdentity();
         const qsizetype visual = app.arguments().indexOf(QStringLiteral("--visual-output"));
@@ -1614,6 +1784,7 @@ int main(int argc, char** argv) {
         const qsizetype visual = app.arguments().indexOf(QStringLiteral("--visual-output"));
         verifyWindows(visual >= 0 ? app.arguments().value(visual + 1) : QString());
         verifyCustomizedActions();
+        verifyOptionalActions();
     }
     storage.shutdown();
     return 0;

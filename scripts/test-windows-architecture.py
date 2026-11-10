@@ -403,6 +403,103 @@ message(STATUS "ENCODERS=${{SNOW_SHOT_ENCODERS}} OPTIONS=${{OPTIONS}}")
                             'hevc_nvenc', 'hevc_amf', 'hevc_qsv'):
                 self.assertEqual(encoder in output, arch == 'x64')
 
+    def test_recording_profiles_select_x265_depth_independently(self):
+        port = ROOT / 'cmake/vcpkg-overlay-ports/ffmpeg'
+        manifest = json.loads((port / 'vcpkg.json').read_text(encoding='utf-8'))
+        for profile, expected in [('snow-shot-minimal', ['main8']),
+                                  ('snow-recording-compat', ['main10']),
+                                  ('snow-macos-media', ['main10']),
+                                  ('snow-shot-macos-minimal', ['main10'])]:
+            with self.subTest(profile=profile):
+                dependencies = manifest['features'][profile]['dependencies']
+                self.assertEqual(next(d['features'] for d in dependencies
+                                      if d['name'] == 'x265'), expected)
+
+        text = (ROOT / 'cmake/vcpkg-overlay-ports/x265/portfile.cmake').read_text(
+            encoding='utf-8')
+        start = text.index('if("main8" IN_LIST FEATURES)')
+        fragment = text[start:text.index('if("main10" IN_LIST FEATURES)', start)]
+        for features in ['main8', 'main8;main10', 'main10']:
+            with self.subTest(features=features):
+                output = self.run_cmake(f'''
+set(FEATURES {features})
+{fragment}
+message(STATUS "OPTIONS=${{OPTIONS}}")
+''')
+                self.assertEqual('-DHIGH_BIT_DEPTH=OFF' in output, 'main8' in features)
+                self.assertEqual('-DEXPORT_C_API=ON' in output, 'main8' in features)
+                only_eight = features == 'main8'
+                self.assertEqual('-DENABLE_DYNAMIC_DEPTH=OFF' in output, only_eight)
+                self.assertEqual('-DLINKED_10BIT=OFF' in output, only_eight)
+                self.assertEqual('-DLINKED_12BIT=OFF' in output, only_eight)
+
+    def test_x265_capabilities_derive_actual_configured_depths(self):
+        module = ROOT / 'cmake/vcpkg-overlay-ports/x265/capabilities.cmake'
+        cases = [
+            ('main8', 'HIGH_BIT_DEPTH:BOOL=OFF\nENABLE_DYNAMIC_DEPTH:BOOL=OFF\n',
+             (True, False, False, False)),
+            ('combined', 'HIGH_BIT_DEPTH:BOOL=OFF\nLINKED_10BIT:BOOL=ON\n'
+             'ENABLE_DYNAMIC_DEPTH:BOOL=ON\n', (True, True, False, True)),
+            ('native10', 'HIGH_BIT_DEPTH:BOOL=ON\nMAIN12:BOOL=OFF\n'
+             'ENABLE_DYNAMIC_DEPTH:BOOL=ON\n', (False, True, False, True)),
+            ('native12-linked8', 'HIGH_BIT_DEPTH:BOOL=ON\nMAIN12:BOOL=ON\n'
+             'LINKED_8BIT:BOOL=ON\nENABLE_DYNAMIC_DEPTH:BOOL=ON\n',
+             (True, False, True, True)),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, flags, expected in cases:
+                with self.subTest(configuration=name):
+                    cache = root / f'{name}.txt'
+                    cache.write_text(flags + 'EXPORT_C_API:BOOL=ON\n', encoding='utf-8')
+                    output = root / f'{name}.json'
+                    self.run_cmake(f'''
+include("{module.as_posix()}")
+snow_x265_write_capabilities(OUTPUT_FILE "{output.as_posix()}" CACHES "{cache.as_posix()}")
+''')
+                    actual = json.loads(output.read_text(encoding='utf-8'))
+                    self.assertEqual(actual, dict(schemaVersion=2, singlePublicApi=True,
+                        **dict(zip(('bitDepth8', 'bitDepth10', 'bitDepth12',
+                                    'dynamicDepthLoading'), expected))))
+
+    def test_x265_capability_contract_rejects_overrides_and_mixed_configs(self):
+        module = ROOT / 'cmake/vcpkg-overlay-ports/x265/capabilities.cmake'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = ('HIGH_BIT_DEPTH:BOOL=OFF\nEXPORT_C_API:BOOL=ON\n'
+                    'ENABLE_DYNAMIC_DEPTH:BOOL=OFF\n')
+            release, debug, output = (root / name for name in
+                                      ['release.txt', 'debug.txt', 'capabilities.json'])
+            release.write_text(base, encoding='utf-8')
+            debug.write_text(base, encoding='utf-8')
+            invocation = f'''
+include("{module.as_posix()}")
+snow_x265_write_capabilities(OUTPUT_FILE "{output.as_posix()}"
+    CACHES "{release.as_posix()}" "{debug.as_posix()}" REQUIRE_MAIN8 REQUIRE_8BIT_ONLY)
+'''
+            self.run_cmake(invocation)
+            for replacement, reason in [
+                (base + 'LINKED_10BIT:BOOL=ON\n', 'release/debug encoder capabilities disagree'),
+                (base.replace('OFF', 'ON', 1), 'release/debug encoder capabilities disagree'),
+                (base.replace('EXPORT_C_API:BOOL=ON', 'EXPORT_C_API:BOOL=UNKNOWN'),
+                 'invalid EXPORT_C_API'),
+                (base.replace('ENABLE_DYNAMIC_DEPTH:BOOL=OFF\n', ''),
+                 'missing ENABLE_DYNAMIC_DEPTH'),
+            ]:
+                with self.subTest(reason=reason, flags=replacement):
+                    debug.write_text(replacement, encoding='utf-8')
+                    self.assertIn(reason, self.run_cmake(invocation, success=False))
+            for replacement in [base + 'LINKED_10BIT:BOOL=ON\n',
+                                base + 'LINKED_12BIT:BOOL=ON\n',
+                                base.replace('ENABLE_DYNAMIC_DEPTH:BOOL=OFF',
+                                             'ENABLE_DYNAMIC_DEPTH:BOOL=ON'),
+                                base.replace('HIGH_BIT_DEPTH:BOOL=OFF',
+                                             'HIGH_BIT_DEPTH:BOOL=ON')]:
+                with self.subTest(override=replacement):
+                    release.write_text(replacement, encoding='utf-8')
+                    debug.write_text(replacement, encoding='utf-8')
+                    self.assertIn('was overridden', self.run_cmake(invocation, success=False))
+
     def test_minimal_recording_profiles_enable_only_required_tempo_filters(self):
         port = ROOT / 'cmake/vcpkg-overlay-ports/ffmpeg'
         manifest = json.loads((port / 'vcpkg.json').read_text(encoding='utf-8'))
@@ -411,7 +508,8 @@ message(STATUS "ENCODERS=${{SNOW_SHOT_ENCODERS}} OPTIONS=${{OPTIONS}}")
                            text.index('if("rubberband" IN_LIST FEATURES)'))
         fragment = text[start:text.index('set(OPTIONS_CROSS', start)]
         for profile, platform in [('snow-shot-minimal', 'WINDOWS'),
-                                  ('snow-macos-media', 'OSX')]:
+                                  ('snow-macos-media', 'OSX'),
+                                  ('snow-shot-macos-minimal', 'OSX')]:
             with self.subTest(profile=profile):
                 dependencies = manifest['features'][profile]['dependencies']
                 common = next(dependency['features'] for dependency in dependencies
@@ -452,16 +550,77 @@ message(STATUS "OPTIONS=${{OPTIONS}}")
                 for kind, names in re.findall(r'--enable-(encoder|decoder|muxer|demuxer|parser)=([^\s]+)', output):
                     enabled.setdefault(kind, set()).update(names.split(','))
                 self.assertTrue({'mp4', 'gif', 'apng', 'webp'} <= enabled['muxer'])
-                self.assertTrue({'libx264', 'libx265', 'gif', 'apng', 'libwebp_anim', 'aac'}
+                self.assertTrue({'libx264', 'libx265', 'apng', 'libwebp_anim', 'aac'}
                                 <= enabled['encoder'])
                 # Older .snowrec sources are still readable in the application profile.
                 self.assertIn('matroska', enabled['demuxer'])
                 self.assertIn('h264', enabled['decoder'])
-                for kind, components in [('encoder', {'mpeg4', 'mp3_mf'}),
+                for kind, components in [('encoder', {'mpeg4', 'mp3_mf', 'gif'}),
                                          ('muxer', {'avi', 'matroska'}),
                                          ('decoder', {'mp3'}),
                                          ('parser', {'mpegaudio'})]:
                     self.assertEqual(components <= enabled[kind], compatibility)
+
+    def test_windows_package_audit_retains_gif_inputs_and_muxing_without_encoder(self):
+        text = (ROOT / 'scripts/package-snow-shot.ps1').read_text(encoding='utf-8')
+        start = text.index('function Get-SnowShotExpectedFfmpegComponents {')
+        fragment = text[start:text.index('function Assert-SnowShotStaticDependencies', start)]
+        components = {
+            kind: set(re.findall(r'"([A-Z0-9_]+)"', values))
+            for kind, values in re.findall(r'^\s+([A-Z]+) = @\(([^)]*)\)', fragment, re.M)
+        }
+        self.assertNotIn('GIF', components['ENCODER'])
+        for kind in ['DECODER', 'PARSER', 'DEMUXER', 'MUXER']:
+            self.assertIn('GIF', components[kind])
+        vendor = {'H264_AMF', 'H264_NVENC', 'H264_QSV',
+                  'HEVC_AMF', 'HEVC_NVENC', 'HEVC_QSV'}
+        self.assertEqual(components['ENCODER'],
+                         vendor | {'AAC', 'APNG', 'H264_MF', 'HEVC_MF',
+                                   'LIBWEBP_ANIM', 'LIBX264', 'LIBX265'})
+        arm = fragment[fragment.index("if ($Architecture -eq 'arm64')"):]
+        excluded = re.search(r'Where-Object \{ \$_ -notin @\(([^)]*)\)', arm)
+        self.assertIsNotNone(excluded)
+        self.assertEqual(set(re.findall(r"'([A-Z0-9_]+)'", excluded.group(1))), vendor)
+
+    def test_macos_application_media_retains_inputs_without_standalone_outputs(self):
+        port = ROOT / 'cmake/vcpkg-overlay-ports/ffmpeg'
+        workspace = json.loads((ROOT / 'vcpkg.json').read_text(encoding='utf-8'))
+        dependencies = workspace['features']['snow-shot']['dependencies']
+        self.assertTrue(any(isinstance(dependency, dict) and
+                            dependency.get('name') == 'ffmpeg' and
+                            dependency.get('platform') == 'osx' and
+                            dependency.get('features') == ['snow-shot-macos-minimal']
+                            for dependency in dependencies))
+        text = (port / 'portfile.cmake').read_text(encoding='utf-8')
+        start = text.index('if("snow-macos-media" IN_LIST FEATURES)',
+                           text.index('if("rubberband" IN_LIST FEATURES)'))
+        fragment = text[start:text.index('set(OPTIONS_CROSS', start)]
+        profiles = {}
+        for profile in ['snow-macos-media', 'snow-shot-macos-minimal']:
+            output = self.run_cmake(f'''
+set(VCPKG_TARGET_IS_OSX TRUE)
+set(FEATURES {profile})
+{fragment}
+message(STATUS "OPTIONS=${{OPTIONS}}")
+''')
+            enabled = {}
+            for kind, names in re.findall(r'--enable-(encoder|decoder|muxer|demuxer|parser)=([^\s]+)', output):
+                enabled.setdefault(kind, set()).update(names.split(','))
+            profiles[profile] = enabled
+        standalone, application = (profiles[name] for name in
+                                   ['snow-macos-media', 'snow-shot-macos-minimal'])
+        # Every pre-existing input remains available for recovery/import/editing.
+        self.assertEqual(application['decoder'], standalone['decoder'])
+        self.assertEqual(application['demuxer'], standalone['demuxer'])
+        self.assertEqual(application['parser'], standalone['parser'])
+        self.assertEqual(application['muxer'], {'mp4', 'gif', 'apng', 'webp'})
+        self.assertEqual(standalone['muxer'] - application['muxer'],
+                         {'matroska', 'avi', 'wav'})
+        self.assertEqual(standalone['encoder'] - application['encoder'],
+                         {'mpeg4', 'gif', 'pcm_s16le'})
+        self.assertTrue({'libx264', 'libx265', 'h264_videotoolbox', 'hevc_videotoolbox',
+                         'apng', 'libwebp_anim', 'aac'} <= application['encoder'])
+        self.assertIn('gif', application['parser'])
 
     def test_crashpad_uses_runnable_host_compilers_and_selected_toolset(self):
         overlay = (ROOT / 'cmake/vcpkg-overlay-ports/crashpad/portfile.cmake').read_text(

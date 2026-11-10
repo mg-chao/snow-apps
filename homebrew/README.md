@@ -14,7 +14,7 @@ brew uninstall --cask snow-shot
 If Homebrew reports that `Casks/snow-shot.rb` is missing and offers only
 `snow-shot@beta`, run `brew update` and retry the stable install. This means
 the local tap checkout has not received the published stable cask. See the
-[macOS Homebrew troubleshooting steps](https://github.com/mg-chao/snow-apps/blob/main/docs-macos-build.md#homebrew-installation)
+[macOS Homebrew troubleshooting steps](https://github.com/mg-chao/snow-shot/blob/main/docs-macos-build.md#homebrew-installation)
 if it is still missing after the update.
 
 Beta releases use a separate cask:
@@ -42,7 +42,7 @@ Use `brew install --cask --appdir="$HOME/Applications" mg-chao/tap/snow-shot` fo
 another application directory (create it first). Use the same desktop account for
 upgrades. Quit Snow Shot and finish recordings before upgrading or uninstalling.
 
-Release and recovery details: [Snow Shot macOS documentation](https://github.com/mg-chao/snow-apps/blob/main/docs-macos-build.md).
+Release and recovery details: [Snow Shot macOS documentation](https://github.com/mg-chao/snow-shot/blob/main/docs-macos-build.md).
 
 The publisher verifies the downloaded DMG against GitHub's asset SHA-256 digest
 and the `.sha256` sidecar when present. At least one checksum source is required;
@@ -62,4 +62,4 @@ the same tag and `repair_architectures` enabled. This permits only extending a
 single-architecture cask to both architectures when its existing archive checksum,
 URL, installer arguments, and all other settings are identical. All archives are
 verified before the tap changes. Ordinary publication still rejects same-version
-cask changes. See the [repair procedure](https://github.com/mg-chao/snow-apps/blob/main/docs-macos-build.md#repairing-an-incomplete-homebrew-publication).
+cask changes. See the [repair procedure](https://github.com/mg-chao/snow-shot/blob/main/docs-macos-build.md#repairing-an-incomplete-homebrew-publication).

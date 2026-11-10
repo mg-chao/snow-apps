@@ -24,6 +24,8 @@ DirectCaptureFrame captureDirectTarget(const DirectCaptureRequest& request) {
     }
     SnowCaptureDesktopSessionConfig config{};
     config.capture_retry_count = 1;
+    if (request.target == DirectCaptureTarget::CurrentMonitor)
+        config.capture_backend = request.captureBackend;
     config.pixel_format = SNOW_CAPTURE_PIXEL_FORMAT_BGRA8;
     const std::unique_ptr<SnowCaptureDesktopSession,
                           decltype(&snow_capture_desktop_session_destroy)>
@@ -49,6 +51,7 @@ DirectCaptureFrame captureDirectTarget(const DirectCaptureRequest& request) {
                                      ? monitorIdentity.constData()
                                      : nullptr;
     targetRequest.pixel_format = config.pixel_format;
+    targetRequest.capture_backend = config.capture_backend;
     struct Admission {
         const DirectCaptureRequest& request;
         std::atomic_bool rejected{false};

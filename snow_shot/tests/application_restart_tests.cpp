@@ -108,6 +108,52 @@ void transactionBehavior() {
     }
 }
 
+void finalAdmissionAndCommitFailure() {
+    for (const bool workArrivesDuringFlush : {false, true}) {
+        bool busy = false;
+        int cancellations = 0;
+        int commits = 0;
+        int quits = 0;
+        QStringList events;
+        const auto result = runApplicationRestartTransaction(
+            {[&] {
+                 events.append(QStringLiteral("prepare"));
+                 return ApplicationRestartResult{true, {}};
+             },
+             [&] {
+                 events.append(QStringLiteral("guard"));
+                 return !busy;
+             },
+             [&] {
+                 events.append(QStringLiteral("flush"));
+                 // Represents a synchronous checkpoint callback starting new protected work.
+                 busy = workArrivesDuringFlush;
+                 return true;
+             },
+             [&] {
+                 ++commits;
+                 events.append(QStringLiteral("commit"));
+                 return ApplicationRestartResult{false, QStringLiteral("commit not acknowledged")};
+             },
+             [&] {
+                 ++cancellations;
+                 events.append(QStringLiteral("cancel"));
+             },
+             [&] { ++quits; }});
+        QStringList expected{QStringLiteral("guard"), QStringLiteral("prepare"),
+                             QStringLiteral("guard"), QStringLiteral("flush"),
+                             QStringLiteral("guard")};
+        if (!workArrivesDuringFlush)
+            expected.append(QStringLiteral("commit"));
+        expected.append(QStringLiteral("cancel"));
+        require(!result.success && cancellations == 1 && quits == 0 &&
+                    commits == (workArrivesDuringFlush ? 0 : 1) && events == expected,
+                "new work after flush and failed commit each cancel the prepared child once");
+        require(workArrivesDuringFlush || result.error == u"commit not acknowledged",
+                "failed helper commitment preserves its original failure reason");
+    }
+}
+
 void argumentBehavior() {
     const QStringList ordinary{QStringLiteral("snow-shot"), QStringLiteral("--show-main-window")};
     require(!snow_shot::app::isApplicationRestartHelperLaunch(ordinary) &&
@@ -196,6 +242,7 @@ int main(int argc, char* argv[]) {
     }
 
     transactionBehavior();
+    finalAdmissionAndCommitFailure();
     argumentBehavior();
     nativeHandoff();
     return 0;

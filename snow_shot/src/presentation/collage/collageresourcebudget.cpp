@@ -17,7 +17,7 @@
 #include <sys/sysctl.h>
 #endif
 
-namespace snow_shot::presentation::collage_detail {
+namespace snow_shot::presentation::image_stitching_detail {
 namespace {
 constexpr qint64 maximumBudget = qint64{32} * 1024 * 1024 * 1024;
 constexpr qint64 minimumHeadroom = qint64{512} * 1024 * 1024;
@@ -85,9 +85,9 @@ Budget& budget() {
 void setError(QString* error) {
     if (error)
         *error = QCoreApplication::translate(
-            "CollageDocument",
-            "There is not enough available memory for this collage operation. Try fewer images "
-            "or close other collage windows.");
+            "ImageStitchingDocument",
+            "There is not enough available memory for image stitching. Try "
+            "fewer images or close other image stitching windows");
 }
 } // namespace
 
@@ -172,37 +172,39 @@ qint64 reservedBytes() {
 qint64 budgetLimit() {
     return budget().limit;
 }
-} // namespace snow_shot::presentation::collage_detail
+} // namespace snow_shot::presentation::image_stitching_detail
 
 namespace snow_shot::presentation {
-struct CollageImportReservation::Impl final {
+struct ImageStitchingImportReservation::Impl final {
     // Imports own encoded input and retained rasters as well as decode scratch. Charging all
     // of that storage to the 512 MiB painting pool rejects otherwise admissible long images.
-    collage_detail::ResourceReservation reservation;
+    image_stitching_detail::ResourceReservation reservation;
 };
 
-CollageImportReservation::CollageImportReservation() : m_impl(std::make_unique<Impl>()) {}
-CollageImportReservation::~CollageImportReservation() = default;
+ImageStitchingImportReservation::ImageStitchingImportReservation()
+    : m_impl(std::make_unique<Impl>()) {}
+ImageStitchingImportReservation::~ImageStitchingImportReservation() = default;
 
-bool CollageImportReservation::resize(qint64 bytes, QString* error) {
+bool ImageStitchingImportReservation::resize(qint64 bytes, QString* error) {
     return m_impl->reservation.resize(bytes, error);
 }
 
-std::shared_ptr<CollageImportReservation> reserveCollageImport(qint64 bytes, QString* error) {
+std::shared_ptr<ImageStitchingImportReservation> reserveImageStitchingImport(qint64 bytes,
+                                                                             QString* error) {
     try {
-        auto reservation = std::make_shared<CollageImportReservation>();
+        auto reservation = std::make_shared<ImageStitchingImportReservation>();
         return reservation->resize(bytes, error) ? reservation : nullptr;
     } catch (const std::bad_alloc&) {
         if (error)
             *error = QCoreApplication::translate(
-                "CollageDocument",
-                "There is not enough available memory for this collage operation. Try fewer images "
-                "or close other collage windows.");
+                "ImageStitchingDocument",
+                "There is not enough available memory for image stitching. Try "
+                "fewer images or close other image stitching windows");
         return {};
     }
 }
 
-std::shared_ptr<void> reserveCollagePreview(qint64 bytes, QString* error) {
-    return collage_detail::reservePreview(bytes, error);
+std::shared_ptr<void> reserveImageStitchingPreview(qint64 bytes, QString* error) {
+    return image_stitching_detail::reservePreview(bytes, error);
 }
 } // namespace snow_shot::presentation

@@ -48,24 +48,29 @@ void duplicateShortcutSharesOnlyHistoryContexts(settings::SettingsRuntimeSession
             "reset restores contextual R without rejecting previous selection R");
 }
 
-void screenshotSaveHotkeysReset(settings::SettingsRuntimeSession& session) {
+void screenshotQuickActionShortcutsReset(settings::SettingsRuntimeSession& session) {
     using Action = snow_shot::presentation::GlobalShortcutAction;
     require(
-        session.applyShortcuts(Action::ScreenshotSave, {QStringLiteral("Ctrl+Alt+F10")}) &&
+        session.applyShortcuts(Action::ScreenshotScrolling, {QStringLiteral("Ctrl+Alt+F9")}) &&
+            session.applyShortcuts(Action::ScreenshotSave, {QStringLiteral("Ctrl+Alt+F10")}) &&
             session.applyShortcuts(Action::ScreenshotQuickSave, {QStringLiteral("Ctrl+Alt+F11")}),
-        "customize both screenshot save hotkeys");
+        "customize optional screenshot hotkeys");
     require(session.reset(settings::SettingsSectionReset::ScreenshotShortcuts) &&
+                session.shortcutState(Action::ScreenshotScrolling).shortcuts.isEmpty() &&
                 session.shortcutState(Action::ScreenshotSave).shortcuts.isEmpty() &&
                 session.shortcutState(Action::ScreenshotQuickSave).shortcuts.isEmpty(),
-            "Screenshot reset clears both save hotkeys to their unset defaults");
+            "Screenshot reset clears optional hotkeys to their unset defaults");
     const auto& configuration = storage::ApplicationStorage::instance().configuration();
-    require(configuration.value(QStringLiteral("global_shortcuts/screenshot_save"))
+    require(configuration.value(QStringLiteral("global_shortcuts/screenshot_scrolling"))
+                    .toArray()
+                    .isEmpty() &&
+                configuration.value(QStringLiteral("global_shortcuts/screenshot_save"))
                     .toArray()
                     .isEmpty() &&
                 configuration.value(QStringLiteral("global_shortcuts/screenshot_quick_save"))
                     .toArray()
                     .isEmpty(),
-            "Screenshot reset persists both cleared save hotkeys");
+            "Screenshot reset persists cleared optional hotkeys");
 }
 
 void copyShortcutReset(settings::SettingsRuntimeSession& session) {
@@ -180,7 +185,7 @@ void pinWindowShortcutPersistsValidatesAndResets(settings::SettingsRuntimeSessio
     const auto before = configuration.snapshot();
     const auto* field = settings::builtInSettingsRegistry().field(fieldId);
     require(field && field->configurationKey == QStringLiteral("screenshot_shortcuts/") + id &&
-                field->definition->title.translated() == QStringLiteral("Pin Window to Screen") &&
+                field->definition->title.translated() == QStringLiteral("Pin window to screen") &&
                 field->reset == settings::SettingsSectionReset::ScreenshotEditorShortcuts,
             "window pin must have a labeled, resettable setting in the screenshot shortcuts");
     require(session.localShortcuts(scope, id) == defaults &&
@@ -344,7 +349,7 @@ int main(int argc, char** argv) {
         settings::BuiltInSettingsBackend backend(manager);
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
         duplicateShortcutSharesOnlyHistoryContexts(session, backend);
-        screenshotSaveHotkeysReset(session);
+        screenshotQuickActionShortcutsReset(session);
         copyShortcutReset(session);
         printShortcutsReset(session);
         selectionTypeShortcutsPersistValidateAndReset(

@@ -1,4 +1,5 @@
 #include "snow_shot/translation/translationservice.h"
+#include "snow_shot/translation/freetranslation.h"
 
 #include "snow_shot/translation/translationlanguages.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -19,6 +20,7 @@ const QString modelKey = QStringLiteral("screenshot_translation/model");
 const QString customKey = QStringLiteral("api_configuration/custom_models");
 const QString textKey = QStringLiteral("api_configuration/text_translation");
 const QString proxyKey = QStringLiteral("network/proxy");
+const QString httpProxyKey = QStringLiteral("network/http_proxy");
 const QString serverKey = QStringLiteral("api_configuration/server_url");
 } // namespace
 
@@ -46,7 +48,8 @@ TranslationService::TranslationService(SnowShotApiClient& client,
     client.setCustomModels(customAiModelsFromJson(settings.value(customKey)));
     client.setTextTranslationConfigurations(
         textTranslationConfigurationsFromJson(settings.value(textKey)));
-    client.setUseSystemProxy(settings.value(proxyKey).toString() == QStringLiteral("system"));
+    client.setProxyConfiguration(settings.value(proxyKey).toString(),
+                                 settings.value(httpProxyKey).toString());
     connect(&settings, &QObject::destroyed, this, [this] { delete this; });
     connect(&settings, &storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
@@ -60,9 +63,9 @@ TranslationService::TranslationService(SnowShotApiClient& client,
                 } else if (key == textKey) {
                     m_client->setTextTranslationConfigurations(
                         textTranslationConfigurationsFromJson(m_settings->value(textKey)));
-                } else if (key == proxyKey) {
-                    m_client->setUseSystemProxy(m_settings->value(proxyKey).toString() ==
-                                                QStringLiteral("system"));
+                } else if (key == proxyKey || key == httpProxyKey) {
+                    m_client->setProxyConfiguration(m_settings->value(proxyKey).toString(),
+                                                    m_settings->value(httpProxyKey).toString());
                 } else if (!m_saving &&
                            (key == sourceKey || key == targetKey || key == secondaryTargetKey ||
                             key == confidenceThresholdKey || key == modelKey)) {
@@ -154,6 +157,9 @@ void TranslationService::publishModels(bool resolveSelection) {
     if (m_client == nullptr)
         return;
     m_models = m_client->cachedChatModels();
+    m_models.removeIf([](const auto& model) { return model.id == freeTranslationId; });
+    m_models.prepend({freeTranslationId, tr("Free translation"), false,
+                      QStringLiteral("free-translation"), false});
     // Select renders a header for each contiguous group. Keep custom and server general
     // models together while preserving their order within each translation category.
     std::stable_partition(m_models.begin(), m_models.end(), [](const auto& model) {
@@ -175,7 +181,8 @@ void TranslationService::publishModels(bool resolveSelection) {
                                (selectedModel.startsWith(QStringLiteral("translation:")) &&
                                 !m_client->isTextTranslation(selectedModel));
     const bool localDefault = selectedModel.isEmpty() && index >= 0 &&
-                              (m_client->isCustomModel(m_models.at(index).id) ||
+                              (m_models.at(index).id == freeTranslationId ||
+                               m_client->isCustomModel(m_models.at(index).id) ||
                                m_client->isTextTranslation(m_models.at(index).id));
     if (!unresolvedLegacy && (resolveSelection || missingCustom || localDefault) &&
         (index >= 0 || missingCustom)) {
@@ -204,14 +211,21 @@ void TranslationService::refreshModels(bool force) {
         force ? SnowShotApiClient::ChatModelsCachePolicy::Refresh
               : SnowShotApiClient::ChatModelsCachePolicy::UseCached);
     if (m_modelsToken == 0)
-        m_catalogError = tr("No translation services are available.");
+        m_catalogError = tr("No translation services are available");
     emit catalogChanged();
 }
 
 void TranslationService::setLocale(const QLocale& locale) {
-    if (locale == m_locale)
+    if (locale == m_locale) {
+        // LanguageChange can arrive before the language manager publishes its new locale.
+        publishModels(false);
         return;
+    }
     m_locale = locale;
+    const QPointer<TranslationService> guard(this);
+    publishModels(false);
+    if (!guard)
+        return;
     if (m_client != nullptr)
         m_client->cancel(std::exchange(m_modelsToken, 0));
     // The effective target belongs to the translation, not to the language of its UI.
@@ -220,17 +234,16 @@ void TranslationService::setLocale(const QLocale& locale) {
 
 QString TranslationService::errorText() const {
     if (m_storageError)
-        return tr(
-            "Unable to save translation preferences. Your previous selections were restored.");
+        return tr("Unable to save translation preferences. Your previous selections were restored");
     if (!m_models.isEmpty() || loadingModels() || !m_catalogAttempted)
         return {};
     return m_catalogError.isEmpty()
-               ? tr("No translation services are available.")
+               ? tr("No translation services are available")
                : tr("Unable to load translation services: %1").arg(m_catalogError);
 }
 
 QString TranslationService::modelConfigurationChangedText() {
-    return tr("Model configuration changed. Retry to use the updated settings.");
+    return tr("Model configuration changed. Retry to use the updated settings");
 }
 
 TranslationJob* TranslationService::createJob(const QStringList& texts, QObject* owner) {
@@ -366,6 +379,10 @@ void TranslationJob::prepare() {
             return;
         if (!m_service->m_catalogAttempted) {
             m_service->refreshModels();
+            return;
+        }
+        if (!m_service->m_catalogError.isEmpty() && !m_preferences.modelId.isEmpty()) {
+            fail(m_service->m_catalogError);
             return;
         }
         if (m_fixedPreferences && !m_preferences.modelId.isEmpty()) {
@@ -512,6 +529,8 @@ QString TranslationJob::errorText() const {
     if (m_state == State::Invalidated) {
         return TranslationService::modelConfigurationChangedText();
     }
+    if (m_preferences.modelId == freeTranslationId && !m_result.error.isEmpty())
+        return freeTranslationErrorText();
     return m_result.error;
 }
 } // namespace snow_shot::translation

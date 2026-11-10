@@ -207,8 +207,8 @@ bool ScreenshotToolPaletteHost::stepFilterIntensity(int direction) {
     return m_palette != nullptr && m_palette->stepFilterIntensity(direction);
 }
 
-bool ScreenshotToolPaletteHost::stepPenFilterStrokeWidth(int direction) {
-    return m_palette != nullptr && m_palette->stepPenFilterStrokeWidth(direction);
+bool ScreenshotToolPaletteHost::stepBrushFilterStrokeWidth(int direction) {
+    return m_palette != nullptr && m_palette->stepBrushFilterStrokeWidth(direction);
 }
 
 bool ScreenshotToolPaletteHost::stepWatermarkFontSize(int direction) {

@@ -12,6 +12,7 @@ class QTemporaryDir;
 namespace screenshot_pinned_drag_export {
 // URL receivers can begin reading after the native drag finishes. Reserve their temporary files
 // for a supported transfer window, admitting new drags only while count and byte budgets allow.
+// Cocoa's IgnoreAction is ambiguous, so macOS applies that grace to every published drag.
 class FileRetention final : public QObject {
   public:
     using Clock = std::function<qint64()>;
