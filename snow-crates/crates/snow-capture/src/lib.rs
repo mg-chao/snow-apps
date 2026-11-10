@@ -8,7 +8,11 @@ mod cursor_compositor;
 pub mod cursor_snapshot;
 pub mod error;
 pub mod exclusions;
+#[cfg(windows)]
+mod follow_mouse;
 pub mod frame;
+#[cfg(all(windows, feature = "bench-follow-mouse"))]
+pub use follow_mouse::set_bench_follow_mouse_position;
 #[cfg(all(test, any(windows, target_os = "macos")))]
 mod frame_pages;
 #[cfg(windows)]

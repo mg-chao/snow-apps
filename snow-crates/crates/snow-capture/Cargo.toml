@@ -41,6 +41,8 @@ windows = { workspace = true, features = ["Win32_UI_HiDpi"] }
 # instrumentation marker compiles to nothing: no API surface, no fields,
 # no clock reads, no code.
 stage-timing = []
+# Process-local synthetic pointer input for serial recording benchmarks.
+bench-follow-mouse = []
 
 [[bench]]
 name = "conversion_hot_path"

@@ -683,6 +683,10 @@
             <translation>濾鏡類型</translation>
         </message>
         <message>
+            <source>Follow mouse</source>
+            <translation>跟隨滑鼠</translation>
+        </message>
+        <message>
             <source>Font family</source>
             <translation>字型</translation>
         </message>

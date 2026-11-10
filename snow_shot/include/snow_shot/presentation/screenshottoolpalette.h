@@ -420,6 +420,8 @@ class ScreenshotToolPalette final : public QWidget,
     void setRecordingSettingsOwnerWindow(QWidget* owner);
     void setRecordingKeyboardSize(int value);
     [[nodiscard]] int recordingKeyboardSize() const;
+    void setRecordingFollowMouseEnabled(bool enabled);
+    [[nodiscard]] bool recordingFollowMouseEnabled() const;
     void setRecordingWebcamEnabled(bool enabled);
     [[nodiscard]] bool recordingWebcamEnabled() const;
     void setRecordingWebcamSize(int size);
@@ -647,6 +649,7 @@ class ScreenshotToolPalette final : public QWidget,
     void recordingStartDelaySecondsChanged(int seconds);
     void recordingMouseTrailDurationMsChanged(int value);
     void recordingKeyboardSizeChanged(int value);
+    void recordingFollowMouseEnabledChanged(bool enabled);
     void recordingWebcamEnabledChanged(bool enabled);
     void recordingWebcamSizeChanged(int size);
     void recordingWebcamShapeChanged(const QString& shape);
@@ -753,6 +756,7 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] bool ensureRecordingEffectSettingsModal();
     void setRecordingExportSettingsVisible(bool visible);
     void updateRecordingExportSettingsControls();
+    void updateRecordingDrawingControls();
     void refreshRecordingExportSettingsText();
     void refreshRecordingEffectSettingsModalText();
     void refreshRecordingMouseOptions();
@@ -1078,6 +1082,8 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_recordingRecordLettersAndSymbols = true;
     bool m_recordingRecordControlKeys = true;
     bool m_recordingPreserveKeyboardShortcuts = true;
+    adqt::widgets::AdButton* m_recordFollowMouseButton = nullptr;
+    bool m_recordingFollowMouseEnabled = false;
     adqt::widgets::AdButton* m_recordWebcamButton = nullptr;
     adqt::widgets::AdInputNumber* m_recordWebcamSizeInput = nullptr;
     adqt::widgets::AdSelect* m_recordWebcamShapeSelect = nullptr;

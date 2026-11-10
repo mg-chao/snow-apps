@@ -219,11 +219,25 @@ impl RecordedEffects {
                     || effects.record_mouse_scrolling
             }
             RecordedInput::Reset => true,
+            RecordedInput::PointerViewport(_) => true,
         };
         if changes_pixels {
             self.observation_revision = self.observation_revision.wrapping_add(1);
         }
         match &event.event {
+            RecordedInput::PointerViewport(transform) => {
+                self.input_effects.reproject_pointer(
+                    *transform,
+                    transform.for_output(
+                        self.source_size,
+                        (self.config.output_width, self.config.output_height),
+                    ),
+                );
+                self.pointer.reproject(*transform);
+                if let Some(cursor) = &mut self.cursor {
+                    (cursor.x, cursor.y) = transform.project((cursor.x, cursor.y));
+                }
+            }
             RecordedInput::CursorShape(shape) => self.store_shape(shape),
             RecordedInput::Cursor(cursor) => {
                 self.cursor = Some(cursor.clone());
@@ -492,6 +506,56 @@ mod tests {
     use crate::keyboard_overlay::KeyEvent;
     use crate::mouse_effects::draw_clicks_to;
     use snow_recording_model::{EffectsConfig, PlaybackOverlay, RecordedMouseClick};
+    #[test]
+    fn follow_mouse_replay_reprojects_clicks_and_pending_pointer_without_resetting_keys() {
+        let mut config = config(PlaybackOverlay::None);
+        config.effects.mouse_click_rgba = [255, 0, 0, 255];
+        let mut effects = RecordedEffects::new(config, (120, 100), None).unwrap();
+        effects.input_effects.click(RenderClick {
+            timestamp_ms: 10,
+            x: 60,
+            y: 40,
+            button: ObservedMouseButton::Left,
+        });
+        effects.input_effects.pending_keys.push_back(KeyEvent {
+            at_ms: 10,
+            key: 0x41,
+            down: true,
+            label: "A".into(),
+            modifiers: vec![],
+        });
+        effects.pointer.observe(Some((60, 40)), 10);
+        effects
+            .observe(&input(
+                0,
+                20,
+                RecordedInput::PointerViewport(snow_recording_model::PointerTransform {
+                    scale: [1.0; 2],
+                    offset: [-20.0, -10.0],
+                }),
+            ))
+            .unwrap();
+        let click = &effects.input_effects.clicks[0];
+        assert_eq!((click.x, click.y, click.timestamp_ms), (40, 30, 10));
+        assert_eq!(effects.input_effects.pending_keys.len(), 1);
+        effects
+            .pointer
+            .advance(&mut effects.input_effects, (120, 100), (120, 100), 20);
+        // Reprojection is pixel-identical to admitting the original desktop observation
+        // directly in the destination viewport, including its original age.
+        let mut expected = InputEffectsState::default();
+        expected.observe_pointer(Some((40, 30)), (120, 100), (120, 100), 10);
+        let mut actual_pixels = pixels();
+        let mut expected_pixels = pixels();
+        effects
+            .input_effects
+            .trail
+            .draw(&mut actual_pixels, (120, 100), 20, [255, 0, 0, 255]);
+        expected
+            .trail
+            .draw(&mut expected_pixels, (120, 100), 20, [255, 0, 0, 255]);
+        assert_eq!(actual_pixels, expected_pixels);
+    }
     fn config(overlay: PlaybackOverlay) -> RenderConfig {
         RenderConfig {
             output_width: 120,

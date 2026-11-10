@@ -1142,6 +1142,21 @@ impl WgcWorker {
             .cloned()
             .ok_or(CaptureError::Timeout)?;
         let source_desc = self.canonical.desc().ok_or(CaptureError::Timeout)?;
+        self.effective_source_into(source, source_desc, output)
+    }
+
+    /// Convert either the canonical display or an owned recording crop using
+    /// the same HDR policy and cached shaders.
+    fn effective_source_into(
+        &mut self,
+        source: ID3D11Texture2D,
+        source_desc: D3D11_TEXTURE2D_DESC,
+        output: Option<&snow_d3d11::Texture>,
+    ) -> CaptureResult<(
+        ID3D11Texture2D,
+        D3D11_TEXTURE2D_DESC,
+        Option<HdrFrameContext>,
+    )> {
         if source_desc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT {
             return Ok((source, source_desc, self.hdr_to_sdr));
         }

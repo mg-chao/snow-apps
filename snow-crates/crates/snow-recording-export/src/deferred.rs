@@ -863,6 +863,51 @@ fn blend_hdr_tiles(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DecodedSdrColors {
+    matrix: i32,
+    full_range: bool,
+}
+impl DecodedSdrColors {
+    fn from_frame(frame: &ffmpeg::frame::Video) -> Self {
+        let matrix = match frame.color_space() as i32 {
+            // App-owned SDR recordings use BT.709. Untagged legacy sources
+            // must not inherit libswscale's dimension-dependent BT.601 default.
+            0 | 2 | 3 => ffmpeg::ffi::SWS_CS_ITU709,
+            matrix => matrix,
+        };
+        Self {
+            matrix,
+            full_range: crate::hdr::is_rgb(frame.format())
+                || frame.color_range() == ffmpeg::color::Range::JPEG,
+        }
+    }
+    fn configure(self, conversion: &mut ffmpeg::software::scaling::Context) -> Result<()> {
+        // SAFETY: the exclusively owned initialized scaler remains live for
+        // this call, and FFmpeg owns the immutable coefficient table.
+        let status = unsafe {
+            let matrix = ffmpeg::ffi::sws_getCoefficients(self.matrix);
+            ffmpeg::ffi::sws_setColorspaceDetails(
+                conversion.as_mut_ptr(),
+                matrix,
+                i32::from(self.full_range),
+                matrix,
+                1,
+                0,
+                1 << 16,
+                1 << 16,
+            )
+        };
+        if status < 0 {
+            return Err(decode(format!(
+                "source SDR color conversion: {}",
+                ffmpeg::Error::from(status)
+            )));
+        }
+        Ok(())
+    }
+}
+
 pub(crate) struct SequentialVideoSource {
     input: ffmpeg::format::context::Input,
     decoder: ffmpeg::decoder::Video,
@@ -879,15 +924,24 @@ pub(crate) struct SequentialVideoSource {
     tone_mapped: RasterBuffer,
     tone_mapped_valid: bool,
     conversion: ffmpeg::software::scaling::Context,
+    sdr_colors: Option<DecodedSdrColors>,
+    sdr_color_override: Option<DecodedSdrColors>,
     output: (u32, u32),
     hdr: bool,
     decoder_name: String,
 }
 impl SequentialVideoSource {
     pub(crate) fn recorded_sdr_colors(&mut self) -> Result<()> {
-        // StreamingEncoder stores SDR sources as full-range BT.709. Camera replay
-        // must not let libswscale infer a different matrix from its small dimensions.
-        crate::hdr::scaler_colors(&mut self.conversion, false, true)
+        // Retain the camera-track replay policy independently of the decoded
+        // screen source's explicit limited/full-range metadata.
+        let colors = DecodedSdrColors {
+            matrix: ffmpeg::ffi::SWS_CS_ITU709,
+            full_range: true,
+        };
+        colors.configure(&mut self.conversion)?;
+        self.sdr_color_override = Some(colors);
+        self.sdr_colors = Some(colors);
+        Ok(())
     }
     fn open(
         path: &Path,
@@ -978,6 +1032,8 @@ impl SequentialVideoSource {
             tone_mapped: RasterBuffer::default(),
             tone_mapped_valid: false,
             conversion,
+            sdr_colors: None,
+            sdr_color_override: None,
             output,
             hdr,
             decoder_name,
@@ -1092,11 +1148,18 @@ impl SequentialVideoSource {
         }
         if changed {
             self.tone_mapped_valid = false;
+            let frame = self.current.as_ref().expect("decoded source");
+            if !self.hdr {
+                let colors = self
+                    .sdr_color_override
+                    .unwrap_or_else(|| DecodedSdrColors::from_frame(frame));
+                if self.sdr_colors != Some(colors) {
+                    colors.configure(&mut self.conversion)?;
+                    self.sdr_colors = Some(colors);
+                }
+            }
             self.conversion
-                .run(
-                    self.current.as_ref().expect("decoded source"),
-                    &mut self.converted,
-                )
+                .run(frame, &mut self.converted)
                 .map_err(|e| decode(e.to_string()))?;
         }
         if self.current.is_none() {

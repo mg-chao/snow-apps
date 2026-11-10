@@ -90,6 +90,24 @@ pub struct MouseMovement {
     pub continuity: u64,
 }
 
+#[cfg(any(windows, target_os = "macos", test))]
+fn observation_position(
+    region: Option<(i32, i32, u32, u32)>,
+    point: (i32, i32),
+) -> ((i32, i32), bool) {
+    let Some((x, y, width, height)) = region else {
+        return (point, true);
+    };
+    let inside = i64::from(point.0) >= i64::from(x)
+        && i64::from(point.0) < i64::from(x) + i64::from(width)
+        && i64::from(point.1) >= i64::from(y)
+        && i64::from(point.1) < i64::from(y) + i64::from(height);
+    (
+        (point.0.saturating_sub(x), point.1.saturating_sub(y)),
+        inside,
+    )
+}
+
 #[cfg(windows)]
 mod platform {
     use std::cell::RefCell;
@@ -115,7 +133,7 @@ mod platform {
     #[derive(Clone)]
     struct HookContext {
         sender: Sender<MouseClickObservation>,
-        region: (i32, i32, u32, u32),
+        region: Option<(i32, i32, u32, u32)>,
         movement: Option<(
             Sender<MouseMovement>,
             crossbeam_channel::Receiver<MouseMovement>,
@@ -160,11 +178,8 @@ mod platform {
                     let Some(context) = context.as_mut() else {
                         return;
                     };
-                    let (x, y, width, height) = context.region;
-                    let inside = i64::from(hook.pt.x) >= i64::from(x)
-                        && i64::from(hook.pt.x) < i64::from(x) + i64::from(width)
-                        && i64::from(hook.pt.y) >= i64::from(y)
-                        && i64::from(hook.pt.y) < i64::from(y) + i64::from(height);
+                    let ((x, y), inside) =
+                        super::observation_position(context.region, (hook.pt.x, hook.pt.y));
                     if let Some(button) = button.filter(|button| {
                         if down {
                             inside
@@ -179,8 +194,8 @@ mod platform {
                             .sender
                             .try_send(MouseClickObservation {
                                 at: std::time::Instant::now(),
-                                x: hook.pt.x.saturating_sub(x),
-                                y: hook.pt.y.saturating_sub(y),
+                                x,
+                                y,
                                 button,
                                 down,
                                 modifiers: crate::keyboard_hook::MODIFIER_KEYS.map(|key| unsafe {
@@ -206,10 +221,7 @@ mod platform {
                         let event = MouseMovement {
                             at: std::time::Instant::now(),
                             continuity: context.continuity,
-                            position: inside.then_some((
-                                hook.pt.x.saturating_sub(x),
-                                hook.pt.y.saturating_sub(y),
-                            )),
+                            position: inside.then_some((x, y)),
                         };
                         if let Err(crossbeam_channel::TrySendError::Full(event)) =
                             sender.try_send(event)
@@ -243,6 +255,17 @@ mod platform {
 
         pub fn start_with_movement(
             region: (i32, i32, u32, u32),
+            sender: Sender<MouseClickObservation>,
+            movement: Option<(
+                Sender<MouseMovement>,
+                crossbeam_channel::Receiver<MouseMovement>,
+            )>,
+        ) -> Result<Self, String> {
+            Self::start_observing(Some(region), sender, movement)
+        }
+
+        pub(super) fn start_observing(
+            region: Option<(i32, i32, u32, u32)>,
             sender: Sender<MouseClickObservation>,
             movement: Option<(
                 Sender<MouseMovement>,
@@ -356,7 +379,7 @@ mod platform {
             HOOK_CONTEXT.with(|slot| {
                 *slot.borrow_mut() = Some(HookContext {
                     sender,
-                    region: (10, 10, 100, 100),
+                    region: Some((10, 10, 100, 100)),
                     movement: None,
                     continuity: 0,
                     was_inside: false,
@@ -401,7 +424,7 @@ mod platform {
             HOOK_CONTEXT.with(|slot| {
                 *slot.borrow_mut() = Some(HookContext {
                     sender,
-                    region: (10, 10, 100, 100),
+                    region: Some((10, 10, 100, 100)),
                     movement: None,
                     continuity: 0,
                     was_inside: false,
@@ -480,6 +503,13 @@ mod platform {
             sender: Sender<MouseClickObservation>,
             movement: Option<(Sender<MouseMovement>, Receiver<MouseMovement>)>,
         ) -> Result<Self, String> {
+            Self::start_observing(Some(region), sender, movement)
+        }
+        pub(super) fn start_observing(
+            region: Option<(i32, i32, u32, u32)>,
+            sender: Sender<MouseClickObservation>,
+            movement: Option<(Sender<MouseMovement>, Receiver<MouseMovement>)>,
+        ) -> Result<Self, String> {
             let input =
                 snow_macos::input::InputObserver::start(false, true).map_err(|e| e.to_string())?;
             let (stop, stopped) = crossbeam_channel::bounded(1);
@@ -504,9 +534,8 @@ mod platform {
                             if event.generation != input_generation { continue; }
                             let Some(at) = event.instant() else { continue; };
                             // The compatibility recording region is in desktop points on macOS.
-                            let x = event.x.round() as i32 - region.0;
-                            let y = event.y.round() as i32 - region.1;
-                            let inside = x >= 0 && y >= 0 && x < region.2 as i32 && y < region.3 as i32;
+                            let ((x, y), inside) = super::observation_position(
+                                region, (event.x.round() as i32, event.y.round() as i32));
                             let button = match event.kind { 22 => ObservedMouseButton::from_scroll_delta(event.scroll_delta_y), 1|2 => Some(ObservedMouseButton::Left), 3|4 => Some(ObservedMouseButton::Right), 25|26 => match event.mouse_button { 2 => Some(ObservedMouseButton::Middle), 3 => Some(ObservedMouseButton::Button4), 4 => Some(ObservedMouseButton::Button5), _ => None }, _ => None };
                             let down = matches!(event.kind,1|3|25|22);
                             if let Some(button) = button.filter(|button| if down { inside } else { held[*button as usize] }) {
@@ -571,7 +600,56 @@ mod platform {
         ) -> Result<Self, String> {
             Err("native mouse observation requires Windows".into())
         }
+        pub(super) fn start_observing(
+            _region: Option<(i32, i32, u32, u32)>,
+            _sender: Sender<MouseClickObservation>,
+            _movement: Option<(
+                Sender<MouseMovement>,
+                crossbeam_channel::Receiver<MouseMovement>,
+            )>,
+        ) -> Result<Self, String> {
+            Err("native mouse observation requires Windows or macOS".into())
+        }
     }
 }
 
 pub use platform::MouseHookObserver;
+
+impl MouseHookObserver {
+    pub fn start_desktop(
+        sender: crossbeam_channel::Sender<MouseClickObservation>,
+    ) -> Result<Self, String> {
+        Self::start_observing(None, sender, None)
+    }
+
+    pub fn start_desktop_with_movement(
+        sender: crossbeam_channel::Sender<MouseClickObservation>,
+        movement: Option<(
+            crossbeam_channel::Sender<MouseMovement>,
+            crossbeam_channel::Receiver<MouseMovement>,
+        )>,
+    ) -> Result<Self, String> {
+        Self::start_observing(None, sender, movement)
+    }
+}
+
+#[cfg(test)]
+mod coordinate_tests {
+    use super::*;
+
+    #[test]
+    fn follow_mouse_desktop_observation_preserves_negative_coordinates() {
+        assert_eq!(
+            observation_position(None, (-1920, -400)),
+            ((-1920, -400), true)
+        );
+        assert_eq!(
+            observation_position(Some((-1920, -400, 800, 600)), (-1910, -390)),
+            ((10, 10), true)
+        );
+        assert_eq!(
+            observation_position(Some((-1920, -400, 800, 600)), (-1120, 0)),
+            ((800, 400), false)
+        );
+    }
+}

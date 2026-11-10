@@ -19,6 +19,7 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
     : QObject(parent), m_area(&area), m_toolbar(&toolbar), m_shortcutManager(this) {
     m_shortcutManager.addScopeWindow(&area);
     m_shortcutManager.addScopeWindow(&toolbar);
+    m_shortcutManager.addScopeWindow(toolbar.autoHideControlWindow());
     connect(toolbar.palette(), &ScreenshotToolPalette::materializedScope, this,
             [this](QWidget* scope) { m_shortcutManager.addScopeWindow(scope); });
 
@@ -160,7 +161,8 @@ bool ScreenRecordingShortcutController::canActivate(
                 return false;
         }
     }
-    return m_area != nullptr && m_toolbar != nullptr && m_area->isVisible() &&
+    return m_area != nullptr && m_toolbar != nullptr &&
+           (m_area->isVisible() || m_toolbar->palette()->recordingFollowMouseEnabled()) &&
            m_toolbar->recordingUiPresented() && receiver != nullptr && receiver->isVisible() &&
            !ShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
            !m_area->canvas()->hasActiveTextEditing();

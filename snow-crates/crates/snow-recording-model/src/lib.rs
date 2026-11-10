@@ -23,8 +23,8 @@ pub use bundle::{
 };
 pub use error::{RecordingModelError, Result};
 pub use input::{
-    InputMouseButton, InputStoreReader, InputStoreWriter, KeyEventRecord, RecordedInput,
-    RecordedInputEvent, RecordedMouseClick,
+    InputMouseButton, InputStoreReader, InputStoreWriter, KeyEventRecord, PointerTransform,
+    RecordedInput, RecordedInputEvent, RecordedMouseClick,
 };
 pub use model::StoredFrame;
 pub use mouse::{

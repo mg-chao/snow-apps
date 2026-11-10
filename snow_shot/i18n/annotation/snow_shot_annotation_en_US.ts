@@ -683,6 +683,10 @@
             <translation>Filter type</translation>
         </message>
         <message>
+            <source>Follow mouse</source>
+            <translation>Follow mouse</translation>
+        </message>
+        <message>
             <source>Font family</source>
             <translation>Font family</translation>
         </message>

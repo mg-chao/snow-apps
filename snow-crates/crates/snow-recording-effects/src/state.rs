@@ -20,6 +20,12 @@ pub struct CoalescedPointer {
 }
 
 impl CoalescedPointer {
+    pub fn reproject(&mut self, transform: snow_recording_model::PointerTransform) {
+        self.position = self.position.map(|point| transform.project(point));
+        self.pending = self
+            .pending
+            .map(|(point, at)| (point.map(|p| transform.project(p)), at));
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -74,14 +80,68 @@ pub struct InputEffectsState {
     pub clicks: VecDeque<RenderClick>,
     pub keyboard: Option<KeyboardOverlay>,
     pub pending_keys: VecDeque<KeyEvent>,
+    pub(crate) precise_clicks: PreciseClicks,
+}
+
+#[derive(Clone, Copy)]
+struct PreciseClick {
+    at: u64,
+    button: crate::mouse_hook::ObservedMouseButton,
+    rounded: (i32, i32),
+    point: (f64, f64),
+}
+pub(crate) struct PreciseClicks([Option<PreciseClick>; CLICK_QUEUE_DEPTH]);
+impl Default for PreciseClicks {
+    fn default() -> Self {
+        Self([None; CLICK_QUEUE_DEPTH])
+    }
 }
 
 impl InputEffectsState {
+    /// Move spatial history with the desktop; do not renew ages or release held keys.
+    pub fn reproject_pointer(
+        &mut self,
+        source: snow_recording_model::PointerTransform,
+        output: snow_recording_model::PointerTransform,
+    ) {
+        self.trail.reproject(source, output);
+        let previous = self.precise_clicks.0;
+        self.precise_clicks.0.fill(None);
+        for (index, click) in self.clicks.iter_mut().enumerate() {
+            let point = previous
+                .iter()
+                .flatten()
+                .find(|old| {
+                    old.at == click.timestamp_ms
+                        && old.button == click.button
+                        && old.rounded == (click.x, click.y)
+                })
+                .map_or((f64::from(click.x), f64::from(click.y)), |old| old.point);
+            let point = (
+                point.0 * source.scale[0] + source.offset[0],
+                point.1 * source.scale[1] + source.offset[1],
+            );
+            (click.x, click.y) = (point.0.round() as i32, point.1.round() as i32);
+            if let Some(slot) = self.precise_clicks.0.get_mut(index) {
+                *slot = Some(PreciseClick {
+                    at: click.timestamp_ms,
+                    button: click.button,
+                    rounded: (click.x, click.y),
+                    point,
+                });
+            }
+        }
+    }
     pub fn new(lifetime_ms: u64) -> Self {
         Self {
             trail: LaserTrail::new(lifetime_ms),
             ..Self::default()
         }
+    }
+
+    pub fn with_keyboard(mut self, keyboard: Option<KeyboardOverlay>) -> Self {
+        self.keyboard = keyboard;
+        self
     }
 
     pub fn queue_key(&mut self, key: KeyEvent) {
@@ -120,6 +180,7 @@ impl InputEffectsState {
     pub fn reset_inputs(&mut self, now: u64) {
         self.trail.clear();
         self.clicks.clear();
+        self.precise_clicks.0.fill(None);
         self.reset_keyboard(now);
     }
 
@@ -220,6 +281,37 @@ mod tests {
     use super::*;
     use crate::preview::{EffectsPreview, PreviewConfig};
     use crate::surface::TileSurface;
+
+    #[test]
+    fn follow_mouse_repeated_shrinking_keeps_original_click_precision() {
+        let mut state = InputEffectsState::default();
+        state.click(RenderClick {
+            timestamp_ms: 10,
+            x: 47,
+            y: 63,
+            button: crate::mouse_hook::ObservedMouseButton::Left,
+        });
+        let half = snow_recording_model::PointerTransform {
+            scale: [0.5; 2],
+            offset: [0.0; 2],
+        };
+        let double = snow_recording_model::PointerTransform {
+            scale: [2.0; 2],
+            offset: [0.0; 2],
+        };
+        for _ in 0..500 {
+            state.reproject_pointer(half, half);
+            state.reproject_pointer(double, double);
+        }
+        assert_eq!(
+            (
+                state.clicks[0].x,
+                state.clicks[0].y,
+                state.clicks[0].timestamp_ms
+            ),
+            (47, 63, 10)
+        );
+    }
 
     struct Solid;
     impl crate::keyboard_overlay::KeycapRasterizer for Solid {

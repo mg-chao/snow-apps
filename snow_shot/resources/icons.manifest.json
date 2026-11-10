@@ -1071,6 +1071,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecordingFollowMouse",
+      "name": "recording-follow-mouse",
+      "source": "../src/presentation/components/icons/resources/recording-follow-mouse.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingKeyboard",
       "name": "recording-keyboard",
       "source": "../src/presentation/components/icons/resources/recording-keyboard.svg",

@@ -4,6 +4,8 @@
 #include "snow_shot/platform/applicationqos.h"
 #include "recordingeffectpreview.h"
 #include "recordingaudiogainpopover.h"
+#include "recordingcountdownoverlay.h"
+#include "../tools/screenshotfloatingtoolpalettenative.h"
 #include "recordingpopupexclusions.h"
 #include "widgets/popover.h"
 #include "widgets/popup_surface_guard.h"
@@ -70,6 +72,11 @@
 #include <QTimer>
 #include <QWindow>
 #include <QScreen>
+#include <QCursor>
+
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/screenshotnative.h"
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -283,6 +290,9 @@ struct RecordingUiSession final : QObject {
     std::unique_ptr<QObject> connections = std::make_unique<QObject>();
     std::unique_ptr<ScreenRecordingShortcutController> shortcuts;
     std::unique_ptr<RecordingEffectPreview> preview;
+    std::unique_ptr<snow_shot::presentation::recording::RecordingCountdownOverlay> followCountdown;
+    bool followMouseSelected = false;
+    bool areaHiddenForFollowing = false;
     std::unique_ptr<snow_shot::presentation::recording::RecordingColorSampler> colorSampler =
         std::make_unique<snow_shot::presentation::recording::RecordingColorSampler>(*area,
                                                                                     *toolbar);
@@ -303,6 +313,7 @@ struct ScreenRecordingController::Impl {
         mouseTrailDurationMs = settings.mouseTrailDurationMs();
         keyboardSize = settings.keyboardSize();
         webcamEnabled = settings.webcamEnabled();
+        followMouse = settings.followMouse();
         webcamSize = settings.webcamSize();
         webcamOffset = QPoint(settings.webcamOffsetLeft(), settings.webcamOffsetBottom());
         webcamShape = settings.webcamShape();
@@ -330,6 +341,12 @@ struct ScreenRecordingController::Impl {
                          [this](const QString& key, const QJsonValue&) {
                              if (key == QStringLiteral("screen_recording/area_history")) {
                                  areaHistoryIndex = -1;
+                                 return;
+                             }
+                             if (key == QStringLiteral("screen_recording/follow_mouse")) {
+                                 followSettingsRefreshPending = true;
+                                 if (!automationOwned && recordingOptionsEditable())
+                                     syncUi();
                                  return;
                              }
                              if (key == QStringLiteral("screen_recording/show_status_prompts")) {
@@ -524,8 +541,7 @@ struct ScreenRecordingController::Impl {
             areaWindow->setRecordingRegion(region);
             syncUi();
             toolbarWindow->placeForRecordingRegion(region);
-            areaWindow->show();
-            areaWindow->raise();
+            syncAreaPresentation();
             showRecordingControls();
             return;
         }
@@ -584,8 +600,7 @@ struct ScreenRecordingController::Impl {
         syncUi();
         SNOW_SHOT_RECORDING_PERF_MILESTONE("open.ui_synced");
 
-        areaWindow->show();
-        areaWindow->raise();
+        syncAreaPresentation();
         showRecordingControls();
         SNOW_SHOT_RECORDING_PERF_MILESTONE("open.show_returned");
     }
@@ -595,6 +610,69 @@ struct ScreenRecordingController::Impl {
         if (!areaWindow->activateInput()) {
             toolbarWindow->showAndActivate();
         }
+    }
+
+    bool shouldHideRecordingArea() const {
+        // Preserve the selection and countdown until the capture startup boundary.
+        // Starting must hide the area before the worker can admit its first frame.
+        return followMouse && !trimRequested &&
+               (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
+                sessionStatus.busyOperation() ==
+                    ScreenshotToolPalette::RecordingBusyOperation::Starting);
+    }
+
+    QWidget* recordingUiOwner() const {
+        return shouldHideRecordingArea() ? static_cast<QWidget*>(toolbarWindow)
+                                         : static_cast<QWidget*>(areaWindow);
+    }
+
+    void syncAreaPresentation() {
+        if (!uiSession || !areaWindow || !toolbarWindow)
+            return;
+        const bool following = followMouse && !trimRequested;
+        if (following != uiSession->followMouseSelected) {
+            updateCaptureRegion();
+            if (uiSession->settingsModal)
+                uiSession->settingsModal->close();
+            uiSession->colorSampler->cancel();
+            areaWindow->cancelWebcamInteraction();
+            if (following) {
+                static_cast<void>(areaWindow->canvas()->resetEditingStatePreservingTool());
+                areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
+            } else if (!trimRequested) {
+                areaWindow->setInputMode(toolbarWindow->palette()->recordingExportSettingsVisible()
+                                             ? ScreenRecordingAreaWindow::InputMode::RegionEditing
+                                             : ScreenRecordingAreaWindow::InputMode::PassThrough);
+            }
+            uiSession->followMouseSelected = following;
+        }
+        const bool hideArea = shouldHideRecordingArea();
+        if (hideArea != uiSession->areaHiddenForFollowing) {
+            if (hideArea) {
+                // Independent tool windows must not retain a hidden native owner.
+                toolbarWindow->setTransientOwnerWindow(nullptr);
+                toolbarWindow->setAutoHideControlOwner(nullptr);
+            } else {
+                areaWindow->show();
+                toolbarWindow->setTransientOwnerWindow(areaWindow);
+                toolbarWindow->setAutoHideControlOwner(areaWindow);
+            }
+            toolbarWindow->palette()->setRecordingSettingsOwnerWindow(recordingUiOwner());
+            uiSession->areaHiddenForFollowing = hideArea;
+        }
+        if (hideArea) {
+            areaWindow->hide();
+        } else if (!areaWindow->isVisible()) {
+            areaWindow->show();
+            areaWindow->raise();
+        }
+    }
+
+    void clearCountdown() {
+        if (areaWindow)
+            areaWindow->clearCountdown();
+        if (uiSession && uiSession->followCountdown)
+            uiSession->followCountdown->clear();
     }
 
     bool isOpen() const {
@@ -626,7 +704,7 @@ struct ScreenRecordingController::Impl {
                     return;
                 if (!uiSession->settingsModal) {
                     auto* modal = snow_shot::presentation::createScreenRecordingSettingsDialog(
-                        areaWindow, uiSession);
+                        recordingUiOwner(), uiSession);
                     uiSession->settingsModal = modal;
                     toolbarWindow->setAutoHideBlocked(modal, true);
                     QObject::connect(modal, &adqt::widgets::AdModal::finished,
@@ -887,6 +965,16 @@ struct ScreenRecordingController::Impl {
                                  value);
                              syncUi();
                          });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingFollowMouseEnabledChanged,
+                         uiSession->connections.get(), [this](bool enabled) {
+                             if (!recordingOptionsEditable()) {
+                                 syncUi();
+                                 return;
+                             }
+                             setOption(followMouse, enabled);
+                             snow_shot::storage::RecordingSettings().setFollowMouse(enabled);
+                             syncUi();
+                         });
         QObject::connect(palette, &ScreenshotToolPalette::recordingWebcamEnabledChanged,
                          uiSession->connections.get(), [this](bool enabled) {
                              setOption(webcamEnabled, enabled);
@@ -953,6 +1041,8 @@ struct ScreenRecordingController::Impl {
             return;
         }
         const auto activate = [this, canvas](SnowCanvasTool tool) {
+            if (followMouse)
+                return;
             canvas->setCanvasTool(tool);
             areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
         };
@@ -1071,9 +1161,7 @@ struct ScreenRecordingController::Impl {
         countdownTimer.stop();
         if (sessionStatus.busyOperation() ==
             ScreenshotToolPalette::RecordingBusyOperation::CountingDown) {
-            if (areaWindow != nullptr) {
-                areaWindow->clearCountdown();
-            }
+            clearCountdown();
             sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
             automationRevision = snow_shot::presentation::nextAutomationRevision();
         }
@@ -1094,6 +1182,7 @@ struct ScreenRecordingController::Impl {
             automationOptions = {};
             automationOwned = false;
             webcamSettingsRefreshPending = true;
+            followSettingsRefreshPending = true;
             const snow_shot::storage::RecordingSettings settings;
             microphoneEnabled = settings.microphoneEnabled();
             systemAudioEnabled = settings.systemAudioEnabled();
@@ -1121,6 +1210,8 @@ struct ScreenRecordingController::Impl {
             postProcessingEnabled = settings.postProcessingEnabled();
             postProcessingEffect = settings.postProcessingEffect();
             progressBarColor = settings.progressBarColor();
+            // Restore saved follow options while startup is still editable.
+            syncUi();
         }
         automationNextStart = false;
         refreshWebcamSettings();
@@ -1156,7 +1247,30 @@ struct ScreenRecordingController::Impl {
         // displayed seconds can never drift away from the recording start.
         countdownTotalMilliseconds = static_cast<qint64>(seconds) * 1000;
         countdownElapsed.start();
-        if (areaWindow != nullptr) {
+        if (followMouse && uiSession) {
+            if (!uiSession->followCountdown) {
+                auto countdown = std::make_unique<
+                    snow_shot::presentation::recording::RecordingCountdownOverlay>();
+                countdown->setObjectName(QStringLiteral("screenRecordingFollowMouseCountdown"));
+                countdown->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
+                                          Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus |
+                                          Qt::WindowTransparentForInput);
+                countdown->setAttribute(Qt::WA_ShowWithoutActivating);
+#ifdef Q_OS_MACOS
+                countdown->setAttribute(Qt::WA_MacAlwaysShowToolWindow);
+                snow_shot::platform::configureScreenRecordingToolbarWindow(countdown.get());
+#endif
+                uiSession->followCountdown = std::move(countdown);
+            }
+            auto* countdown = uiSession->followCountdown.get();
+            auto* screen = QGuiApplication::screenAt(QCursor::pos());
+            if (!screen)
+                screen = QGuiApplication::primaryScreen();
+            if (screen)
+                countdown->move(screen->geometry().center() -
+                                QPoint(countdown->width() / 2, countdown->height() / 2));
+            countdown->start(seconds);
+        } else if (areaWindow) {
             areaWindow->startCountdown(seconds);
         }
         countdownTimer.start();
@@ -1173,12 +1287,12 @@ struct ScreenRecordingController::Impl {
             if (areaWindow != nullptr) {
                 areaWindow->updateCountdown(remaining);
             }
+            if (uiSession && uiSession->followCountdown)
+                uiSession->followCountdown->setRemainingMilliseconds(remaining);
             return;
         }
         countdownTimer.stop();
-        if (areaWindow != nullptr) {
-            areaWindow->clearCountdown();
-        }
+        clearCountdown();
         sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         scheduleStart();
@@ -1193,8 +1307,8 @@ struct ScreenRecordingController::Impl {
     }
 
     bool canNavigateAreaHistory() const {
-        return recordingOptionsEditable() && !sessionEnding && !trimRequested && !trimSession &&
-               uiSession && areaWindow->canRestoreRecordingRegion() &&
+        return !followMouse && recordingOptionsEditable() && !sessionEnding && !trimRequested &&
+               !trimSession && uiSession && areaWindow->canRestoreRecordingRegion() &&
                toolbarWindow->palette()->recordingExportSettingsVisible();
     }
 
@@ -1362,6 +1476,7 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(recordLettersAndSymbols),
                 static_cast<uint32_t>(recordControlKeys),
                 static_cast<uint32_t>(preserveKeyboardShortcuts),
+                static_cast<uint32_t>(followMouse),
             };
             sessionLoopAnimatedImages = config.loop_animated_images != 0;
             const QDateTime outputTimestamp = QDateTime::currentDateTime();
@@ -1497,10 +1612,7 @@ struct ScreenRecordingController::Impl {
             sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
             automationRevision = snow_shot::presentation::nextAutomationRevision();
             syncUi();
-            if (areaWindow != nullptr) {
-                areaWindow->show();
-                areaWindow->raise();
-            }
+            syncAreaPresentation();
             if (toolbarWindow != nullptr) {
                 toolbarWindow->show();
                 toolbarWindow->raise();
@@ -1515,10 +1627,7 @@ struct ScreenRecordingController::Impl {
         sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::recording();
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         syncUi();
-        if (areaWindow != nullptr) {
-            areaWindow->show();
-            areaWindow->raise();
-        }
+        syncAreaPresentation();
         if (toolbarWindow != nullptr) {
             showRecordingControls();
         }
@@ -1681,8 +1790,8 @@ struct ScreenRecordingController::Impl {
             QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(recordingRegion);
             // Keep placement independent of the selection windows, which may already be closed.
             QRect anchorGeometry;
-            if (areaWindow) {
-                anchorGeometry = areaWindow->frameGeometry();
+            if (recordingUiOwner()) {
+                anchorGeometry = recordingUiOwner()->frameGeometry();
             } else {
 #ifdef Q_OS_MACOS
                 anchorGeometry = recordingRegion;
@@ -1692,7 +1801,9 @@ struct ScreenRecordingController::Impl {
 #endif
             }
             renderJob = new RecordingRenderJob(result.source, !automationOwned, screen, &owner,
-                                               anchorGeometry, areaWindow);
+                                               anchorGeometry, recordingUiOwner());
+            if (toolbarWindow)
+                toolbarWindow->setAutoHideBlocked(renderJob, true);
             renderJob->changed = [this, job = renderJob] {
                 if (renderJob != job)
                     return;
@@ -2045,6 +2156,7 @@ struct ScreenRecordingController::Impl {
             {QStringLiteral("system_audio_gain_db"), systemAudioGainDb},
             {QStringLiteral("microphone_gain_db"), microphoneGainDb},
             {QStringLiteral("show_cursor"), showCursor},
+            {QStringLiteral("follow_mouse"), followMouse},
             {QStringLiteral("show_keyboard"), showKeyboard},
             {QStringLiteral("record_number_keys"), recordNumberKeys},
             {QStringLiteral("record_letters_and_symbols"), recordLettersAndSymbols},
@@ -2275,7 +2387,7 @@ struct ScreenRecordingController::Impl {
         adqt::widgets::AdMessage::Request request;
         request.key = key;
         request.content = content;
-        adqt::widgets::AdMessageService::warning(std::move(request), areaWindow);
+        adqt::widgets::AdMessageService::warning(std::move(request), recordingUiOwner());
     }
 
     void reportToolbarExclusionError() {
@@ -2350,8 +2462,8 @@ struct ScreenRecordingController::Impl {
             webcamTimer.start();
         if (webcamFailed)
             return;
-        // Preview must receive a stable source even before the area is shown. The source
-        // starts inactive; window visibility controls device capture, not handle creation.
+        // Preview needs a stable source even before the area is shown. Device capture
+        // stays inactive until a visible preview or the recording worker needs it.
         if (!webcam) {
             webcam = std::shared_ptr<SnowWebcam>(
                 snow_webcam_create(static_cast<uint32_t>(webcamSize), 30), snow_webcam_destroy);
@@ -2478,6 +2590,11 @@ struct ScreenRecordingController::Impl {
     }
 
     void syncUi() {
+        if (followSettingsRefreshPending && !automationOwned && !automationNextStart &&
+            recordingOptionsEditable()) {
+            followSettingsRefreshPending = false;
+            setOption(followMouse, snow_shot::storage::RecordingSettings().followMouse());
+        }
         refreshAudioGains();
         refreshWebcamSettings();
         if (uiSession != nullptr && sessionStatus.busy())
@@ -2486,10 +2603,11 @@ struct ScreenRecordingController::Impl {
             (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
              sessionStatus.busy()))
             uiSession->settingsModal->close();
+        syncAreaPresentation();
         syncPreview();
         if (areaWindow != nullptr) {
             areaWindow->setRecordingState(sessionStatus.state());
-            areaWindow->setDrawingBlocked(sessionStatus.busy());
+            areaWindow->setDrawingBlocked(sessionStatus.busy() || (followMouse && !trimRequested));
         }
         ScreenshotToolPalette* palette =
             toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
@@ -2508,6 +2626,7 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingMouseTrailDurationMs(mouseTrailDurationMs);
             palette->setRecordingKeyboardSize(keyboardSize);
             palette->setRecordingWebcamEnabled(webcamEnabled);
+            palette->setRecordingFollowMouseEnabled(followMouse);
             palette->setRecordingWebcamSize(webcamSize);
             palette->setRecordingWebcamShape(webcamShape);
             palette->setRecordingKeyboardBackgroundColor(keyboardBackgroundColor);
@@ -2530,6 +2649,11 @@ struct ScreenRecordingController::Impl {
     }
 
     void updateCaptureRegion() {
+        if (followMouse) {
+            // The backend keeps output fixed and handles source alignment itself.
+            captureRegion = recordingRegion;
+            return;
+        }
 #ifdef Q_OS_MACOS
         captureRegion = recordingRegion;
 #else
@@ -2552,7 +2676,15 @@ struct ScreenRecordingController::Impl {
         using adqt::widgets::AdModal;
         auto* modal = new AdModal(uiSession ? static_cast<QObject*>(uiSession) : &owner);
         modal->setObjectName(QStringLiteral("screenRecordingErrorModal"));
-        snow_shot::presentation::configureScreenRecordingModal(*modal, areaWindow);
+        snow_shot::presentation::configureScreenRecordingModal(*modal, recordingUiOwner());
+        if (toolbarWindow) {
+            toolbarWindow->setAutoHideBlocked(modal, true);
+            QObject::connect(modal, &adqt::widgets::AdModal::finished, uiSession->connections.get(),
+                             [this, modal] {
+                                 if (toolbarWindow)
+                                     toolbarWindow->setAutoHideBlocked(modal, false);
+                             });
+        }
         modal->setPreset(AdModal::Preset::Error);
         modal->setWindowTitle(tr("Screen recording"));
         modal->setText(message.isEmpty() ? tr("The recording operation failed") : message);
@@ -2621,6 +2753,8 @@ struct ScreenRecordingController::Impl {
     QString pendingOutputPath;
     snow_shot::storage::ScreenshotWindowNames sessionWindowNames;
     bool webcamEnabled = false;
+    bool followMouse = false;
+    bool followSettingsRefreshPending = false;
     int webcamSize = 150;
     QPoint webcamOffset{48, 48};
     QString webcamShape = QStringLiteral("square");
@@ -2783,6 +2917,7 @@ void ScreenRecordingController::prepareForSessionEnd(int timeoutMs) {
     s.finalizationPollTimer.stop();
     s.startPollTimer.stop();
     s.countdownTimer.stop();
+    s.clearCountdown();
     s.exclusionPollTimer.stop();
     s.audioMeterTimer.stop();
     s.webcamTimer.stop();
@@ -3013,6 +3148,7 @@ bool ScreenRecordingController::startAutomation(const QRect& region, const QJson
     s.startDelaySeconds =
         options.value(QStringLiteral("start_delay_seconds")).toInt(settings.startDelaySeconds());
     s.showCursor = options.value(QStringLiteral("show_cursor")).toBool(settings.showCursor());
+    s.followMouse = options.value(QStringLiteral("follow_mouse")).toBool(settings.followMouse());
     s.showKeyboard = options.value(QStringLiteral("show_keyboard")).toBool(settings.showKeyboard());
     s.recordNumberKeys =
         options.value(QStringLiteral("record_number_keys")).toBool(settings.recordNumberKeys());
@@ -3129,6 +3265,8 @@ bool ScreenRecordingController::controlAutomation(const QString& action, const Q
     } else if (s.areaWindow &&
                (action == QStringLiteral("annotations") || action == QStringLiteral("undo") ||
                 action == QStringLiteral("redo") || action == QStringLiteral("reset"))) {
+        if (s.followMouse)
+            return fail("action_unavailable");
         auto& runtime = s.areaWindow->canvasRuntime();
         bool ok = false;
         if (action == QStringLiteral("annotations")) {

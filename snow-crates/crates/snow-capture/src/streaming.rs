@@ -72,6 +72,13 @@ impl Default for CaptureStreamConfig {
 /// capture thread. Read these from any thread via `CaptureStream::stats()`.
 #[derive(Debug)]
 pub struct CaptureStreamStats {
+    /// Mouse-follow destination preparations requested during this stream.
+    pub follow_prepare_requests: AtomicU64,
+    pub follow_monitor_switches: AtomicU64,
+    pub follow_preparation_failures: AtomicU64,
+    /// Maximum simultaneously owned active/preparing/retiring native sources.
+    pub follow_peak_sources: AtomicU64,
+    pub follow_prepare_latency_max_ns: AtomicU64,
     /// Total frames captured since the stream started.
     pub frames_captured: AtomicU64,
     /// Total frames dropped due to backpressure (receiver too slow).
@@ -116,6 +123,11 @@ pub struct CaptureStreamStats {
 impl Default for CaptureStreamStats {
     fn default() -> Self {
         Self {
+            follow_prepare_requests: AtomicU64::new(0),
+            follow_monitor_switches: AtomicU64::new(0),
+            follow_preparation_failures: AtomicU64::new(0),
+            follow_peak_sources: AtomicU64::new(0),
+            follow_prepare_latency_max_ns: AtomicU64::new(0),
             frames_captured: AtomicU64::new(0),
             frames_dropped: AtomicU64::new(0),
             errors_recovered: AtomicU64::new(0),
@@ -141,6 +153,13 @@ impl CaptureStreamStats {
     /// Snapshot the current stats into plain values.
     pub fn snapshot(&self) -> CaptureStreamStatsSnapshot {
         CaptureStreamStatsSnapshot {
+            follow_prepare_requests: self.follow_prepare_requests.load(Ordering::Relaxed),
+            follow_monitor_switches: self.follow_monitor_switches.load(Ordering::Relaxed),
+            follow_preparation_failures: self.follow_preparation_failures.load(Ordering::Relaxed),
+            follow_peak_sources: self.follow_peak_sources.load(Ordering::Relaxed),
+            follow_prepare_latency_max: Duration::from_nanos(
+                self.follow_prepare_latency_max_ns.load(Ordering::Relaxed),
+            ),
             frames_captured: self.frames_captured.load(Ordering::Relaxed),
             frames_dropped: self.frames_dropped.load(Ordering::Relaxed),
             errors_recovered: self.errors_recovered.load(Ordering::Relaxed),
@@ -169,6 +188,11 @@ impl CaptureStreamStats {
 /// A point-in-time copy of stream statistics.
 #[derive(Clone, Debug, Default)]
 pub struct CaptureStreamStatsSnapshot {
+    pub follow_prepare_requests: u64,
+    pub follow_monitor_switches: u64,
+    pub follow_preparation_failures: u64,
+    pub follow_peak_sources: u64,
+    pub follow_prepare_latency_max: Duration,
     pub frames_captured: u64,
     pub frames_dropped: u64,
     pub errors_recovered: u64,
@@ -214,6 +238,116 @@ pub struct CaptureStream {
 }
 
 impl CaptureStream {
+    /// Recording-only mouse following. Native monitor sources are warmed on
+    /// independent owner threads while the previous source continues delivering.
+    #[cfg(windows)]
+    pub fn spawn_follow_mouse(
+        nominal_region: crate::CaptureRegion,
+        preferred_backend: crate::backend::CaptureBackendKind,
+        options: crate::CaptureOptions,
+        config: CaptureStreamConfig,
+    ) -> CaptureResult<Self> {
+        if config.target_fps == 0
+            || nominal_region.width == 0
+            || nominal_region.height == 0
+            || options.workload != CaptureWorkload::Continuous
+        {
+            return Err(CaptureError::InvalidConfig(
+                "following requires continuous capture, nonempty geometry and positive FPS".into(),
+            ));
+        }
+        let buffer_depth = config.buffer_depth.max(1);
+        let queue = Arc::new(StreamQueue::new(buffer_depth));
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let pause_flag = Arc::new(AtomicBool::new(false));
+        let stats = Arc::new(CaptureStreamStats::default());
+        let maximum_fps = config.target_fps;
+        let minimum_fps = if config.adaptive_fps {
+            config.min_fps
+        } else {
+            0
+        };
+        let target_fps = Arc::new(AtomicU32::new(maximum_fps));
+        stats
+            .target_fps
+            .store(u64::from(maximum_fps), Ordering::Relaxed);
+        let pacing_origin = Arc::new(Mutex::new(None));
+        let cancellation = CancellationToken::default();
+        let (wake, commands) = mpsc::bounded(1);
+        let (ready_tx, ready_rx) = mpsc::bounded(1);
+        let (recycle_tx, recycle_rx) = mpsc::bounded(buffer_depth.saturating_add(4));
+        let recycler = FrameRecycleSender::new(recycle_tx);
+        let worker_queue = queue.clone();
+        let worker_stop = stop_flag.clone();
+        let worker_pause = pause_flag.clone();
+        let worker_stats = stats.clone();
+        let worker_target = target_fps.clone();
+        let worker_origin = pacing_origin.clone();
+        let join_handle = std::thread::Builder::new()
+            .name("snow-follow-capture".into())
+            .spawn(move || {
+                snow_core::qos::apply_current_thread();
+                let result = crate::follow_mouse::run(
+                    crate::follow_mouse::Settings {
+                        nominal: nominal_region,
+                        preferred: preferred_backend,
+                        options,
+                        config,
+                        gpu: false,
+                        recycled: Some(recycle_rx),
+                    },
+                    &worker_stop,
+                    &worker_pause,
+                    &worker_target,
+                    &worker_origin,
+                    &commands,
+                    &worker_stats,
+                    ready_tx.clone(),
+                    |frame| {
+                        if let crate::follow_mouse::FollowFrame::Cpu(frame) = frame {
+                            let _ = publish_cpu_frame(
+                                &worker_queue,
+                                &worker_stats,
+                                CapturedFrame::from_frame_with_recycler(frame, recycler.clone()),
+                            );
+                        }
+                    },
+                );
+                if let Err(error) = result {
+                    let _ = ready_tx.try_send(Err(error.clone()));
+                    worker_queue.push(CaptureEvent::Error(error));
+                }
+                worker_queue.push(CaptureEvent::StreamEnded);
+                worker_queue.close();
+            })
+            .map_err(CaptureError::platform)?;
+        match ready_rx.recv() {
+            Ok(Ok(_)) => Ok(Self {
+                queue,
+                stop_flag,
+                cancellation,
+                wake,
+                pause_flag,
+                stats,
+                join_handle: Some(join_handle),
+                buffer_depth,
+                target_fps,
+                pacing_origin,
+                maximum_fps,
+                minimum_fps,
+            }),
+            result => {
+                stop_flag.store(true, Ordering::Release);
+                let _ = wake.try_send(());
+                let _ = join_handle.join();
+                Err(match result {
+                    Ok(Err(error)) => error,
+                    _ => CaptureError::WorkerDead,
+                })
+            }
+        }
+    }
+
     fn request_stop_and_join(&mut self) {
         self.stop();
         if let Some(handle) = self.join_handle.take() {
@@ -359,10 +493,14 @@ impl CaptureStream {
         self.map_recv_outcome(self.queue.recv_timeout(timeout))
     }
 
-    /// Cancel native acquisition and wake pacing so the worker can release capture access.
+    /// Cancel native acquisition and wake pacing or a paused supervisor so the
+    /// worker can release capture access before joining.
     pub fn stop(&self) {
         self.stop_flag.store(true, Ordering::Release);
         self.cancellation.cancel();
+        // Follow supervisors wait on control changes while paused; they do not
+        // observe the native-acquisition cancellation receiver.
+        let _ = self.wake.try_send(());
     }
 
     /// Update the pacing target without restarting the capture session.
@@ -724,29 +862,15 @@ fn stream_loop(
                 frame.metadata.queued_at = Some(Instant::now());
                 frame.metadata.observation_started_at = Some(frame_start);
 
-                let outcome = queue.push(CaptureEvent::Frame(
+                let dropped = publish_cpu_frame(
+                    queue,
+                    stats,
                     CapturedFrame::from_frame_with_recycler(frame, recycler.clone()),
-                ));
-                store_queue_fill(stats, outcome.data_len);
-                let was_dropped = match outcome.dropped {
-                    Some(CaptureEvent::Frame(dropped)) => {
-                        stats.frames_dropped.fetch_add(1, Ordering::Relaxed);
-                        store_queue_fill(
-                            stats,
-                            queue
-                                .push(CaptureEvent::FramesDropped { count: 1 })
-                                .data_len,
-                        );
-                        if let Ok(frame) = dropped.into_owned() {
-                            reuse_frame = Some(frame);
-                        }
-                        true
+                );
+                if let Some(dropped) = dropped {
+                    if let Ok(frame) = dropped.into_owned() {
+                        reuse_frame = Some(frame);
                     }
-                    Some(_) => false,
-                    None => false,
-                };
-
-                if was_dropped {
                     window_drops += 1;
                 }
                 window_total += 1;
@@ -826,7 +950,11 @@ pub(crate) struct AlignedCaptureCadence {
     pub(crate) next: u64,
 }
 impl AlignedCaptureCadence {
-    fn wait_interruptibly(&mut self, now: Instant, wait: impl FnOnce(Duration) -> bool) -> bool {
+    pub(crate) fn wait_interruptibly(
+        &mut self,
+        now: Instant,
+        wait: impl FnOnce(Duration) -> bool,
+    ) -> bool {
         let previous = self.next;
         if wait(self.wait(now)) {
             // A control wake is not an acquisition. Preserve the pending slot
@@ -900,6 +1028,29 @@ fn store_queue_fill(stats: &CaptureStreamStats, len: usize) {
     stats.buffer_fill.store(len as u64, Ordering::Release);
 }
 
+/// Keep CPU drop statistics and reliable notifications in agreement for fixed
+/// and following streams. Return the displaced lease for optional local reuse.
+fn publish_cpu_frame(
+    queue: &StreamQueue<CaptureEvent>,
+    stats: &CaptureStreamStats,
+    frame: CapturedFrame,
+) -> Option<CapturedFrame> {
+    let outcome = queue.push(CaptureEvent::Frame(frame));
+    store_queue_fill(stats, outcome.data_len);
+    if let Some(CaptureEvent::Frame(dropped)) = outcome.dropped {
+        stats.frames_dropped.fetch_add(1, Ordering::Relaxed);
+        store_queue_fill(
+            stats,
+            queue
+                .push(CaptureEvent::FramesDropped { count: 1 })
+                .data_len,
+        );
+        Some(dropped)
+    } else {
+        None
+    }
+}
+
 /// Pacing never holds stop or a rate change behind the previous frame interval.
 fn wait_for_control(
     duration: Duration,
@@ -947,6 +1098,34 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::time::Duration;
+
+    #[test]
+    fn follow_mouse_cpu_queue_reports_every_displaced_frame() {
+        use crate::frame::{CaptureEvent, CapturedFrame, Frame};
+        let queue = StreamQueue::new(1);
+        let stats = CaptureStreamStats::default();
+        for value in 0..3u8 {
+            let frame = CapturedFrame::from(Frame::from_rgba8(1, 1, vec![value; 4]).unwrap());
+            let dropped = super::publish_cpu_frame(&queue, &stats, frame);
+            assert_eq!(dropped.is_some(), value != 0);
+            if let Some(dropped) = dropped {
+                assert_eq!(dropped.as_bytes(), &[value - 1; 4]);
+            }
+        }
+        assert_eq!(stats.snapshot().frames_dropped, 2);
+        assert_eq!(stats.snapshot().buffer_fill, 1);
+        for _ in 0..2 {
+            assert!(matches!(
+                queue.try_recv().unwrap().0,
+                CaptureEvent::FramesDropped { count: 1 }
+            ));
+        }
+        let CaptureEvent::Frame(latest) = queue.try_recv().unwrap().0 else {
+            panic!("latest frame")
+        };
+        assert_eq!(latest.as_bytes(), &[2; 4]);
+        assert!(queue.try_recv().is_err());
+    }
 
     #[test]
     fn retry_budget_counts_distinct_display_attempts_even_with_identical_deadlines() {
@@ -1231,6 +1410,94 @@ mod tests {
             maximum_fps,
             minimum_fps,
         }
+    }
+
+    #[test]
+    fn follow_mouse_paused_cpu_stream_stop_drain_and_drop_wake_supervisor() {
+        use crate::frame::CaptureEvent;
+
+        #[derive(Clone, Copy, Debug)]
+        enum Shutdown {
+            Stop,
+            Drain,
+            Drop,
+        }
+
+        let deadline = Duration::from_secs(5);
+        for shutdown in [Shutdown::Stop, Shutdown::Drain, Shutdown::Drop] {
+            let mut stream = test_stream(30, 1);
+            let (wake, commands) = mpsc::bounded(1);
+            stream.wake = wake.clone();
+            stream.pause();
+            let stop = stream.stop_flag.clone();
+            let paused = stream.pause_flag.clone();
+            let queue = stream.queue.clone();
+            let (entered, ready) = mpsc::bounded(0);
+            stream.join_handle = Some(std::thread::spawn(move || {
+                // Consume the pause notification before parking, as the follow
+                // supervisor does. Cancellation alone cannot wake this receiver.
+                commands.recv().unwrap();
+                assert!(paused.load(Ordering::Acquire));
+                entered.send(()).unwrap();
+                commands.recv().unwrap();
+                assert!(stop.load(Ordering::Acquire));
+                queue.push(CaptureEvent::StreamEnded);
+                queue.close();
+            }));
+            ready.recv_timeout(deadline).unwrap();
+            let (completed, finished) = mpsc::bounded(1);
+            let teardown = std::thread::spawn(move || {
+                let events = match shutdown {
+                    Shutdown::Stop => {
+                        stream.stop();
+                        let event = stream.recv_timeout(deadline);
+                        drop(stream);
+                        event.into_iter().collect()
+                    }
+                    Shutdown::Drain => stream.stop_and_drain(),
+                    Shutdown::Drop => {
+                        drop(stream);
+                        Vec::new()
+                    }
+                };
+                completed.send(events).unwrap();
+            });
+            let result = finished.recv_timeout(deadline);
+            // A regression must fail with a bounded timeout instead of leaving
+            // the test process hung in Drop while joining the parked worker.
+            if result.is_err() {
+                let _ = wake.try_send(());
+            }
+            teardown.join().unwrap();
+            let events = result.unwrap_or_else(|error| {
+                panic!("{shutdown:?} must wake the paused follow supervisor: {error}")
+            });
+            if !matches!(shutdown, Shutdown::Drop) {
+                assert!(matches!(events.as_slice(), [CaptureEvent::StreamEnded]));
+            }
+        }
+    }
+
+    #[test]
+    fn stop_broadcasts_cancellation_and_coalesces_control_wakes() {
+        let mut stream = test_stream(30, 1);
+        let (wake, commands) = mpsc::bounded(1);
+        stream.wake = wake;
+        stream.pause();
+        // A pending pause notification must not block stop or hide its flag.
+        stream.stop();
+        stream.stop();
+        assert!(stream.stop_flag.load(Ordering::Acquire));
+        assert!(stream.cancellation.is_canceled());
+        assert!(matches!(
+            stream.cancellation.receiver().try_recv(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
+        assert!(commands.try_recv().is_ok());
+        assert!(commands.try_recv().is_err());
+        // Repeating stop after the previous wake was consumed remains safe.
+        stream.stop();
+        assert!(commands.try_recv().is_ok());
     }
 
     #[test]

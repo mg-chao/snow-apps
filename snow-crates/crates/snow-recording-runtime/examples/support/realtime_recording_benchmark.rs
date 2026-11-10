@@ -43,7 +43,9 @@ use snow_recording_runtime::{
     CaptureBackendKind, DirectRecordingConfig, DirectRecordingSession, KeyboardOverlayConfig,
     RecordingRegion,
 };
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{
+    COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Dwm::{DWMWA_EXCLUDED_FROM_PEEK, DwmSetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
@@ -124,7 +126,15 @@ impl Clarity {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FollowMouseMode {
+    Stationary,
+    Pan,
+    Boundary,
+}
+
 struct Options {
+    follow_mouse: Option<FollowMouseMode>,
     webcam_size: Option<u32>,
     webcam_shape: snow_webcam::WebcamShape,
     webcam_orientation: snow_webcam::WebcamOrientation,
@@ -179,6 +189,7 @@ bench-stage-timing,bench-compositor-timing,bench-pipeline-timing \
   --partial-composition      experimental conservative damage updates and restoration\n\
   --restoration-only         restore overlays only while the background is unchanged\n\
   --skip-unneeded-cursor     omit cursor observations when cursor and trail are disabled\n\
+  --follow-mouse <mode>      synthetic desktop following: stationary, pan, boundary\n\
   --force-hardware-failure    simulate failure of the preferred hardware encoder\n\
   --warmup-seconds <n>       discarded warmup recording per scenario, 0 disables (default: \
 {DEFAULT_WARMUP_SECONDS})\n\
@@ -217,6 +228,7 @@ fn parse_codec(value: &str) -> Result<VideoCodec> {
 
 fn parse_args() -> Result<Options> {
     let mut options = Options {
+        follow_mouse: None,
         webcam_size: None,
         webcam_shape: snow_webcam::WebcamShape::Square,
         webcam_orientation: snow_webcam::WebcamOrientation::Identity,
@@ -308,6 +320,16 @@ fn parse_args() -> Result<Options> {
                     .split_once('x')
                     .context("--region-size requires WIDTHxHEIGHT")?;
                 options.region_size = Some((width.parse()?, height.parse()?));
+            }
+            "--follow-mouse" => {
+                options.follow_mouse = Some(
+                    match next_value("--follow-mouse", &args, &mut index)?.as_str() {
+                        "stationary" => FollowMouseMode::Stationary,
+                        "pan" => FollowMouseMode::Pan,
+                        "boundary" => FollowMouseMode::Boundary,
+                        _ => bail!("--follow-mouse expects stationary, pan or boundary"),
+                    },
+                );
             }
             "--half-resize" => options.half_resize = true,
             "--direct-output" => options.direct_output = true,
@@ -493,6 +515,8 @@ struct ProcessUsage {
 }
 
 struct SampleResult {
+    follow_mouse: Option<FollowMouseMode>,
+    workload_monitor_count: usize,
     workload: String,
     published_frames: u64,
     workload_failures: u64,
@@ -561,10 +585,25 @@ pub(crate) fn run() -> Result<()> {
     // benchmark covers one screen with its workload window.
     let monitor =
         select_recording_monitor(&layout).context("monitor layout contains no monitors")?;
+    if options.follow_mouse == Some(FollowMouseMode::Boundary) && layout.monitors.len() < 2 {
+        fs::create_dir_all(&options.output_directory)?;
+        let reason = "SKIP: follow mouse boundary requires at least two monitors; no cross-monitor recording was performed\n";
+        fs::write(options.output_directory.join("skipped.txt"), reason)?;
+        println!("{reason}");
+        return Ok(());
+    }
     let (width, height) = options
         .region_size
-        .unwrap_or((monitor.width, monitor.height));
-    validate_workload_region(width, height, monitor.width, monitor.height)?;
+        .unwrap_or(if options.follow_mouse.is_some() {
+            ((monitor.width / 2).max(2), (monitor.height / 2).max(2))
+        } else {
+            (monitor.width, monitor.height)
+        });
+    if options.follow_mouse.is_none() {
+        validate_workload_region(width, height, monitor.width, monitor.height)?;
+    } else if width < 2 || height < 2 || width > monitor.width || height > monitor.height {
+        bail!("follow viewport must be at least 2x2 and fit its initial monitor");
+    }
     // Even dimensions, matching screenRecordingCompatibleCaptureRegion.
     let region = RecordingRegion::new(monitor.x, monitor.y, width & !1, height & !1);
 
@@ -604,7 +643,38 @@ pub(crate) fn run() -> Result<()> {
         "static" => 0,
         _ => options.window_timer_ms,
     };
-    let window = WorkloadWindow::spawn(region, timer_ms, options.workload == "sparse")?;
+    let workload_regions = if options.follow_mouse == Some(FollowMouseMode::Boundary) {
+        layout
+            .monitors
+            .iter()
+            .map(|m| RecordingRegion::new(m.x, m.y, m.width, m.height))
+            .collect::<Vec<_>>()
+    } else if options.follow_mouse.is_some() {
+        vec![RecordingRegion::new(
+            monitor.x,
+            monitor.y,
+            monitor.width,
+            monitor.height,
+        )]
+    } else {
+        vec![region]
+    };
+    let windows = workload_regions
+        .iter()
+        .enumerate()
+        .map(|(index, &bounds)| {
+            if options.follow_mouse.is_some() {
+                WorkloadWindow::spawn_with_pattern(
+                    bounds,
+                    timer_ms,
+                    options.workload == "sparse",
+                    Some(index as u8),
+                )
+            } else {
+                WorkloadWindow::spawn(bounds, timer_ms, options.workload == "sparse")
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
     // Let the first frames reach the compositor before capturing or injecting.
     std::thread::sleep(Duration::from_millis(750));
 
@@ -641,6 +711,19 @@ pub(crate) fn run() -> Result<()> {
             options.webcam_size, options.webcam_shape, options.webcam_orientation
         ),
     )?;
+    fs::write(
+        options.output_directory.join("follow-mouse-metadata.txt"),
+        format!(
+            "mode={:?}\nworkload_monitors={}\nphysical_input_injected=false\nvalidation={}\n",
+            options.follow_mouse,
+            workload_regions.len(),
+            if options.follow_mouse.is_some() {
+                "fixed_dimensions,monotonic_pts,nonblank,spatial_changes"
+            } else {
+                "source_identifiers"
+            }
+        ),
+    )?;
     let mut rows = Vec::new();
     let mut validation_errors = Vec::new();
     for scenario in SCENARIOS.iter().filter(|scenario| {
@@ -654,7 +737,15 @@ pub(crate) fn run() -> Result<()> {
                 "[{}] warming up for {} s",
                 scenario.name, options.warmup_seconds
             );
-            let warmup = run_sample(&options, scenario, region, &window, 0, true)?;
+            let warmup = run_sample(
+                &options,
+                scenario,
+                region,
+                &windows,
+                &workload_regions,
+                0,
+                true,
+            )?;
             if let Err(error) = validate_sample(&warmup, true) {
                 fs::write(
                     options.output_directory.join("validation-errors.txt"),
@@ -664,7 +755,15 @@ pub(crate) fn run() -> Result<()> {
             }
         }
         for sample in 0..options.samples {
-            let result = run_sample(&options, scenario, region, &window, sample, false)?;
+            let result = run_sample(
+                &options,
+                scenario,
+                region,
+                &windows,
+                &workload_regions,
+                sample,
+                false,
+            )?;
             // Print first so a gate failure still shows the sample's numbers.
             print_sample(&result);
             let validation = validate_sample(&result, false);
@@ -682,7 +781,7 @@ pub(crate) fn run() -> Result<()> {
             }
         }
     }
-    drop(window);
+    drop(windows);
 
     let summary_path = write_summary_csv(&options.output_directory, &rows)?;
     println!("Wrote {}", summary_path.display());
@@ -962,7 +1061,8 @@ fn run_sample(
     options: &Options,
     scenario: &Scenario,
     region: RecordingRegion,
-    window: &WorkloadWindow,
+    windows: &[WorkloadWindow],
+    workload_regions: &[RecordingRegion],
     sample: usize,
     warmup: bool,
 ) -> Result<SampleResult> {
@@ -1004,6 +1104,7 @@ fn run_sample(
         options.duration_seconds
     };
     let config = DirectRecordingConfig {
+        follow_mouse: options.follow_mouse.is_some(),
         keyboard_filter: Default::default(),
         webcam: options
             .webcam_size
@@ -1096,6 +1197,11 @@ fn run_sample(
     // Overlay inputs are synthetic observations fed straight to the session;
     // the physical mouse and keyboard are never touched.
     session.set_bench_synthetic_input(true)?;
+    if let Some(mode) = options.follow_mouse {
+        let (x, y) = follow_position(mode, workload_regions, Duration::ZERO);
+        session.bench_observe_desktop_cursor(x, y)?;
+    }
+    let _follow_reset = FollowMouseOverrideGuard;
     session
         .start()
         .context("starting direct recording session")?;
@@ -1109,7 +1215,9 @@ fn run_sample(
         // Establish the static image after this session's acquisition and
         // recording clock start. An image painted only before startup may not
         // produce a usable first DXGI presentation. No timer runs afterward.
-        window.publish_once()?;
+        for window in windows {
+            window.publish_once()?;
+        }
     }
     let input = simulate_input(
         &session,
@@ -1119,6 +1227,8 @@ fn run_sample(
             key_interval_ms: options.key_interval_ms,
             chord_interval_ms: options.chord_interval_ms,
             region,
+            follow_mouse: options.follow_mouse,
+            workload_regions: workload_regions.to_vec(),
             simulate_keys: scenario.simulate_keys,
             duration: Duration::from_secs(duration_seconds),
         },
@@ -1180,10 +1290,15 @@ fn run_sample(
     let output_bytes = fs::metadata(&output_path)
         .with_context(|| format!("failed to stat {}", output_path.display()))?
         .len();
-    let (decoded_frames, fresh_frames, unreadable_ids) =
-        decode_frame_ids(&output_path, region.width, region.height)?;
+    let (decoded_frames, fresh_frames, unreadable_ids) = if options.follow_mouse.is_some() {
+        decode_follow_frames(&output_path, (output_width, output_height))?
+    } else {
+        decode_frame_ids(&output_path, region.width, region.height)?
+    };
 
     Ok(SampleResult {
+        follow_mouse: options.follow_mouse,
+        workload_monitor_count: workload_regions.len(),
         workload: options.workload.clone(),
         published_frames,
         workload_failures,
@@ -1229,6 +1344,12 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
         bail!("{label} workload failed to publish frames");
     }
     if result.unreadable_ids != 0 {
+        if result.follow_mouse.is_some() {
+            bail!(
+                "{label} has {} blank captured frames",
+                result.unreadable_ids
+            );
+        }
         bail!(
             "{label} has {} unreadable source identifiers; workload was obstructed or pixels were corrupted",
             result.unreadable_ids
@@ -1239,6 +1360,28 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
             "{label} failed to inject {} input events",
             result.input.send_failures
         );
+    }
+    if result.follow_mouse.is_some() && result.decoded_frames == 0 {
+        bail!("{label} follow recording decoded no frames");
+    }
+    if result.follow_mouse.is_some() && result.report.follow_peak_sources > 2 {
+        bail!("{label} exceeded the active plus preparing source bound");
+    }
+    if !warmup
+        && result.follow_mouse == Some(FollowMouseMode::Boundary)
+        && result.report.follow_monitor_switches == 0
+    {
+        bail!("{label} did not commit a cross-monitor capture switch");
+    }
+    if !warmup
+        && result.workload == "static"
+        && matches!(
+            result.follow_mouse,
+            Some(FollowMouseMode::Pan | FollowMouseMode::Boundary)
+        )
+        && result.fresh_frames == 0
+    {
+        bail!("{label} following did not change the viewport over the static workload");
     }
     if warmup {
         return Ok(());
@@ -1252,7 +1395,10 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
             result.coalesced_frames
         );
     }
-    if result.workload == "continuous" && achieved_fps < f64::from(result.fps) * 0.95 {
+    if result.follow_mouse.is_none()
+        && result.workload == "continuous"
+        && achieved_fps < f64::from(result.fps) * 0.95
+    {
         println!(
             "warning: {label} achieved {achieved_fps:.1} fresh fps, below 95% of the {} fps target",
             result.fps
@@ -1262,6 +1408,22 @@ fn validate_sample(result: &SampleResult, warmup: bool) -> Result<()> {
 }
 
 fn print_sample(result: &SampleResult) {
+    if result.follow_mouse.is_some() {
+        println!(
+            "  follow resources: prepares={} switches={} preparation_failures={} peak_sources={} max_prepare_ms={:.3}",
+            result.report.follow_prepare_requests,
+            result.report.follow_monitor_switches,
+            result.report.follow_preparation_failures,
+            result.report.follow_peak_sources,
+            result.report.follow_prepare_latency_max.as_secs_f64() * 1000.0
+        );
+    }
+    if let Some(mode) = result.follow_mouse {
+        println!(
+            "  follow: mode={mode:?} workload_monitors={} decoded_frames={} spatial_changes={} validation=fixed_dimensions,monotonic_pts,nonblank",
+            result.workload_monitor_count, result.decoded_frames, result.fresh_frames
+        );
+    }
     println!(
         "[{} sample {}] encoded={}/{} coalesced={} dropped={} setup={:.1}ms stop={:.1}ms \
 encoder={} output={:.1}MiB",
@@ -1369,6 +1531,42 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
     let mut cells = Vec::with_capacity(rows.len());
     for row in rows {
         let base_columns: Vec<(String, String)> = vec![
+            (
+                "follow_prepare_requests".into(),
+                row.report.follow_prepare_requests.to_string(),
+            ),
+            (
+                "follow_monitor_switches".into(),
+                row.report.follow_monitor_switches.to_string(),
+            ),
+            (
+                "follow_preparation_failures".into(),
+                row.report.follow_preparation_failures.to_string(),
+            ),
+            (
+                "follow_peak_sources".into(),
+                row.report.follow_peak_sources.to_string(),
+            ),
+            (
+                "follow_prepare_latency_max_ms".into(),
+                format!(
+                    "{:.3}",
+                    row.report.follow_prepare_latency_max.as_secs_f64() * 1000.0
+                ),
+            ),
+            ("follow_mouse".into(), format!("{:?}", row.follow_mouse)),
+            (
+                "workload_monitor_count".into(),
+                row.workload_monitor_count.to_string(),
+            ),
+            (
+                "spatial_changes".into(),
+                if row.follow_mouse.is_some() {
+                    row.fresh_frames.to_string()
+                } else {
+                    String::new()
+                },
+            ),
             ("schema_version".into(), "10".into()),
             (
                 "requested_video_encoder".into(),
@@ -1882,6 +2080,8 @@ const VK_CONTROL: u16 = 0xA2;
 const VK_SHIFT: u16 = 0xA0;
 
 struct InputPlan {
+    follow_mouse: Option<FollowMouseMode>,
+    workload_regions: Vec<RecordingRegion>,
     move_interval_ms: u64,
     click_interval_ms: u64,
     key_interval_ms: u64,
@@ -1904,6 +2104,21 @@ fn simulate_input(session: &DirectRecordingSession, plan: &InputPlan) -> Result<
     while started.elapsed() < plan.duration {
         let elapsed_ms = started.elapsed().as_millis() as u64;
         while next_move_ms <= elapsed_ms && outcome.send_failures == 0 {
+            if let Some(mode) = plan.follow_mouse {
+                let (x, y) = follow_position(
+                    mode,
+                    &plan.workload_regions,
+                    Duration::from_millis(next_move_ms),
+                );
+                if let Err(error) = session.bench_observe_desktop_cursor(x, y) {
+                    eprintln!("synthetic desktop cursor failed: {error:#}");
+                    outcome.send_failures += 1;
+                    break;
+                }
+                outcome.moves_sent += 1;
+                next_move_ms = next_move_ms.saturating_add(plan.move_interval_ms);
+                continue;
+            }
             let (x, y) = sweep_position(&plan.region, Duration::from_millis(next_move_ms));
             if send_mouse_move(session, x, y, &mut outcome) {
                 next_move_ms = next_move_ms.saturating_add(plan.move_interval_ms);
@@ -1912,7 +2127,15 @@ fn simulate_input(session: &DirectRecordingSession, plan: &InputPlan) -> Result<
             }
         }
         while next_click_ms <= elapsed_ms && outcome.send_failures == 0 {
-            let (x, y) = sweep_position(&plan.region, Duration::from_millis(next_click_ms));
+            let (x, y) = if let Some(mode) = plan.follow_mouse {
+                follow_position(
+                    mode,
+                    &plan.workload_regions,
+                    Duration::from_millis(next_click_ms),
+                )
+            } else {
+                sweep_position(&plan.region, Duration::from_millis(next_click_ms))
+            };
             if send_mouse_click(session, x, y, &mut outcome) {
                 next_click_ms = next_click_ms.saturating_add(plan.click_interval_ms);
             } else {
@@ -1941,6 +2164,33 @@ fn simulate_input(session: &DirectRecordingSession, plan: &InputPlan) -> Result<
         std::thread::sleep(Duration::from_millis(2));
     }
     Ok(outcome)
+}
+
+struct FollowMouseOverrideGuard;
+
+impl Drop for FollowMouseOverrideGuard {
+    fn drop(&mut self) {
+        snow_capture::set_bench_follow_mouse_position(None);
+    }
+}
+
+fn follow_position(
+    mode: FollowMouseMode,
+    monitors: &[RecordingRegion],
+    elapsed: Duration,
+) -> (i32, i32) {
+    let index = if mode == FollowMouseMode::Boundary {
+        (elapsed.as_millis() / 1500) as usize % monitors.len()
+    } else {
+        0
+    };
+    let monitor = &monitors[index];
+    let (x, y) = if mode == FollowMouseMode::Pan {
+        sweep_position(monitor, elapsed)
+    } else {
+        ((monitor.width / 2) as i32, (monitor.height / 2) as i32)
+    };
+    (monitor.x.saturating_add(x), monitor.y.saturating_add(y))
 }
 
 fn letter_for(keys_sent: u64) -> u16 {
@@ -2181,6 +2431,51 @@ mod monitor_selection_tests {
     }
 
     #[test]
+    fn follow_paths_use_desktop_pixels_and_actual_destination_monitors() {
+        let monitors = [
+            RecordingRegion::new(-1920, -300, 1920, 1080),
+            RecordingRegion::new(0, 0, 1280, 720),
+        ];
+        assert_eq!(
+            follow_position(FollowMouseMode::Stationary, &monitors, Duration::ZERO),
+            (-960, 240)
+        );
+        assert_eq!(
+            follow_position(
+                FollowMouseMode::Boundary,
+                &monitors,
+                Duration::from_millis(1499)
+            ),
+            (-960, 240)
+        );
+        assert_eq!(
+            follow_position(
+                FollowMouseMode::Boundary,
+                &monitors,
+                Duration::from_millis(1500)
+            ),
+            (640, 360)
+        );
+        assert_eq!(
+            follow_position(
+                FollowMouseMode::Boundary,
+                &monitors,
+                Duration::from_millis(3000)
+            ),
+            (-960, 240)
+        );
+        for millis in (0..10_000).step_by(17) {
+            let (x, y) = follow_position(
+                FollowMouseMode::Pan,
+                &monitors,
+                Duration::from_millis(millis),
+            );
+            assert!((-1920..0).contains(&x));
+            assert!((-300..780).contains(&y));
+        }
+    }
+
+    #[test]
     fn workload_region_contains_identifier_strip_and_fits_monitor() {
         for (width, height) in [(528, 96), (529, 97), (1080, 1920), (3840, 2160)] {
             assert!(validate_workload_region(width, height, 3840, 2160).is_ok());
@@ -2353,6 +2648,7 @@ struct WindowState {
     tick: u64,
     animate: bool,
     sparse: bool,
+    spatial_pattern: Option<u8>,
 }
 
 pub(crate) struct WorkloadWindow {
@@ -2374,12 +2670,23 @@ impl WorkloadWindow {
     }
 
     pub(crate) fn spawn(region: RecordingRegion, timer_ms: u32, sparse: bool) -> Result<Self> {
+        Self::spawn_with_pattern(region, timer_ms, sparse, None)
+    }
+
+    fn spawn_with_pattern(
+        region: RecordingRegion,
+        timer_ms: u32,
+        sparse: bool,
+        spatial_pattern: Option<u8>,
+    ) -> Result<Self> {
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let thread = std::thread::Builder::new()
             .name("snow-bench-workload-window".to_string())
             .spawn(move || {
                 let _dpi = ThreadDpiAwareness::per_monitor_v2();
-                if let Err(error) = run_window_thread(region, timer_ms, sparse, &ready_tx) {
+                if let Err(error) =
+                    run_window_thread(region, timer_ms, sparse, spatial_pattern, &ready_tx)
+                {
                     // The parent may already have timed out; surface it anyway.
                     let _ = ready_tx.send(Err(error));
                 }
@@ -2424,6 +2731,7 @@ fn run_window_thread(
     region: RecordingRegion,
     timer_ms: u32,
     sparse: bool,
+    spatial_pattern: Option<u8>,
     ready: &SyncSender<Result<isize, String>>,
 ) -> Result<(), String> {
     unsafe {
@@ -2437,7 +2745,7 @@ fn run_window_thread(
             lpszClassName: class_name,
             ..Default::default()
         };
-        if RegisterClassW(&class) == 0 {
+        if RegisterClassW(&class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS {
             return Err("RegisterClassW failed".into());
         }
 
@@ -2448,6 +2756,7 @@ fn run_window_thread(
             tick: 0,
             animate: timer_ms != 0,
             sparse,
+            spatial_pattern,
         });
         let state_raw = Box::into_raw(state);
         // The window must stay visible for capture but never steal focus: no
@@ -2612,6 +2921,29 @@ unsafe fn render_workload_frame(dc: HDC, state: &mut WindowState) {
     unsafe {
         state.tick = state.tick.wrapping_add(1);
         let tick = state.tick;
+        if let Some(seed) = state.spatial_pattern {
+            // Coordinate-coded tiles remain visible in every viewport. Static
+            // panning must change these pixels even without a new native frame.
+            for row in 0..8 {
+                for column in 0..12 {
+                    fill_rect(
+                        dc,
+                        column * state.width / 12,
+                        row * state.height / 8,
+                        (column + 1) * state.width / 12,
+                        (row + 1) * state.height / 8,
+                        rgb(
+                            40 + ((column * 13 + i32::from(seed) * 73) % 180) as u8,
+                            40 + ((row * 19 + i32::from(seed) * 47) % 180) as u8,
+                            40 + (((column + row) * 11 + i32::from(seed) * 31) % 180) as u8,
+                        ),
+                    );
+                }
+            }
+            if !state.animate {
+                return;
+            }
+        }
         if state.sparse && tick == 1 {
             fill_rect(dc, 0, 0, state.width, state.height, rgb(32, 32, 32));
         }
@@ -2630,7 +2962,9 @@ unsafe fn render_workload_frame(dc: HDC, state: &mut WindowState) {
             (tick.wrapping_mul(5) % 256) as u8,
             (tick.wrapping_mul(7) % 256) as u8,
         );
-        fill_rect(dc, 0, 0, width, height, background);
+        if state.spatial_pattern.is_none() {
+            fill_rect(dc, 0, 0, width, height, background);
+        }
 
         let rect_size = (width / 6).max(40);
         let rect_x = (tick.wrapping_mul(11) % ((width - rect_size).max(1) as u64)) as i32;
@@ -2708,6 +3042,95 @@ unsafe fn draw_ellipse(dc: HDC, left: i32, top: i32, right: i32, bottom: i32, co
         let _ = SelectObject(dc, old_brush);
         let _ = DeleteObject(brush.into());
     }
+}
+
+fn decode_follow_frames(path: &Path, expected: (u32, u32)) -> Result<(u64, u64, u64)> {
+    use ffmpeg_next as ffmpeg;
+    let mut input = ffmpeg::format::input(path)?;
+    let stream = input
+        .streams()
+        .best(ffmpeg::media::Type::Video)
+        .context("missing follow video")?;
+    let index = stream.index();
+    let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?
+        .decoder()
+        .video()?;
+    if (decoder.width(), decoder.height()) != expected {
+        bail!(
+            "follow output dimensions {:?} differ from fixed {:?}",
+            (decoder.width(), decoder.height()),
+            expected
+        );
+    }
+    let mut scaler = ffmpeg::software::scaling::Context::get(
+        decoder.format(),
+        expected.0,
+        expected.1,
+        ffmpeg::format::Pixel::RGB24,
+        expected.0,
+        expected.1,
+        ffmpeg::software::scaling::flag::Flags::POINT,
+    )?;
+    let mut count = 0u64;
+    let mut spatial_changes = 0u64;
+    let mut blank = 0u64;
+    let mut previous_pts = None;
+    let mut previous_signature: Option<Vec<u8>> = None;
+    let mut observations = String::from("decoded_frame,pts,spatial_change,nonblank\n");
+    let mut receive = |decoder: &mut ffmpeg::decoder::Video| -> Result<()> {
+        let mut frame = ffmpeg::frame::Video::empty();
+        while decoder.receive_frame(&mut frame).is_ok() {
+            if (frame.width(), frame.height()) != expected {
+                bail!("follow recording changed its encoded dimensions");
+            }
+            let pts = frame.pts().context("follow frame has no timestamp")?;
+            if previous_pts.is_some_and(|previous| pts <= previous) {
+                bail!("follow frame timestamps are not strictly increasing");
+            }
+            previous_pts = Some(pts);
+            let mut rgb = ffmpeg::frame::Video::empty();
+            scaler.run(&frame, &mut rgb)?;
+            let mut signature = Vec::with_capacity(12 * 8 * 3);
+            for row in 0..8usize {
+                for column in 0..12usize {
+                    let x =
+                        ((2 * column + 1) * expected.0 as usize / 24).min(expected.0 as usize - 1);
+                    let y = ((2 * row + 1) * expected.1 as usize / 16).min(expected.1 as usize - 1);
+                    let offset = y * rgb.stride(0) + x * 3;
+                    signature.extend_from_slice(&rgb.data(0)[offset..offset + 3]);
+                }
+            }
+            let nonblank = signature.iter().any(|&value| value > 8);
+            blank += u64::from(!nonblank);
+            let changed = previous_signature.as_ref().is_some_and(|previous| {
+                signature
+                    .iter()
+                    .zip(previous)
+                    .map(|(&a, &b)| u64::from(a.abs_diff(b)))
+                    .sum::<u64>()
+                    > signature.len() as u64 * 4
+            });
+            spatial_changes += u64::from(changed);
+            previous_signature = Some(signature);
+            count += 1;
+            observations.push_str(&format!(
+                "{count},{pts},{},{}\n",
+                u8::from(changed),
+                u8::from(nonblank)
+            ));
+        }
+        Ok(())
+    };
+    for (stream, packet) in input.packets() {
+        if stream.index() == index {
+            decoder.send_packet(&packet)?;
+            receive(&mut decoder)?;
+        }
+    }
+    decoder.send_eof()?;
+    receive(&mut decoder)?;
+    fs::write(path.with_extension("follow-validation.csv"), observations)?;
+    Ok((count, spatial_changes, blank))
 }
 
 // Count changed source identifiers after decoding: packet count alone can hide duplicates.

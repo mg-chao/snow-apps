@@ -278,6 +278,59 @@ impl Compositor {
     pub fn compose(&mut self, layers: &[Layer<'_>], opaque: bool) -> MacResult<PixelBuffer> {
         self.compose_with_overlays(layers, &[], opaque)
     }
+    /// Fractional source pixels preserve a proportional viewport on smaller or
+    /// mixed-scale displays. The immutable full-monitor lease remains on GPU.
+    pub(crate) fn compose_viewport(
+        &mut self,
+        image: &PixelBuffer,
+        source: [f64; 4],
+    ) -> MacResult<PixelBuffer> {
+        let [x, y, width, height] = source;
+        let input = image.size();
+        if source.into_iter().any(|value| !value.is_finite())
+            || x < 0.0
+            || y < 0.0
+            || width <= 0.0
+            || height <= 0.0
+            || x + width > f64::from(input.width) + 1e-7
+            || y + height > f64::from(input.height) + 1e-7
+        {
+            return Err(MacError::InvalidConfig("invalid GPU viewport".into()));
+        }
+        objc2::rc::autoreleasepool(|_| unsafe {
+            let buffer = self.allocate_output()?;
+            let source_y = (f64::from(input.height) - y - height).max(0.0);
+            let sx = f64::from(self.size.width) / width;
+            let sy = f64::from(self.size.height) / height;
+            let source = CIImage::imageWithCVPixelBuffer(image.native_buffer())
+                .imageByCroppingToRect(rect(x, source_y, width, height));
+            let result = source.imageByApplyingTransform_highQualityDownsample(
+                CGAffineTransform {
+                    a: sx,
+                    b: 0.0,
+                    c: 0.0,
+                    d: sy,
+                    tx: -x * sx,
+                    ty: -source_y * sy,
+                },
+                true,
+            );
+            let bounds = rect(
+                0.0,
+                0.0,
+                f64::from(self.size.width),
+                f64::from(self.size.height),
+            );
+            self.context.render_toCVPixelBuffer_bounds_colorSpace(
+                &result,
+                &buffer,
+                bounds,
+                Some(&self.color_space),
+            );
+            PixelBuffer::from_retained(buffer, self.color)
+                .map_err(|error| MacError::Unsupported(error.to_string()))
+        })
+    }
     pub fn compose_with_overlays(
         &mut self,
         layers: &[Layer<'_>],
@@ -660,6 +713,71 @@ fn metal_texture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn follow_viewport_crops_a_held_monitor_surface_at_fixed_output_size() {
+        let mut monitor =
+            Compositor::new(PixelSize::new(16, 8).unwrap(), PixelFormat::Bgra8, 2).unwrap();
+        let red = [255u8, 0, 0, 255].repeat(8 * 8);
+        let blue = [0u8, 0, 255, 255].repeat(8 * 8);
+        let source = monitor
+            .compose_with_overlays(
+                &[],
+                &[
+                    RgbaOverlay {
+                        x: 0,
+                        y: 0,
+                        width: 8,
+                        height: 8,
+                        stride: 32,
+                        bytes: &red,
+                    },
+                    RgbaOverlay {
+                        x: 8,
+                        y: 0,
+                        width: 8,
+                        height: 8,
+                        stride: 32,
+                        bytes: &blue,
+                    },
+                ],
+                true,
+            )
+            .unwrap();
+        let mut viewport =
+            Compositor::new(PixelSize::new(8, 8).unwrap(), PixelFormat::Bgra8, 3).unwrap();
+        for (x, color) in [(0.0, [255, 0, 0, 255]), (8.0, [0, 0, 255, 255])] {
+            let image = viewport
+                .compose_viewport(&source, [x, 0.0, 8.0, 8.0])
+                .unwrap();
+            assert_eq!(image.size(), PixelSize::new(8, 8).unwrap());
+            let cpu = image.to_cpu_format(PixelFormat::Rgba8).unwrap();
+            for y in 1..7 {
+                for x in 1..7 {
+                    let offset = cpu.planes[0].offset + y * cpu.planes[0].stride + x * 4;
+                    assert_eq!(&cpu.bytes[offset..offset + 4], &color);
+                }
+            }
+        }
+        assert!(
+            viewport
+                .compose_viewport(&source, [8.0, 0.0, 8.01, 8.0])
+                .is_err()
+        );
+        assert!(
+            viewport
+                .compose_viewport(&source, [0.0, f64::NAN, 8.0, 8.0])
+                .is_err()
+        );
+        // A fractional backing-pixel crop does not round or change output extent.
+        assert_eq!(
+            viewport
+                .compose_viewport(&source, [8.5, 0.5, 7.5, 7.5])
+                .unwrap()
+                .size(),
+            PixelSize::new(8, 8).unwrap()
+        );
+    }
 
     #[test]
     fn cached_camera_owns_one_immutable_image_and_refreshes_on_revision_geometry_and_reappearance()

@@ -14,6 +14,140 @@ struct Fixture {
     metadata: RenderMetadata,
 }
 
+#[test]
+fn sdr_source_colors_honor_decoded_matrix_and_limited_or_full_range() {
+    use ffmpeg::ffi::{AVColorRange, AVColorSpace};
+    for (matrix, range, yuv, expected) in [
+        (
+            AVColorSpace::AVCOL_SPC_BT709,
+            AVColorRange::AVCOL_RANGE_MPEG,
+            [63, 102, 240],
+            [255, 0, 0],
+        ),
+        (
+            AVColorSpace::AVCOL_SPC_BT709,
+            AVColorRange::AVCOL_RANGE_JPEG,
+            [54, 99, 255],
+            [254, 0, 0],
+        ),
+        (
+            AVColorSpace::AVCOL_SPC_SMPTE170M,
+            AVColorRange::AVCOL_RANGE_MPEG,
+            [145, 54, 34],
+            [0, 255, 0],
+        ),
+        (
+            AVColorSpace::AVCOL_SPC_UNSPECIFIED,
+            AVColorRange::AVCOL_RANGE_MPEG,
+            [63, 102, 240],
+            [255, 0, 0],
+        ),
+        (
+            AVColorSpace::AVCOL_SPC_BT709,
+            AVColorRange::AVCOL_RANGE_MPEG,
+            [16, 128, 128],
+            [0, 0, 0],
+        ),
+        (
+            AVColorSpace::AVCOL_SPC_BT709,
+            AVColorRange::AVCOL_RANGE_JPEG,
+            [16, 128, 128],
+            [16, 16, 16],
+        ),
+    ] {
+        let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, 16, 16);
+        for (plane, value) in yuv.into_iter().enumerate() {
+            frame.data_mut(plane).fill(value);
+        }
+        // SAFETY: the test exclusively owns the initialized AVFrame.
+        unsafe {
+            (*frame.as_mut_ptr()).colorspace = matrix;
+            (*frame.as_mut_ptr()).color_range = range;
+        }
+        let mut conversion = ffmpeg::software::scaling::Context::get(
+            frame.format(),
+            16,
+            16,
+            ffmpeg::format::Pixel::RGBA,
+            16,
+            16,
+            ffmpeg::software::scaling::Flags::BICUBIC,
+        )
+        .unwrap();
+        DecodedSdrColors::from_frame(&frame)
+            .configure(&mut conversion)
+            .unwrap();
+        let mut converted = ffmpeg::frame::Video::empty();
+        conversion.run(&frame, &mut converted).unwrap();
+        for (actual, expected) in converted.data(0)[..3].iter().zip(expected) {
+            assert!(
+                actual.abs_diff(expected) <= 4,
+                "{matrix:?}/{range:?}: decoded {:?}, expected {expected:?}",
+                &converted.data(0)[..3]
+            );
+        }
+    }
+}
+
+#[test]
+fn small_sdr_clean_source_replays_saturated_colors_without_matrix_drift() {
+    let fixture = fixture(
+        crate::ExportFormat::Mp4,
+        crate::VideoCodec::H264,
+        false,
+        false,
+        false,
+    );
+    let path = fixture._directory.path().join("saturated-source.mp4");
+    let mut config = fixture.config.clone();
+    config.output_path = path.clone();
+    let mut encoder = StreamingEncoder::builder(config)
+        .recording_source()
+        .create()
+        .unwrap();
+    let colors = [[220, 40, 40, 255], [40, 220, 40, 255], [40, 40, 220, 255]];
+    for (index, color) in colors.iter().enumerate() {
+        encoder
+            .push_rgba_frame_at_pts(index as u64 * 5, &color.repeat(32 * 24))
+            .unwrap();
+    }
+    encoder.finish_at_pts(15).unwrap();
+    let index_path = fixture._directory.path().join("saturated.index");
+    let mut bytes = snow_recording_model::VIDEO_INDEX_MAGIC.to_vec();
+    for (index, timestamp, duration) in [(0u64, 0u64, 166u32), (1, 166, 167), (2, 333, 167)] {
+        bytes.extend(index.to_le_bytes());
+        bytes.extend(timestamp.to_le_bytes());
+        bytes.extend(duration.to_le_bytes());
+    }
+    std::fs::write(&index_path, &bytes).unwrap();
+    let index =
+        VideoIndexReader::from_range(File::open(index_path).unwrap(), 0, bytes.len() as u64)
+            .unwrap();
+    let cancel = CancellationToken::default();
+    let mut video = SequentialVideoSource::open_indexed(
+        &path,
+        index,
+        FinalizedTimeline::new(500, 30).unwrap(),
+        false,
+        (32, 24),
+        (32, 24),
+        &cancel,
+    )
+    .unwrap();
+    let mut rgba = vec![0; 32 * 24 * 4];
+    for (index, expected) in colors.iter().enumerate() {
+        video.advance(index as u64 * 5, &cancel).unwrap();
+        video.copy_rgba(&mut rgba).unwrap();
+        for (actual, expected) in rgba[..3].iter().zip(expected) {
+            assert!(
+                actual.abs_diff(*expected) <= 5,
+                "source replay changed color: {:?} vs {expected:?}",
+                &rgba[..3]
+            );
+        }
+    }
+}
+
 fn add_webcam(fixture: &Fixture, shape: snow_recording_model::WebcamShape) {
     let root = fixture._directory.path();
     let mut config = fixture.config.clone();

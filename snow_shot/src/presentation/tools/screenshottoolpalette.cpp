@@ -202,6 +202,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color transparent"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show cursor in recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show keystrokes in recording"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Follow mouse"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record webcam"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Delay recording (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy recording"),
@@ -2353,6 +2354,8 @@ void ScreenshotToolPalette::setRecordingTrimPanel(QWidget* panel, bool busy) {
         panel->show();
     }
     updateRecordingControls();
+    if (changed && !panel && m_recordingFollowMouseEnabled)
+        updateRecordingDrawingControls();
     if (changed) {
         markLayoutDirty(true);
         updateToolbarGeometry();
@@ -2458,7 +2461,43 @@ bool ScreenshotToolPalette::stepRecordingStartDelay(int direction) {
 }
 
 void ScreenshotToolPalette::setRecordingSettingsOwnerWindow(QWidget* owner) {
+    if (m_recordSettingsOwnerWindow != owner && m_recordSettingsModal)
+        m_recordSettingsModal->close();
     m_recordSettingsOwnerWindow = owner;
+}
+
+void ScreenshotToolPalette::setRecordingFollowMouseEnabled(bool enabled) {
+    if (m_recordingFollowMouseEnabled == enabled)
+        return;
+    m_recordingFollowMouseEnabled = enabled;
+    if (enabled && m_options.recordingDrawingMode)
+        setRecordingExportSettingsVisible(true);
+    updateRecordingExportSettingsControls();
+    updateRecordingDrawingControls();
+}
+
+void ScreenshotToolPalette::updateRecordingDrawingControls() {
+    const bool blocked = m_options.recordingDrawingMode && m_recordingFollowMouseEnabled;
+    for (int index = 0; index < m_drawingToolGroups.size(); ++index) {
+        auto& group = m_drawingToolGroups[index];
+        if (blocked && group.popover)
+            group.popover->hide();
+        refreshDrawingToolGroup(index);
+    }
+    // The underlying buttons also own shortcut availability for stacked groups.
+    for (auto* button :
+         {m_selectButton, m_shapeButton, m_speechBubbleButton, m_arrowButton, m_lineButton,
+          m_brushButton, m_highlighterButton, m_distanceButton, m_angleButton, m_bracketButton,
+          m_magnifierButton, m_spotlightButton, m_textButton, m_sequenceNumberButton,
+          m_filterButton, m_eraserButton, m_watermarkButton}) {
+        if (button)
+            button->setEnabled(!blocked);
+    }
+    updateHistoryActionAvailability();
+}
+
+bool ScreenshotToolPalette::recordingFollowMouseEnabled() const {
+    return m_recordingFollowMouseEnabled;
 }
 
 void ScreenshotToolPalette::setRecordingWebcamEnabled(bool enabled) {
@@ -4013,6 +4052,10 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                                                   "Post-processing effects",
                                                   styleButtonMetrics(m_physicalScale));
     }
+    if (m_recordFollowMouseButton) {
+        configureScreenshotToolPaletteStyleButton(m_recordFollowMouseButton, "Follow mouse",
+                                                  styleButtonMetrics(m_physicalScale));
+    }
     if (m_recordWebcamButton) {
         configureScreenshotToolPaletteStyleButton(m_recordWebcamButton, "Record webcam",
                                                   styleButtonMetrics(m_physicalScale));
@@ -5317,7 +5360,7 @@ adqt::widgets::AdButton* ScreenshotToolPalette::toolEntryButton(Tool tool) const
 }
 
 bool ScreenshotToolPalette::canActivateToolShortcut(Tool tool) const {
-    if (m_recordTrimPanel)
+    if (m_recordTrimPanel || (m_options.recordingDrawingMode && m_recordingFollowMouseEnabled))
         return false;
     tool = rememberedDrawingMode(tool);
     const QString actionId = actionToolItemId(tool);
@@ -5368,7 +5411,8 @@ void ScreenshotToolPalette::activateDefaultToolbarTool() {
 }
 
 bool ScreenshotToolPalette::historyActionEnabled(const QString& itemId) const {
-    if (!m_options.showHistoryActions ||
+    if ((m_options.recordingDrawingMode && m_recordingFollowMouseEnabled) ||
+        !m_options.showHistoryActions ||
         (itemId != QStringLiteral("undo") && itemId != QStringLiteral("redo"))) {
         return false;
     }
@@ -5441,6 +5485,15 @@ void ScreenshotToolPalette::refreshDrawingToolGroup(int groupIndex) {
     if (group.trigger == nullptr || descriptor == definitions.cend()) {
         return;
     }
+    if (m_options.recordingDrawingMode && m_recordingFollowMouseEnabled) {
+        group.trigger->setEnabled(false);
+        for (auto* option : group.optionButtons) {
+            if (option)
+                option->setEnabled(false);
+        }
+        return;
+    }
+    group.trigger->setEnabled(true);
     configureScreenshotToolPaletteTooltip(group.trigger, descriptor->label);
     if (itemId == QStringLiteral("undo") || itemId == QStringLiteral("redo")) {
         applyScreenshotShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
@@ -5470,6 +5523,7 @@ void ScreenshotToolPalette::refreshDrawingToolGroup(int groupIndex) {
                 optionButton,
                 optionButton->property("snowShotDrawingShortcutTooltipSource").toString(),
                 optionId);
+            optionButton->setEnabled(true);
         }
     }
     const QString activeId = m_activeTool.has_value()
@@ -7603,6 +7657,19 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
             return content;
         },
         adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
+    m_recordFollowMouseButton = createScreenshotToolPaletteStyleActionButton(
+        m_recordExportSettingsPanel, "Follow mouse", custom_outlined_icons::RecordingFollowMouse(),
+        styleButtonMetrics(m_physicalScale));
+    m_recordFollowMouseButton->setObjectName(QStringLiteral("screenRecordingFollowMouse"));
+    m_recordFollowMouseButton->setCheckable(true);
+    m_recordFollowMouseButton->setCheckedUsesActiveStyle(false);
+    layout->addWidget(m_recordFollowMouseButton);
+    connect(m_recordFollowMouseButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        if (m_recordingSession.state() != RecordingState::Idle || recordingBusy())
+            return;
+        setRecordingFollowMouseEnabled(!m_recordingFollowMouseEnabled);
+        emit recordingFollowMouseEnabledChanged(m_recordingFollowMouseEnabled);
+    });
     m_recordWebcamButton = createScreenshotToolPaletteStyleActionButton(
         m_recordExportSettingsPanel, "Record webcam", custom_outlined_icons::RecordingCamera(),
         styleButtonMetrics(m_physicalScale));
@@ -8086,6 +8153,8 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
 }
 
 void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
+    if (m_recordFollowMouseButton)
+        configureScreenshotToolPaletteTooltip(m_recordFollowMouseButton, "Follow mouse");
     if (m_recordWebcamButton)
         configureScreenshotToolPaletteTooltip(m_recordWebcamButton, "Record webcam");
     if (m_recordPreferencesButton != nullptr) {
@@ -8180,6 +8249,13 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
 
 void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     const bool editable = m_recordingSession.state() == RecordingState::Idle && !recordingBusy();
+    if (m_recordFollowMouseButton) {
+        const QSignalBlocker blocker(m_recordFollowMouseButton);
+        m_recordFollowMouseButton->setEnabled(editable);
+        m_recordFollowMouseButton->setChecked(m_recordingFollowMouseEnabled);
+        setScreenshotToolPaletteButtonActive(m_recordFollowMouseButton,
+                                             m_recordingFollowMouseEnabled);
+    }
     if (m_recordWebcamButton) {
         m_recordWebcamButton->setEnabled(editable);
         setScreenshotToolPaletteButtonActive(m_recordWebcamButton, m_recordingWebcamEnabled);

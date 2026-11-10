@@ -22,6 +22,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod follow;
+mod follow_policy;
+mod follow_wait;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DisplayId(pub u32);
 /// A WindowServer session identifier; never persist it as a durable identity.
@@ -136,6 +140,8 @@ pub struct DesktopConfig {
     pub opaque: bool,
     /// Live-window policy; snapshot and recording callers keep the default.
     pub persistent_window: bool,
+    /// Record a fixed-size viewport of the monitor containing the pointer.
+    pub follow_mouse: bool,
 }
 impl DesktopConfig {
     pub fn new(target: DesktopTarget) -> Self {
@@ -151,6 +157,7 @@ impl DesktopConfig {
             excluded_processes: Vec::new(),
             opaque: false,
             persistent_window: false,
+            follow_mouse: false,
         }
     }
     fn validate(&self, support: crate::capabilities::CaptureSupport) -> MacResult<()> {
@@ -166,6 +173,9 @@ impl DesktopConfig {
             return Err(geometry(
                 "persistent window capture requires a window at native output size",
             ));
+        }
+        if self.follow_mouse && !matches!(self.target, DesktopTarget::Region(_)) {
+            return Err(geometry("follow mouse requires a desktop region"));
         }
         support.native_format(self.dynamic_range)?;
         if !support.metal_composition {
@@ -197,7 +207,11 @@ impl DesktopConfig {
         Ok(TargetCapabilities {
             support,
             transform: plan.transform,
-            source_count: plan.sources.len(),
+            source_count: if self.follow_mouse {
+                1
+            } else {
+                plan.sources.len()
+            },
             native_format: support.native_format(self.dynamic_range)?,
             cpu_formats: support.cpu_formats(self.dynamic_range)?,
             exclusion_filters: !matches!(self.target, DesktopTarget::Window(_)),
@@ -439,6 +453,7 @@ pub struct DesktopSession {
     exclusion_control: Option<ExclusionControl>,
     exclusion_flight: Option<ExclusionFlight>,
     required_excluded_windows: Vec<u32>,
+    follow: Option<follow::FollowState>,
 }
 impl DesktopSession {
     pub fn new(mut config: DesktopConfig) -> MacResult<Self> {
@@ -451,7 +466,31 @@ impl DesktopSession {
         config.excluded_processes.sort_unstable();
         config.excluded_processes.dedup();
         let topology = topology()?;
-        let plan = Plan::resolve(&config)?;
+        let mut plan = Plan::resolve(&config)?;
+        let mut pending_content = None;
+        let follow = if config.follow_mouse {
+            let (follow, content) = follow::FollowState::new(&config, &plan)?;
+            let point = follow::cursor_position().unwrap_or((
+                follow.nominal.x + follow.nominal.width * 0.5,
+                follow.nominal.y + follow.nominal.height * 0.5,
+            ));
+            plan.transform.source = follow.viewport(point)?;
+            plan.sources = vec![SourcePlan {
+                target: Target::Display(follow.display.id),
+                process_id: None,
+                source: None,
+                destination: PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: plan.transform.output.width,
+                    height: plan.transform.output.height,
+                },
+            }];
+            pending_content = Some(content);
+            Some(follow)
+        } else {
+            None
+        };
         // Primary is resolved once. Removing it must never silently retarget.
         if config.target == DesktopTarget::PrimaryDisplay
             && let Target::Display(id) = plan.sources[0].target
@@ -475,10 +514,11 @@ impl DesktopSession {
             failure: None,
             inspected_at: Instant::now(),
             window_probe,
-            pending_content: None,
+            pending_content,
             exclusion_control: None,
             exclusion_flight: None,
             required_excluded_windows: Vec::new(),
+            follow,
         })
     }
     /// Assign cancellation before starting streams or between one-shot operations.
@@ -497,6 +537,13 @@ impl DesktopSession {
     }
     pub fn transform(&self) -> DesktopTransform {
         self.plan.transform
+    }
+    fn capture_config(&self, index: usize) -> CaptureConfig {
+        if let Some(follow) = &self.follow {
+            follow::capture_config(&self.config, &follow.display)
+        } else {
+            self.plan.capture_config(&self.config, index)
+        }
     }
     pub fn set_exclusion_control(&mut self, control: ExclusionControl) {
         self.exclusion_control = Some(control);
@@ -520,10 +567,9 @@ impl DesktopSession {
                             .iter()
                             .enumerate()
                             .filter_map(|(index, stream)| {
-                                match stream.update_exclusions(
-                                    &self.plan.capture_config(&self.config, index),
-                                    &content,
-                                ) {
+                                match stream
+                                    .update_exclusions(&self.capture_config(index), &content)
+                                {
                                     Ok(result) => Some(result),
                                     Err(_) => {
                                         failed = true;
@@ -678,6 +724,9 @@ impl DesktopSession {
         Ok(())
     }
     fn refresh(&mut self) -> MacResult<()> {
+        if self.follow.is_some() {
+            return self.refresh_follow();
+        }
         if self.config.persistent_window {
             // Native per-window geometry plus frame backing-scale metadata
             // avoids enumerating every desktop window on each resize frame.
@@ -744,6 +793,54 @@ impl DesktopSession {
         self.topology = current;
         Ok(())
     }
+    fn refresh_follow(&mut self) -> MacResult<()> {
+        let Some(cursor) = follow::cursor_position() else {
+            return Ok(());
+        };
+        let current_topology = topology()?;
+        let (exclusions, _, status) = self
+            .exclusion_control
+            .as_ref()
+            .map_or((0, 0, 0), ExclusionControl::status);
+        let settled = status == 0 && self.exclusion_flight.is_none();
+        let follow = self.follow.as_mut().unwrap();
+        follow.recover |= current_topology != self.topology;
+        if let Some(prepared) =
+            follow.poll(&self.config, current_topology, cursor, exclusions, settled)
+        {
+            let previous = std::mem::replace(&mut self.streams, vec![prepared.stream]);
+            self.latest = vec![Some(prepared.frame)];
+            follow.display = prepared.display;
+            follow.recover = false;
+            self.topology = current_topology;
+            // A destination can become ready before the original producer
+            // starts. Never retain its older content snapshot for a later resume.
+            self.pending_content = None;
+            self.plan.sources[0].target = Target::Display(follow.display.id);
+            self.previous = None;
+            follow.changed_at = Instant::now();
+            follow.retire(previous);
+        }
+        let source = follow.viewport(cursor)?;
+        if source != self.plan.transform.source {
+            self.plan.transform.source = source;
+            self.generation = self
+                .generation
+                .checked_add(1)
+                .ok_or_else(|| geometry("viewport generation overflow"))?;
+            follow.changed_at = Instant::now();
+        }
+        if settled && (follow.recover || !follow_policy::contains(follow.display.bounds, cursor)) {
+            follow.prepare(
+                &self.config,
+                current_topology,
+                cursor,
+                exclusions,
+                &self.required_excluded_windows,
+            )?;
+        }
+        Ok(())
+    }
     fn complete<T>(&mut self, mut result: MacResult<T>) -> MacResult<T> {
         if self.config.cancellation.is_canceled() && result.is_ok() {
             result = Err(MacError::Canceled);
@@ -794,7 +891,7 @@ impl DesktopSession {
             let mut streams = Vec::with_capacity(self.plan.sources.len());
             for i in 0..self.plan.sources.len() {
                 streams.push(VideoStream::start_with(
-                    &self.plan.capture_config(&self.config, i),
+                    &self.capture_config(i),
                     shared.as_deref(),
                 )?);
             }
@@ -807,6 +904,7 @@ impl DesktopSession {
         // delivered frame. Retry them even if no further callback arrives.
         let mut changed = self.sources_changed();
         loop {
+            let mut unavailable = false;
             // Drain every display before waiting. An idle first display must
             // not delay an already available frame from another display.
             for (index, stream) in self.streams.iter().enumerate() {
@@ -829,6 +927,15 @@ impl DesktopSession {
                     }
                     Err(MacError::Timeout) => {}
                     Err(error) => {
+                        if let Some(follow) = &mut self.follow
+                            && !matches!(error, MacError::Canceled | MacError::PermissionDenied)
+                        {
+                            follow.recover = true;
+                            // Keep the last immutable source while replacement
+                            // discovery/startup runs on the preparation worker.
+                            unavailable = true;
+                            continue;
+                        }
                         self.previous = None;
                         self.latest.fill(None);
                         return Err(error);
@@ -839,6 +946,19 @@ impl DesktopSession {
             if changed && complete {
                 break;
             }
+            if unavailable {
+                // A failed source remains ready with the same terminal error.
+                // Wait on replacement progress instead of its native channels
+                // so returning a held frame still honors capture pacing.
+                self.follow
+                    .as_ref()
+                    .unwrap()
+                    .wait_for_progress(deadline, &self.config.cancellation);
+                if complete {
+                    break;
+                }
+                return Err(MacError::Timeout);
+            }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 if !complete {
@@ -848,18 +968,40 @@ impl DesktopSession {
             }
             VideoStream::wait_for_any(&self.streams, remaining);
         }
-        if topology()? != self.topology {
+        if self.follow.is_none() && topology()? != self.topology {
             return Err(MacError::Inactive);
+        }
+        if self.follow.as_ref().is_some_and(|follow| !follow.published) {
+            // Starting a native producer can take seconds. Resolve the pointer
+            // again after its first usable frame, before publishing the initial
+            // recording image or choosing an encoder-visible source.
+            self.refresh_follow()?;
+            if let Some(cursor) = follow::cursor_position() {
+                let follow = self.follow.as_ref().unwrap();
+                if !follow_policy::can_publish(
+                    follow.published,
+                    self.topology,
+                    topology()?,
+                    !follow.recover,
+                    follow.display.bounds,
+                    cursor,
+                ) {
+                    follow.wait_for_progress(deadline, &self.config.cancellation);
+                    return Err(MacError::Timeout);
+                }
+            }
         }
         self.frame_from_latest().map(DesktopEvent::Frame)
     }
     fn sources_changed(&self) -> bool {
         self.previous.as_ref().is_none_or(|previous| {
-            !self
-                .latest
-                .iter()
-                .map(|frame| frame.as_ref().map(|frame| frame.timestamp))
-                .eq(previous.source_times.iter().copied().map(Some))
+            previous.transform != self.plan.transform
+                || previous.generation != self.generation
+                || !self
+                    .latest
+                    .iter()
+                    .map(|frame| frame.as_ref().map(|frame| frame.timestamp))
+                    .eq(previous.source_times.iter().copied().map(Some))
         })
     }
     fn frame_from_latest(&mut self) -> MacResult<DesktopFrame> {
@@ -872,6 +1014,9 @@ impl DesktopSession {
             });
         }
         let frame = self.compose()?;
+        if let Some(follow) = &mut self.follow {
+            follow.published = true;
+        }
         self.previous = Some(frame.clone());
         Ok(frame)
     }
@@ -900,7 +1045,7 @@ impl DesktopSession {
             )?),
         };
         for i in 0..self.plan.sources.len() {
-            let mut options = self.plan.capture_config(&self.config, i);
+            let mut options = self.capture_config(i);
             options.timeout = deadline.remaining()?;
             self.latest[i] = Some(crate::capture::screenshot_with(&options, &content)?);
         }
@@ -948,7 +1093,29 @@ impl DesktopSession {
             self.plan.sources.first().map(|source| source.target),
             Some(Target::Display(_))
         );
-        let image = if layers.len() == 1
+        let image = if let Some(follow) = &self.follow {
+            if self.compositor.is_none() {
+                self.compositor = Some(Compositor::new(
+                    self.plan.transform.output,
+                    output_format(&self.config),
+                    4,
+                )?);
+            }
+            let bounds = follow.display.bounds;
+            let crop = self.plan.transform.source;
+            let image = &frames[0].image;
+            let sx = f64::from(image.size().width) / bounds.width;
+            let sy = f64::from(image.size().height) / bounds.height;
+            self.compositor.as_mut().unwrap().compose_viewport(
+                image,
+                [
+                    (crop.x - bounds.x) * sx,
+                    (crop.y - bounds.y) * sy,
+                    crop.width * sx,
+                    crop.height * sy,
+                ],
+            )?
+        } else if layers.len() == 1
             && should_clone_source(
                 layers[0].source,
                 layers[0].destination,
@@ -956,7 +1123,8 @@ impl DesktopSession {
                 full,
                 self.config.opaque,
                 display,
-            ) {
+            )
+        {
             frames[0].image.clone()
         } else {
             if self.compositor.is_none() {
@@ -980,11 +1148,19 @@ impl DesktopSession {
                 .iter()
                 .map(|f| f.acquired_at)
                 .max()
-                .ok_or(MacError::Timeout)?,
+                .ok_or(MacError::Timeout)?
+                .max(
+                    self.follow
+                        .as_ref()
+                        .map_or_else(|| frames[0].acquired_at, |follow| follow.changed_at),
+                ),
             duplicate: false,
         })
     }
     pub fn release_capture_access(&mut self) {
+        if let Some(follow) = &mut self.follow {
+            follow.cancel_prepare();
+        }
         self.streams.clear();
         self.latest.fill(None);
         self.previous = None;
@@ -1191,6 +1367,7 @@ mod tests {
             exclusion_control: None,
             exclusion_flight: None,
             required_excluded_windows: Vec::new(),
+            follow: None,
         }
     }
     #[test]
