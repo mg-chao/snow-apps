@@ -12,6 +12,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -163,6 +164,127 @@ void exceptionalShutdownTransitions() {
             "each terminal preservation hook runs once even when an earlier hook throws");
 }
 
+void cooperativeCommitRechecksAfterPreparation() {
+    enum class Boundary { Suspend, Checkpoint, Validation };
+    for (const auto boundary : {Boundary::Suspend, Boundary::Checkpoint, Boundary::Validation}) {
+        bool paused = false;
+        bool protectedWork = false;
+        bool inject = true;
+        int checkpoints = 0;
+        int validations = 0;
+        int resumes = 0;
+        int recordingPreservations = 0;
+        snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+        hooks.busy = [&] { return paused || protectedWork; };
+        hooks.suspend = [&](bool suspended) {
+            paused = suspended;
+            if (!suspended)
+                ++resumes;
+            else if (inject && boundary == Boundary::Suspend)
+                protectedWork = true;
+        };
+        hooks.checkpoint = [&] {
+            require(paused, "cooperative checkpoint runs with admission closed");
+            ++checkpoints;
+            if (inject && boundary == Boundary::Checkpoint)
+                protectedWork = true;
+            return true;
+        };
+        hooks.validateAfterCheckpoint = [&] {
+            require(paused && checkpoints == validations + 1,
+                    "final validation runs after each acquired pause and checkpoint");
+            ++validations;
+            if (inject && boundary == Boundary::Validation)
+                throw std::runtime_error("final admission failed");
+            return !protectedWork;
+        };
+        hooks.preserveRecording = [&](int budget) {
+            require(budget >= 0 && budget <= 4000, "forced preservation keeps its deadline");
+            ++recordingPreservations;
+        };
+        snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+        require(!lifecycle.queryEndSession() && !lifecycle.pending() && !paused &&
+                    checkpoints == 1 && validations == 1 && resumes == 1,
+                "new work or failed final validation vetoes cooperative commitment and restores");
+        if (boundary == Boundary::Validation) {
+            lifecycle.endSession(true);
+            lifecycle.endSession(true);
+            require(lifecycle.pending() && validations == 1 && recordingPreservations == 1,
+                    "forced termination bypasses failed cooperative admission and preserves once");
+            continue;
+        }
+        inject = false;
+        protectedWork = false;
+        require(lifecycle.queryEndSession() && lifecycle.pending() && paused && checkpoints == 2 &&
+                    validations == 2,
+                "retry validates current work without treating its own pause as a blocker");
+        require(lifecycle.queryEndSession() && checkpoints == 2 && validations == 2,
+                "accepted duplicate query does not acquire or validate another pause");
+        lifecycle.endSession(false);
+        require(!lifecycle.pending() && !paused && resumes == 2,
+                "cancelled retry restores exactly its own accepted pause");
+    }
+}
+
+void forcedTerminationOwnsReentrantCooperativeCompletion() {
+    enum class Boundary { Busy, Suspend, Checkpoint, Validation };
+    for (const auto boundary :
+         {Boundary::Busy, Boundary::Suspend, Boundary::Checkpoint, Boundary::Validation}) {
+        for (const bool throws : {false, true}) {
+            int resumes = 0;
+            int checkpoints = 0;
+            int validations = 0;
+            int terminalFreezes = 0;
+            int preserved = 0;
+            snow_shot::app::StoreUpdateLifecycle* current = nullptr;
+            const auto terminate = [&](Boundary point) {
+                if (point != boundary)
+                    return;
+                current->endSession(true);
+                if (throws)
+                    throw std::runtime_error("cooperative callback failed after forced shutdown");
+            };
+            snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+            hooks.busy = [&] {
+                terminate(Boundary::Busy);
+                return boundary == Boundary::Busy;
+            };
+            hooks.suspend = [&](bool suspended) {
+                if (suspended)
+                    terminate(Boundary::Suspend);
+                else
+                    ++resumes;
+            };
+            hooks.checkpoint = [&] {
+                ++checkpoints;
+                terminate(Boundary::Checkpoint);
+                return boundary != Boundary::Checkpoint;
+            };
+            hooks.validateAfterCheckpoint = [&] {
+                ++validations;
+                terminate(Boundary::Validation);
+                return false;
+            };
+            hooks.suspendForTermination = [&] { ++terminalFreezes; };
+            hooks.preserveRecording = [&](int) { ++preserved; };
+            snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+            current = &lifecycle;
+            require(lifecycle.queryEndSession() && lifecycle.pending() && resumes == 0 &&
+                        terminalFreezes == 1 && preserved == 1 &&
+                        checkpoints ==
+                            (boundary == Boundary::Busy || boundary == Boundary::Suspend ? 0 : 1) &&
+                        validations == (boundary == Boundary::Validation ? 1 : 0),
+                    "terminal ownership prevents obsolete cooperative callbacks reopening work");
+            require(lifecycle.queryEndSession() && lifecycle.pending() && resumes == 0 &&
+                        preserved == 1,
+                    "a query after forced termination preserves the terminal result");
+            lifecycle.endSession(false);
+            require(lifecycle.pending() && resumes == 0,
+                    "late cooperative cancellation cannot undo forced termination");
+        }
+    }
+}
+
 void terminalSavesShareOneDeadline() {
     std::promise<void> pendingSave;
     const auto save = pendingSave.get_future().share();
@@ -232,6 +354,8 @@ int main(int argc, char** argv) {
     distributionPolicy();
     shutdownTransitions();
     exceptionalShutdownTransitions();
+    cooperativeCommitRechecksAfterPreparation();
+    forcedTerminationOwnsReentrantCooperativeCompletion();
     terminalSavesShareOneDeadline();
 #ifdef Q_OS_WIN
     terminalNativeCallbackSkipsDestructiveTeardown();

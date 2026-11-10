@@ -526,7 +526,8 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
         reject(QStringLiteral("stale_revision"));
         return;
     }
-    const bool invalidates = r.method == QStringLiteral("snow_shot_screenshot_set_selection") ||
+    const bool replacesSelection = r.method == QStringLiteral("snow_shot_screenshot_set_selection");
+    const bool invalidates = replacesSelection ||
                              r.method == QStringLiteral("snow_shot_screenshot_recapture") ||
                              r.method == QStringLiteral("snow_shot_screenshot_finish");
     if (!m_activeOperation.isEmpty() && !invalidates) {
@@ -537,12 +538,10 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
         reject(QStringLiteral("busy"));
         return;
     }
-    if (invalidates) {
-        cancelOperation();
+    if (invalidates && !replacesSelection) {
+        invalidateOperations();
         if (!lifetime)
             return;
-        m_operations.clear();
-        m_operationOrder.clear();
     }
     const bool background = r.method == QStringLiteral("snow_shot_screenshot_recognize") ||
                             r.method == QStringLiteral("snow_shot_screenshot_translate") ||
@@ -647,9 +646,10 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
     QString error;
     QJsonObject annotation;
     bool ok = false;
-    if (r.method == QStringLiteral("snow_shot_screenshot_set_selection"))
-        ok = m_ports.selection(r.params, &error);
-    else if (r.method == QStringLiteral("snow_shot_screenshot_set_tool"))
+    if (replacesSelection) {
+        const auto selection = m_ports.selection;
+        ok = selection(r.params, &error);
+    } else if (r.method == QStringLiteral("snow_shot_screenshot_set_tool"))
         ok = m_ports.tool(r.params.value(QStringLiteral("tool")).toString(), &error);
     else if (r.method == QStringLiteral("snow_shot_screenshot_apply_annotations")) {
         const QJsonObject batch{
@@ -670,8 +670,18 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
     if (!lifetime)
         return;
     if (!ok) {
-        reject(QStringLiteral("invalid_parameters"), error);
+        if (replacesSelection && error == QStringLiteral("busy"))
+            reject(error);
+        else
+            reject(QStringLiteral("invalid_parameters"), error);
         return;
+    }
+    if (replacesSelection) {
+        // The port owns atomic model/input admission. A refusal must preserve ongoing work;
+        // successful replacement retires its prior operations before publishing the response.
+        invalidateOperations();
+        if (!lifetime)
+            return;
     }
     observe();
     ScreenshotMcpResponse response;
@@ -695,6 +705,21 @@ void ScreenshotMcpSession::cancelOperation() {
     const auto cancelCommand = m_ports.cancelCommand;
     if (cancelCommand)
         cancelCommand();
+}
+void ScreenshotMcpSession::invalidateOperations() {
+    const bool running = !m_activeOperation.isEmpty();
+    ++m_operationGeneration;
+    m_activeOperation.clear();
+    m_operations.clear();
+    m_operationOrder.clear();
+    if (running) {
+        ++m_revision;
+        // Retire all bookkeeping before callbacks can complete synchronously, admit new
+        // operations or destroy this session. Nothing may access the session afterward.
+        const auto cancelCommand = m_ports.cancelCommand;
+        if (cancelCommand)
+            cancelCommand();
+    }
 }
 void ScreenshotMcpSession::trimOperations() {
     qsizetype bytes = 0;

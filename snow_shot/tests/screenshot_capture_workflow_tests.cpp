@@ -135,6 +135,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void applyDisplayModels(ScreenshotDisplaySession&) override {
         ++applyDisplayModelsCalls;
+        if (onApplyDisplayModels)
+            onApplyDisplayModels();
     }
     [[nodiscard]] bool
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override {
@@ -164,6 +166,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         if (mode == ScreenshotOverlayShowMode::CapturedImage) {
             ++capturedImageShowCalls;
         }
+        if (onShowOverlayWindows)
+            onShowOverlayWindows();
     }
     void hideOverlayWindowsImmediately(const ScreenshotDisplaySession&) override {
         ++hideOverlayImmediatelyCalls;
@@ -246,6 +250,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     QPoint queriedPoint;
     ScreenshotCaptureRequest lastCaptureRequest;
     QVector<QString> operations;
+    std::function<void()> onApplyDisplayModels;
+    std::function<void()> onShowOverlayWindows;
 };
 
 ScreenshotCaptureResult successfulResult(quint64 requestId, const CapturedDisplayModel& snapshot) {
@@ -1001,6 +1007,91 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
                 runtime.warmSurfaceShowCalls == 0 && capturePresentedCalls == 1 &&
                 showCallsObservedByCallback == 1,
             "capture-presented callback must run once after the captured overlay is shown");
+}
+
+void presentationCallbacksCannotContinueIntoAnotherSession() {
+    enum class Boundary { Apply, OverlayState, BeforeShow, Show, Picker, Presented };
+    for (const auto boundary : {Boundary::Apply, Boundary::OverlayState, Boundary::BeforeShow,
+                                Boundary::Show, Boundary::Picker, Boundary::Presented}) {
+        for (const bool replace : {false, true}) {
+            ScreenshotCaptureState state;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotInteractionState interaction;
+            ScreenshotSelectionModel selection;
+            ScreenshotIntelligentSelectionModel intelligent;
+            CaptureRuntime runtime;
+            ScreenshotCaptureWorkflow* active = nullptr;
+            int pickerCalls = 0;
+            int presentedCalls = 0;
+            int pickerAfterReentry = 0;
+            int presentedAfterReentry = 0;
+            int refreshAfterReentry = 0;
+            bool reentered = false;
+            ScreenshotStartupContext::Phase phaseAfterReentry{};
+            const auto reenter = [&](Boundary point) {
+                if (point != boundary || reentered || state.captureInProgress)
+                    return;
+                reentered = true;
+                if (replace)
+                    active->startCapture();
+                else
+                    active->cancelCapture();
+                // Leave a selector refresh eligible so an obsolete continuation is visible.
+                runtime.selectorIsReady = false;
+                runtime.selectorRefreshActive = false;
+                pickerAfterReentry = pickerCalls;
+                presentedAfterReentry = presentedCalls;
+                refreshAfterReentry = runtime.startWorkflowRefreshCalls;
+                phaseAfterReentry = displays.startup->phase;
+            };
+            ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                     interaction, selection, intelligent, {}};
+            runtime.onApplyDisplayModels = [&] { reenter(Boundary::Apply); };
+            runtime.onShowOverlayWindows = [&] { reenter(Boundary::Show); };
+            context.presentation.updateOverlayState = [&] { reenter(Boundary::OverlayState); };
+            context.presentation.beforeCapturePresented = [&] { reenter(Boundary::BeforeShow); };
+            context.presentation.updateColorPicker = [&] {
+                ++pickerCalls;
+                reenter(Boundary::Picker);
+            };
+            context.presentation.capturePresented = [&] {
+                ++presentedCalls;
+                reenter(Boundary::Presented);
+            };
+            ScreenshotCaptureWorkflow workflow(std::move(context));
+            active = &workflow;
+            workflow.startCapture();
+            const auto oldSession = state.sessionId;
+            CapturedDisplayModel snapshot;
+            snapshot.stableId = QStringLiteral("primary");
+            snapshot.physicalRect = QRect(0, 0, 64, 48);
+            snapshot.logicalRect = snapshot.physicalRect;
+            snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGB32);
+            snapshot.image.fill(Qt::blue);
+            runtime.deliverResult(successfulResult(oldSession, snapshot));
+            require(reentered && state.sessionId != oldSession,
+                    "presentation fixture must cancel or replace the publishing session");
+            require(displays.startup->phase == phaseAfterReentry &&
+                        pickerCalls == pickerAfterReentry &&
+                        presentedCalls == presentedAfterReentry &&
+                        runtime.startWorkflowRefreshCalls == refreshAfterReentry,
+                    "obsolete publication cannot reveal, notify or refresh another session");
+            if (replace) {
+                require(state.captureInProgress &&
+                            displays.startup->phase == ScreenshotStartupContext::Phase::Preparing,
+                        "replacement must retain its own acquisition and preparation phase");
+            } else {
+                require(!state.captureInProgress && interaction.inactive(),
+                        "cancelled presentation remains retired after callback returns");
+                workflow.startCapture();
+            }
+            runtime.deliverResult(successfulResult(state.sessionId, snapshot));
+            require(displays.startup->phase == ScreenshotStartupContext::Phase::Revealed &&
+                        presentedCalls == presentedAfterReentry + 1,
+                    "fresh session still publishes readiness once after obsolete work retires");
+        }
+    }
 }
 
 void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
@@ -2614,6 +2705,7 @@ int main() {
     restartingCaptureReleasesPreviousSelectorCache();
     captureEndResetsPresentationBeforeDeferredCleanup();
     capturePresentedRunsAfterCapturedOverlayIsShown();
+    presentationCallbacksCannotContinueIntoAnotherSession();
     capturedOverlayWaitsForImageAndSelectionInEitherOrder();
     overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch();
     overlayCaptureDoesNotShowWarmSurfaceAfterCaptureDispatch();

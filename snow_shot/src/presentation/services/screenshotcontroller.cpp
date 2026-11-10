@@ -24,6 +24,7 @@
 #include "screenshotprintcompletion.h"
 #include "screenshotairdropcompletion.h"
 #include "screenshotdeferredpresentation_p.h"
+#include "screenshotdelayedcapture_p.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
@@ -296,7 +297,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] ScreenshotSelectionRestoreTarget selectionRestoreTarget() const;
     [[nodiscard]] bool selectPreviousSelection(bool previous = true);
     void handleAutomaticTextRecognitionAction(bool available);
-    [[nodiscard]] bool canBeginCapture(bool includeCaptureSuspension = true) const;
+    void scheduleCaptureAvailabilityUpdate();
+    [[nodiscard]] bool canBeginCapture(bool includeCaptureSuspension = true,
+                                       bool includePreparation = true) const;
     [[nodiscard]] ScreenshotOverlayWindow* overlayUnderCursor() const;
     [[nodiscard]] ScreenshotOverlayWindow* overlayForWidget(QWidget* widget) const;
     [[nodiscard]] ScreenshotOverlayWindow* keyboardOwnerOverlay() const;
@@ -604,6 +607,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
 
     ScreenshotController& owner;
     ScreenshotDeferredPresentation m_deferredPresentation;
+    ScreenshotDelayedCapture m_delayedCapture;
+    bool m_capturePreparing = false;
+    bool m_shuttingDown = false;
     ScreenshotSelectorCoordinator* m_selectorCoordinator = nullptr;
     ScreenshotCaptureState m_captureState;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_windowShortcutManager;
@@ -701,8 +707,6 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     bool m_clipboardDecodeBeforePresentation = false;
     ScreenshotExportQueue m_historyPinQueue{ScreenshotExportCoordinator::shared()};
     quint64 m_historyPinEpoch = 0;
-    quint64 m_delayedCaptureGeneration = 0;
-    snow_shot::runtime::RuntimeActivityLease m_delayedCaptureActivity;
     PendingSelectionAction m_pendingSelectionAction = PendingSelectionAction::None;
     ScreenshotGlobalMouseDrag m_globalMouseDrag;
     bool m_pendingOcrFromQuickOcrAction = false;
@@ -758,6 +762,14 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                                   if (ensureExportFeature() && m_selectionExportUiServices)
                                       m_selectionExportUiServices->restorePersistedWindows();
                               }}),
+      m_delayedCapture({[this] { return canBeginCapture(); },
+                        [this] { static_cast<void>(beginCapture()); },
+                        [this](bool active) {
+                            emit owner.captureActivityChanged(QStringLiteral("delay"), active);
+                        },
+                        [this](int milliseconds, auto task) {
+                            QTimer::singleShot(milliseconds, &owner, std::move(task));
+                        }}),
       m_groupManager(groupManager), m_ocrRecognition(sharedOcrRecognition),
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
     SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -1752,9 +1764,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 if (m_qrController)
                     m_qrController->invalidate();
 #endif
-                QTimer::singleShot(0, &owner, [this]() {
-                    emit owner.captureAvailabilityChanged(canBeginCapture());
-                });
+                scheduleCaptureAvailabilityUpdate();
                 if (m_ocrController != nullptr) {
                     m_ocrController->invalidateSession();
                 }
@@ -2108,9 +2118,13 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             const auto* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
             return palette != nullptr && palette->canActivateDrawingShortcut(toolId);
         },
-        [this]() {
-            resetPendingCaptureRequest();
-            m_captureWorkflow->enableCaptureToolbar();
+        [this](ScreenshotSelectionIntent intent) {
+            if (intent == ScreenshotSelectionIntent::SupersedeWithCommand) {
+                resetPendingCaptureRequest();
+                m_captureWorkflow->enableCaptureToolbar();
+            } else if (m_captureWorkflow->suppressCaptureToolbar()) {
+                return;
+            }
             if (auto* toolbar = m_overlayCoordinator->ensureToolbar()) {
                 toolbar->suppressRememberedDrawingTool();
             }
@@ -2118,13 +2132,6 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
     };
     actions.currentLogicalCursorPosition = [this] {
         return m_displaySession.logicalCursorPosition();
-    };
-    actions.prepareSelectionReplacement = [this] {
-        if (!m_captureWorkflow->suppressCaptureToolbar()) {
-            if (auto* toolbar = m_overlayCoordinator->ensureToolbar()) {
-                toolbar->suppressRememberedDrawingTool();
-            }
-        }
     };
     actions.toggleGuidesForCurrentSession = [this] { return toggleGuidesForCurrentSession(); };
     actions.cursorVisibilityAvailable = [this] { return screenshotCursorAvailable(); };
@@ -6292,9 +6299,7 @@ void ScreenshotController::Impl::finishGlobalMouseDragIfReleased(bool finishRele
 }
 
 void ScreenshotController::Impl::invalidateDelayedCapture() {
-    m_delayedCaptureActivity = {};
-    emit owner.captureActivityChanged(QStringLiteral("delay"), false);
-    ++m_delayedCaptureGeneration;
+    m_delayedCapture.invalidate();
 }
 
 void ScreenshotController::Impl::resetPendingCaptureRequest() {
@@ -6305,8 +6310,18 @@ void ScreenshotController::Impl::resetPendingCaptureRequest() {
     m_ocrTranslateAfterRecognition = false;
 }
 
-bool ScreenshotController::Impl::canBeginCapture(bool includeCaptureSuspension) const {
-    if ((includeCaptureSuspension && m_captureWorkflow && m_captureWorkflow->captureSuspended()) ||
+void ScreenshotController::Impl::scheduleCaptureAvailabilityUpdate() {
+    // Publish live admission after callers finish unwinding. A captured idle snapshot could
+    // reopen input after a newer session or suspension; inline observers could replace it
+    // before the original caller has finished its failure cleanup.
+    QTimer::singleShot(0, &owner,
+                       [this] { emit owner.captureAvailabilityChanged(canBeginCapture()); });
+}
+
+bool ScreenshotController::Impl::canBeginCapture(bool includeCaptureSuspension,
+                                                 bool includePreparation) const {
+    if (m_shuttingDown || (includePreparation && m_capturePreparing) ||
+        (includeCaptureSuspension && m_captureWorkflow && m_captureWorkflow->captureSuspended()) ||
         m_captureState.captureInProgress || !m_interaction.inactive() ||
         (m_captureState.sessionState != ScreenshotSessionState::IdleCold &&
          m_captureState.sessionState != ScreenshotSessionState::IdlePrepared)) {
@@ -6319,13 +6334,26 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
                                               ScreenshotCaptureWorkflow::StartMode mode) {
     if (!canBeginCapture())
         return false;
+    const QPointer<ScreenshotController> lifetime(&owner);
+    // Closing a blocker and publishing activity can run arbitrary synchronous observers.
+    // Reserve preparation so a nested request cannot dismiss the same blocker or start a
+    // competing session. The reservation is also visible to transition/trim admission.
+    m_capturePreparing = true;
+    const auto preparation = makeScopeExit([this, lifetime] {
+        if (!lifetime)
+            return;
+        m_capturePreparing = false;
+        scheduleCaptureAvailabilityUpdate();
+    });
 #ifdef Q_OS_MACOS
     if (m_mcpOptions.value(QStringLiteral("presentation")).toString() != QStringLiteral("silent"))
         m_sessionFocus->prepare();
 #endif
-    if (!snow_shot::presentation::closeCaptureInputBlockers()) {
+    if (!snow_shot::presentation::closeCaptureInputBlockers() || !lifetime ||
+        !canBeginCapture(true, false)) {
 #ifdef Q_OS_MACOS
-        m_sessionFocus->abandonPrepared();
+        if (lifetime)
+            m_sessionFocus->abandonPrepared();
 #endif
         return false;
     }
@@ -6339,6 +6367,8 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
         m_overlayInputHandler->resetTransientShortcuts();
     }
     invalidateDelayedCapture();
+    if (!lifetime)
+        return false;
     m_pendingHistoryEditRecordId.clear();
     m_pendingSelectionAction = action;
     m_pendingOcrFromQuickOcrAction = action == PendingSelectionAction::RecognizeText;
@@ -6349,7 +6379,20 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
     }
     resetGuideVisibilityForSession();
     emit owner.captureActivityChanged(QStringLiteral("selection"), true);
+    if (!lifetime)
+        return false;
     emit owner.captureAvailabilityChanged(false);
+    if (!lifetime)
+        return false;
+    if (!canBeginCapture(true, false)) {
+        m_pendingSelectionAction = PendingSelectionAction::None;
+        m_pendingOcrFromQuickOcrAction = false;
+#ifdef Q_OS_MACOS
+        m_sessionFocus->abandonPrepared();
+#endif
+        emit owner.captureActivityChanged(QStringLiteral("selection"), false);
+        return false;
+    }
     using ToolbarPreparation = ScreenshotCaptureWorkflow::ToolbarPreparation;
     using ToolbarVisibility = ScreenshotCaptureWorkflow::ToolbarVisibility;
     const bool entersEditing =
@@ -6570,7 +6613,9 @@ void ScreenshotController::Impl::handleSelectionConfirmed() {
 }
 
 void ScreenshotController::Impl::shutdown() {
+    m_shuttingDown = true;
     m_deferredPresentation.stop();
+    m_delayedCapture.stop();
 #ifdef Q_OS_MACOS
     m_sessionFocus->discard();
     m_recaptureKeyboardOwner.clear();
@@ -6722,11 +6767,12 @@ bool ScreenshotController::blocksApplicationUpdate(bool includeCaptureSuspension
              m_impl->m_screenRecordingController->isRecording()));
 }
 
-bool ScreenshotController::blocksMemoryTrimming() const {
+bool ScreenshotController::blocksMemoryTrimming(bool includeCaptureSuspension) const {
     const auto& state = *m_impl;
-    return !state.canBeginCapture() || state.m_recaptureBusy || state.m_globalMouseDrag.active() ||
-           state.clipboardPinPending() || state.m_filePinBatch.active() ||
-           state.m_filePinQueue.active() || state.m_historyPinQueue.active() ||
+    return !state.canBeginCapture(includeCaptureSuspension) || state.m_recaptureBusy ||
+           state.m_globalMouseDrag.active() || state.clipboardPinPending() ||
+           state.m_filePinBatch.active() || state.m_filePinQueue.active() ||
+           state.m_historyPinQueue.active() ||
            (state.m_selectionExportUiServices &&
             state.m_selectionExportUiServices->restoringWindows()) ||
            !state.m_activeImageExports.isEmpty() || static_cast<bool>(state.m_cancelSaveDialog) ||
@@ -6778,8 +6824,10 @@ bool ScreenshotController::beginGlobalMouseCapture(
     }
     m_impl->m_globalMouseDrag.begin(gestureId, position, space);
     m_impl->m_overlayInputHandler->setExternalDragActive(true);
+    const QPointer<ScreenshotController> lifetime(this);
     if (!m_impl->beginCapture(pending, ScreenshotCaptureWorkflow::StartMode::ExternalDrag)) {
-        m_impl->endGlobalMouseDrag();
+        if (lifetime)
+            m_impl->endGlobalMouseDrag();
         return false;
     }
     return true;
@@ -6945,23 +6993,7 @@ void ScreenshotController::startCapture() {
 }
 
 void ScreenshotController::startDelayedCapture(int delaySeconds) {
-    if (!m_impl->canBeginCapture()) {
-        return;
-    }
-    const int seconds = std::clamp(delaySeconds, 1, 10);
-    const quint64 generation = ++m_impl->m_delayedCaptureGeneration;
-    m_impl->m_delayedCaptureActivity =
-        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
-    emit captureActivityChanged(QStringLiteral("delay"), true);
-    QTimer::singleShot(seconds * 1000, this, [this, generation]() {
-        if (m_impl == nullptr || generation != m_impl->m_delayedCaptureGeneration) {
-            return;
-        }
-        m_impl->m_delayedCaptureActivity = {};
-        emit captureActivityChanged(QStringLiteral("delay"), false);
-        if (m_impl->canBeginCapture())
-            startCapture();
-    });
+    static_cast<void>(m_impl->m_delayedCapture.request(delaySeconds));
 }
 
 void ScreenshotController::captureAndPinSelection() {
@@ -7111,6 +7143,26 @@ void ScreenshotControllerTestAccess::prepareSelection(ScreenshotController& cont
 
 SnowCanvasRuntime& ScreenshotControllerTestAccess::runtime(ScreenshotController& controller) {
     return controller.m_impl->m_canvasRuntime;
+}
+
+ScreenshotOverlayInputHandler&
+ScreenshotControllerTestAccess::overlayInput(ScreenshotController& controller) {
+    return *controller.m_impl->m_overlayInputHandler;
+}
+
+ScreenshotSelectionModel&
+ScreenshotControllerTestAccess::selection(ScreenshotController& controller) {
+    return controller.m_impl->m_selection;
+}
+
+ScreenshotInteractionState&
+ScreenshotControllerTestAccess::interaction(ScreenshotController& controller) {
+    return controller.m_impl->m_interaction;
+}
+
+ScreenshotIntelligentSelectionModel&
+ScreenshotControllerTestAccess::intelligentSelection(ScreenshotController& controller) {
+    return controller.m_impl->m_intelligentSelection;
 }
 
 bool ScreenshotControllerTestAccess::exportActive(const ScreenshotController& controller) {
@@ -7478,10 +7530,13 @@ bool ScreenshotController::mcpBegin(const QJsonObject& options, QString* error) 
     m_impl->m_mcpOptions.insert(QStringLiteral("target"), target);
     m_impl->m_mcpObserving = true;
     m_impl->m_canvasRuntime.setDocumentChangedHandler([this] { emit mcpCanvasChanged(); });
+    const QPointer<ScreenshotController> lifetime(this);
     if (!m_impl->beginCapture()) {
-        m_impl->m_mcpObserving = false;
-        m_impl->m_canvasRuntime.setDocumentChangedHandler({});
-        m_impl->m_mcpOptions = {};
+        if (lifetime) {
+            m_impl->m_mcpObserving = false;
+            m_impl->m_canvasRuntime.setDocumentChangedHandler({});
+            m_impl->m_mcpOptions = {};
+        }
         if (error)
             *error = QStringLiteral("capture_unavailable");
         return false;
@@ -7494,6 +7549,13 @@ bool ScreenshotController::mcpSetSelection(const QJsonObject& params, QString* e
         m_impl->m_interaction.scrollingCapture()) {
         if (error)
             *error = QStringLiteral("capture_phase");
+        return false;
+    }
+    // A protocol revision covers published document state, not uncommitted pointer/draft
+    // state. Let its input owner finish or roll back before atomically applying API geometry.
+    if (m_impl->m_overlayInputHandler->selectionTransactionActive()) {
+        if (error)
+            *error = QStringLiteral("busy");
         return false;
     }
     if (!snow_shot::app::mcp::applySelection(m_impl->m_selection, m_impl->m_geometry.canvasBounds(),

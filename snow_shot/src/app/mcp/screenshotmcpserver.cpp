@@ -617,6 +617,7 @@ bool ScreenshotMcpServer::start(QString* error) {
         return fail(listenError.isEmpty() ? McpStartupError::Descriptor
                                           : McpStartupError::LocalEndpoint);
     }
+    m_acceptingRequests = true;
     m_running = true;
     QCoreApplication::instance()->setProperty("snowShotMcpRunning", true);
     emit runningChanged(true);
@@ -627,6 +628,7 @@ McpStartupError ScreenshotMcpServer::startupError() const {
 }
 void ScreenshotMcpServer::stop() {
     Q_ASSERT(QThread::currentThread() == thread());
+    m_acceptingRequests = false;
     ++m_epoch;
     removeDescriptor();
     if (m_thread) {
@@ -650,6 +652,9 @@ void ScreenshotMcpServer::stop() {
 }
 void ScreenshotMcpServer::drainAndStop(std::function<void()> afterDrain, int timeoutMilliseconds) {
     Q_ASSERT(QThread::currentThread() == thread());
+    // A socket dispatch may already be queued for the GUI while beginDrain is still queued
+    // for the worker. Admission ends here, independently of transport drain completion.
+    m_acceptingRequests = false;
     if (!m_worker) {
         if (afterDrain)
             afterDrain();
@@ -707,6 +712,11 @@ void ScreenshotMcpServer::handleRequest(quint64 connection, const QJsonObject& o
     Q_ASSERT(QThread::currentThread() == thread());
     if (!m_running)
         return;
+    if (!m_acceptingRequests) {
+        sendResponse(connection, failure(object.value(QStringLiteral("request_id")).toString(),
+                                         QStringLiteral("disabled")));
+        return;
+    }
     if (object.value(QStringLiteral("method")) == QStringLiteral("snow_shot_request_cancel")) {
         const auto target = object.value(QStringLiteral("params"))
                                 .toObject()

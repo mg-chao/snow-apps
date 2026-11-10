@@ -46,6 +46,8 @@ bool StoreUpdateLifecycle::queryEndSession() {
         return true;
     bool suspensionRequested = false;
     const auto restoreAvailability = [this] {
+        if (m_ended)
+            return;
         try {
             if (m_hooks.suspend)
                 m_hooks.suspend(false);
@@ -54,24 +56,41 @@ bool StoreUpdateLifecycle::queryEndSession() {
         }
     };
     try {
-        if (m_hooks.busy && m_hooks.busy())
+        const bool busy = m_hooks.busy && m_hooks.busy();
+        if (m_ended)
+            return true;
+        if (busy)
             return false;
         // Suspension can partially complete before an exception. Always restore it when a
         // checkpoint cannot be accepted, including when the suspend hook itself throws.
         suspensionRequested = true;
         if (m_hooks.suspend)
             m_hooks.suspend(true);
-        if (m_hooks.checkpoint && !m_hooks.checkpoint()) {
+        if (m_ended)
+            return true;
+        const bool checkpointed = !m_hooks.checkpoint || m_hooks.checkpoint();
+        if (m_ended)
+            return true;
+        const bool admitted =
+            checkpointed && (!m_hooks.validateAfterCheckpoint || m_hooks.validateAfterCheckpoint());
+        // A terminal notification owns shutdown even if the cooperative callback declines or
+        // throws. Its resources must remain closed, and no later preparation callback may run.
+        if (m_ended)
+            return true;
+        if (!admitted) {
             restoreAvailability();
-            return false;
+            return m_ended;
         }
         m_pending = true;
         return true;
     } catch (...) {
+        if (m_ended)
+            return true;
         if (suspensionRequested)
             restoreAvailability();
-        qWarning("Store update shutdown preparation failed");
-        return false;
+        if (!m_ended)
+            qWarning("Store update shutdown preparation failed");
+        return m_ended;
     }
 }
 

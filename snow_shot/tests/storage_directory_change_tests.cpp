@@ -493,6 +493,57 @@ void completionPreventsEarlyReentryAndAllowsFinalChaining() {
     app.shutdown();
 }
 
+void busyNotificationOwnsTheWorkerBeforeLifecycleReentry() {
+    QTemporaryDir fixture;
+    auto& app = storage::ApplicationStorage::instance();
+    const QString source = fixture.filePath(QStringLiteral("source"));
+    const QString target = fixture.filePath(QStringLiteral("target"));
+    const QString replacement = fixture.filePath(QStringLiteral("replacement"));
+    storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")), source,
+                                                  60000};
+    options.isolateAuxiliaryStorage = true;
+    require(app.initialize(options).success, "busy notification fixture initialized");
+    int resumed = 0;
+    int completions = 0;
+    bool replaced = false;
+    app.setDirectoryChangeHooks([] { return storage::StorageResult::ok(); },
+                                [&](const QString& root) {
+                                    require(root == target,
+                                            "busy notification shutdown restores committed root");
+                                    ++resumed;
+                                });
+    const auto finishedConnection = QObject::connect(
+        &app, &storage::ApplicationStorage::directoryChangeFinished, &app, [&](const auto& result) {
+            require(result.success, "busy notification shutdown finishes its owned transaction");
+            ++completions;
+        });
+    const auto statusConnection = QObject::connect(
+        &app, &storage::ApplicationStorage::storageStatusChanged, &app,
+        [&](const storage::StorageStatus& status) {
+            if (!status.directoryChanging || replaced)
+                return;
+            // A public busy notification may synchronously run application teardown. The
+            // teardown barrier must already own the worker and restore participants first.
+            replaced = true;
+            app.shutdown();
+            require(resumed == 1 && completions == 1,
+                    "busy notification cannot precede ownership of the worker barrier");
+            auto next = options;
+            next.appDataDirectory = replacement;
+            require(app.initialize(next).success, "status callback safely replaces storage");
+        });
+    require(app.requestDirectoryChange(target, true).success,
+            "busy notification transaction was admitted before synchronous teardown");
+    QCoreApplication::processEvents();
+    require(replaced && resumed == 1 && completions == 1 && app.isInitialized() &&
+                app.configurationDirectory() == replacement && !app.directoryChanging(),
+            "retired request cannot launch against repositories replaced by its notification");
+    QObject::disconnect(statusConnection);
+    QObject::disconnect(finishedConnection);
+    app.setDirectoryChangeHooks({}, {});
+    app.shutdown();
+}
+
 void preparationClosesStorageAdmission() {
     QTemporaryDir fixture;
     auto& app = storage::ApplicationStorage::instance();
@@ -834,6 +885,7 @@ int main(int argc, char** argv) {
     flushFailureRestoresAvailability();
     asynchronousExceptionsRestoreParticipants();
     completionPreventsEarlyReentryAndAllowsFinalChaining();
+    busyNotificationOwnsTheWorkerBeforeLifecycleReentry();
     preparationClosesStorageAdmission();
     preparationRevalidatesTheLiveStorageOwner();
     progressDeliveryIsBoundedAndRetiredBeforeCompletion();

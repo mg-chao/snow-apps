@@ -64,6 +64,8 @@ class ScreenshotMcpServer final : public QObject {
     // Remains available after failed-start cleanup; the next start resets it.
     [[nodiscard]] McpStartupError startupError() const;
     void stop();
+    // Closes GUI dispatch admission synchronously, then lets already-dispatched work send
+    // its final responses before stopping the socket worker. A fresh start reopens admission.
     void drainAndStop(std::function<void()> afterDrain = {}, int timeoutMilliseconds = 2000);
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] QString descriptorPath() const;
@@ -102,6 +104,7 @@ class ScreenshotMcpServer final : public QObject {
     QString m_token;
     McpStartupError m_startupError = McpStartupError::None;
     bool m_running = false;
+    bool m_acceptingRequests = false;
     quint64 m_epoch = 0;
 };
 

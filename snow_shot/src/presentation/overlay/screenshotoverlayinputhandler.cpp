@@ -49,6 +49,11 @@ ScreenshotOverlayInputHandler::~ScreenshotOverlayInputHandler() {
     static_cast<void>(m_context.interaction.cancelEffectDrag());
 }
 
+bool ScreenshotOverlayInputHandler::selectionTransactionActive() const {
+    return m_externalDragActive || m_context.interaction.dragging() ||
+           m_context.intelligentSelection.pressActive() || regionOperationActive();
+}
+
 bool ScreenshotOverlayInputHandler::effectDragActive() const {
     return m_context.interaction.effectGesture().has_value();
 }
@@ -1254,7 +1259,7 @@ bool ScreenshotOverlayInputHandler::selectCurrentScreen() {
     // Replacing the region confirms the action that opened this capture, just
     // like a mouse selection or restoring a previous region. Only an explicit
     // toolbar command may supersede that pending action.
-    m_context.actions.prepareSelectionReplacement();
+    m_context.actions.prepareSelection(ScreenshotSelectionIntent::PreserveLaunchAction);
     m_context.selection.setSelectionRect(expandToAllScreens ? allScreens : screen);
     // A full-screen replacement must retain the target's exact extent, even
     // when the preceding selection used a remembered aspect ratio preset.
@@ -1285,7 +1290,7 @@ bool ScreenshotOverlayInputHandler::activateToolbarShortcutForSelection(
     const bool resumeScrolling = std::exchange(m_scrollingCaptureSelectionResize, false);
     resetTransientShortcuts();
     m_consumeRegionRelease = consumeRelease;
-    m_context.actions.prepareExplicitSelectionCommand();
+    m_context.actions.prepareSelection(ScreenshotSelectionIntent::SupersedeWithCommand);
     bool activated = false;
     confirmSelection([&] {
         if (resumeScrolling) {
