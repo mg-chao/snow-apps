@@ -12386,11 +12386,16 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     snow_shot_link_macos_window_platform(snow-shot-macos-scrolling-input-tests)
     target_include_directories(snow-shot-macos-scrolling-input-tests PRIVATE include)
     target_link_libraries(snow-shot-macos-scrolling-input-tests PRIVATE Qt6::Widgets
+        snow_shot_window_shortcuts
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-scrolling-input-tests
         COMMAND snow-shot-macos-scrolling-input-tests)
     set_tests_properties(snow-shot-macos-scrolling-input-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-scrolling-shortcut-native-tests
+        COMMAND snow-shot-macos-scrolling-input-tests -platform cocoa --shortcuts-only)
+    set_tests_properties(snow-shot-macos-scrolling-shortcut-native-tests PROPERTIES
+        LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     add_test(NAME snow-shot-macos-scrolling-input-native-tests
         COMMAND snow-shot-macos-scrolling-input-tests -platform cocoa)
     set_tests_properties(snow-shot-macos-scrolling-input-native-tests PROPERTIES

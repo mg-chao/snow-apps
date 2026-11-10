@@ -522,19 +522,17 @@ class ControlledWindowDragging final : public QObject {
     adqt::widgets::detail::WindowSurfaceObserver m_observer;
 };
 
-// Qt and AppKit must agree on input ownership. Qt can reapply native window
-// flags during tracking and presentation, including after native surface reuse.
+// Scrolling passes mouse input through while retaining keyboard shortcuts. Qt's
+// WindowTransparentForInput also disables Cocoa key delivery and first-responder
+// eligibility, so constrain only the native mouse setting. The shared policy
+// keeps it enforced when Qt reapplies window flags during tracking/presentation.
 class ScreenshotInputTransparency final : public QObject {
   public:
     explicit ScreenshotInputTransparency(QWidget* widget)
         : QObject(widget), m_widget(widget),
-          m_observer(widget, [this] { synchronize(); }, this, [this] { restore(); }) {
+          m_observer(widget, [this] { synchronize(); }, this, [this] { m_policy.reset(); }) {
         widget->installEventFilter(this);
     }
-    ~ScreenshotInputTransparency() override {
-        restore();
-    }
-
     void setTransparent(bool transparent) {
         m_transparent = transparent;
         synchronize();
@@ -544,7 +542,7 @@ class ScreenshotInputTransparency final : public QObject {
     bool eventFilter(QObject*, QEvent* event) override {
         switch (event->type()) {
         case QEvent::Hide:
-            restore();
+            m_policy.reset();
             break;
         default:
             break;
@@ -565,44 +563,18 @@ class ScreenshotInputTransparency final : public QObject {
             return;
         QScopedValueRollback synchronizing(m_synchronizing, true);
         if (!m_transparent || !m_widget->isVisible()) {
-            restore();
+            m_policy.reset();
             return;
         }
-        NSWindow* window = nativeWindow();
-        QWindow* qtWindow = m_widget->windowHandle();
-        if (m_native != window || m_qtWindow != qtWindow) {
-            restore();
-            // Restoring Qt ownership can update the replacement native surface.
-            // Sample its defaults only after that previous ownership is released.
-            m_native = nativeWindow();
-            m_qtWindow = m_widget->windowHandle();
-            m_originalIgnoresMouse = m_native.ignoresMouseEvents;
-            m_originalTransparentForInput =
-                m_qtWindow && m_qtWindow->flags().testFlag(Qt::WindowTransparentForInput);
-        }
-        if (m_qtWindow)
-            m_qtWindow->setFlag(Qt::WindowTransparentForInput, true);
-        if (m_native)
-            m_native.ignoresMouseEvents = YES;
-    }
-
-    void restore() {
-        QScopedValueRollback restoring(m_synchronizing, true);
-        if (m_qtWindow && m_widget && m_qtWindow == m_widget->windowHandle())
-            m_qtWindow->setFlag(Qt::WindowTransparentForInput, m_originalTransparentForInput);
-        if (m_native && m_native == nativeWindow())
-            m_native.ignoresMouseEvents = m_originalIgnoresMouse;
-        m_native = nil;
-        m_qtWindow = nullptr;
+        adqt::widgets::detail::NativeWindowConstraints constraints;
+        constraints.ignoresMouseEvents = true;
+        m_policy.apply(nativeWindow(), constraints);
     }
 
     QPointer<QWidget> m_widget;
     bool m_transparent = false;
     bool m_synchronizing = false;
-    NSWindow* m_native = nil;
-    QPointer<QWindow> m_qtWindow;
-    BOOL m_originalIgnoresMouse = NO;
-    bool m_originalTransparentForInput = false;
+    adqt::widgets::detail::MacNativeWindowPolicy m_policy;
     adqt::widgets::detail::WindowSurfaceObserver m_observer;
 };
 

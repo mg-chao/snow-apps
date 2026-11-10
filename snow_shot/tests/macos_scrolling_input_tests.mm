@@ -1,4 +1,6 @@
 #include "snow_shot/platform/screenshotnative.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
+#include "physical_key_test_support.h"
 
 #import <AppKit/AppKit.h>
 #include <QApplication>
@@ -11,6 +13,7 @@
 #include <QTimer>
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -48,22 +51,22 @@ void qtTransparencyTracksWindowAndSurfaceLifecycle() {
     QApplication::processEvents();
     const WId surface = overlay.internalWinId();
     QWindow* handle = overlay.windowHandle();
-    require(handle && handle->flags().testFlag(Qt::WindowTransparentForInput),
-            "showing scrolling capture gives Qt the same input ownership as the native window");
+    require(handle && !handle->flags().testFlag(Qt::WindowTransparentForInput),
+            "scrolling capture must preserve Qt keyboard input when shown");
     setScreenshotInputTransparent(&overlay, true);
     overlay.move(overlay.pos() + QPoint(20, 20));
     require(overlay.internalWinId() == surface && overlay.windowHandle() == handle,
             "input ownership must preserve the current native surface during activation and move");
     overlay.hide();
     require(!handle->flags().testFlag(Qt::WindowTransparentForInput),
-            "hiding scrolling capture restores the original Qt input flag");
+            "hiding scrolling capture must preserve the original Qt input flag");
     overlay.show();
     QApplication::processEvents();
-    require(overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
-            "showing an active capture reapplies Qt input transparency");
+    require(!overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
+            "showing an active capture must preserve Qt keyboard input");
     setScreenshotInputTransparent(&overlay, false);
     require(!overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
-            "stopping scrolling capture restores Qt input handling");
+            "stopping scrolling capture must preserve Qt keyboard input");
     overlay.windowHandle()->setFlag(Qt::WindowTransparentForInput, true);
     setScreenshotInputTransparent(&overlay, true);
     setScreenshotInputTransparent(&overlay, false);
@@ -76,15 +79,98 @@ void qtTransparencyTracksWindowAndSurfaceLifecycle() {
     require(!overlay.internalWinId(), "native surface release must remain complete");
     overlay.show();
     QApplication::processEvents();
-    require(overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
-            "a replacement surface acquires active Qt transparency");
+    require(!overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
+            "a replacement surface must preserve Qt keyboard input");
     setScreenshotInputTransparent(&overlay, false);
     require(!overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
-            "replacement surface cleanup restores its original input flag");
+            "replacement surface cleanup must preserve its original input flag");
     overlay.hide();
     overlay.releaseSurface();
     setScreenshotInputTransparent(&overlay, false);
     require(!overlay.internalWinId(), "cleanup must never recreate a released native surface");
+}
+
+void scrollingPreservesShortcutDispatch() {
+    using snow_shot::platform::setScreenshotInputTransparent;
+    using snow_shot::presentation::WindowShortcutManager;
+    Overlay overlay;
+    overlay.setFocusPolicy(Qt::StrongFocus);
+    overlay.resize(240, 160);
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&overlay);
+    int activations = 0;
+    const QKeyCombination combinations[] = {
+        QKeyCombination(Qt::Key_Escape), QKeyCombination(Qt::Key_Return),
+        QKeyCombination(Qt::ControlModifier, Qt::Key_C), QKeyCombination(Qt::Key_Left)};
+    for (const auto combination : combinations) {
+        WindowShortcutManager::Binding binding;
+        binding.id = QString::number(combination.toCombined());
+        binding.keyCombinations = {combination};
+        if (combination.key() == Qt::Key_Escape)
+            binding.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+        binding.activate = [&](const auto&) {
+            ++activations;
+            return true;
+        };
+        require(manager.addBinding(&overlay, std::move(binding)) != 0,
+                "register scrolling capture shortcut");
+    }
+    overlay.show();
+    QApplication::processEvents();
+    const WId surface = overlay.internalWinId();
+    NSView* view = QApplication::platformName() == QStringLiteral("cocoa")
+                       ? reinterpret_cast<NSView*>(surface)
+                       : nil;
+    for (const bool scrolling : {false, true, false, true}) {
+        setScreenshotInputTransparent(&overlay, scrolling);
+        require(overlay.internalWinId() == surface &&
+                    !overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
+                "entering scrolling mode must preserve the keyboard-enabled surface");
+        if (view) {
+            require(view.window.canBecomeKeyWindow && view.acceptsFirstResponder,
+                    "scrolling capture must retain native key window and responder eligibility");
+            require(view.window.ignoresMouseEvents == scrolling,
+                    "mouse pass-through must track scrolling without disabling the keyboard");
+        }
+        const int before = activations;
+        for (int index = 0; index != 4; ++index) {
+            const auto combination = combinations[index];
+            for (const auto type : {QEvent::KeyPress, QEvent::KeyRelease}) {
+                if (view) {
+                    // Deliver through Qt's real Cocoa responder path without posting
+                    // system input, changing application activation, or moving the pointer.
+                    const unsigned short codes[] = {53, 36, 8, 123};
+                    NSString* characters[] = {@"\x1b", @"\r", @"c", @"\uf702"};
+                    NSEvent* event =
+                        [NSEvent keyEventWithType:type == QEvent::KeyPress ? NSEventTypeKeyDown
+                                                                           : NSEventTypeKeyUp
+                                               location:NSZeroPoint
+                                          modifierFlags:combination.keyboardModifiers() ==
+                                                                Qt::ControlModifier
+                                                            ? NSEventModifierFlagCommand
+                                                            : 0
+                                              timestamp:1
+                                           windowNumber:view.window.windowNumber
+                                                context:nil
+                                             characters:characters[index]
+                            charactersIgnoringModifiers:characters[index]
+                                              isARepeat:NO
+                                                keyCode:codes[index]];
+                    if (type == QEvent::KeyPress)
+                        [view keyDown:event];
+                    else
+                        [view keyUp:event];
+                } else {
+                    PhysicalKeyEvent event(type, combination.key(),
+                                           combination.keyboardModifiers());
+                    QCoreApplication::sendEvent(&overlay, &event);
+                }
+            }
+            require(activations == before + index + 1,
+                    "each shortcut must dispatch once immediately after a scrolling transition");
+        }
+    }
+    setScreenshotInputTransparent(&overlay, false);
 }
 
 void nativeTransparencyRoutesToUnderlyingWindow() {
@@ -145,8 +231,11 @@ void nativeTransparencyRoutesToUnderlyingWindow() {
         setScreenshotInputTransparent(&overlay, true);
         require(native.ignoresMouseEvents,
                 "scrolling enables whole-window transparency without pointer movement");
-        require(overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
-                "Qt must preserve native transparency during pointer tracking");
+        require(!overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
+                "mouse transparency must preserve Qt keyboard input");
+        native.ignoresMouseEvents = NO;
+        require(native.ignoresMouseEvents,
+                "Qt/AppKit mouse tracking must not undo scrolling pass-through");
         require(wheelRecipient() == 1, "WindowServer must deliver the original wheel underneath");
         overlay.clearMask();
         require(native.ignoresMouseEvents && wheelRecipient() == 1,
@@ -174,6 +263,9 @@ void nativeTransparencyRoutesToUnderlyingWindow() {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     qtTransparencyTracksWindowAndSurfaceLifecycle();
+    scrollingPreservesShortcutDispatch();
+    if (app.arguments().contains(QStringLiteral("--shortcuts-only")))
+        return 0;
     if (QApplication::platformName() == QStringLiteral("cocoa")) {
         if (!CGPreflightPostEventAccess()) {
             std::cout << "SKIP: native wheel fixture requires existing event-posting permission\n";
