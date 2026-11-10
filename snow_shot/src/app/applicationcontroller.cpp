@@ -78,6 +78,7 @@
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QTimer>
 #include <QtMath>
@@ -638,7 +639,12 @@ class ApplicationController::Impl {
                         screenshotController->prepareForSessionEnd(timeoutMs);
                 },
                 [this] {
+                    shuttingDown = true;
+                    deferredStartup.stop();
+                    if (handoffPause)
+                        handoffPause->commit();
                     handoffInput->active = true;
+                    mcpGraph.setSourcesSuspended(true);
                     if (screenshotController)
                         screenshotController->setCaptureSuspended(true);
                     static_cast<void>(globalShortcutManager.suspendRegistrations());
@@ -689,7 +695,9 @@ class ApplicationController::Impl {
         OperationFacts facts;
         facts.suspended =
             (ownedPause != OwnedPause::Relocation && migrationInput && migrationInput->active) ||
-            (ownedPause != OwnedPause::UpdateHandoff && handoffInput && handoffInput->active);
+            (ownedPause != OwnedPause::UpdateHandoff &&
+             (handoffPauseRequested || (handoffInput && handoffInput->active) ||
+              (handoffPause && handoffPause->committed())));
         facts.storageChanging = applicationStorage.directoryChanging();
         facts.updaterUnavailableOrApplying =
             !updates || updates->status().state == update::UpdateState::Applying;
@@ -781,53 +789,143 @@ class ApplicationController::Impl {
         });
     }
 
+    void restoreApplicationInput(ApplicationInputGuard& input) {
+        const QPointer<ApplicationController> lifetime(&q);
+        input.active = &input == handoffInput && handoffPauseRequested;
+        reconcileSuspension();
+        if (!lifetime)
+            return;
+        globalMouseManager.setCaptureAvailable(
+            !applicationSuspended() &&
+            (!screenshotController || screenshotController->captureAvailable()));
+        if (!lifetime)
+            return;
+        systemTray.setEnabled(!applicationSuspended() && storage::ApplicationStorage::instance()
+                                                             .configuration()
+                                                             .value(kTrayEnabledKey)
+                                                             .toBool());
+    }
+
     void acquireApplicationPause(QuiescenceSession& pause, ApplicationInputGuard& input) {
+        const QPointer<ApplicationController> lifetime(&q);
         input.active = true;
-        pause.acquired([this, &input] {
-            input.active = false;
-            reconcileSuspension();
-            globalMouseManager.setCaptureAvailable(
-                !applicationSuspended() &&
-                (!screenshotController || screenshotController->captureAvailable()));
-            systemTray.setEnabled(!applicationSuspended() && storage::ApplicationStorage::instance()
-                                                                 .configuration()
-                                                                 .value(kTrayEnabledKey)
-                                                                 .toBool());
+        pause.acquired([this, lifetime, &input] {
+            if (lifetime)
+                restoreApplicationInput(input);
         });
         // Close admission before the stacking checkpoint can notify reentrant producers.
         if (screenshotController)
             screenshotController->setCaptureSuspended(true);
+        if (!lifetime)
+            return;
         mcpGraph.setSourcesSuspended(true);
+        if (!lifetime)
+            return;
         groupManager.stackingCoordinator()->beginMutation();
-        pause.acquired([this] { groupManager.stackingCoordinator()->endMutation(); });
+        if (!lifetime)
+            return;
+        pause.acquired([this, lifetime] {
+            if (lifetime)
+                groupManager.stackingCoordinator()->endMutation();
+        });
         reconcileSuspension(); // close delayed/programmatic admission before draining producers
+        if (!lifetime)
+            return;
         systemTray.setEnabled(false);
         globalMouseManager.setCaptureAvailable(false);
+        if (!lifetime)
+            return;
         const auto token = globalShortcutManager.suspendRegistrations();
-        pause.acquired([this, token] { globalShortcutManager.resumeRegistrations(token); });
+        pause.acquired([this, lifetime, token] {
+            if (lifetime)
+                globalShortcutManager.resumeRegistrations(token);
+        });
     }
 
     void setUpdateHandoffPending(bool pending) {
-        if (pending) {
-            if (handoffPause)
-                return;
-            auto pause = std::make_unique<QuiescenceSession>();
-            acquireApplicationPause(*pause, *handoffInput);
-            handoffPause = std::move(pause);
-        } else {
-            if (!handoffPause)
-                return;
-            handoffPause.reset();
-            reconcileMcpConfiguration();
-#ifdef Q_OS_WIN
-            const auto intent = shellLaunches.takeUpdate();
-            updates->clearRelaunchArguments();
-            if (!intent.paths.isEmpty())
-                pinShellFiles(intent.paths);
-            if (intent.foreground)
-                showMainWindow();
-#endif
+        // Retain the latest request, but let the current acquisition/restoration stack
+        // finish before changing its resource ownership. In particular a listener-stop
+        // observer may cancel the handoff before acquisition has returned.
+        if (shuttingDown || (handoffPause && handoffPause->committed()))
+            return;
+        handoffPauseRequested = pending;
+        if (handoffPauseReconciling) {
+            // A restoration observer can enter a native event loop before reacquisition.
+            // Its new request closes widget input immediately while the old owner is visible.
+            if (pending)
+                handoffInput->active = true;
+            return;
         }
+        const QPointer<ApplicationController> lifetime(&q);
+        reconcileUpdateHandoffPause();
+        // Replay can dispatch another native query. Its pause must acquire and restore
+        // synchronously, outside the resource reconciliation stack that has just finished.
+        // A failed acquisition may already have retired its owner before this cancellation.
+        if (lifetime && !shuttingDown && !handoffPauseRequested && !handoffPause)
+            resumeAfterUpdateHandoff();
+    }
+
+    void reconcileUpdateHandoffPause() {
+        handoffPauseReconciling = true;
+        const QPointer<ApplicationController> lifetime(&q);
+        const auto reconciliation = qScopeGuard([this, lifetime] {
+            if (lifetime)
+                handoffPauseReconciling = false;
+        });
+        while (lifetime && !shuttingDown && !(handoffPause && handoffPause->committed()) &&
+               (handoffPauseRequested != static_cast<bool>(handoffPause) ||
+                (!handoffPauseRequested && handoffInput->active))) {
+            if (!handoffPauseRequested) {
+                if (const auto pause = handoffPause) {
+                    // Terminal callbacks must still see and commit the restoring owner.
+                    pause->restore();
+                    if (!lifetime || pause->committed())
+                        return;
+                    handoffPause.reset();
+                } else {
+                    // A request cancelled inside restoration can leave input preclosed
+                    // after its owner retires. Reconcile that state before replay too.
+                    restoreApplicationInput(*handoffInput);
+                }
+                continue;
+            }
+            std::shared_ptr<QuiescenceSession> pause;
+            try {
+                pause = std::make_shared<QuiescenceSession>();
+                // Publish before callbacks, keeping a local reference through acquisition.
+                handoffPause = pause;
+                acquireApplicationPause(*pause, *handoffInput);
+            } catch (...) {
+                if (lifetime && !shuttingDown) {
+                    handoffPauseRequested = false;
+                    if (pause)
+                        pause->restore();
+                    else
+                        restoreApplicationInput(*handoffInput);
+                    if (lifetime && (!pause || !pause->committed()))
+                        handoffPause.reset();
+                }
+                throw;
+            }
+        }
+    }
+
+    void resumeAfterUpdateHandoff() {
+        if (shuttingDown || handoffPauseRequested || (updates && updates->handoffPending()))
+            return;
+        const QPointer<ApplicationController> lifetime(&q);
+        reconcileMcpConfiguration();
+        if (!lifetime || shuttingDown || handoffPauseRequested ||
+            (handoffPause && handoffPause->committed()))
+            return;
+#ifdef Q_OS_WIN
+        const auto intent = shellLaunches.takeUpdate();
+        updates->clearRelaunchArguments();
+        if (!intent.paths.isEmpty())
+            pinShellFiles(intent.paths);
+        if (intent.foreground)
+            showMainWindow();
+#endif
     }
 
     void reportSelectedFilePinFailure(const QString& message) {
@@ -891,7 +989,9 @@ class ApplicationController::Impl {
     }
 
     bool applicationSuspended() const {
-        return (migrationInput && migrationInput->active) || (handoffInput && handoffInput->active);
+        return (migrationInput && migrationInput->active) || handoffPauseRequested ||
+               (handoffInput && handoffInput->active) ||
+               (handoffPause && handoffPause->committed());
     }
 
     bool actionsAvailable() const {
@@ -1901,7 +2001,9 @@ class ApplicationController::Impl {
         QuiescenceSession resources;
     };
     std::unique_ptr<DirectoryPause> migrationPause;
-    std::unique_ptr<QuiescenceSession> handoffPause;
+    std::shared_ptr<QuiescenceSession> handoffPause;
+    bool handoffPauseRequested = false;
+    bool handoffPauseReconciling = false;
     // These services outlive the disposable configuration window.
     presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;

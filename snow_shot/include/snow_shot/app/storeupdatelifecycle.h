@@ -10,8 +10,9 @@ namespace snow_shot::app {
 // Coordinates Windows Restart Manager with the same work owners used by normal app shutdown.
 class StoreUpdateLifecycle final : public QAbstractNativeEventFilter {
   public:
-    // Synchronous owner-thread callbacks. They may introduce work or deliver terminal
-    // endSession(true) reentrantly, and must keep this lifecycle alive until they return.
+    // Synchronous owner-thread callbacks. They may introduce work, repeat a query, or deliver
+    // endSession reentrantly, and must keep this lifecycle alive until they return. An in-flight
+    // query declines nested queries; cancellation unwinds its pause after the current callback.
     struct Hooks {
         std::function<bool()> busy;
         std::function<void(bool)> suspend;
@@ -38,6 +39,8 @@ class StoreUpdateLifecycle final : public QAbstractNativeEventFilter {
     Hooks m_hooks;
     bool m_installed = false;
     bool m_pending = false;
+    bool m_preparing = false;
+    bool m_queryCanceled = false;
     bool m_ended = false;
 };
 

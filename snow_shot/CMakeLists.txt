@@ -11837,6 +11837,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-application-action-gate-tests COMMAND snow-shot-application-action-gate-tests)
     set_tests_properties(snow-shot-application-action-gate-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE)
+    add_executable(snow-shot-application-input-guard-tests tests/application_input_guard_tests.cpp)
+    target_include_directories(snow-shot-application-input-guard-tests PRIVATE include)
+    target_link_libraries(snow-shot-application-input-guard-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-application-input-guard-tests COMMAND snow-shot-application-input-guard-tests)
+    set_tests_properties(snow-shot-application-input-guard-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 10)
     add_executable(snow-shot-deferred-startup-tests tests/deferred_startup_tests.cpp)
     target_include_directories(snow-shot-deferred-startup-tests PRIVATE include)
     target_link_libraries(snow-shot-deferred-startup-tests PRIVATE Qt6::Core)
