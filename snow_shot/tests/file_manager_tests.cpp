@@ -26,58 +26,40 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QTemporaryDir directory;
     require(directory.isValid(), "create file-manager fixture directory");
-    const QString path = directory.filePath(QString::fromUtf8("capture 测试, & $(test) #1.png"));
+    const QString parentPath = directory.filePath(QString::fromUtf8("history 测试, & $(test) #1"));
+    require(QDir().mkpath(parentPath), "create file-manager fixture parent directory");
+    const QString fileName = QString::fromUtf8("capture 测试, & $(test) #1.png");
+    const QString path = QDir(parentPath).filePath(fileName);
     QFile file(path);
     require(file.open(QIODevice::WriteOnly), "create file-manager fixture file");
     file.close();
-    int processCalls = 0;
     int directoryCalls = 0;
     bool launchSucceeds = true;
     snow_shot::platform::FileManagerLauncher launcher;
-    launcher.startDetached = [&](const QString& program, const QStringList& arguments,
-                                 const QString& nativeArguments) {
-        ++processCalls;
-#ifdef Q_OS_WIN
-        require(program == QStringLiteral("explorer.exe") && arguments.isEmpty() &&
-                    nativeArguments ==
-                        QStringLiteral("/select,\"%1\"").arg(QDir::toNativeSeparators(path)),
-                "Explorer receives one quoted Unicode selection operand without a shell");
-#elif defined(Q_OS_MACOS)
-        require(program == QStringLiteral("/usr/bin/open") &&
-                    arguments == QStringList{QStringLiteral("-R"), path} &&
-                    nativeArguments.isEmpty(),
-                "Finder receives the entire Unicode path as one argument");
-#else
-        Q_UNUSED(program);
-        Q_UNUSED(arguments);
-        Q_UNUSED(nativeArguments);
-        require(false, "other platforms open the containing directory");
-#endif
-        return launchSucceeds;
-    };
     launcher.openDirectory = [&](const QUrl& url) {
         ++directoryCalls;
-        require(url.isLocalFile() && url.toLocalFile() == directory.path(),
+        require(url.isLocalFile() && url.toLocalFile() == parentPath,
                 "directories are opened as correctly encoded local-file URLs");
         return launchSucceeds;
     };
     using snow_shot::platform::revealInFileManager;
     require(revealInFileManager(path, launcher), "reveal an existing file");
-#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
-    require(processCalls == 1 && directoryCalls == 0, "select the file, not merely its parent");
-#else
-    require(directoryCalls == 1, "open the containing directory on other platforms");
-#endif
-    require(revealInFileManager(directory.path(), launcher), "open a directory's contents");
+    require(directoryCalls == 1,
+            "open the containing directory through the system's default folder handler");
+    require(revealInFileManager(parentPath, launcher), "open a directory's contents");
+    const QString previousDirectory = QDir::currentPath();
+    require(QDir::setCurrent(parentPath), "enter the file-manager fixture directory");
+    require(revealInFileManager(fileName, launcher), "resolve relative files before opening");
+    require(QDir::setCurrent(previousDirectory), "restore the working directory");
     launchSucceeds = false;
-    require(!revealInFileManager(path, launcher) &&
-                !revealInFileManager(directory.path(), launcher),
+    require(!revealInFileManager(path, launcher) && !revealInFileManager(parentPath, launcher),
             "propagate native launcher failures");
-    const int previousCalls = processCalls + directoryCalls;
+    require(directoryCalls == 5,
+            "each valid target uses the default folder handler exactly once, even on failure");
+    const int previousCalls = directoryCalls;
     require(!revealInFileManager({}, launcher) &&
                 !revealInFileManager(directory.filePath(QStringLiteral("missing")), launcher),
             "empty and missing targets fail");
-    require(processCalls + directoryCalls == previousCalls,
-            "invalid targets never launch anything");
+    require(directoryCalls == previousCalls, "invalid targets never launch anything");
     std::cout << "File-manager tests passed\n";
 }
