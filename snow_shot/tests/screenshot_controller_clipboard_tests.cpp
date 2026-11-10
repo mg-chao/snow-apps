@@ -1850,6 +1850,20 @@ void pinOutputsUseHiDpiScaling() {
 namespace {
 void screenshotSessionFocusRouting() {
     using namespace snow_shot::platform::macos;
+    struct Background final : ScreenshotBackgroundWindow {
+        Background(ScreenshotController& controller, int& suppressions, int& restorations)
+            : controller(controller), suppressions(suppressions), restorations(restorations) {}
+        void suppress() override {
+            ++suppressions;
+        }
+        void restoreBehind() override {
+            require(controller.captureAvailable(), "background must follow presentation teardown");
+            ++restorations;
+        }
+        ScreenshotController& controller;
+        int& suppressions;
+        int& restorations;
+    };
     struct Target final : ScreenshotFocusTarget {
         Target(ScreenshotController& controller, int& restores, int& live)
             : controller(controller), restores(restores), live(live) {
@@ -1859,6 +1873,9 @@ void screenshotSessionFocusRouting() {
             --live;
         }
         bool canRestore() const override {
+            return true;
+        }
+        bool isExternalApplication() const override {
             return true;
         }
         void restore() override {
@@ -1881,14 +1898,42 @@ void screenshotSessionFocusRouting() {
     for (int action = 0; action < 8; ++action) {
         int restores = 0;
         int live = 0;
+        int suppressions = 0;
+        int backgroundRestores = 0;
         {
             ScreenshotController controller;
             ScreenshotSelectionParams selection;
             selection.selection = QRect(0, 0, 100, 60);
             ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
             ScreenshotControllerTestAccess::installSessionFocus(
-                controller, [&] { return std::make_unique<Target>(controller, restores, live); });
+                controller, [&] { return std::make_unique<Target>(controller, restores, live); },
+                std::make_unique<ScreenshotBackgroundWindowGuard>(
+                    ScreenshotBackgroundWindowGuard::Ports{[&] {
+                                                               return std::make_unique<Background>(
+                                                                   controller, suppressions,
+                                                                   backgroundRestores);
+                                                           },
+                                                           [] { return true; }}));
+            auto* overlay = ScreenshotControllerTestAccess::presentSelection(controller);
+            // Exercise the actual overlay's frozen/live-desktop transitions without
+            // acquiring frames or requiring Screen Recording permission offscreen.
+            for (bool scrolling : {true, false, true, false}) {
+                overlay->setScrollingCaptureMode(scrolling);
+                QCoreApplication::processEvents();
+                require(suppressions == 1 && backgroundRestores == 0,
+                        "scrolling and return to editing must retain background suppression");
+            }
             auto& commands = ScreenshotControllerTestAccess::commands(controller);
+            if (action == 0) {
+                ScreenshotControllerTestAccess::prepareScrollingSnapshot(
+                    controller, scrollingSnapshot(fixture()));
+                commands.setScrollingScreenshotAutoScroll(false);
+                commands.setMoveTool();
+                QCoreApplication::processEvents();
+                require(suppressions == 1 && backgroundRestores == 0 &&
+                            !controller.captureAvailable(),
+                        "stopping the scrolling controller must retain the capture's lease");
+            }
             switch (action) {
             case 0:
                 controller.mcpCancelCapture();
@@ -1951,12 +1996,16 @@ void screenshotSessionFocusRouting() {
                 QCoreApplication::processEvents();
                 require(restores == (action < 5 ? 1 : 0),
                         "late export completion must not restore focus again");
+                require(backgroundRestores == 1,
+                        "all terminal actions must restore background visibility once");
             }
         }
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCoreApplication::processEvents();
         require(live == 0 && (action != 7 || restores == 0),
                 "shutdown must discard the target and pending restoration");
+        require(action != 7 || backgroundRestores == 0,
+                "shutdown must release the lease without showing the main window");
         closePins();
     }
 }

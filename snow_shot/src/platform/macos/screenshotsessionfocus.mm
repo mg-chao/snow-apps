@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/platform/macos/screenshotsessionfocus.h"
+#include "widgets/detail/window_surface_observer.h"
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 
 #include <QApplication>
+#include <QEvent>
 #include <QPointer>
 #include <QThread>
 #include <QWidget>
@@ -83,6 +85,10 @@ class NativeFocusTarget final : public ScreenshotFocusTarget {
                 foreground.processIdentifier == NSProcessInfo.processInfo.processIdentifier);
     }
 
+    bool isExternalApplication() const override {
+        return m_application.processIdentifier != NSProcessInfo.processInfo.processIdentifier;
+    }
+
     void restore() override {
         if (!canRestore())
             return;
@@ -126,10 +132,102 @@ class NativeFocusTarget final : public ScreenshotFocusTarget {
     Element m_window;
     Element m_input;
 };
+
+NSWindow* nativeWindow(QWidget* widget) {
+    return widget && widget->internalWinId()
+               ? reinterpret_cast<NSView*>(widget->internalWinId()).window
+               : nil;
+}
+
+class NativeBackgroundWindow final : public QObject, public ScreenshotBackgroundWindow {
+  public:
+    explicit NativeBackgroundWindow(QWidget* widget)
+        : m_widget(widget), m_window([nativeWindow(widget) retain]),
+          m_surface(widget, [this] { validateSurface(); }, this, [this] { m_valid = false; }) {
+        widget->installEventFilter(this);
+    }
+    ~NativeBackgroundWindow() override {
+        [m_window release];
+    }
+    void suppress() override {
+        if (isValid())
+            [m_window orderOut:nil];
+    }
+    void restoreBehind() override {
+        if (isValid())
+            [m_window orderBack:nil];
+        m_valid = false;
+    }
+    bool isValid() const override {
+        return m_valid && m_widget && nativeWindow(m_widget) == m_window && m_widget->isVisible() &&
+               !m_widget->isMinimized() && !m_window.miniaturized &&
+               [NSApp.windows containsObject:m_window];
+    }
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        // Do not invalidate on Close: Qt can reject it. An accepted close hides
+        // or destroys the widget, whereas native orderOut only changes exposure.
+        if (event->type() == QEvent::Hide || event->type() == QEvent::Destroy ||
+            (event->type() == QEvent::WindowStateChange && m_widget && m_widget->isMinimized()))
+            m_valid = false;
+        return false;
+    }
+
+  private:
+    void validateSurface() {
+        if (nativeWindow(m_widget) != m_window)
+            m_valid = false;
+    }
+    QPointer<QWidget> m_widget;
+    NSWindow* m_window = nil;
+    bool m_valid = true;
+    adqt::widgets::detail::WindowSurfaceObserver m_surface;
+};
+
+std::unique_ptr<ScreenshotBackgroundWindowGuard>
+createBackgroundGuard(std::function<QWidget*()> window) {
+    if (!window)
+        return {};
+    auto guard =
+        std::make_unique<ScreenshotBackgroundWindowGuard>(ScreenshotBackgroundWindowGuard::Ports{
+            [window = std::move(window)]() -> std::unique_ptr<ScreenshotBackgroundWindow> {
+                if (QGuiApplication::platformName() != QStringLiteral("cocoa"))
+                    return {};
+                QWidget* widget = window();
+                NSWindow* native = nativeWindow(widget);
+                // isVisible includes fully occluded windows; occlusionState does not.
+                if (!widget || !widget->isVisible() || widget->isMinimized() || !native.visible ||
+                    native.miniaturized)
+                    return {};
+                return std::make_unique<NativeBackgroundWindow>(widget);
+            },
+            [] {
+                NSRunningApplication* application =
+                    NSWorkspace.sharedWorkspace.frontmostApplication;
+                return application &&
+                       application.processIdentifier != NSProcessInfo.processInfo.processIdentifier;
+            }});
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        const QPointer<ScreenshotBackgroundWindowGuard> lifetime(guard.get());
+        NSNotificationCenter* center = NSWorkspace.sharedWorkspace.notificationCenter;
+        id observer = [center addObserverForName:NSWorkspaceDidActivateApplicationNotification
+                                          object:nil
+                                           queue:NSOperationQueue.mainQueue
+                                      usingBlock:^(NSNotification*) {
+                                        if (lifetime)
+                                            lifetime->applicationActivated();
+                                      }];
+        QObject::connect(guard.get(), &QObject::destroyed,
+                         [center, observer] { [center removeObserver:observer]; });
+    }
+    return guard;
+}
 } // namespace
 
 std::unique_ptr<ScreenshotSessionFocus>
-createScreenshotSessionFocus(std::function<bool()> accessibilityTrusted) {
+createScreenshotSessionFocus(std::function<bool()> accessibilityTrusted,
+                             std::function<QWidget*()> backgroundWindow) {
     if (!accessibilityTrusted)
         accessibilityTrusted = [] { return AXIsProcessTrusted(); };
     return std::make_unique<ScreenshotSessionFocus>(
@@ -142,6 +240,7 @@ createScreenshotSessionFocus(std::function<bool()> accessibilityTrusted) {
             if (!application || application.terminated)
                 return {};
             return std::make_unique<NativeFocusTarget>(application, accessibilityTrusted);
-        });
+        },
+        createBackgroundGuard(std::move(backgroundWindow)));
 }
 } // namespace snow_shot::platform::macos

@@ -45,6 +45,8 @@ class ScreenshotControllerTestAccess {
 #ifdef Q_OS_MACOS
     static void
     installSessionFocus(ScreenshotController& controller,
-                        snow_shot::platform::macos::ScreenshotSessionFocus::Capture capture);
+                        snow_shot::platform::macos::ScreenshotSessionFocus::Capture capture,
+                        std::unique_ptr<snow_shot::platform::macos::ScreenshotBackgroundWindowGuard>
+                            background = {});
 #endif
 };
