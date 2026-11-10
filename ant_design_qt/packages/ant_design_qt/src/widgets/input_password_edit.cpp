@@ -19,7 +19,6 @@ AdPasswordEdit::AdPasswordEdit(QWidget* parent) : AdLineEdit(parent) {
   QLineEdit::setEchoMode(QLineEdit::Password);
   setTrailingActionLeading(true);
   if (QToolButton* actionButton = trailingActionButton()) {
-    actionButton->setFocusPolicy(Qt::StrongFocus);
     connect(actionButton, &QToolButton::clicked, this, [this]() {
       if (!revealActionVisible_ || !isEnabled()) {
         return;
@@ -103,7 +102,9 @@ void AdPasswordEdit::changeEvent(QEvent* event) {
 void AdPasswordEdit::updateToggleVisual() {
   setTrailingActionVisible(revealActionVisible_);
   if (QToolButton* actionButton = trailingActionButton()) {
-    actionButton->setFocusPolicy(revealActionVisible_ ? Qt::StrongFocus : Qt::NoFocus);
+    // Like the clear action, revealing text must not add an extra field Tab stop
+    // or take editing focus when clicked.
+    actionButton->setFocusPolicy(Qt::NoFocus);
   }
   if (!revealActionVisible_) {
     setTrailingActionAccessibleName(QString());

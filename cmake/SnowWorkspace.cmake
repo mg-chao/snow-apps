@@ -137,7 +137,7 @@ function(snow_workspace_configure_options)
             set(SNOW_APPS_API_BASE_URL "https://snowshot.top" CACHE STRING
                 "Default Snow Shot API base URL. Set explicitly for reproducible builds." FORCE)
         elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set(SNOW_APPS_API_BASE_URL "http://localhost:8080" CACHE STRING
+            set(SNOW_APPS_API_BASE_URL "https://test.snowshot.top" CACHE STRING
                 "Default Snow Shot API base URL." FORCE)
         else()
             set(SNOW_APPS_API_BASE_URL "https://snowshot.top" CACHE STRING

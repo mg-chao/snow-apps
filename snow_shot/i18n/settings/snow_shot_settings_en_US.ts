@@ -2,6 +2,320 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
     <context>
+        <name>AccountPageWidget</name>
+        <message>
+            <source>3–32 letters, numbers, _, . or -</source>
+            <translation>3–32 letters, numbers, _, . or -</translation>
+        </message>
+        <message>
+            <source>8–16 characters</source>
+            <translation>8–16 characters</translation>
+        </message>
+        <message>
+            <source>Account</source>
+            <translation>Account</translation>
+        </message>
+        <message>
+            <source>Account linked</source>
+            <translation>Account linked</translation>
+        </message>
+        <message>
+            <source>Account transactions</source>
+            <translation>Account transactions</translation>
+        </message>
+        <message>
+            <source>Activate %1</source>
+            <translation>Activate %1</translation>
+        </message>
+        <message>
+            <source>Already have an account? Sign in</source>
+            <translation>Already have an account? Sign in</translation>
+        </message>
+        <message>
+            <source>Available credits</source>
+            <translation>Available credits</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Cancel payment</source>
+            <translation>Cancel payment</translation>
+        </message>
+        <message>
+            <source>Code valid for %1:%2 · Valid until %3</source>
+            <translation>Code valid for %1:%2 · Valid until %3</translation>
+        </message>
+        <message>
+            <source>Completed</source>
+            <translation>Completed</translation>
+        </message>
+        <message>
+            <source>Confirm password</source>
+            <translation>Confirm password</translation>
+        </message>
+        <message>
+            <source>Confirming payment</source>
+            <translation>Confirming payment</translation>
+        </message>
+        <message>
+            <source>Continue</source>
+            <translation>Continue</translation>
+        </message>
+        <message>
+            <source>Create an account</source>
+            <translation>Create an account</translation>
+        </message>
+        <message>
+            <source>Create your account</source>
+            <translation>Create your account</translation>
+        </message>
+        <message>
+            <source>Credits</source>
+            <translation>Credits</translation>
+        </message>
+        <message>
+            <source>Date</source>
+            <translation>Date</translation>
+        </message>
+        <message>
+            <source>Failed</source>
+            <translation>Failed</translation>
+        </message>
+        <message>
+            <source>I have read and agree to the %1 and %2</source>
+            <translation>I have read and agree to the %1 and %2</translation>
+        </message>
+        <message>
+            <source>I've paid</source>
+            <translation>I've paid</translation>
+        </message>
+        <message>
+            <source>Image code</source>
+            <translation>Image code</translation>
+        </message>
+        <message>
+            <source>Load more</source>
+            <translation>Load more</translation>
+        </message>
+        <message>
+            <source>Manage and view account data</source>
+            <translation>Manage and view account data</translation>
+        </message>
+        <message>
+            <source>No transactions yet</source>
+            <translation>No transactions yet</translation>
+        </message>
+        <message>
+            <source>Order ID: %1</source>
+            <translation>Order ID: %1</translation>
+        </message>
+        <message>
+            <source>Outstanding balance: %1</source>
+            <translation>Outstanding balance: %1</translation>
+        </message>
+        <message>
+            <source>Paid calls are paused. Your free allowance remains available. New purchases pay this balance first</source>
+            <translation>Paid calls are paused. Your free allowance remains available. New purchases pay this balance first</translation>
+        </message>
+        <message>
+            <source>Password</source>
+            <translation>Password</translation>
+        </message>
+        <message>
+            <source>Payment confirmation continues after the code's original expiry</source>
+            <translation>Payment confirmation continues after the code's original expiry</translation>
+        </message>
+        <message>
+            <source>Payment failed or the order was closed</source>
+            <translation>Payment failed or the order was closed</translation>
+        </message>
+        <message>
+            <source>Payment received</source>
+            <translation>Payment received</translation>
+        </message>
+        <message>
+            <source>Pending</source>
+            <translation>Pending</translation>
+        </message>
+        <message>
+            <source>Privacy policy</source>
+            <translation>Privacy policy</translation>
+        </message>
+        <message>
+            <source>Processing</source>
+            <translation>Processing</translation>
+        </message>
+        <message>
+            <source>Purchase credits</source>
+            <translation>Purchase credits</translation>
+        </message>
+        <message>
+            <source>Purchase credits for %1</source>
+            <translation>Purchase credits for %1</translation>
+        </message>
+        <message>
+            <source>Purchases are currently unavailable. Your account and transaction records are still available</source>
+            <translation>Purchases are currently unavailable. Your account and transaction records are still available</translation>
+        </message>
+        <message>
+            <source>Refresh</source>
+            <translation>Refresh</translation>
+        </message>
+        <message>
+            <source>Refresh code</source>
+            <translation>Refresh code</translation>
+        </message>
+        <message>
+            <source>Refund</source>
+            <translation>Refund</translation>
+        </message>
+        <message>
+            <source>Register and continue</source>
+            <translation>Register and continue</translation>
+        </message>
+        <message>
+            <source>Registration image code</source>
+            <translation>Registration image code</translation>
+        </message>
+        <message>
+            <source>Return to registration and generate a new code. Your previous order records are retained</source>
+            <translation>Return to registration and generate a new code. Your previous order records are retained</translation>
+        </message>
+        <message>
+            <source>Scan this Mini Program code with WeChat</source>
+            <translation>Scan this Mini Program code with WeChat</translation>
+        </message>
+        <message>
+            <source>Scan with your own WeChat account. An existing temporary account will be linked and signed in automatically using these desktop credentials. Otherwise, select a package and confirm your order. The WeChat link cannot be changed</source>
+            <translation>Scan with your own WeChat account. An existing temporary account will be linked and signed in automatically using these desktop credentials. Otherwise, select a package and confirm your order. The WeChat link cannot be changed</translation>
+        </message>
+        <message>
+            <source>Sign in</source>
+            <translation>Sign in</translation>
+        </message>
+        <message>
+            <source>Sign in to Snow Shot</source>
+            <translation>Sign in to Snow Shot</translation>
+        </message>
+        <message>
+            <source>Sign in to an existing account</source>
+            <translation>Sign in to an existing account</translation>
+        </message>
+        <message>
+            <source>Sign out</source>
+            <translation>Sign out</translation>
+        </message>
+        <message>
+            <source>Status</source>
+            <translation>Status</translation>
+        </message>
+        <message>
+            <source>The account service is unavailable</source>
+            <translation>The account service is unavailable</translation>
+        </message>
+        <message>
+            <source>The payment result is still being checked</source>
+            <translation>The payment result is still being checked</translation>
+        </message>
+        <message>
+            <source>This purchase code has expired</source>
+            <translation>This purchase code has expired</translation>
+        </message>
+        <message>
+            <source>Top-up</source>
+            <translation>Top-up</translation>
+        </message>
+        <message>
+            <source>Top-ups, usage charges, and refunds</source>
+            <translation>Top-ups, usage charges, and refunds</translation>
+        </message>
+        <message>
+            <source>Top-ups, usage charges, and refunds appear here</source>
+            <translation>Top-ups, usage charges, and refunds appear here</translation>
+        </message>
+        <message>
+            <source>Total top-ups: %1</source>
+            <translation>Total top-ups: %1</translation>
+        </message>
+        <message>
+            <source>Transaction</source>
+            <translation>Transaction</translation>
+        </message>
+        <message>
+            <source>Usage</source>
+            <translation>Usage</translation>
+        </message>
+        <message>
+            <source>User agreement</source>
+            <translation>User agreement</translation>
+        </message>
+        <message>
+            <source>Username</source>
+            <translation>Username</translation>
+        </message>
+        <message>
+            <source>Waiting for payment</source>
+            <translation>Waiting for payment</translation>
+        </message>
+    </context>
+    <context>
+        <name>AccountSessionService</name>
+        <message>
+            <source>Complete your first payment to activate this account</source>
+            <translation>Complete your first payment to activate this account</translation>
+        </message>
+        <message>
+            <source>Payment has not been confirmed. We will keep checking</source>
+            <translation>Payment has not been confirmed. We will keep checking</translation>
+        </message>
+        <message>
+            <source>Purchases are currently unavailable. Please try again later</source>
+            <translation>Purchases are currently unavailable. Please try again later</translation>
+        </message>
+        <message>
+            <source>The image code is incorrect or expired. Refresh it and try again</source>
+            <translation>The image code is incorrect or expired. Refresh it and try again</translation>
+        </message>
+        <message>
+            <source>The passwords do not match</source>
+            <translation>The passwords do not match</translation>
+        </message>
+        <message>
+            <source>The payment result needs confirmation. Your request remains reserved</source>
+            <translation>The payment result needs confirmation. Your request remains reserved</translation>
+        </message>
+        <message>
+            <source>The username or password is incorrect</source>
+            <translation>The username or password is incorrect</translation>
+        </message>
+        <message>
+            <source>This purchase code has expired. Generate a new code to continue</source>
+            <translation>This purchase code has expired. Generate a new code to continue</translation>
+        </message>
+        <message>
+            <source>This purchase must use the WeChat account linked to your Snow Shot account</source>
+            <translation>This purchase must use the WeChat account linked to your Snow Shot account</translation>
+        </message>
+        <message>
+            <source>This username is already taken or temporarily reserved</source>
+            <translation>This username is already taken or temporarily reserved</translation>
+        </message>
+        <message>
+            <source>Too many requests. Wait a moment and try again</source>
+            <translation>Too many requests. Wait a moment and try again</translation>
+        </message>
+        <message>
+            <source>Unable to complete the request. Check your connection and try again</source>
+            <translation>Unable to complete the request. Check your connection and try again</translation>
+        </message>
+        <message>
+            <source>Your session has expired. Sign in again</source>
+            <translation>Your session has expired. Sign in again</translation>
+        </message>
+    </context>
+    <context>
         <name>AdministratorLaunch</name>
         <message>
             <source> Recovery failed: %1</source>
@@ -1218,6 +1532,10 @@
         <message>
             <source>Accessibility</source>
             <translation>Accessibility</translation>
+        </message>
+        <message>
+            <source>Account</source>
+            <translation>Account</translation>
         </message>
         <message>
             <source>Accuracy first</source>
@@ -3062,6 +3380,10 @@
         <message>
             <source>Medium V6</source>
             <translation>Medium V6</translation>
+        </message>
+        <message>
+            <source>Membership, credits and transactions</source>
+            <translation>Membership, credits and transactions</translation>
         </message>
         <message>
             <source>Memory optimization policy</source>
@@ -5607,6 +5929,49 @@ Unavailable: %2</translation>
         <message>
             <source>Youdao</source>
             <translation>Youdao</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::AccountSessionService</name>
+        <message>
+            <source>%1 credits</source>
+            <translation>%1 credits</translation>
+        </message>
+        <message>
+            <source>Confirm your password</source>
+            <translation>Confirm your password</translation>
+        </message>
+        <message>
+            <source>Enter the image code</source>
+            <translation>Enter the image code</translation>
+        </message>
+        <message>
+            <source>Enter your password</source>
+            <translation>Enter your password</translation>
+        </message>
+        <message>
+            <source>Enter your username</source>
+            <translation>Enter your username</translation>
+        </message>
+        <message>
+            <source>This payment is already being processed. We will keep checking its result</source>
+            <translation>This payment is already being processed. We will keep checking its result</translation>
+        </message>
+        <message>
+            <source>Use 3–32 letters, numbers, underscores, dots, or hyphens for your username</source>
+            <translation>Use 3–32 letters, numbers, underscores, dots, or hyphens for your username</translation>
+        </message>
+        <message>
+            <source>Use a password between 8 and 16 characters</source>
+            <translation>Use a password between 8 and 16 characters</translation>
+        </message>
+        <message>
+            <source>Your account is activated. Sign in with your username and password if automatic sign-in does not complete</source>
+            <translation>Your account is activated. Sign in with your username and password if automatic sign-in does not complete</translation>
+        </message>
+        <message>
+            <source>Your session could not be saved securely. Keep this app open until payment is confirmed; you may need to sign in again after restarting</source>
+            <translation>Your session could not be saved securely. Keep this app open until payment is confirmed; you may need to sign in again after restarting</translation>
         </message>
     </context>
     <context>

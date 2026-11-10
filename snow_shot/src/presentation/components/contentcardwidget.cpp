@@ -3,6 +3,10 @@
 #include "snow_shot/app/editionfeatures.h"
 
 #include "snow_shot/presentation/components/aboutpagewidget.h"
+#if !SNOW_SHOT_EDITION_MINI
+#include "snow_shot/presentation/components/accountpagewidget.h"
+#include "snow_shot/app/accountsessionservice.h"
+#endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/components/translationpagewidget.h"
 #endif
@@ -197,6 +201,11 @@ QWidget* ContentCardWidget::createPage(
         page = translationPage;
 #endif
 
+    } else if (definition.kind == snow_shot::presentation::settings::SettingsPageKind::Account) {
+#if !SNOW_SHOT_EDITION_MINI
+        page = new AccountPageWidget(
+            snow_shot::app::AccountSessionService::forClient(m_translationClient), m_stack);
+#endif
     } else if (definition.kind == snow_shot::presentation::settings::SettingsPageKind::About) {
         page = new AboutPageWidget(m_stack);
     } else {

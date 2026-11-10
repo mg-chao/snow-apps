@@ -32,6 +32,7 @@ void temporaryRateLimitsRetryWithoutLosingResults() {
         return rateLimitResponse();
     };
     SnowShotApiClient client(server.url());
+    client.setAccountAccessToken("account-session");
     QObject receiver;
     int completions = 0;
     QString output;
@@ -51,8 +52,9 @@ void temporaryRateLimitsRetryWithoutLosingResults() {
             "temporary admission rejection is retried before completing the consumer");
     require(rejectedAt.elapsed() >= 1000, "automatic retry respects Retry-After");
     require(server.streams[0].body == server.streams[1].body &&
-                server.streams[0].headers != server.streams[1].headers,
-            "retry preserves input and uses a new request identity");
+                server.streams[0].headers == server.streams[1].headers &&
+                server.streams[0].headers.contains("Authorization: Bearer account-session"),
+            "retry preserves the billing identity and official account authorization");
     server.delta(1, QStringLiteral("translated"));
     server.finish(1);
     waitUntil([&] { return completions == 1; }, "retried translation completes once");

@@ -57,7 +57,7 @@
         "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
         "SNOW_APPS_RELEASE_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
-        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_APPS_API_BASE_URL": "http://localhost:5101",
         "SNOW_IMAGE_PROFILE": "full",
         "SNOW_IMAGE_DEFAULT_LINKAGE": "static"
       }
@@ -99,7 +99,7 @@
         "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
         "SNOW_APPS_RELEASE_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
-        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_APPS_API_BASE_URL": "https://test.snowshot.top",
         "SNOW_IMAGE_PROFILE": "full",
         "SNOW_IMAGE_DEFAULT_LINKAGE": "static"
       }
@@ -208,7 +208,7 @@
         "SNOW_APPS_RELEASE_STATIC": "OFF",
         "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
-        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_APPS_API_BASE_URL": "https://test.snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
       }
     },
@@ -273,7 +273,7 @@
         "SNOW_APPS_RELEASE_STATIC": "OFF",
         "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
-        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_APPS_API_BASE_URL": "https://test.snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON",
         "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "OFF"
       }
@@ -379,7 +379,7 @@
         "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
         "SNOW_APPS_RELEASE_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
-        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_APPS_API_BASE_URL": "https://test.snowshot.top",
         "SNOW_IMAGE_PROFILE": "full",
         "SNOW_IMAGE_DEFAULT_LINKAGE": "static",
         "VCPKG_MANIFEST_FEATURES": "snow-shot;full-codecs",
