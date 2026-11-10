@@ -869,6 +869,9 @@ void autoHiddenRecordingToolbarRetainsAreaShortcuts() {
         press(*receiver, Qt::Key_F8);
         require(resumes == beforeResumes + 1 && !toolbar.isVisible(),
                 "recording resume must remain available from both area surfaces while auto-hidden");
+        // This fixture has no controller to publish the resumed state. Do so
+        // before the next focus() drains the queued auto-hide reconciliation.
+        palette->setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
         const int beforeCloses = closes;
         press(*receiver, Qt::Key_F9);
         require(closes == beforeCloses + 1,

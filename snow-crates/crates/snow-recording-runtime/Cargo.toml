@@ -94,7 +94,7 @@ bench-pipeline-timing = ["snow-capture/stage-timing", "snow-recording-export/ben
 # inputs (cursor, clicks, keys) with synthetic observations instead of OS
 # input injection. Sessions opt in explicitly; production builds that enable
 # none of the bench features compile the hooks-only path unchanged.
-bench-synthetic-input = ["snow-recording-effects/bench-synthetic-input", "snow-recording-effects/bench-experiments", "snow-recording-export/bench-experiments"]
+bench-synthetic-input = ["snow-recording-effects/bench-synthetic-input", "snow-recording-effects/bench-experiments", "snow-recording-export/bench-experiments", "snow-capture/bench-follow-mouse"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 snow-macos = { path = "../snow-macos" }

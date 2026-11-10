@@ -83,6 +83,11 @@ impl CaptureSystem {
         self.backend.monitor_layout()
     }
 
+    #[cfg(windows)]
+    pub(crate) fn display_generation(&self) -> CaptureResult<Option<u64>> {
+        self.backend.checked_display_generation()
+    }
+
     pub fn refresh_display_configuration(&self) -> CaptureResult<()> {
         self.backend.refresh_display_configuration()
     }

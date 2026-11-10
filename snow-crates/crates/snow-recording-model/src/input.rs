@@ -11,7 +11,7 @@ use crate::{
     read_recording_bundle_footer,
 };
 
-const INPUT_MAGIC: &[u8; 11] = b"SNOWINPUT\0\x02";
+const INPUT_MAGIC: &[u8; 11] = b"SNOWINPUT\0\x03";
 pub const MAX_INPUT_EVENT_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -79,7 +79,85 @@ pub struct RecordedMouseClick {
     pub key: KeyEventRecord,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+/// Affine reprojection of spatial input history when the capture viewport moves.
+/// Coordinates are in the recorded input canvas; observation ages are unchanged.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PointerTransform {
+    pub scale: [f64; 2],
+    pub offset: [f64; 2],
+}
+
+impl PointerTransform {
+    pub fn between(
+        previous: snow_media::geometry::DesktopRect,
+        previous_destination: snow_media::geometry::PixelRect,
+        next: snow_media::geometry::DesktopRect,
+        next_destination: snow_media::geometry::PixelRect,
+    ) -> Result<Self> {
+        previous
+            .validate()
+            .map_err(|_| invalid("invalid previous pointer viewport"))?;
+        next.validate()
+            .map_err(|_| invalid("invalid next pointer viewport"))?;
+        if previous.space != next.space
+            || previous_destination.width == 0
+            || previous_destination.height == 0
+            || next_destination.width == 0
+            || next_destination.height == 0
+        {
+            return Err(invalid("incompatible pointer viewports"));
+        }
+        let scale = [
+            previous.width / f64::from(previous_destination.width)
+                * f64::from(next_destination.width)
+                / next.width,
+            previous.height / f64::from(previous_destination.height)
+                * f64::from(next_destination.height)
+                / next.height,
+        ];
+        let result = Self {
+            scale,
+            offset: [
+                f64::from(next_destination.x)
+                    + (previous.x - next.x) * f64::from(next_destination.width) / next.width
+                    - f64::from(previous_destination.x) * scale[0],
+                f64::from(next_destination.y)
+                    + (previous.y - next.y) * f64::from(next_destination.height) / next.height
+                    - f64::from(previous_destination.y) * scale[1],
+            ],
+        };
+        result.validate()?;
+        Ok(result)
+    }
+
+    pub fn validate(self) -> Result<()> {
+        if self.scale.into_iter().any(|v| !v.is_finite() || v <= 0.0)
+            || self.offset.into_iter().any(|v| !v.is_finite())
+        {
+            return Err(invalid("invalid pointer viewport transform"));
+        }
+        Ok(())
+    }
+
+    pub fn project(self, point: (i32, i32)) -> (i32, i32) {
+        (
+            (f64::from(point.0) * self.scale[0] + self.offset[0]).round() as i32,
+            (f64::from(point.1) * self.scale[1] + self.offset[1]).round() as i32,
+        )
+    }
+
+    pub fn for_output(self, source: (u32, u32), output: (u32, u32)) -> Self {
+        Self {
+            scale: self.scale,
+            offset: [
+                self.offset[0] * f64::from(output.0) / f64::from(source.0.max(1)),
+                self.offset[1] * f64::from(output.1) / f64::from(source.1.max(1)),
+            ],
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum RecordedInput {
     CursorShape(CursorShapeRecord),
     Cursor(CursorFrameRecord),
@@ -98,9 +176,11 @@ pub enum RecordedInput {
     KeyboardReset,
     /// Vertical wheel observation; key carries direction, localized label and original time.
     Scroll(KeyEventRecord),
+    /// Reproject existing mouse effects through a moving viewport, without resetting keys.
+    PointerViewport(PointerTransform),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RecordedInputEvent {
     /// Pause-free admission time. Original observation times remain in the payload.
     pub timestamp_ms: u64,
@@ -112,6 +192,7 @@ pub struct RecordedInputEvent {
 impl RecordedInputEvent {
     pub fn validate(&self) -> Result<()> {
         match &self.event {
+            RecordedInput::PointerViewport(transform) => transform.validate()?,
             RecordedInput::CursorShape(shape) => {
                 let expected = u64::from(shape.width) * u64::from(shape.height) * 4;
                 if shape.width == 0
@@ -245,7 +326,7 @@ impl InputStoreReader {
         let mut input = BufReader::with_capacity(64 * 1024, file.take(len));
         let mut magic = [0u8; INPUT_MAGIC.len()];
         input.read_exact(&mut magic)?;
-        if &magic != INPUT_MAGIC && &magic != b"SNOWINPUT\0\x01" {
+        if &magic != INPUT_MAGIC && &magic != b"SNOWINPUT\0\x02" && &magic != b"SNOWINPUT\0\x01" {
             return Err(invalid("unsupported input store format"));
         }
         Ok(Self {
@@ -310,6 +391,71 @@ impl InputStoreReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn follow_mouse_viewport_roundtrips_and_rejects_invalid_transforms() {
+        let path = path();
+        let transform = PointerTransform {
+            scale: [2.0, 2.0],
+            offset: [-400.0, 100.0],
+        };
+        assert_eq!(transform.project((210, -40)), (20, 20));
+        let event = RecordedInputEvent {
+            timestamp_ms: 32,
+            sequence: 1,
+            event: RecordedInput::PointerViewport(transform),
+        };
+        let mut writer = InputStoreWriter::new(&path).unwrap();
+        writer.push(&event).unwrap();
+        writer.finish().unwrap();
+        assert_eq!(
+            InputStoreReader::open(&path).unwrap().next_event().unwrap(),
+            Some(event)
+        );
+        std::fs::remove_file(path).unwrap();
+        for transform in [
+            PointerTransform {
+                scale: [0.0, 1.0],
+                offset: [0.0; 2],
+            },
+            PointerTransform {
+                scale: [1.0; 2],
+                offset: [f64::NAN, 0.0],
+            },
+        ] {
+            assert!(transform.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn follow_mouse_viewport_projects_through_desktop_and_padded_canvas() {
+        use snow_media::geometry::{DesktopRect, DesktopSpace, PixelRect};
+        let previous = DesktopRect {
+            space: DesktopSpace::PhysicalPixels,
+            x: -1000.0,
+            y: 100.0,
+            width: 800.0,
+            height: 600.0,
+        };
+        let next = DesktopRect {
+            x: -600.0,
+            y: 200.0,
+            width: 400.0,
+            height: 300.0,
+            ..previous
+        };
+        let rect = PixelRect {
+            x: 10,
+            y: 20,
+            width: 800,
+            height: 600,
+        };
+        let transform = PointerTransform::between(previous, rect, next, rect).unwrap();
+        // Old point (-500,250) becomes (200,100) in the new source, plus padding.
+        assert_eq!(transform.project((510, 170)), (210, 120));
+        let inverse = PointerTransform::between(next, rect, previous, rect).unwrap();
+        assert_eq!(inverse.project(transform.project((510, 170))), (510, 170));
+    }
 
     #[test]
     fn scroll_records_roundtrip_and_legacy_input_remains_readable() {

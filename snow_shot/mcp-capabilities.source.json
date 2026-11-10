@@ -371,6 +371,9 @@
           "capture_toolbar": {
             "type": "boolean"
           },
+          "follow_mouse": {
+            "type": "boolean"
+          },
           "show_cursor": {
             "type": "boolean"
           },

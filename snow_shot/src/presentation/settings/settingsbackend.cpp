@@ -3165,6 +3165,9 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
             {QStringLiteral("screen_recording/enable_webcam"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/enable_webcam"))},
+            {QStringLiteral("screen_recording/follow_mouse"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/follow_mouse"))},
             {QStringLiteral("screen_recording/webcam_size"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/webcam_size"))},

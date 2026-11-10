@@ -132,7 +132,12 @@ pub(crate) fn prepare_capture(
     use std::time::{Duration, Instant};
     crate::capture_policy::try_recording_gpu_capture(config.capture_backend, |backend| {
         diagnostics.stage = Some("capture_startup".into());
-        let stream = GpuCaptureStream::spawn(
+        let spawn = if config.follow_mouse {
+            GpuCaptureStream::spawn_follow_mouse
+        } else {
+            GpuCaptureStream::spawn
+        };
+        let stream = spawn(
             snow_capture::CaptureRegion {
                 x: config.region.x,
                 y: config.region.y,

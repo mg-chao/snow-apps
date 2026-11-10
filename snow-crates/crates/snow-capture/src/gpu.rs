@@ -12,6 +12,7 @@ use crate::CaptureRegion;
 use crate::backend::CaptureBackendKind;
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::FrameMetadata;
+use crate::monitor::MonitorKey;
 use crate::platform::windows::{duplication, monitor, wgc};
 
 mod stream;
@@ -21,7 +22,7 @@ pub use stream::{GpuCaptureEvent, GpuCaptureStream};
 pub struct GpuCapturedFrame {
     pub layers: Vec<VideoLayer>,
     dimensions: (u32, u32),
-    metadata: Arc<FrameMetadata>,
+    pub(crate) metadata: Arc<FrameMetadata>,
 }
 
 impl GpuCapturedFrame {
@@ -99,6 +100,24 @@ struct LayerSource {
     delivered: Option<u64>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct PreparedMonitor {
+    pub key: MonitorKey,
+    pub bounds: Rect,
+}
+
+impl PreparedMonitor {
+    fn accepts(self, key: MonitorKey, bounds: Rect) -> CaptureResult<bool> {
+        if key != self.key {
+            return Ok(false);
+        }
+        if bounds != self.bounds {
+            return Err(CaptureError::ResolutionChanged(bounds.width, bounds.height));
+        }
+        Ok(true)
+    }
+}
+
 /// Construct and use on the capture thread; WGC apartment lifetime stays there.
 pub struct GpuCaptureSession {
     device: SharedDevice,
@@ -122,6 +141,24 @@ impl GpuCaptureSession {
             .sum()
     }
     pub fn open(region: CaptureRegion, backend: CaptureBackendKind) -> CaptureResult<Self> {
+        Self::open_impl(region, backend, None, None)
+    }
+
+    pub(crate) fn open_follow(
+        region: CaptureRegion,
+        backend: CaptureBackendKind,
+        device: Option<SharedDevice>,
+        monitor: PreparedMonitor,
+    ) -> CaptureResult<Self> {
+        Self::open_impl(region, backend, device, Some(monitor))
+    }
+
+    fn open_impl(
+        region: CaptureRegion,
+        backend: CaptureBackendKind,
+        device: Option<SharedDevice>,
+        prepared: Option<PreparedMonitor>,
+    ) -> CaptureResult<Self> {
         let monitors = monitor::enumerate_resolved()?;
         let mut overlapping = Vec::new();
         for monitor in monitors {
@@ -133,12 +170,23 @@ impl GpuCaptureSession {
                 width: (rect.right - rect.left) as u32,
                 height: (rect.bottom - rect.top) as u32,
             };
+            if let Some(prepared) = prepared
+                && !prepared.accepts(monitor.key, desktop)?
+            {
+                continue;
+            }
             if let Some(intersection) = intersect(region, desktop)? {
                 overlapping.push((monitor, desktop, intersection));
             }
         }
         let first = overlapping.first().ok_or_else(|| {
-            CaptureError::InvalidTarget("GPU recording region does not intersect a display".into())
+            if prepared.is_some() {
+                CaptureError::MonitorLost
+            } else {
+                CaptureError::InvalidTarget(
+                    "GPU recording region does not intersect a display".into(),
+                )
+            }
         })?;
         let identity =
             AdapterIdentity::inspect(&first.0.adapter).map_err(CaptureError::platform)?;
@@ -151,16 +199,32 @@ impl GpuCaptureSession {
                 ));
             }
         }
-        let device = SharedDevice::create(&first.0.adapter).map_err(CaptureError::platform)?;
+        let device = match device {
+            Some(device)
+                if backend == CaptureBackendKind::WindowsGraphicsCapture
+                    || device.identity().luid == identity.luid =>
+            {
+                device
+            }
+            _ => SharedDevice::create(&first.0.adapter).map_err(CaptureError::platform)?,
+        };
         let mut sources = Vec::new();
         for (monitor, desktop, intersection) in overlapping {
             let source = create_gpu_source(backend, |kind| match kind {
-                CaptureBackendKind::DxgiDuplication => Ok(Source::Dxgi(Box::new(
-                    duplication::GpuDxgiCapturer::new(&monitor, device.clone())?,
-                ))),
-                CaptureBackendKind::WindowsGraphicsCapture => Ok(Source::Wgc(Box::new(
-                    wgc::GpuWgcCapturer::new(&monitor, device.clone())?,
-                ))),
+                CaptureBackendKind::DxgiDuplication => {
+                    let mut source = duplication::GpuDxgiCapturer::new(&monitor, device.clone())?;
+                    if prepared.is_some() {
+                        source.enable_following((desktop.width, desktop.height));
+                    }
+                    Ok(Source::Dxgi(Box::new(source)))
+                }
+                CaptureBackendKind::WindowsGraphicsCapture => {
+                    let mut source = wgc::GpuWgcCapturer::new(&monitor, device.clone())?;
+                    if prepared.is_some() {
+                        source.enable_following((desktop.width, desktop.height));
+                    }
+                    Ok(Source::Wgc(Box::new(source)))
+                }
                 _ => Err(CaptureError::BackendUnavailable(
                     "selected backend has no GPU frame delivery".into(),
                 )),
@@ -189,7 +253,42 @@ impl GpuCaptureSession {
         &self.device
     }
 
+    pub(crate) fn set_follow_region(&mut self, region: CaptureRegion) -> CaptureResult<()> {
+        if self.region == region {
+            return Ok(());
+        }
+        if self.sources.len() != 1 {
+            return Err(CaptureError::InvalidTarget(
+                "following requires one monitor".into(),
+            ));
+        }
+        let source = &mut self.sources[0];
+        let intersection = intersect(region, source.desktop)?.ok_or_else(|| {
+            CaptureError::InvalidTarget("following crop left its prepared monitor".into())
+        })?;
+        if intersection.width != region.width || intersection.height != region.height {
+            return Err(CaptureError::InvalidTarget(
+                "following crop exceeds its monitor".into(),
+            ));
+        }
+        source.intersection = intersection;
+        source.delivered = None;
+        self.region = region;
+        Ok(())
+    }
+
     pub fn capture(&mut self) -> CaptureResult<GpuCapturedFrame> {
+        self.capture_impl(true)
+    }
+
+    pub(crate) fn capture_follow(&mut self) -> CaptureResult<GpuCapturedFrame> {
+        // The follow owner has already sampled the exact pointer observation
+        // used to choose this crop; decoding another shape here wastes GDI work
+        // and could attach a pointer from a different observation.
+        self.capture_impl(false)
+    }
+
+    fn capture_impl(&mut self, sample_cursor: bool) -> CaptureResult<GpuCapturedFrame> {
         let started = Instant::now();
         let mut layers = Vec::with_capacity(self.sources.len());
         let mut generations = Vec::with_capacity(self.sources.len());
@@ -241,7 +340,7 @@ impl GpuCaptureSession {
         }
         metadata.sequence = self.sequence;
         metadata.content_generation = Some(self.generation);
-        if let Ok(snapshot) = self.cursor.sample() {
+        if sample_cursor && let Ok(snapshot) = self.cursor.sample() {
             metadata.cursor = Some(project_cursor(
                 &mut self.projector,
                 &mut self.cursor_shape,
@@ -263,7 +362,7 @@ impl GpuCaptureSession {
     }
 }
 
-fn project_cursor(
+pub(crate) fn project_cursor(
     projector: &mut CursorProjector,
     retained: &mut Option<CursorShape>,
     target: &CursorTargetInfo,
@@ -333,6 +432,29 @@ pub(crate) fn native_crop(crop: Rect, size: (u32, u32), rotation: u32) -> Captur
         width: w as u32,
         height: h as u32,
     })
+}
+
+/// A moving source is tied to the monitor geometry used to prepare it. Detect
+/// native resizes before crop validation, including resizes whose notification
+/// has not reached display discovery yet. Invalid crops remain terminal errors.
+pub(crate) fn follow_native_crop(
+    crop: Rect,
+    size: (u32, u32),
+    rotation: u32,
+    expected: (u32, u32),
+) -> CaptureResult<Rect> {
+    if rotation > 3 {
+        return native_crop(crop, size, rotation);
+    }
+    let oriented = if rotation.is_multiple_of(2) {
+        size
+    } else {
+        (size.1, size.0)
+    };
+    if oriented != expected {
+        return Err(CaptureError::ResolutionChanged(oriented.0, oriented.1));
+    }
+    native_crop(crop, size, rotation)
 }
 
 /// Copy while the acquisition/canonical source is still owned. The shared
@@ -418,6 +540,81 @@ pub(crate) fn acquire_conversion_output(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn follow_mouse_native_resize_is_recoverable_before_validating_the_old_crop() {
+        let crop = Rect::full((1600, 900));
+        assert!(matches!(
+            follow_native_crop(crop, (1280, 720), 0, (1920, 1080)),
+            Err(CaptureError::ResolutionChanged(1280, 720))
+        ));
+        assert!(matches!(
+            native_crop(crop, (1280, 720), 0),
+            Err(CaptureError::InvalidTarget(_))
+        ));
+        // Even a small crop that still fits cannot publish stale geometry.
+        assert!(matches!(
+            follow_native_crop(Rect::full((10, 10)), (1280, 720), 0, (1920, 1080)),
+            Err(CaptureError::ResolutionChanged(1280, 720))
+        ));
+        for rotation in 0..4 {
+            let size = if rotation % 2 == 0 {
+                (1920, 1080)
+            } else {
+                (1080, 1920)
+            };
+            assert_eq!(
+                follow_native_crop(crop, size, rotation, (1920, 1080)).unwrap(),
+                native_crop(crop, size, rotation).unwrap()
+            );
+        }
+        assert!(matches!(
+            follow_native_crop(Rect::full((2000, 1000)), (1920, 1080), 0, (1920, 1080)),
+            Err(CaptureError::InvalidTarget(_))
+        ));
+        assert!(matches!(
+            follow_native_crop(crop, (1280, 720), 4, (1920, 1080)),
+            Err(CaptureError::InvalidConfig(_))
+        ));
+    }
+
+    #[test]
+    fn follow_mouse_open_requires_the_prepared_monitor_identity_and_bounds() {
+        let key = MonitorKey {
+            adapter_luid: 1,
+            output_id: 2,
+        };
+        let prepared = PreparedMonitor {
+            key,
+            bounds: Rect::full((1920, 1080)),
+        };
+        assert!(prepared.accepts(key, prepared.bounds).unwrap());
+        assert!(
+            !prepared
+                .accepts(
+                    MonitorKey {
+                        output_id: 3,
+                        ..key
+                    },
+                    prepared.bounds
+                )
+                .unwrap()
+        );
+        assert!(matches!(
+            prepared.accepts(key, Rect::full((1280, 720))),
+            Err(CaptureError::ResolutionChanged(1280, 720))
+        ));
+        assert!(matches!(
+            prepared.accepts(
+                key,
+                Rect {
+                    x: -1920,
+                    ..prepared.bounds
+                }
+            ),
+            Err(CaptureError::ResolutionChanged(1920, 1080))
+        ));
+    }
+
     #[test]
     fn gpu_auto_initialization_prefers_wgc_and_falls_back_to_dxgi() {
         use CaptureBackendKind::{Auto, DxgiDuplication as Dxgi, WindowsGraphicsCapture as Wgc};

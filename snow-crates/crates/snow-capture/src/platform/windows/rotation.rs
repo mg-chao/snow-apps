@@ -151,7 +151,7 @@ pub(super) fn native_blit(
     })
 }
 
-pub(super) fn orient_into(
+pub(crate) fn orient_into(
     source: &Frame,
     destination: &mut Frame,
     dst_x: u32,

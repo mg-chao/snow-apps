@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -63,6 +63,100 @@ pub struct GpuCaptureStream {
 }
 
 impl GpuCaptureStream {
+    /// Start a recording viewport on the cursor's monitor. Destination sources
+    /// are prepared independently and commit only after their first valid image.
+    pub fn spawn_follow_mouse(
+        nominal_region: CaptureRegion,
+        backend: CaptureBackendKind,
+        config: CaptureStreamConfig,
+    ) -> CaptureResult<Self> {
+        if config.target_fps == 0 || nominal_region.width == 0 || nominal_region.height == 0 {
+            return Err(CaptureError::InvalidConfig(
+                "following requires nonempty geometry and positive FPS".into(),
+            ));
+        }
+        let queue = Arc::new(StreamQueue::new(config.buffer_depth.max(1)));
+        let stopped = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
+        let origin = Arc::new(Mutex::new(None));
+        let stats = Arc::new(CaptureStreamStats::default());
+        stats
+            .target_fps
+            .store(u64::from(config.target_fps), Ordering::Relaxed);
+        let (wake, commands) = crossbeam_channel::bounded(1);
+        let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
+        let worker_queue = queue.clone();
+        let worker_stop = stopped.clone();
+        let worker_pause = paused.clone();
+        let worker_origin = origin.clone();
+        let worker_stats = stats.clone();
+        let worker = std::thread::Builder::new()
+            .name("snow-follow-capture".into())
+            .spawn(move || {
+                snow_core::qos::apply_current_thread();
+                let target = AtomicU32::new(config.target_fps);
+                let result = crate::follow_mouse::run(
+                    crate::follow_mouse::Settings {
+                        nominal: nominal_region,
+                        preferred: backend,
+                        options: crate::CaptureOptions {
+                            workload: crate::CaptureWorkload::Continuous,
+                            ..Default::default()
+                        },
+                        config,
+                        gpu: true,
+                        recycled: None,
+                    },
+                    &worker_stop,
+                    &worker_pause,
+                    &target,
+                    &worker_origin,
+                    &commands,
+                    &worker_stats,
+                    ready_tx.clone(),
+                    |frame| {
+                        if let crate::follow_mouse::FollowFrame::Gpu(frame) = frame {
+                            let outcome = worker_queue.push(GpuCaptureEvent::Frame(frame));
+                            worker_stats
+                                .buffer_fill
+                                .store(outcome.data_len as u64, Ordering::Relaxed);
+                            if outcome.dropped.is_some() {
+                                worker_stats.frames_dropped.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                    },
+                );
+                if let Err(error) = result {
+                    let _ = ready_tx.try_send(Err(error.clone()));
+                    worker_queue.push(GpuCaptureEvent::Error(error));
+                }
+                worker_queue.push(GpuCaptureEvent::StreamEnded);
+                worker_queue.close();
+            })
+            .map_err(CaptureError::platform)?;
+        match ready_rx.recv() {
+            Ok(Ok(Some(device))) => Ok(Self {
+                queue,
+                stopped,
+                paused,
+                origin,
+                wake,
+                worker: Some(worker),
+                device,
+                stats,
+            }),
+            result => {
+                stopped.store(true, Ordering::Release);
+                let _ = wake.try_send(());
+                let _ = worker.join();
+                Err(match result {
+                    Ok(Err(error)) => error,
+                    _ => CaptureError::WorkerDead,
+                })
+            }
+        }
+    }
+
     pub fn spawn(
         region: CaptureRegion,
         backend: CaptureBackendKind,

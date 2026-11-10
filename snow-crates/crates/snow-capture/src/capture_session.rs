@@ -867,6 +867,11 @@ impl CaptureSession {
         &self.target
     }
 
+    #[cfg(windows)]
+    pub(crate) fn set_follow_region(&mut self, region: CaptureRegion) {
+        self.target = CaptureTarget::Region(region);
+    }
+
     /// Warm conversion dispatch without allocating workers for one-shot captures.
     pub fn warmup_runtime(&mut self) {
         // Native target capturers own their pixel processing. Snapshot backends

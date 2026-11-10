@@ -337,6 +337,7 @@ impl GpuVisualCompositor {
         // CPU rasterization and camera conversion never hold the shared D3D
         // immediate-context lock needed by capture and hardware encoding.
         let source_size = frame.dimensions();
+        state.update_pointer_viewport(frame.metadata().capture_transform(), source_size)?;
         self.tiles.clear();
         state
             .input_effects
@@ -843,6 +844,7 @@ mod tests {
 
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
+            follow_mouse: false,
             keyboard_filter: Default::default(),
             webcam: None,
             audio_mode: Default::default(),

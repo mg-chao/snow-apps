@@ -186,10 +186,7 @@ impl Effects {
             cursor,
             keyboard_filter: KeyboardFilter::default(),
             trail: FrameTrail::new(),
-            input_effects: InputEffectsState {
-                keyboard,
-                ..InputEffectsState::new(config.trail_duration_ms)
-            },
+            input_effects: InputEffectsState::new(config.trail_duration_ms).with_keyboard(keyboard),
             render_policy: snow_recording_model::EffectsConfig {
                 mouse_trail_rgba: if config.trail {
                     config.trail_rgba
@@ -261,6 +258,17 @@ impl Effects {
     ) -> Result<(Vec<Tile>, Option<String>)> {
         let geometry = (transform, destination);
         if self.last_geometry != Some(geometry) {
+            if let Some((previous, previous_destination)) = self.last_geometry {
+                let reproject = snow_recording_model::PointerTransform::between(
+                    previous.source,
+                    previous_destination,
+                    transform.source,
+                    destination,
+                )
+                .map_err(|error| ScreenRecorderError::InvalidConfig(error.to_string()))?;
+                self.input_effects.reproject_pointer(reproject, reproject);
+                self.trail.reproject(reproject);
+            }
             self.dirty = true;
             self.last_geometry = Some(geometry);
         }
@@ -574,6 +582,28 @@ mod tests {
             transform,
             destination,
         )
+    }
+
+    #[test]
+    fn moving_viewport_reprojects_clicks_without_releasing_input_or_renewing_ages() {
+        let (mut effects, clock, transform, destination) = effects_fixture();
+        effects.held_buttons[0] = true;
+        effects.input_effects.click(RenderClick {
+            timestamp_ms: 600,
+            x: 100,
+            y: 64,
+            button: ObservedMouseButton::Left,
+        });
+        effects.draw(&clock, transform, destination, 617).unwrap();
+        let mut moved = transform;
+        moved.source.x += 50.0;
+        let (_, interruption) = effects.draw(&clock, moved, destination, 634).unwrap();
+        assert!(interruption.is_none());
+        assert!(effects.held_buttons[0]);
+        let click = effects.input_effects.clicks.front().unwrap();
+        assert_eq!((click.timestamp_ms, click.x, click.y), (600, 50, 64));
+        effects.draw(&clock, moved, destination, 651).unwrap();
+        assert_eq!(effects.input_effects.clicks.front().unwrap().x, 50);
     }
 
     #[test]

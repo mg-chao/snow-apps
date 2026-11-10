@@ -51,6 +51,19 @@ impl Default for LaserTrail {
 }
 
 impl LaserTrail {
+    pub fn reproject(
+        &mut self,
+        source: snow_recording_model::PointerTransform,
+        output: snow_recording_model::PointerTransform,
+    ) {
+        self.last_position = self.last_position.map(|point| source.project(point));
+        for point in &mut self.points {
+            point.x = (f64::from(point.x) * output.scale[0] + output.offset[0])
+                .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as f32;
+            point.y = (f64::from(point.y) * output.scale[1] + output.offset[1])
+                .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as f32;
+        }
+    }
     pub fn new(lifetime_ms: u64) -> Self {
         Self {
             lifetime_ms: lifetime_ms.max(1),
@@ -371,6 +384,31 @@ impl Coverage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn follow_mouse_reprojects_trail_without_renewing_observation_ages() {
+        let mut trail = LaserTrail::new(500);
+        trail.observe(Some((20, 30)), (100, 100), (200, 200), 10);
+        trail.observe(Some((30, 40)), (100, 100), (200, 200), 20);
+        let source = snow_recording_model::PointerTransform {
+            scale: [1.0; 2],
+            offset: [-10.0, -20.0],
+        };
+        trail.reproject(source, source.for_output((100, 100), (200, 200)));
+        assert_eq!(trail.last_position, Some((20, 20)));
+        assert_eq!(
+            trail
+                .points
+                .iter()
+                .map(|p| p.timestamp_ms)
+                .collect::<Vec<_>>(),
+            [10, 20]
+        );
+        assert_eq!((trail.points[1].x, trail.points[1].y), (32.0, 32.0));
+        // The same absolute cursor at its reprojected coordinate must not renew the trail.
+        trail.observe(Some((20, 20)), (100, 100), (200, 200), 100);
+        assert_eq!(trail.points.back().unwrap().timestamp_ms, 20);
+    }
 
     const SIZE: (u32, u32) = (160, 100);
     const COLOR: [u8; 4] = [255, 0, 0, 128];

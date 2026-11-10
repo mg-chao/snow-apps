@@ -1,6 +1,9 @@
 use super::*;
-use crate::gpu::{GpuMonitorFrame, acquire_conversion_output, copy_texture_region, native_crop};
-use snow_d3d11::{Rect, SharedDevice, TexturePool};
+use crate::gpu::{
+    GpuMonitorFrame, acquire_conversion_output, copy_texture_region, follow_native_crop,
+    native_crop,
+};
+use snow_d3d11::{Rect, SharedDevice, Texture, TexturePool};
 
 pub(crate) struct GpuDxgiCapturer {
     device: SharedDevice,
@@ -13,6 +16,11 @@ pub(crate) struct GpuDxgiCapturer {
     tonemapper: Option<GpuTonemapper>,
     f16: Option<GpuF16Converter>,
     generation: u64,
+    // Moving crops need pixels outside the previously delivered crop even when
+    // DXGI has no newer presentation. This private image is never published.
+    follow_canonical: Option<Texture>,
+    follow_crop: Option<Rect>,
+    follow_size: Option<(u32, u32)>,
 }
 
 impl GpuDxgiCapturer {
@@ -32,7 +40,14 @@ impl GpuDxgiCapturer {
             tonemapper: None,
             f16: None,
             generation: 0,
+            follow_canonical: None,
+            follow_crop: None,
+            follow_size: None,
         })
+    }
+
+    pub(crate) fn enable_following(&mut self, size: (u32, u32)) {
+        self.follow_size = Some(size);
     }
 
     pub(crate) fn capture(&mut self, crop: Rect) -> CaptureResult<GpuMonitorFrame> {
@@ -47,12 +62,20 @@ impl GpuDxgiCapturer {
             TryAcquireResult::AccessLost => {
                 self.duplication = create_duplication(&self.output, device.device())?;
                 self.latest = None;
+                self.follow_canonical = None;
+                self.follow_crop = None;
                 return Err(CaptureError::AccessLost);
+            }
+            TryAcquireResult::Retry if self.follow_size.is_some() => {
+                return self.capture_follow_crop(crop);
             }
             TryAcquireResult::Retry => return self.duplicate(),
         };
         if info.LastPresentTime == 0 && self.latest.is_some() {
             drop(guard);
+            if self.follow_size.is_some() {
+                return self.capture_follow_crop(crop);
+            }
             return self.duplicate();
         }
         let output_desc = unsafe { self.output.GetDesc() }.map_err(CaptureError::platform)?;
@@ -64,6 +87,26 @@ impl GpuDxgiCapturer {
         };
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.GetDesc(&mut desc) };
+        if self.follow_size.is_some() {
+            if self.follow_canonical.as_ref().is_none_or(|image| {
+                let old = image.desc();
+                old.Width != desc.Width || old.Height != desc.Height || old.Format != desc.Format
+            }) {
+                self.follow_canonical = Some(
+                    device
+                        .texture(desc.Width, desc.Height, desc.Format, 0)
+                        .map_err(CaptureError::platform)?,
+                );
+            }
+            unsafe {
+                device
+                    .context()
+                    .CopyResource(self.follow_canonical.as_ref().unwrap().raw(), &texture);
+            }
+            drop(guard);
+            self.follow_crop = None;
+            return self.capture_follow_crop(crop);
+        }
         let crop = native_crop(crop, (desc.Width, desc.Height), rotation)?;
         // Detach only the selected region before ReleaseFrame. HDR conversion
         // then operates on that same bounded surface without a full-display copy.
@@ -118,6 +161,82 @@ impl GpuDxgiCapturer {
             rotation,
             metadata,
         };
+        self.latest = Some(frame.clone());
+        Ok(frame)
+    }
+
+    fn capture_follow_crop(&mut self, crop: Rect) -> CaptureResult<GpuMonitorFrame> {
+        let canonical = self
+            .follow_canonical
+            .as_ref()
+            .ok_or(CaptureError::Timeout)?;
+        let output_desc = unsafe { self.output.GetDesc() }.map_err(CaptureError::platform)?;
+        let rotation = match output_desc.Rotation.0 {
+            2 => 1,
+            3 => 2,
+            4 => 3,
+            _ => 0,
+        };
+        let desc = canonical.desc();
+        let native_rect = follow_native_crop(
+            crop,
+            (desc.Width, desc.Height),
+            rotation,
+            self.follow_size
+                .expect("following source has prepared geometry"),
+        )?;
+        if self.follow_crop == Some(crop) {
+            return self.duplicate();
+        }
+        let native =
+            copy_texture_region(&self.device, &mut self.native, canonical.raw(), native_rect)?;
+        let desc = native.desc();
+        let texture = if desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT {
+            let output = acquire_conversion_output(&mut self.converted, desc.Width, desc.Height)?;
+            if let Some(params) = self.hdr {
+                if self.tonemapper.is_none() {
+                    self.tonemapper = Some(GpuTonemapper::new(self.device.device())?);
+                }
+                self.tonemapper.as_mut().unwrap().tonemap_into(
+                    self.device.device(),
+                    self.device.context(),
+                    native.raw(),
+                    &desc,
+                    params.sanitized(),
+                    None,
+                    &output,
+                )?;
+            } else {
+                if self.f16.is_none() {
+                    self.f16 = Some(GpuF16Converter::new(self.device.device())?);
+                }
+                self.f16.as_mut().unwrap().convert_into(
+                    self.device.device(),
+                    self.device.context(),
+                    native.raw(),
+                    &desc,
+                    None,
+                    &output,
+                )?;
+            }
+            output
+        } else {
+            native
+        };
+        self.generation = self.generation.wrapping_add(1);
+        let mut metadata = crate::FrameMetadata {
+            backend_kind: CaptureBackendKind::DxgiDuplication,
+            content_generation: Some(self.generation),
+            ..Default::default()
+        };
+        metadata.set_timing(Some(Instant::now()), None);
+        let frame = GpuMonitorFrame {
+            source: Rect::full(texture.dimensions()),
+            texture,
+            rotation,
+            metadata,
+        };
+        self.follow_crop = Some(crop);
         self.latest = Some(frame.clone());
         Ok(frame)
     }

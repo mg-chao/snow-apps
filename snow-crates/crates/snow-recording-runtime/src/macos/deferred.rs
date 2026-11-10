@@ -158,9 +158,11 @@ pub(crate) fn run_capture(
                     at,
                     (transform.output.width, transform.output.height),
                     Some(transform),
-                )? {
-                    // Placement changes reset replay's shape cache too. Re-advertise
-                    // the sampled native shape even when its pixel scale is unchanged.
+                )? && !config.follow_mouse
+                {
+                    // Fixed-region reconfiguration resets replay's shape cache.
+                    // Follow mode preserves it; the scale/bitmap comparison below
+                    // advertises a replacement only when the actual shape changes.
                     last_cursor = None;
                 }
                 input.drain(&clock, false, since, None)?;

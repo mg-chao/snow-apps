@@ -822,6 +822,37 @@ pub(crate) fn map_staging_to_frame(
     )
 }
 
+/// Poll a staging copy without allowing a busy adapter to block video output.
+pub(crate) fn try_map_staging_to_frame(
+    context: &ID3D11DeviceContext,
+    staging: &ID3D11Texture2D,
+    desc: &D3D11_TEXTURE2D_DESC,
+    frame: &mut Frame,
+    options: SurfaceConversionOptions,
+) -> CaptureResult<bool> {
+    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+    match unsafe {
+        context.Map(
+            staging,
+            0,
+            D3D11_MAP_READ,
+            D3D11_MAP_FLAG_DO_NOT_WAIT,
+            Some(&mut mapped),
+        )
+    } {
+        Ok(()) => {}
+        Err(error) if error.code() == DXGI_ERROR_WAS_STILL_DRAWING => return Ok(false),
+        Err(error) => return Err(CaptureError::platform(error)),
+    }
+    let result = copy_mapped_surface_to_frame(frame, desc, &mapped, options);
+    unsafe {
+        context.Unmap(staging, 0);
+    }
+    #[cfg(feature = "stage-timing")]
+    crate::pixel_counters::readback();
+    result.map(|()| true)
+}
+
 /// Screenshot-style single-shot variant.
 ///
 /// We still prefer a short DO_NOT_WAIT spin first because the GPU copy often

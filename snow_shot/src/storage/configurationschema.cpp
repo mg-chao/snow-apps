@@ -1146,6 +1146,7 @@ constexpr SchemaEntryDescriptor kEntryDescriptors[] = {
      ConfigurationValueKind::Boolean},
     {u"screen_recording/preserve_keyboard_shortcuts", booleanDefault(true),
      ConfigurationValueKind::Boolean},
+    {u"screen_recording/follow_mouse", booleanDefault(false), ConfigurationValueKind::Boolean},
     {u"screen_recording/enable_webcam", booleanDefault(false), ConfigurationValueKind::Boolean},
     {u"screen_recording/webcam_orientation", integerDefault(0), ConfigurationValueKind::Integer,
      &kSchemaRange8},

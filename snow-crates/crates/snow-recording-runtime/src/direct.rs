@@ -139,6 +139,8 @@ pub struct DirectRecordingConfig {
     /// Whether animated image outputs repeat indefinitely.
     pub loop_animated_images: bool,
     pub region: RecordingRegion,
+    /// Follow the desktop pointer within its monitor, preserving the encoded size.
+    pub follow_mouse: bool,
     /// Preferred recording backend on Windows; other backends remain available as fallbacks.
     pub capture_backend: CaptureBackendKind,
     pub output_path: PathBuf,
@@ -196,7 +198,6 @@ impl DirectRecordingConfig {
             },
         }
     }
-    #[cfg(any(test, feature = "bench-synthetic-input"))]
     fn needs_cursor_observations(&self) -> bool {
         self.show_cursor || self.mouse_trail_rgba[3] != 0
     }
@@ -414,6 +415,12 @@ impl DirectRecordingConfig {
 
 #[derive(Clone, Debug, Default)]
 pub struct DirectRecordingReport {
+    pub follow_mouse: bool,
+    pub follow_prepare_requests: u64,
+    pub follow_monitor_switches: u64,
+    pub follow_preparation_failures: u64,
+    pub follow_peak_sources: u64,
+    pub follow_prepare_latency_max: Duration,
     #[cfg(feature = "bench-pipeline-timing")]
     pub pixel_counters: snow_capture::pixel_counters::PixelCounters,
     pub gpu_memory_bytes: u64,
@@ -784,6 +791,19 @@ impl DirectRecordingSession {
         })
     }
 
+    /// Drive follow capture in desktop pixels without moving the physical pointer.
+    /// The benchmark override is process-local; benchmark recordings run serially.
+    #[cfg(all(windows, feature = "bench-synthetic-input"))]
+    pub fn bench_observe_desktop_cursor(&self, x: i32, y: i32) -> Result<()> {
+        if !self.config.follow_mouse || !self.bench_synthetic_input {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "desktop bench observations require follow mode and synthetic input".into(),
+            ));
+        }
+        snow_capture::set_bench_follow_mouse_position(Some((x, y)));
+        Ok(())
+    }
+
     /// Feed a synthetic left-button click (region-relative) to the click
     /// overlay without pressing the physical mouse.
     #[cfg(feature = "bench-synthetic-input")]
@@ -853,18 +873,29 @@ impl DirectRecordingSession {
         let include_cursor = !self.bench_skip_cursor || self.config.needs_cursor_observations();
         #[cfg(not(feature = "bench-synthetic-input"))]
         let include_cursor = true;
+        // Following needs only desktop position when neither cursor nor trail
+        // is rendered. Avoid decoding cursor bitmaps in that common case.
+        let include_cursor = if self.config.follow_mouse {
+            self.config.needs_cursor_observations()
+        } else {
+            include_cursor
+        };
         let (click_tx, click_rx) = crossbeam_channel::bounded(CLICK_QUEUE_DEPTH);
         #[cfg(feature = "bench-synthetic-input")]
         let bench_click_tx = self.bench_synthetic_input.then(|| click_tx.clone());
-        let mouse_hook = MouseHookObserver::start(
-            (
-                self.config.region.x,
-                self.config.region.y,
-                self.config.region.width,
-                self.config.region.height,
-            ),
-            click_tx,
-        )
+        let mouse_hook = if self.config.follow_mouse {
+            MouseHookObserver::start_desktop(click_tx)
+        } else {
+            MouseHookObserver::start(
+                (
+                    self.config.region.x,
+                    self.config.region.y,
+                    self.config.region.width,
+                    self.config.region.height,
+                ),
+                click_tx,
+            )
+        }
         .map_err(ScreenRecorderError::Encode)?;
         #[cfg(feature = "bench-synthetic-input")]
         let (keyboard_input, bench_keyboard_tx, bench_keyboard_generation) = match (
@@ -949,6 +980,7 @@ impl DirectRecordingSession {
                 snow_core::qos::apply_current_thread();
                 let result = (|| {
                     let mut compositor = VisualCompositor::new(config.output_dimensions());
+                    compositor.configure_follow_mouse(&config);
                     let render = config.render_config(
                         config.output_dimensions(),
                         snow_recording_model::PlaybackOverlay::None,
@@ -1771,7 +1803,11 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                                 .unwrap_or_else(|| frame.instant()),
                         )
                     {
-                        if let Some(cursor) = frame.metadata().cursor().filter(|_| !bench_cursor) {
+                        if let Some(cursor) = frame
+                            .metadata()
+                            .cursor()
+                            .filter(|_| !bench_cursor && !config.follow_mouse)
+                        {
                             cursors.push(
                                 frame.metadata().queued_at().unwrap_or(received),
                                 cursor.clone(),
@@ -1850,6 +1886,14 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     || previous.metadata().content_generation()
                         != frame.metadata().content_generation()
             });
+            if config.follow_mouse {
+                changed |=
+                    admit_follow_cursor(&config, &mut latest_cursor, frame.metadata().cursor());
+                compositor.update_pointer_viewport(
+                    frame.metadata().capture_transform(),
+                    frame.dimensions(),
+                )?;
+            }
             latest_frame = Some(frame);
         }
         if let Some(webcam) = &config.webcam {
@@ -1990,7 +2034,6 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     let final_at = input_end.unwrap_or_else(Instant::now);
     let endpoint = schedule.endpoint(clock.active_elapsed_duration(final_at));
     clock_controller.mark_pause(final_at);
-    #[cfg(feature = "bench-pipeline-timing")]
     let stream_stats = capture_stream.stats().snapshot();
     // Captures after the accepted stop boundary must not extend the recording.
     #[cfg(windows)]
@@ -2096,6 +2139,12 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         report.pixel_counters = snow_capture::pixel_counters::snapshot().since(pixel_start);
     }
     report.asynchronous = asynchronous;
+    report.follow_mouse = config.follow_mouse;
+    report.follow_prepare_requests = stream_stats.follow_prepare_requests;
+    report.follow_monitor_switches = stream_stats.follow_monitor_switches;
+    report.follow_preparation_failures = stream_stats.follow_preparation_failures;
+    report.follow_peak_sources = stream_stats.follow_peak_sources;
+    report.follow_prepare_latency_max = stream_stats.follow_prepare_latency_max;
     #[cfg(any(test, feature = "bench-synthetic-input"))]
     {
         report.partial_composition = compositor.partial;
@@ -2112,6 +2161,17 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
     Ok(report)
 }
 
+fn admit_follow_cursor(
+    config: &DirectRecordingConfig,
+    latest: &mut Option<AttachedCursorSample>,
+    captured: Option<&AttachedCursorSample>,
+) -> bool {
+    let changed =
+        (config.show_cursor || config.mouse_trail_rgba[3] != 0) && latest.as_ref() != captured;
+    *latest = captured.cloned();
+    changed
+}
+
 fn report_from_encoder(
     report: StreamingEncoderReport,
     dropped_capture_frames: u64,
@@ -2121,6 +2181,12 @@ fn report_from_encoder(
     #[cfg(feature = "bench-pipeline-timing")] pipeline: Option<CapturePipelineStats>,
 ) -> DirectRecordingReport {
     DirectRecordingReport {
+        follow_mouse: false,
+        follow_prepare_requests: 0,
+        follow_monitor_switches: 0,
+        follow_preparation_failures: 0,
+        follow_peak_sources: 0,
+        follow_prepare_latency_max: Duration::ZERO,
         #[cfg(feature = "bench-pipeline-timing")]
         pixel_counters: Default::default(),
         gpu_memory_bytes: 0,
@@ -2621,10 +2687,11 @@ fn drain_click_observations(
         if !observation.down || !observation.button.has_ring() {
             continue;
         }
+        let (x, y) = compositor.project_mouse_observation((observation.x, observation.y));
         compositor.input_effects.click(RenderClick {
             timestamp_ms: clock.active_elapsed_ms(observation.at),
-            x: observation.x,
-            y: observation.y,
+            x,
+            y,
             button: observation.button,
         });
     }
@@ -2658,6 +2725,7 @@ impl ResizeFrameDomain {
 }
 
 struct VisualCompositor {
+    pointer_viewport: Option<(snow_media::geometry::DesktopRect, (u32, u32))>,
     webcam: snow_recording_effects::webcam::WebcamOverlay,
     output_size: (u32, u32),
     background: RasterBuffer,
@@ -2691,6 +2759,7 @@ struct VisualCompositor {
 impl VisualCompositor {
     fn new(output_size: (u32, u32)) -> Self {
         Self {
+            pointer_viewport: None,
             webcam: Default::default(),
             output_size,
             background: RasterBuffer::new(),
@@ -2722,6 +2791,71 @@ impl VisualCompositor {
         }
     }
 
+    fn configure_follow_mouse(&mut self, config: &DirectRecordingConfig) {
+        if config.follow_mouse {
+            self.pointer_viewport = Some((
+                snow_media::geometry::DesktopRect {
+                    space: if cfg!(target_os = "macos") {
+                        snow_media::geometry::DesktopSpace::Points
+                    } else {
+                        snow_media::geometry::DesktopSpace::PhysicalPixels
+                    },
+                    x: f64::from(config.region.x),
+                    y: f64::from(config.region.y),
+                    width: f64::from(config.region.width),
+                    height: f64::from(config.region.height),
+                },
+                (config.region.width, config.region.height),
+            ));
+        }
+    }
+
+    fn project_mouse_observation(&self, point: (i32, i32)) -> (i32, i32) {
+        self.pointer_viewport.map_or(point, |(desktop, size)| {
+            (
+                ((f64::from(point.0) - desktop.x) * f64::from(size.0) / desktop.width).round()
+                    as i32,
+                ((f64::from(point.1) - desktop.y) * f64::from(size.1) / desktop.height).round()
+                    as i32,
+            )
+        })
+    }
+
+    fn update_pointer_viewport(
+        &mut self,
+        transform: Option<snow_media::geometry::DesktopTransform>,
+        source_size: (u32, u32),
+    ) -> Result<()> {
+        let (Some((previous, previous_size)), Some(transform)) = (self.pointer_viewport, transform)
+        else {
+            return Ok(());
+        };
+        if (previous, previous_size) == (transform.source, source_size) {
+            return Ok(());
+        }
+        let rect = |size: (u32, u32)| snow_media::geometry::PixelRect {
+            x: 0,
+            y: 0,
+            width: size.0,
+            height: size.1,
+        };
+        let source = snow_recording_model::PointerTransform::between(
+            previous,
+            rect(previous_size),
+            transform.source,
+            rect(source_size),
+        )?;
+        let output = snow_recording_model::PointerTransform::between(
+            previous,
+            rect(self.output_size),
+            transform.source,
+            rect(self.output_size),
+        )?;
+        self.input_effects.reproject_pointer(source, output);
+        self.pointer_viewport = Some((transform.source, source_size));
+        Ok(())
+    }
+
     fn key_event(
         &mut self,
         config: KeyboardFilterConfig,
@@ -2749,6 +2883,7 @@ impl VisualCompositor {
         timestamp_ms: u64,
         cursor: Option<&AttachedCursorSample>,
     ) -> Result<RasterBuffer> {
+        self.update_pointer_viewport(frame.metadata().capture_transform(), frame.dimensions())?;
         let fallback;
         let effects = if let Some(effects) = &self.effects {
             effects
@@ -3569,6 +3704,7 @@ mod tests {
 
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
+            follow_mouse: false,
             keyboard_filter: Default::default(),
             webcam: None,
             audio_mode: Default::default(),
@@ -3602,6 +3738,84 @@ mod tests {
             record_mouse_scrolling: false,
             show_keyboard: true,
         }
+    }
+
+    #[test]
+    fn follow_mouse_live_viewport_reprojects_effects_without_changing_output_or_keys() {
+        let mut config = config();
+        config.follow_mouse = true;
+        config.region = RecordingRegion::new(-200, 10, 100, 100);
+        let mut state = VisualCompositor::new((200, 200));
+        state.configure_follow_mouse(&config);
+        assert_eq!(state.project_mouse_observation((-150, 60)), (50, 50));
+        state.input_effects.click(RenderClick {
+            timestamp_ms: 10,
+            x: 50,
+            y: 50,
+            button: crate::mouse_hook::ObservedMouseButton::Left,
+        });
+        state
+            .input_effects
+            .trail
+            .observe(Some((50, 50)), (100, 100), (200, 200), 10);
+        state.input_effects.pending_keys.push_back(KeyEvent {
+            at_ms: 10,
+            key: 0x41,
+            down: true,
+            label: "A".into(),
+            modifiers: vec![],
+        });
+        let transform = snow_media::geometry::DesktopTransform::new(
+            snow_media::geometry::DesktopRect {
+                space: snow_media::geometry::DesktopSpace::PhysicalPixels,
+                x: -150.0,
+                y: 30.0,
+                width: 50.0,
+                height: 50.0,
+            },
+            snow_media::geometry::PixelSize::new(50, 50).unwrap(),
+        )
+        .unwrap();
+        state
+            .update_pointer_viewport(Some(transform), (50, 50))
+            .unwrap();
+        let click = &state.input_effects.clicks[0];
+        assert_eq!((click.x, click.y, click.timestamp_ms), (0, 30, 10));
+        assert_eq!(state.project_mouse_observation((-150, 60)), (0, 30));
+        assert_eq!(state.output_size, (200, 200));
+        assert_eq!(state.input_effects.pending_keys.len(), 1);
+        // Reusing a frame/viewport must not reproject history a second time.
+        state
+            .update_pointer_viewport(Some(transform), (50, 50))
+            .unwrap();
+        assert_eq!(state.input_effects.clicks[0].y, 30);
+    }
+
+    #[test]
+    fn follow_mouse_cursor_only_updates_wake_static_clamped_capture() {
+        let mut config = config();
+        config.follow_mouse = true;
+        config.show_cursor = true;
+        let mut latest = None;
+        let sample = AttachedCursorSample {
+            x: 10,
+            y: 20,
+            visible: true,
+            shape: CursorShapeState::Unavailable,
+        };
+        assert!(admit_follow_cursor(&config, &mut latest, Some(&sample)));
+        assert!(!admit_follow_cursor(&config, &mut latest, Some(&sample)));
+        let moved = AttachedCursorSample {
+            x: 11,
+            ..sample.clone()
+        };
+        assert!(admit_follow_cursor(&config, &mut latest, Some(&moved)));
+        config.show_cursor = false;
+        config.mouse_trail_rgba = [255, 0, 0, 128];
+        assert!(admit_follow_cursor(&config, &mut latest, Some(&sample)));
+        config.mouse_trail_rgba = [0; 4];
+        assert!(!admit_follow_cursor(&config, &mut latest, None));
+        assert!(latest.is_none());
     }
 
     #[test]

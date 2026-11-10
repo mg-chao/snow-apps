@@ -98,8 +98,14 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 219,
-            "Snow Shot pack should contain all 219 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 220,
+            "Snow Shot pack should contain all 220 project-owned assets");
+    require(adqt::icons::describeIcon(icons::outlined::CreditsCoin()).key.name ==
+                QStringLiteral("credits-coin"),
+            "account credits should resolve to their project-owned coin icon");
+    require(adqt::icons::describeIcon(icons::outlined::RecordingFollowMouse()).key.name ==
+                QStringLiteral("recording-follow-mouse"),
+            "follow mouse recording should resolve to its project-owned icon");
     require(adqt::icons::describeIcon(icons::outlined::PinWindowToScreen()).key.name ==
                 QStringLiteral("pin-window-to-screen"),
             "live window pinning should resolve to its project-owned icon");
@@ -157,6 +163,46 @@ void everySnowShotEntryRenders() {
         std::cerr << warning.toStdString() << '\n';
     require(renderWarnings.isEmpty(),
             "every Snow Shot icon must render without missing images or undefined references");
+}
+
+void followMouseIconFollowsThemeAndToolbarMetrics() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const auto ref = icons::outlined::RecordingFollowMouse();
+    require(adqt::icons::describeIcon(ref).key.name == QStringLiteral("recording-follow-mouse"),
+            "follow mouse resolves to its dedicated tracking-frame icon");
+    QImage preview(480, 200, QImage::Format_ARGB32_Premultiplied);
+    preview.fill(Qt::white);
+    QPainter painter(&preview);
+    for (int row = 0; row < 2; ++row) {
+        const QColor foreground = row == 0 ? QColor("#262626") : QColor("#f5f5f5");
+        painter.fillRect(QRect(0, row * 100, 480, 100), row == 0 ? Qt::white : QColor("#141414"));
+        int column = 0;
+        for (const int size : {16, 20, 24, 32}) {
+            for (const qreal dpr : {1.0, 1.25, 2.0}) {
+                const auto image =
+                    render(ref.withColors(adqt::icons::IconColors::primary(foreground)),
+                           QSize(size, size), dpr)
+                        .toImage();
+                const auto bounds = alphaBounds(image);
+                require(!bounds.isEmpty() && bounds.left() > 0 && bounds.top() > 0 &&
+                            bounds.right() < image.width() - 1 &&
+                            bounds.bottom() < image.height() - 1,
+                        "follow mouse retains its clearance at toolbar sizes and fractional DPI");
+                if (size >= 24)
+                    require(containsOpaqueColor(image, foreground),
+                            "follow mouse uses the supplied theme foreground");
+            }
+            const auto pixmap = render(ref.withColors(adqt::icons::IconColors::primary(foreground)),
+                                       QSize(size, size));
+            painter.drawPixmap(24 + column++ * 80, row * 100 + (100 - size) / 2, pixmap);
+        }
+        painter.drawPixmap(
+            360, row * 100 + 10,
+            render(ref.withColors(adqt::icons::IconColors::primary(foreground)), QSize(80, 80)));
+    }
+    painter.end();
+    if (const auto path = qEnvironmentVariable("SNOW_FOLLOW_MOUSE_ICON_PREVIEW"); !path.isEmpty())
+        require(preview.save(path), "save follow mouse icon inspection sheet");
 }
 
 void airDropIconFollowsAntDesign() {
@@ -1145,6 +1191,11 @@ void liveWindowStatusIconsRetainWindowFrame() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--follow-mouse-only"))) {
+            followMouseIconFollowsThemeAndToolbarMetrics();
+            return 0;
+        }
+        followMouseIconFollowsThemeAndToolbarMetrics();
         if (application.arguments().contains(QStringLiteral("--live-window-status-only"))) {
             liveWindowStatusIconsRetainWindowFrame();
             return 0;

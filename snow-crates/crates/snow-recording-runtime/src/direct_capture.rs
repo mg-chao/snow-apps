@@ -124,6 +124,20 @@ impl DirectCapture {
         }
     }
     pub fn cpu(config: &DirectRecordingConfig, include_cursor: bool) -> Result<Self> {
+        #[cfg(windows)]
+        if config.follow_mouse {
+            return Ok(Self::Cpu(CaptureStream::spawn_follow_mouse(
+                snow_capture::CaptureRegion {
+                    x: config.region.x,
+                    y: config.region.y,
+                    width: config.region.width,
+                    height: config.region.height,
+                },
+                config.capture_backend,
+                capture_options(config),
+                stream_config(config, include_cursor),
+            )?));
+        }
         let system = crate::capture_policy::recording_capture_system(
             crate::capture_policy::RecordingCapturePath::Direct,
             config.capture_backend,
@@ -165,7 +179,6 @@ impl DirectCapture {
             Self::Gpu(stream) => stream.set_pacing_origin(origin),
         }
     }
-    #[cfg(feature = "bench-pipeline-timing")]
     pub fn stats(&self) -> &Arc<snow_capture::CaptureStreamStats> {
         match self {
             Self::Cpu(stream) => stream.stats(),

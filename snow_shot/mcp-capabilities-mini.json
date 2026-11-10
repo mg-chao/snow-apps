@@ -272,6 +272,7 @@
         "quality",
         "loop",
         "capture_toolbar",
+        "follow_mouse",
         "show_cursor",
         "show_keyboard",
         "record_number_keys",
@@ -402,6 +403,9 @@
           "type": "boolean"
         },
         "capture_toolbar": {
+          "type": "boolean"
+        },
+        "follow_mouse": {
           "type": "boolean"
         },
         "show_cursor": {

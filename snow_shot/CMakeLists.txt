@@ -8995,6 +8995,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-recording-color-sampler-tests
         COMMAND snow-shot-screen-recording-controller-tests --color-sampling-only -platform offscreen)
+    add_test(NAME snow-shot-recording-follow-mouse-tests
+        COMMAND snow-shot-screen-recording-controller-tests --follow-mouse-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-follow-mouse-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-follow-mouse-icon-tests
+        COMMAND snow-shot-generated-icon-pack-tests --follow-mouse-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-follow-mouse-icon-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-recording-color-sampler-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recording-tool-toggle-tests
         COMMAND snow-shot-screen-recording-controller-tests --tool-toggle-only -platform offscreen)

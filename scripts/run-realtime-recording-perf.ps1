@@ -29,6 +29,7 @@ param(
     [switch]$DirectOutput,
     [switch]$SkipUnneededCursor,
     [string]$RegionSize = "",
+    [ValidateSet("off", "stationary", "pan", "boundary")][string]$FollowMouse = "off",
     [switch]$BuildOnly,
     [string]$Executable = "",
     [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
@@ -79,6 +80,7 @@ if ($HalfResize) { $benchmarkArguments += "--half-resize" }
 if ($DirectOutput) { $benchmarkArguments += "--direct-output" }
 if ($SkipUnneededCursor) { $benchmarkArguments += "--skip-unneeded-cursor" }
 if ($RegionSize) { $benchmarkArguments += @("--region-size", $RegionSize) }
+if ($FollowMouse -ne 'off') { $benchmarkArguments += @('--follow-mouse', $FollowMouse) }
 if ($PreferHardware) {
     $benchmarkArguments += "--prefer-hardware"
 }
@@ -111,7 +113,11 @@ try {
         arguments = $benchmarkArguments
     } | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $OutputDirectory 'build-identity.json')
     Write-Host "Realtime recording benchmark report: $OutputDirectory"
-    Write-Warning "The benchmark covers the leftmost monitor with a fullscreen workload window. It never injects mouse or keyboard input."
+    if ($FollowMouse -eq 'boundary') {
+        Write-Warning "The boundary benchmark covers every monitor with a workload window. It uses synthetic desktop positions and never injects OS input."
+    } else {
+        Write-Warning "The benchmark covers the leftmost monitor with a workload window. It never injects mouse or keyboard input."
+    }
     for ($remaining = 5; $remaining -ge 1; $remaining--) {
         Write-Host "Starting in $remaining..."
         Start-Sleep -Seconds 1

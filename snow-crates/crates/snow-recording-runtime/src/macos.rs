@@ -207,6 +207,11 @@ impl NativeRecordingSession {
             snow_macos::text::prepare_keyboard_layout();
         }
         config.capture.opaque = true;
+        if config.capture.follow_mouse {
+            // Produce the fixed recording canvas directly on GPU. A panning
+            // viewport must not resize once at native scale and again at export size.
+            config.capture.output = Some(logical_output.unwrap_or(config.output));
+        }
         let capture = DesktopSession::new(config.capture.clone()).map_err(native_error)?;
         let format = if hdr {
             PixelFormat::P010

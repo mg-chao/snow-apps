@@ -27,6 +27,7 @@ fn capture_config(config: &DirectRecordingConfig) -> Result<DesktopConfig> {
         height: f64::from(config.region.height),
     }));
     capture.fps = config.capture_fps;
+    capture.follow_mouse = config.follow_mouse;
     capture.cursor = if config.show_cursor {
         snow_media::CursorMode::Embedded
     } else {
@@ -419,6 +420,7 @@ mod tests {
             system_audio_gain_db: 0,
             microphone_gain_db: 0,
             loop_animated_images: true,
+            follow_mouse: false,
             region: crate::RecordingRegion::new(-321, -99, 641, 359),
             capture_backend: crate::CaptureBackendKind::Auto,
             output_path: "test.mp4".into(),
@@ -462,6 +464,25 @@ mod tests {
         assert_eq!(capture.excluded_windows, [123]);
         assert_eq!(capture.excluded_processes, [456]);
         assert_eq!(capture.fps, 60);
+    }
+    #[test]
+    fn follow_mode_keeps_nominal_point_region_and_native_exclusions() {
+        let mut config = config();
+        config.follow_mouse = true;
+        let capture = capture_config(&config).unwrap();
+        assert!(capture.follow_mouse);
+        assert_eq!(capture.excluded_windows, [123]);
+        assert_eq!(capture.excluded_processes, [456]);
+        assert_eq!(
+            capture.target,
+            DesktopTarget::Region(DesktopRect {
+                space: DesktopSpace::Points,
+                x: -321.0,
+                y: -99.0,
+                width: 641.0,
+                height: 359.0,
+            })
+        );
     }
     #[test]
     fn output_uses_native_resolution_then_quality_and_codec_alignment() {

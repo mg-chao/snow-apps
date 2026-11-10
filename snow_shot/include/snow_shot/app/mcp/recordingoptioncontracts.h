@@ -109,6 +109,9 @@ inline const QJsonObject& recordingAutomationOptionContracts() {
         {QStringLiteral("capture_toolbar"),
          QJsonObject{
              {QStringLiteral("type"), QStringLiteral("boolean")}}},
+        {QStringLiteral("follow_mouse"),
+         QJsonObject{
+             {QStringLiteral("type"), QStringLiteral("boolean")}}},
         {QStringLiteral("show_cursor"),
          QJsonObject{
              {QStringLiteral("type"), QStringLiteral("boolean")}}},
