@@ -98,8 +98,14 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 219,
-            "Snow Shot pack should contain all 219 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 220,
+            "Snow Shot pack should contain all 220 project-owned assets");
+    require(adqt::icons::describeIcon(icons::outlined::CreditsCoin()).key.name ==
+                QStringLiteral("credits-coin"),
+            "account credits should resolve to their project-owned coin icon");
+    require(adqt::icons::describeIcon(icons::outlined::RecordingFollowMouse()).key.name ==
+                QStringLiteral("recording-follow-mouse"),
+            "follow mouse recording should resolve to its project-owned icon");
     require(adqt::icons::describeIcon(icons::outlined::PinWindowToScreen()).key.name ==
                 QStringLiteral("pin-window-to-screen"),
             "live window pinning should resolve to its project-owned icon");

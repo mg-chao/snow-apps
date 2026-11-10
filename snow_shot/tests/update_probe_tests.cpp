@@ -15,6 +15,26 @@ void require(bool condition, const char* message) {
         throw std::runtime_error(message);
 }
 
+void probeInvocationCannotFallThroughToLiveStartup() {
+    using snow_shot::app::inspectUpdateProbeRequest;
+    const QString version = QStringLiteral("1.5.3");
+    const char* const normal[]{"snow-shot", "--show-main-window"};
+    require(!inspectUpdateProbeRequest(1, normal, version) &&
+                !inspectUpdateProbeRequest(2, normal, version),
+            "ordinary application invocations retain normal startup");
+    const char* const valid[]{"snow-shot", "--update-probe", "1.5.3"};
+    require(inspectUpdateProbeRequest(3, valid, version) == 0,
+            "matching version admits the isolated probe");
+    const char* const mismatch[]{"snow-shot", "--update-probe", "1.5.2"};
+    require(inspectUpdateProbeRequest(3, mismatch, version) == 3,
+            "version mismatch preserves the updater's existing failure code");
+    const char* const missing[]{"snow-shot", "--update-probe"};
+    const char* const extra[]{"snow-shot", "--update-probe", "1.5.3", "--show-main-window"};
+    require(inspectUpdateProbeRequest(2, missing, version) == 64 &&
+                inspectUpdateProbeRequest(4, extra, version) == 64,
+            "malformed probe invocations reject before QApplication or live startup");
+}
+
 void probeUsesOnlyTemporaryStorage() {
     QTemporaryDir liveDirectory;
     require(liveDirectory.isValid(), "isolated live-state sentinel");
@@ -97,6 +117,7 @@ void failedInitializationDoesNotStartPresentation() {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     try {
+        probeInvocationCannotFallThroughToLiveStartup();
         probeUsesOnlyTemporaryStorage();
         failedInitializationDoesNotStartPresentation();
     } catch (const std::exception& error) {

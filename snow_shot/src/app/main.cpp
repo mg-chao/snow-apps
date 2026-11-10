@@ -417,10 +417,10 @@ int main(int argc, char* argv[]) {
         return result == SNOW_RECORDING_RESULT_OK ? 0 : 1;
     }
     // A probe runs before diagnostics, singleton acquisition, or any live user-state access.
-    if (argc == 3 && QString::fromLocal8Bit(argv[1]) == u"--update-probe") {
-        if (QString::fromLocal8Bit(argv[2]) != QCoreApplication::applicationVersion()) {
-            return 3;
-        }
+    if (const auto probeRequest = snow_shot::app::inspectUpdateProbeRequest(
+            argc, argv, QCoreApplication::applicationVersion())) {
+        if (*probeRequest != 0)
+            return *probeRequest;
         qputenv("QT_QPA_PLATFORM", "offscreen");
         QApplication probe(argc, argv);
         adqt::widgets::initializePlatformCompatibility(probe);

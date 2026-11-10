@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 12V2.75M9.75 4.75 12 6.75l2.25-2"/>
+  <path d="M12 12V2.75M9.75 4.75 12 6.75l2.25-2" transform="rotate(60 12 12)"/>
+  <path d="M12 12V2.75M9.75 4.75 12 6.75l2.25-2" transform="rotate(120 12 12)"/>
+  <path d="M12 12V2.75M9.75 4.75 12 6.75l2.25-2" transform="rotate(180 12 12)"/>
+  <path d="M12 12V2.75M9.75 4.75 12 6.75l2.25-2" transform="rotate(240 12 12)"/>
+  <path d="M12 12V2.75M9.75 4.75 12 6.75l2.25-2" transform="rotate(300 12 12)"/>
+</svg>

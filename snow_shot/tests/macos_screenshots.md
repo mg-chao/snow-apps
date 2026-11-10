@@ -129,6 +129,45 @@ it also tests direct target resolution and horizontal/vertical scroll dispatch t
 a helper process while checking that the pointer stays fixed. Missing native
 prerequisites are reported explicitly, not treated as validated functionality.
 
+## Background main-window protection
+
+Visible captures invoked over another application temporarily order Snow Shot's main
+window out before acquisition or presentation. Fully obscured windows are included;
+hidden and minimized windows are not. Foreground self-capture remains supported.
+The lease spans scrolling, return to editing, and recapture. Completion restores the
+same surviving native window with `orderBack:`, independently of keyboard-focus
+restoration. Explicit reopening supersedes the lease and pending focus restoration.
+
+Focused checks:
+
+```sh
+cmake --build --preset build-snow-shot-macos-arm64-debug --target \
+  snow_shot snow-shot-macos-screenshot-focus-tests \
+  snow-shot-macos-screenshot-focus-native-tests snow-shot-capture-workflow-tests
+ctest --preset test-snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(macos-screenshot-focus(-controller)?|capture-workflow)-tests$'
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-macos-capture-background-window-native-tests$' -j 1
+```
+
+The Cocoa regression starts a separate process and verifies that its native window
+completely covers the main-window fixture in WindowServer order before capture.
+It exercises process-activating Qt raises, scrolling input transparency, restoration,
+explicit reopen/hide/close, minimization, destruction, and native-surface replacement.
+It needs a desktop session but no Screen Recording or Accessibility permission.
+The same regression was compiled against the original focus implementation and failed
+at `capture activation must not reveal the obscured main window`; it passes with the
+guard. `--without-background-guard` is a test-only negative control.
+
+For hardware acceptance, leave Settings behind a browser and invoke both the ordinary
+capture shortcut followed by the scrolling toolbar action and the direct scrolling
+shortcut. Test manual/automatic scrolling, pause/resume, resize, recapture, cancellation,
+copy/save, and pinning. Settings must remain absent during capture and return behind
+the browser afterward. Repeat across displays and fullscreen Spaces, checking that
+neither the active Space nor the main window's geometry/state changes. Also capture
+Settings while Snow Shot is initially foreground, and explicitly reopen it from the
+Dock/tray during capture.
+
 ## Hardware acceptance checklist
 
 On a Retina + non-Retina pair, repeat ordinary/delayed/fixed and direct captures;

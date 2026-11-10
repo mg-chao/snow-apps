@@ -50,6 +50,7 @@ class MainWindow : public QMainWindow {
     void showTranslation(const QString& text);
 
   signals:
+    void aboutToShowAndActivate();
     void screenshotRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void

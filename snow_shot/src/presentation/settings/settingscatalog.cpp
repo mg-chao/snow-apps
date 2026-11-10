@@ -5147,6 +5147,17 @@ constexpr CatalogPageRecord catalogPages[] = {
         .aliases = catalogPageGeneralAliases,
     },
     {
+        .id = u"account",
+        .route = u"/settings/account",
+        .title = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Account")),
+        .description = settingsText(
+            QT_TRANSLATE_NOOP("SettingsCatalog", "Membership, credits and transactions")),
+        .sections = {},
+        .kind = SettingsPageKind::Account,
+        .links = {},
+        .aliases = {},
+    },
+    {
         .id = u"general-appearance",
         .route = u"/settings/general-appearance",
         .title = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Appearance")),
@@ -5410,6 +5421,8 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     settingsGroup.pages = {
         {QStringLiteral("nav.general"), QStringLiteral("general"),
          []() { return outlined_icons::Setting(); }},
+        {QStringLiteral("nav.account"), QStringLiteral("account"),
+         []() { return outlined_icons::User(); }},
         {QStringLiteral("nav.general-appearance"), QStringLiteral("general-appearance"),
          []() { return outlined_icons::Control(); }},
         {QStringLiteral("nav.screenshots"), QStringLiteral("screenshots"),
@@ -5594,7 +5607,8 @@ SettingsCatalog::SettingsCatalog(QVector<SettingsPageDefinition> pages,
                   !app::edition::textTranslation || !app::edition::apiConfiguration ||
                   !app::edition::extendedFeatures) {
         const auto pageAvailable = [](const QString& id) {
-            return (app::edition::textTranslation || id != QStringLiteral("translation")) &&
+            return (!app::edition::isMini || id != QStringLiteral("account")) &&
+                   (app::edition::textTranslation || id != QStringLiteral("translation")) &&
                    (app::edition::apiConfiguration || id != QStringLiteral("api-configuration")) &&
                    (app::edition::extendedFeatures || id != QStringLiteral("extended-features"));
         };

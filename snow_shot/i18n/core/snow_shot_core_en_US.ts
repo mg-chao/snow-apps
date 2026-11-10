@@ -254,6 +254,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Updates are managed by Microsoft Store</translation>
         </message>
         <message>
+            <source>User agreement</source>
+            <translation>User agreement</translation>
+        </message>
+        <message>
             <source>Verifying update…</source>
             <translation>Verifying update…</translation>
         </message>
@@ -760,6 +764,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>No translation services are available</translation>
         </message>
         <message>
+            <source>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available</source>
+            <translation>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available</translation>
+        </message>
+        <message>
             <source>Table recognition failed</source>
             <translation>Table recognition failed</translation>
         </message>
@@ -838,6 +846,14 @@ so every moment on screen can be expressed clearly and shared easily</translatio
         <message>
             <source>Translation stream ended unexpectedly</source>
             <translation>Translation stream ended unexpectedly</translation>
+        </message>
+        <message>
+            <source>Your available free allowance and credits cannot cover this request. Purchase credits from Account to continue</source>
+            <translation>Your available free allowance and credits cannot cover this request. Purchase credits from Account to continue</translation>
+        </message>
+        <message>
+            <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</source>
+            <translation>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</translation>
         </message>
     </context>
     <context>

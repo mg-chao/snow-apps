@@ -4,6 +4,7 @@
 include_guard(GLOBAL)
 
 set(SNOW_SHOT_MINI_EXCLUDED_SOURCE_NAMES
+    accountpagewidget accountsessionservice accountsecretstore
     selectedtexttranslationcoordinator selectedtexttranslationcontroller
     standalonetranslationwindow translationpagewidget translationpagecontroller
     translationservice translationlanguages translationlanguagedetector snowshotapiclient

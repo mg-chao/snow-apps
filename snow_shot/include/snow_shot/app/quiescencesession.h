@@ -18,6 +18,10 @@ class QuiescenceSession final {
         restore();
     }
     template <typename Restore> void acquired(Restore restore) {
+        // Terminal commitment may arrive reentrantly during synchronous preparation.
+        // Later acquisitions belong to that handoff too and must remain closed.
+        if (m_committed)
+            return;
         try {
             m_restore.emplace_back(restore);
         } catch (...) {
@@ -29,6 +33,8 @@ class QuiescenceSession final {
         auto callbacks = std::move(m_restore);
         m_restore.clear();
         for (auto it = callbacks.rbegin(); it != callbacks.rend(); ++it) {
+            if (m_committed)
+                break;
             try {
                 (*it)();
             } catch (...) {
@@ -40,11 +46,16 @@ class QuiescenceSession final {
     }
     // A committed terminal handoff must not reopen admission during destruction.
     void commit() {
+        m_committed = true;
         m_restore.clear();
+    }
+    [[nodiscard]] bool committed() const {
+        return m_committed;
     }
 
   private:
     std::vector<std::function<void()>> m_restore;
+    bool m_committed = false;
 };
 } // namespace snow_shot::app
 #endif

@@ -101,6 +101,7 @@ ArrowheadTriangleStart(const adqt::icons::IconColors& colors = {});
 BrushPressureSensitive(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef BrushRegular(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ColorPicker(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef CreditsCoin(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef CropHorizontal(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef CropVertical(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Delete(const adqt::icons::IconColors& colors = {});

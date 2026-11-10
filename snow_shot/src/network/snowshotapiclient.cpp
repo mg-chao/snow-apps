@@ -553,6 +553,7 @@ struct SnowShotApiClient::Request {
     QString model;
     QString endpoint;
     QByteArray apiKey;
+    QByteArray accountAccessToken;
     QByteArray pendingBody;
     bool custom = false;
     bool builtInChat = false;
@@ -604,6 +605,7 @@ bool SnowShotApiClient::setBaseUrl(const QString& baseUrl) {
     if (m_baseUrl == *normalized)
         return true;
     m_baseUrl = *normalized;
+    m_accountAccessToken.clear();
     ++m_serverGeneration;
     ++m_chatModelsLocaleGeneration;
     m_requestedChatModelsLocale.clear();
@@ -616,6 +618,31 @@ bool SnowShotApiClient::setBaseUrl(const QString& baseUrl) {
         return true;
     emit chatModelsChanged();
     return true;
+}
+
+void SnowShotApiClient::setAccountAccessToken(const QByteArray& accessToken,
+                                              bool sameAccountRefresh) {
+    if (m_accountAccessToken == accessToken)
+        return;
+    const auto previousToken = m_accountAccessToken;
+    m_accountAccessToken = accessToken;
+    // Queued/preparing requests cannot silently run under a former identity.
+    const auto tokens = m_requests.keys();
+    const QPointer<SnowShotApiClient> guard(this);
+    for (const auto token : tokens) {
+        auto* state = m_requests.value(token);
+        if (state && !state->custom && !state->freeTranslation && !state->textTranslation &&
+            !state->reply) {
+            if (sameAccountRefresh && !previousToken.isEmpty() &&
+                state->accountAccessToken == previousToken &&
+                state->endpoint.startsWith(m_baseUrl + u'/'))
+                state->accountAccessToken = accessToken;
+            else
+                cancel(token);
+        }
+        if (!guard)
+            return;
+    }
 }
 
 bool SnowShotApiClient::usesSystemProxy() const {
@@ -631,15 +658,19 @@ void SnowShotApiClient::setProxyConfiguration(const QString& mode, const QString
         return;
     m_proxyMode = mode;
     m_proxyAddress = address;
-    if (auto* manager = findChild<QNetworkAccessManager*>(); manager != nullptr)
-        snow_shot::network::configureProxy(*manager, m_proxyMode, m_proxyAddress);
+    if (auto* manager = findChild<QNetworkAccessManager*>(QString(), Qt::FindDirectChildrenOnly))
+        configureNetworkProxy(*manager);
+}
+
+void SnowShotApiClient::configureNetworkProxy(QNetworkAccessManager& manager) const {
+    snow_shot::network::configureProxy(manager, m_proxyMode, m_proxyAddress);
 }
 
 QNetworkAccessManager* SnowShotApiClient::networkAccessManager() {
-    auto* manager = findChild<QNetworkAccessManager*>();
+    auto* manager = findChild<QNetworkAccessManager*>(QString(), Qt::FindDirectChildrenOnly);
     if (manager == nullptr) {
         manager = new QNetworkAccessManager(this);
-        snow_shot::network::configureProxy(*manager, m_proxyMode, m_proxyAddress);
+        configureNetworkProxy(*manager);
     }
     return manager;
 }
@@ -662,6 +693,15 @@ QByteArray SnowShotApiClient::encodeWebp(const QImage& image) {
 
 QString SnowShotApiClient::formatFailure(int httpStatus, const QString& failureCode,
                                          const QString& description) {
+    if (failureCode == u"insufficient_credits")
+        return tr("Your available free allowance and credits cannot cover this request. "
+                  "Purchase credits from Account to continue");
+    if (failureCode == u"outstanding_balance")
+        return tr("Paid calls are paused because your account has an outstanding balance. "
+                  "Your free allowance remains available");
+    if (failureCode == u"funds_temporarily_reserved")
+        return tr("Your credits are reserved by other calls that are still running. "
+                  "Wait for them to finish and try again");
     const QString conciseDescription = description.simplified();
     const QString code =
         httpStatus > 0 && httpStatus != 200 ? QString::number(httpStatus) : failureCode.trimmed();
@@ -705,6 +745,7 @@ SnowShotApiClient::extractImage(ImageExtractionKind kind, const QImage& source, 
     const bool latex = kind == ImageExtractionKind::Latex;
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(latex ? Request::Kind::LatexExtract : Request::Kind::TableExtract);
+    state->accountAccessToken = m_accountAccessToken;
     state->endpoint = m_baseUrl + (latex ? QStringLiteral("/api/v1/latex/extract")
                                          : QStringLiteral("/api/v1/table/extract"));
     state->receiver = receiver;
@@ -785,8 +826,11 @@ void SnowShotApiClient::startImageUpload(RequestToken token, const QByteArray& w
     QHttp1Configuration http1;
     http1.setNumberOfConnectionsPerHost(8);
     request.setHttp1Configuration(http1);
-    request.setRawHeader("X-Request-ID",
-                         QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::SameOriginRedirectPolicy);
+    if (!requestState->accountAccessToken.isEmpty())
+        request.setRawHeader("Authorization", "Bearer " + requestState->accountAccessToken);
+    request.setRawHeader("X-Request-ID", requestState->operation.toUtf8());
     request.setTransferTimeout(static_cast<int>(remaining));
 
     auto* multipart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
@@ -1084,6 +1128,7 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
     auto* manager = networkAccessManager();
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::ChatModels);
+    state->accountAccessToken = m_accountAccessToken;
     state->receiver = receiver;
     state->chatModelsCompletion = std::move(completion);
     m_requests.insert(token, state);
@@ -1101,8 +1146,11 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
     QHttp1Configuration http1;
     http1.setNumberOfConnectionsPerHost(8);
     request.setHttp1Configuration(http1);
-    request.setRawHeader("X-Request-ID",
-                         QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::SameOriginRedirectPolicy);
+    if (!state->accountAccessToken.isEmpty())
+        request.setRawHeader("Authorization", "Bearer " + state->accountAccessToken);
+    request.setRawHeader("X-Request-ID", state->operation.toUtf8());
     if (!locale.trimmed().isEmpty()) {
         request.setRawHeader("Accept-Language", locale.toUtf8());
     }
@@ -1257,6 +1305,7 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     }
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::Translation);
+    state->accountAccessToken = m_accountAccessToken;
     state->endpoint = m_baseUrl + QStringLiteral("/api/v1/chat/completions");
     state->model = input.model;
     state->freeTranslation = freeTranslation;
@@ -1392,6 +1441,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageRequest(
                       : format == QStringLiteral("latex") ? Request::Kind::LatexVisionExtract
                                                           : Request::Kind::ImageConversion;
     auto* state = new Request(kind);
+    state->accountAccessToken = m_accountAccessToken;
     state->endpoint = m_baseUrl + QStringLiteral("/api/v1/chat/completions");
     if (custom != nullptr) {
         state->custom = true;
@@ -1677,12 +1727,17 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
             request.setRawHeader("Authorization", "Bearer " + state->apiKey);
         }
     }
+    if (!state->custom && !state->freeTranslation) {
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::SameOriginRedirectPolicy);
+        if (!state->accountAccessToken.isEmpty())
+            request.setRawHeader("Authorization", "Bearer " + state->accountAccessToken);
+    }
     request.setRawHeader("Content-Type", "application/json");
     request.setRawHeader("Accept", "text/event-stream");
     if (state->freeTranslation)
         request.setRawHeader("User-Agent", "Index-Translate-Client/1.0");
-    request.setRawHeader("X-Request-ID",
-                         QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
+    request.setRawHeader("X-Request-ID", state->operation.toUtf8());
     request.setTransferTimeout(kTranslationTimeoutMs);
     ++state->chatAttempts;
     state->transport.start();
@@ -1987,7 +2042,13 @@ void SnowShotApiClient::finish(RequestToken token, SnowShotTableResult result) {
     const QPointer<QObject> receiver = request->receiver;
     Completion completion = std::move(request->completion);
     const QPointer<SnowShotApiClient> guard(this);
+    const bool accountCall = !request->custom && !request->freeTranslation &&
+                             !request->textTranslation && !request->accountAccessToken.isEmpty() &&
+                             request->accountAccessToken == m_accountAccessToken &&
+                             request->endpoint.startsWith(m_baseUrl + u'/');
     cleanupRequest(request);
+    if (guard && accountCall)
+        emit officialCallSettled();
     if (guard && receiver && completion) {
         completion(std::move(result));
     }
@@ -2004,7 +2065,13 @@ void SnowShotApiClient::finishLatex(RequestToken token, SnowShotLatexResult resu
     const QPointer<QObject> receiver = request->receiver;
     LatexCompletion completion = std::move(request->latexCompletion);
     const QPointer<SnowShotApiClient> guard(this);
+    const bool accountCall = !request->custom && !request->freeTranslation &&
+                             !request->textTranslation && !request->accountAccessToken.isEmpty() &&
+                             request->accountAccessToken == m_accountAccessToken &&
+                             request->endpoint.startsWith(m_baseUrl + u'/');
     cleanupRequest(request);
+    if (guard && accountCall)
+        emit officialCallSettled();
     if (guard && receiver && completion) {
         completion(std::move(result));
     }
@@ -2074,7 +2141,13 @@ void SnowShotApiClient::finishTranslation(RequestToken token, SnowShotTranslatio
         QTimer::singleShot(0, this, &SnowShotApiClient::pumpCustomChatStreams);
     // An SSE error can arrive before HTTP completion. Release its connection before
     // the consumer starts another request in the newly available queue slot.
+    const bool accountCall = !request->custom && !request->freeTranslation &&
+                             !request->textTranslation && !request->accountAccessToken.isEmpty() &&
+                             request->accountAccessToken == m_accountAccessToken &&
+                             request->endpoint.startsWith(m_baseUrl + u'/');
     cleanupRequest(request);
+    if (guard && accountCall)
+        emit officialCallSettled();
     if (guard && receiver != nullptr && completion) {
         completion(std::move(result));
     }

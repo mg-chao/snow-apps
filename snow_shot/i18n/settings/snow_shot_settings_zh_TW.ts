@@ -2,6 +2,320 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
     <context>
+        <name>AccountPageWidget</name>
+        <message>
+            <source>3–32 letters, numbers, _, . or -</source>
+            <translation>3–32 個字母、數字、_、. 或 -</translation>
+        </message>
+        <message>
+            <source>8–16 characters</source>
+            <translation>8–16 個字元</translation>
+        </message>
+        <message>
+            <source>Account</source>
+            <translation>帳號</translation>
+        </message>
+        <message>
+            <source>Account linked</source>
+            <translation>帳號已綁定</translation>
+        </message>
+        <message>
+            <source>Account transactions</source>
+            <translation>帳號明細</translation>
+        </message>
+        <message>
+            <source>Activate %1</source>
+            <translation>啟用 %1</translation>
+        </message>
+        <message>
+            <source>Already have an account? Sign in</source>
+            <translation>已有帳號？登入</translation>
+        </message>
+        <message>
+            <source>Available credits</source>
+            <translation>可用積分</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Cancel payment</source>
+            <translation>取消付款</translation>
+        </message>
+        <message>
+            <source>Code valid for %1:%2 · Valid until %3</source>
+            <translation>二維碼剩餘有效時間 %1:%2 · 有效至 %3</translation>
+        </message>
+        <message>
+            <source>Completed</source>
+            <translation>已完成</translation>
+        </message>
+        <message>
+            <source>Confirm password</source>
+            <translation>確認密碼</translation>
+        </message>
+        <message>
+            <source>Confirming payment</source>
+            <translation>正在確認付款結果</translation>
+        </message>
+        <message>
+            <source>Continue</source>
+            <translation>繼續</translation>
+        </message>
+        <message>
+            <source>Create an account</source>
+            <translation>註冊帳號</translation>
+        </message>
+        <message>
+            <source>Create your account</source>
+            <translation>註冊 Snow Shot 帳號</translation>
+        </message>
+        <message>
+            <source>Credits</source>
+            <translation>積分</translation>
+        </message>
+        <message>
+            <source>Date</source>
+            <translation>日期</translation>
+        </message>
+        <message>
+            <source>Failed</source>
+            <translation>失敗</translation>
+        </message>
+        <message>
+            <source>I have read and agree to the %1 and %2</source>
+            <translation>我已閱讀並同意%1和%2</translation>
+        </message>
+        <message>
+            <source>I've paid</source>
+            <translation>我已付款</translation>
+        </message>
+        <message>
+            <source>Image code</source>
+            <translation>圖形驗證碼</translation>
+        </message>
+        <message>
+            <source>Load more</source>
+            <translation>載入更多</translation>
+        </message>
+        <message>
+            <source>Manage and view account data</source>
+            <translation>管理、查看帳號資料</translation>
+        </message>
+        <message>
+            <source>No transactions yet</source>
+            <translation>尚無帳號明細</translation>
+        </message>
+        <message>
+            <source>Order ID: %1</source>
+            <translation>訂單編號：%1</translation>
+        </message>
+        <message>
+            <source>Outstanding balance: %1</source>
+            <translation>待償還欠款：%1</translation>
+        </message>
+        <message>
+            <source>Paid calls are paused. Your free allowance remains available. New purchases pay this balance first</source>
+            <translation>付費呼叫已暫停，免費額度仍可使用。後續儲值將優先抵扣欠款</translation>
+        </message>
+        <message>
+            <source>Password</source>
+            <translation>密碼</translation>
+        </message>
+        <message>
+            <source>Payment confirmation continues after the code's original expiry</source>
+            <translation>二維碼原有效期結束後，仍會繼續確認付款結果</translation>
+        </message>
+        <message>
+            <source>Payment failed or the order was closed</source>
+            <translation>付款失敗或訂單已關閉</translation>
+        </message>
+        <message>
+            <source>Payment received</source>
+            <translation>已確認入帳</translation>
+        </message>
+        <message>
+            <source>Pending</source>
+            <translation>待處理</translation>
+        </message>
+        <message>
+            <source>Privacy policy</source>
+            <translation>隱私權政策</translation>
+        </message>
+        <message>
+            <source>Processing</source>
+            <translation>處理中</translation>
+        </message>
+        <message>
+            <source>Purchase credits</source>
+            <translation>儲值積分</translation>
+        </message>
+        <message>
+            <source>Purchase credits for %1</source>
+            <translation>為 %1 儲值積分</translation>
+        </message>
+        <message>
+            <source>Purchases are currently unavailable. Your account and transaction records are still available</source>
+            <translation>儲值暫不可用，帳號資訊和明細仍可查看</translation>
+        </message>
+        <message>
+            <source>Refresh</source>
+            <translation>重新整理</translation>
+        </message>
+        <message>
+            <source>Refresh code</source>
+            <translation>換一張</translation>
+        </message>
+        <message>
+            <source>Refund</source>
+            <translation>退款</translation>
+        </message>
+        <message>
+            <source>Register and continue</source>
+            <translation>註冊並繼續</translation>
+        </message>
+        <message>
+            <source>Registration image code</source>
+            <translation>註冊圖形驗證碼</translation>
+        </message>
+        <message>
+            <source>Return to registration and generate a new code. Your previous order records are retained</source>
+            <translation>請返回註冊頁面產生新二維碼。原訂單紀錄仍會保留</translation>
+        </message>
+        <message>
+            <source>Scan this Mini Program code with WeChat</source>
+            <translation>請用微信掃描此小程式碼</translation>
+        </message>
+        <message>
+            <source>Scan with your own WeChat account. An existing temporary account will be linked and signed in automatically using these desktop credentials. Otherwise, select a package and confirm your order. The WeChat link cannot be changed</source>
+            <translation>請使用本人的微信掃碼。已有臨時帳號將使用在電腦端填寫的使用者名稱和密碼完成綁定並自動登入；否則，請選擇方案並確認購買。微信綁定後無法更換</translation>
+        </message>
+        <message>
+            <source>Sign in</source>
+            <translation>登入</translation>
+        </message>
+        <message>
+            <source>Sign in to Snow Shot</source>
+            <translation>登入 Snow Shot</translation>
+        </message>
+        <message>
+            <source>Sign in to an existing account</source>
+            <translation>登入已有帳號</translation>
+        </message>
+        <message>
+            <source>Sign out</source>
+            <translation>登出</translation>
+        </message>
+        <message>
+            <source>Status</source>
+            <translation>狀態</translation>
+        </message>
+        <message>
+            <source>The account service is unavailable</source>
+            <translation>帳號服務暫不可用</translation>
+        </message>
+        <message>
+            <source>The payment result is still being checked</source>
+            <translation>仍在核實付款結果</translation>
+        </message>
+        <message>
+            <source>This purchase code has expired</source>
+            <translation>此儲值二維碼已過期</translation>
+        </message>
+        <message>
+            <source>Top-up</source>
+            <translation>儲值</translation>
+        </message>
+        <message>
+            <source>Top-ups, usage charges, and refunds</source>
+            <translation>查看儲值、使用扣款和退款記錄</translation>
+        </message>
+        <message>
+            <source>Top-ups, usage charges, and refunds appear here</source>
+            <translation>儲值、消費及退款紀錄會顯示在這裡</translation>
+        </message>
+        <message>
+            <source>Total top-ups: %1</source>
+            <translation>累計儲值：%1</translation>
+        </message>
+        <message>
+            <source>Transaction</source>
+            <translation>交易類型</translation>
+        </message>
+        <message>
+            <source>Usage</source>
+            <translation>消費</translation>
+        </message>
+        <message>
+            <source>User agreement</source>
+            <translation>使用者協議</translation>
+        </message>
+        <message>
+            <source>Username</source>
+            <translation>使用者名稱</translation>
+        </message>
+        <message>
+            <source>Waiting for payment</source>
+            <translation>等待付款</translation>
+        </message>
+    </context>
+    <context>
+        <name>AccountSessionService</name>
+        <message>
+            <source>Complete your first payment to activate this account</source>
+            <translation>請完成首次付款以啟用此帳號</translation>
+        </message>
+        <message>
+            <source>Payment has not been confirmed. We will keep checking</source>
+            <translation>尚未確認入帳，將繼續查詢付款結果</translation>
+        </message>
+        <message>
+            <source>Purchases are currently unavailable. Please try again later</source>
+            <translation>儲值暫不可用，請稍後重試</translation>
+        </message>
+        <message>
+            <source>The image code is incorrect or expired. Refresh it and try again</source>
+            <translation>圖形驗證碼錯誤或已過期，請更換後重試</translation>
+        </message>
+        <message>
+            <source>The passwords do not match</source>
+            <translation>兩次輸入的密碼不一致</translation>
+        </message>
+        <message>
+            <source>The payment result needs confirmation. Your request remains reserved</source>
+            <translation>付款結果仍需核實，您的申請將繼續保留</translation>
+        </message>
+        <message>
+            <source>The username or password is incorrect</source>
+            <translation>使用者名稱或密碼錯誤</translation>
+        </message>
+        <message>
+            <source>This purchase code has expired. Generate a new code to continue</source>
+            <translation>此儲值二維碼已過期，請產生新二維碼後繼續</translation>
+        </message>
+        <message>
+            <source>This purchase must use the WeChat account linked to your Snow Shot account</source>
+            <translation>請使用與此 Snow Shot 帳號綁定的微信帳號付款</translation>
+        </message>
+        <message>
+            <source>This username is already taken or temporarily reserved</source>
+            <translation>此使用者名稱已被使用或暫時保留</translation>
+        </message>
+        <message>
+            <source>Too many requests. Wait a moment and try again</source>
+            <translation>請求過於頻繁，請稍後重試</translation>
+        </message>
+        <message>
+            <source>Unable to complete the request. Check your connection and try again</source>
+            <translation>無法完成請求，請檢查網路連線後重試</translation>
+        </message>
+        <message>
+            <source>Your session has expired. Sign in again</source>
+            <translation>登入狀態已過期，請重新登入</translation>
+        </message>
+    </context>
+    <context>
         <name>AdministratorLaunch</name>
         <message>
             <source> Recovery failed: %1</source>
@@ -1218,6 +1532,10 @@
         <message>
             <source>Accessibility</source>
             <translation>輔助使用</translation>
+        </message>
+        <message>
+            <source>Account</source>
+            <translation>帳號</translation>
         </message>
         <message>
             <source>Accuracy first</source>
@@ -3062,6 +3380,10 @@
         <message>
             <source>Medium V6</source>
             <translation>中型 V6</translation>
+        </message>
+        <message>
+            <source>Membership, credits and transactions</source>
+            <translation>會員、餘額及帳號明細</translation>
         </message>
         <message>
             <source>Memory optimization policy</source>
@@ -5607,6 +5929,49 @@ Unavailable: %2</source>
         <message>
             <source>Youdao</source>
             <translation>有道</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::AccountSessionService</name>
+        <message>
+            <source>%1 credits</source>
+            <translation>%1 積分</translation>
+        </message>
+        <message>
+            <source>Confirm your password</source>
+            <translation>請確認密碼</translation>
+        </message>
+        <message>
+            <source>Enter the image code</source>
+            <translation>請輸入圖片驗證碼</translation>
+        </message>
+        <message>
+            <source>Enter your password</source>
+            <translation>請輸入密碼</translation>
+        </message>
+        <message>
+            <source>Enter your username</source>
+            <translation>請輸入使用者名稱</translation>
+        </message>
+        <message>
+            <source>This payment is already being processed. We will keep checking its result</source>
+            <translation>這筆付款正在處理中，我們將繼續查詢付款結果</translation>
+        </message>
+        <message>
+            <source>Use 3–32 letters, numbers, underscores, dots, or hyphens for your username</source>
+            <translation>使用者名稱須為 3–32 個字母、數字、底線、點或連字號</translation>
+        </message>
+        <message>
+            <source>Use a password between 8 and 16 characters</source>
+            <translation>密碼長度須為 8–16 個字元</translation>
+        </message>
+        <message>
+            <source>Your account is activated. Sign in with your username and password if automatic sign-in does not complete</source>
+            <translation>帳號已啟用。如果未能自動登入，請使用使用者名稱和密碼登入</translation>
+        </message>
+        <message>
+            <source>Your session could not be saved securely. Keep this app open until payment is confirmed; you may need to sign in again after restarting</source>
+            <translation>無法安全儲存登入資訊。請保持應用程式開啟，直到付款結果確認；重新啟動後可能需要重新登入</translation>
         </message>
     </context>
     <context>

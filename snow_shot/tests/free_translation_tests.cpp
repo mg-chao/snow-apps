@@ -50,6 +50,7 @@ void requestAndStreaming() {
     Server server;
     SnowShotApiClient client{QString()};
     configure(server, client);
+    client.setAccountAccessToken("private-account-token");
     QObject owner;
     QString output;
     int completions = 0;
@@ -293,6 +294,7 @@ void boundedQueueAndQueuedCancellation() {
     Server server;
     SnowShotApiClient client{QString()};
     configure(server, client);
+    client.setAccountAccessToken("original-account-token");
     auto owner = std::make_unique<QObject>();
     QVector<SnowShotApiClient::RequestToken> tokens;
     int completed = 0;
@@ -309,10 +311,19 @@ void boundedQueueAndQueuedCancellation() {
     waitUntil([&] { return server.streams.size() == 8; }, "free service fills eight shared slots");
     require(client.isQueued(tokens[8]) && client.isQueued(tokens[9]),
             "excess free requests wait in the bounded queue");
+    client.setAccountAccessToken("refreshed-account-token", true);
+    require(client.isQueued(tokens[8]) && client.isQueued(tokens[9]),
+            "account token refresh preserves queued free translation");
+    client.setAccountAccessToken({});
+    require(client.isQueued(tokens[8]) && client.isQueued(tokens[9]),
+            "signing out preserves queued free translation");
     client.cancel(tokens[8]);
     server.delta(0, QStringLiteral("done"));
     server.finish(0);
     waitUntil([&] { return server.streams.size() == 9; }, "a completion admits queued work");
+    for (const auto& stream : server.streams)
+        require(!stream.headers.toLower().contains("authorization:"),
+                "free translation never sends account credentials, including queued requests");
     require(server.streams.last()
                 .body.value(QStringLiteral("messages"))
                 .toArray()

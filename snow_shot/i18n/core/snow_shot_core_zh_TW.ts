@@ -254,6 +254,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>更新由 Microsoft Store 管理</translation>
         </message>
         <message>
+            <source>User agreement</source>
+            <translation>使用者協議</translation>
+        </message>
+        <message>
             <source>Verifying update…</source>
             <translation>正在驗證更新…</translation>
         </message>
@@ -760,6 +764,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>沒有可用的翻譯服務</translation>
         </message>
         <message>
+            <source>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available</source>
+            <translation>帳號存在欠款，付費呼叫已暫停。免費額度仍可使用</translation>
+        </message>
+        <message>
             <source>Table recognition failed</source>
             <translation>表格辨識失敗</translation>
         </message>
@@ -838,6 +846,14 @@ so every moment on screen can be expressed clearly and shared easily</source>
         <message>
             <source>Translation stream ended unexpectedly</source>
             <translation>翻譯串流意外結束</translation>
+        </message>
+        <message>
+            <source>Your available free allowance and credits cannot cover this request. Purchase credits from Account to continue</source>
+            <translation>可用免費額度和帳號餘額不足以支付本次請求。請前往「帳號」儲值後繼續</translation>
+        </message>
+        <message>
+            <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</source>
+            <translation>餘額已被其他進行中的呼叫預留，請等待這些呼叫結束後重試</translation>
         </message>
     </context>
     <context>

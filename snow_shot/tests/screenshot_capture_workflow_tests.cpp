@@ -2090,6 +2090,10 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
         ++completions;
         lastSucceeded = succeeded;
     };
+    int sessionTransitions = 0;
+    context.captureStarting = [&](bool) { ++sessionTransitions; };
+    context.captureEnding = [&](ScreenshotCaptureFocusDisposition) { ++sessionTransitions; };
+    context.captureEnded = [&] { ++sessionTransitions; };
     ScreenshotCaptureWorkflow workflow(context);
 
     QVector<std::uint32_t> excludedWindowIds{101, 202};
@@ -2165,6 +2169,9 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     runtime.deliverResult(successfulRecaptureResult(pendingRequestId, replacement));
     require(completions == 4 && displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
             "a stale recapture callback after teardown must be ignored");
+    require(sessionTransitions == 0,
+            "recapture success, failure, and cancellation must retain the session's focus and "
+            "background-window lease");
 }
 
 void colorPickerFollowsCaptureSessionLifetime() {

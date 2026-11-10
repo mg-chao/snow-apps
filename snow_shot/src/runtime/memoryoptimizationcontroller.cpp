@@ -71,9 +71,10 @@ void MemoryOptimizationController::evaluate() {
     if (!before || before->memoryBytes < (pressure ? 12 : 18) * mib)
         return;
     // Sampling can race worker admission. Recheck UI/policy before the tracker
-    // checks its generation under the admission lock.
+    // checks its generation under the admission lock. Inspection callbacks can stop
+    // this controller synchronously even while the desired setting remains enabled.
     if (!m_options.enabled || !m_options.enabled() || !m_options.safe || !m_options.safe() ||
-        !m_options.trim)
+        m_stopped || !m_enabled || !m_options.trim)
         return;
     MemoryTrimReport report;
     report.lowMemory = pressure;
