@@ -1387,6 +1387,18 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
                 }
             },
             m_windowShortcutManager.get(),
+            [this]() {
+                if (m_ocrTranslateAfterRecognition ||
+                    m_interaction.activeTool() == ScreenshotActiveTool::TextTranslation ||
+                    m_ocrAutoActionHandledActivationId == m_ocrActivationId) {
+                    return true;
+                }
+                const QString action =
+                    snow_shot::storage::ScreenshotSettings().autoExecuteAfterTextRecognition();
+                return action != QStringLiteral("copy_text_and_end_screenshot") &&
+                       (action != QStringLiteral("quick_copy_text_and_end_screenshot") ||
+                        !m_ocrFromQuickOcrAction);
+            },
         },
         &owner);
     QObject::connect(m_ocrController.get(), &ScreenshotOcrController::textResultChanged, &owner,

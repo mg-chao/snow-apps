@@ -1425,7 +1425,10 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         return;
     if (!lifetime || transition != m_transitionGeneration)
         return;
-    if (mode != Mode::Text && m_textRenderRequestToken != 0) {
+    const bool renderBackground = mode == Mode::Text && shouldRenderTextBackground();
+    if (!lifetime || transition != m_transitionGeneration)
+        return;
+    if (!renderBackground && m_textRenderRequestToken != 0) {
         if (m_recognition != nullptr) {
             m_recognition->cancel(m_textRenderRequestToken);
         }
@@ -3110,7 +3113,7 @@ void ScreenshotRecognitionSessionController::renderTextBackground() {
 }
 
 void ScreenshotRecognitionSessionController::startTextRender() {
-    if (m_independentEditing)
+    if (m_independentEditing || !shouldRenderTextBackground())
         return;
     const QPointer<ScreenshotRecognitionSessionController> lifetime(this);
     if (!m_active || m_mode != Mode::Text || !hasTarget() || m_recognition == nullptr ||
@@ -3150,9 +3153,12 @@ void ScreenshotRecognitionSessionController::startTextRender() {
             if (generation == m_textRenderGeneration) {
                 m_textRenderRequestToken = 0;
             }
+            const QPointer<ScreenshotRecognitionSessionController> guard(this);
             const bool current = generation == m_textRenderGeneration && key == m_target.key &&
                                  m_active && m_mode == Mode::Text;
-            if (!current) {
+            if (!current || !shouldRenderTextBackground()) {
+                if (!guard)
+                    return;
                 if (!updateBusyState())
                     return;
                 return;
@@ -3884,10 +3890,14 @@ void ScreenshotRecognitionSessionController::clearContent(bool retainTableEditor
 void ScreenshotRecognitionSessionController::applyPresentation(
     const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage,
     QRectF filteredImageCanvasRect) {
+    const QPointer<ScreenshotRecognitionSessionController> lifetime(this);
     m_presentation = presentation;
     if (!notify(&ScreenshotRecognitionSessionController::ensureContent))
         return;
-    if (presentation != nullptr) {
+    const bool renderBackground = shouldRenderTextBackground();
+    if (!lifetime)
+        return;
+    if (renderBackground && presentation != nullptr) {
         prepareScreenshotOcrFillColors(*presentation, m_target.image, m_target.canvasRect,
                                        backgroundFillEnabled());
     }
@@ -3900,6 +3910,8 @@ void ScreenshotRecognitionSessionController::applyPresentation(
     } else if (content() != nullptr) {
         content()->setOcrPresentation(presentation);
     }
+    if (!shouldRenderTextBackground())
+        return;
     if (m_actions.applyOcrBackground) {
         if (!notifyUiCallback(m_actions.applyOcrBackground, presentation))
             return;
@@ -3961,7 +3973,16 @@ void ScreenshotRecognitionSessionController::handleTextDocumentChanged(const QSt
         return;
 }
 
+bool ScreenshotRecognitionSessionController::shouldRenderTextBackground() const {
+    const QPointer<const ScreenshotRecognitionSessionController> lifetime(this);
+    const auto shouldRender = m_actions.shouldRenderTextBackground;
+    const bool enabled = !shouldRender || shouldRender();
+    return lifetime && enabled;
+}
+
 bool ScreenshotRecognitionSessionController::shouldRenderRecognitionInWorker() const {
+    if (!shouldRenderTextBackground())
+        return false;
     const auto renderInWorker = m_actions.renderRecognitionInWorker;
     return m_actions.applyOcrBackgroundImage && !backgroundFillEnabled() &&
            (!renderInWorker || renderInWorker());

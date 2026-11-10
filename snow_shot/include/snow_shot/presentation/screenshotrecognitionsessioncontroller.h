@@ -105,6 +105,8 @@ struct ScreenshotRecognitionSessionActions {
         setTextTranslationServices{};
     // Shared hosts reject UI publication from cached or retired controllers.
     std::function<bool()> isCurrentSession{};
+    // Empty keeps background preparation and publication enabled.
+    std::function<bool()> shouldRenderTextBackground{};
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
@@ -387,6 +389,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void updateTextHighlighting() const;
     void updateTableState(const ScreenshotTableCommandState& state) const;
     void clearTextEditingState();
+    [[nodiscard]] bool shouldRenderTextBackground() const;
     [[nodiscard]] bool shouldRenderRecognitionInWorker() const;
     void setPendingTextRecognitionRendering(bool enabled);
     void pollTextModelDownload(quint64 generation);

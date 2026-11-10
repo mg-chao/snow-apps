@@ -131,13 +131,13 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 return ensureRecognitionWindow() ? m_recognitionWindow.data() : nullptr;
             },
             [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
+                m_presentation = presentation;
                 if (m_recognitionWindow != nullptr) {
                     m_recognitionWindow->setOcrPresentation(std::move(presentation));
                 }
             },
             [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
-                m_presentation = std::move(presentation);
-                applyOcrBackgroundToOverlays(m_presentation);
+                applyOcrBackgroundToOverlays(presentation);
             },
             [](std::shared_ptr<QTextDocument>) {},
             [this]() { clearOcrBackgroundFromOverlays(); },
@@ -320,6 +320,11 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                     if (auto* palette = toolbar->palette())
                         palette->setTextTranslationServices(models, selection, loading);
                 }
+            },
+            {},
+            [this]() {
+                return !m_copyAndEndCapture && (!m_context.shouldRenderTextBackground ||
+                                                m_context.shouldRenderTextBackground());
             },
         },
         this);

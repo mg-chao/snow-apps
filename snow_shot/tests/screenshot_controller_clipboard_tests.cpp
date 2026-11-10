@@ -8,6 +8,8 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
@@ -363,6 +365,106 @@ void captureActionsChooseToolBeforeFirstPresentation(const QString& directory) {
                         expected,
                 "capture actions and remembered tools must activate synchronously exactly once");
         controller.mcpCancelCapture();
+    }
+}
+
+void copyAndEndWorkflowsSkipTextBackgrounds(const QString& directory) {
+    enum class Workflow { Ordinary, Quick, Translation, ExplicitCopy };
+    using Action = ScreenshotController::CaptureAction;
+    const snow_shot::storage::ScreenshotSettings settings;
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const auto previousFill = configuration.value(QStringLiteral("text_recognition/fill_style"));
+    const auto previousFollowUp = settings.autoExecuteAfterTextRecognition();
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+    const bool previousAutomaticQr = settings.autoRecognizeQrCode();
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    const snow_shot::storage::ScreenshotTranslationSettings translationSettings;
+    const auto previousTranslation = translationSettings.configuration();
+#endif
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(
+            configuration.setValue(QStringLiteral("text_recognition/fill_style"), previousFill));
+        static_cast<void>(settings.setAutoExecuteAfterTextRecognition(previousFollowUp));
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+        static_cast<void>(settings.setAutoRecognizeQrCode(previousAutomaticQr));
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        static_cast<void>(translationSettings.setConfiguration(previousTranslation));
+#endif
+    });
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+    require(settings.setAutoRecognizeQrCode(false),
+            "background policy coverage must not run automatic QR recognition");
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    require(
+        translationSettings.setConfiguration(
+            {QStringLiteral("en"), QStringLiteral("zh-Hans"),
+             QStringLiteral("missing-background-policy-test-model"), QStringLiteral("original")}),
+        "translation workflow coverage must not use an external model");
+#endif
+    require(configuration.setValue(QStringLiteral("text_recognition/fill_style"),
+                                   QStringLiteral("background_fill")),
+            "use deterministic solid-fill preparation for workflow coverage");
+    ScreenshotOcrRecognitionService recognition(isolatedRecognitionOptions(directory));
+    ScreenshotController controller(nullptr, nullptr, &recognition);
+    for (const auto& followUp :
+         {QStringLiteral("no_action"), QStringLiteral("copy_text"),
+          QStringLiteral("quick_copy_text"), QStringLiteral("enable_edit_mode"),
+          QStringLiteral("copy_text_and_end_screenshot"),
+          QStringLiteral("quick_copy_text_and_end_screenshot")}) {
+        require(settings.setAutoExecuteAfterTextRecognition(followUp),
+                "select the workflow fixture follow-up");
+        for (const auto workflow :
+             {Workflow::Ordinary, Workflow::Quick, Workflow::Translation, Workflow::ExplicitCopy}) {
+            ScreenshotSelectionParams selection;
+            selection.selection = QRect(10, 10, 60, 40);
+            ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+            ScreenshotControllerTestAccess::presentSelection(controller);
+            if (workflow == Workflow::Ordinary) {
+                ScreenshotControllerTestAccess::commands(controller).setOcrTool();
+            } else {
+                ScreenshotControllerTestAccess::confirmCaptureSelection(
+                    controller, workflow == Workflow::Quick ? Action::RecognizeText
+                                : workflow == Workflow::Translation
+                                    ? Action::RecognizeTextTranslation
+                                    : Action::RecognizeTextAndCopy);
+            }
+            auto* session = controller.findChild<ScreenshotRecognitionSessionController*>();
+            require(session && session->active(), "workflow activates its recognition session");
+            auto results = session->cachedRecognitionResults();
+            auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+            presentation->selection = selection.selection;
+            presentation->lines.push_back(
+                {QStringLiteral("Recognized text"), 1.0,
+                 QPolygonF{QPointF(15, 15), QPointF(60, 15), QPointF(60, 35), QPointF(15, 35)}});
+            presentation->prepareForRendering();
+            results.text = ScreenshotOcrRecognitionResult{presentation};
+            QApplication::clipboard()->setText(QStringLiteral("Previous clipboard"));
+            session->seedRecognitionResults(std::move(results));
+            QCoreApplication::processEvents();
+            const bool endCapture =
+                workflow == Workflow::ExplicitCopy ||
+                (workflow != Workflow::Translation &&
+                 (followUp == QStringLiteral("copy_text_and_end_screenshot") ||
+                  (workflow == Workflow::Quick &&
+                   followUp == QStringLiteral("quick_copy_text_and_end_screenshot"))));
+            require(presentation->lines[0].backgroundFillColor.isValid() == !endCapture,
+                    "only applicable copy-and-end workflows skip solid-fill preparation");
+            require(session->active() == !endCapture,
+                    "copy-and-end workflows preserve their session termination behavior");
+            const bool copied =
+                endCapture ||
+                (workflow != Workflow::Translation &&
+                 (followUp == QStringLiteral("copy_text") ||
+                  (workflow == Workflow::Quick && followUp == QStringLiteral("quick_copy_text"))));
+            require(QApplication::clipboard()->text() ==
+                        (copied ? QStringLiteral("Recognized text")
+                                : QStringLiteral("Previous clipboard")),
+                    "workflow background policy preserves automatic clipboard behavior");
+            controller.mcpCancelCapture();
+        }
     }
 }
 
@@ -2228,6 +2330,7 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
         storage.shutdown();
         return EXIT_SUCCESS;
     }
+    copyAndEndWorkflowsSkipTextBackgrounds(directory.path());
     {
         ScreenshotController controller;
         combinedCopiesPreserveImagePlacementAndAppearance(controller);
