@@ -291,7 +291,7 @@ void AccountSessionService::resetOrigin() {
             }
         });
     }
-    if (m_purchase.pending())
+    if (m_purchase.pending() && m_purchase.m_registration)
         m_purchase.m_poll.start(0);
     else if (m_purchase.m_autoClaim && m_purchase.m_registration &&
              m_purchase.m_request.value(QStringLiteral("state")).toString() == u"fulfilled")
@@ -360,6 +360,8 @@ void AccountSessionService::acceptSession(const QJsonObject& session, bool sameA
     if (expires.isValid())
         m_tokenRefresh.start(static_cast<int>(std::clamp<qint64>(
             QDateTime::currentDateTimeUtc().msecsTo(expires) - 60000, 1000, 3600000)));
+    if (m_purchase.pending() && !m_purchase.m_pollBusy)
+        m_purchase.m_poll.start(0);
     persist();
     emit signedInChanged(signedIn());
     emit changed();
@@ -441,6 +443,7 @@ void AccountSessionService::signIn(const QString& username, const QString& passw
 }
 void AccountSessionService::signOut() {
     const auto refresh = m_refreshToken;
+    m_purchase.m_poll.stop();
     ++m_generation;
     const auto replies = m_replies;
     for (auto* reply : replies)
@@ -467,7 +470,7 @@ void AccountSessionService::signOut() {
              [](const auto&, const auto&) {});
     emit signedInChanged(false);
     emit changed();
-    if (m_purchase.pending())
+    if (m_purchase.pending() && m_purchase.m_registration)
         m_purchase.m_poll.start(m_options.pollIntervalMs);
 }
 
@@ -586,6 +589,8 @@ void AccountSessionService::acceptPurchase(const QJsonObject& request, bool regi
 void AccountSessionService::refreshPurchase(bool queryPlatform) {
     if (m_purchase.m_request.isEmpty() || m_purchase.m_cancelBusy)
         return;
+    if (!m_purchase.m_registration && !signedIn())
+        return;
     if (m_purchase.m_pollBusy) {
         // Run a requested manual refresh after the current automatic poll finishes.
         if (queryPlatform && !m_purchase.m_queryPlatform) {
@@ -683,7 +688,8 @@ void AccountSessionService::claimRegistration() {
         false, m_purchase.m_proof);
 }
 void AccountSessionService::cancelPurchase() {
-    if (m_purchase.m_registration || !m_purchase.pending() || m_purchase.m_cancelBusy)
+    if (m_purchase.m_registration || !m_purchase.pending() || m_purchase.m_cancelBusy ||
+        !signedIn())
         return;
     m_purchase.m_poll.stop();
     const quint64 purchaseGeneration = ++m_purchase.m_generation;

@@ -766,11 +766,13 @@ void AccountPageWidget::updateState() {
         m_paymentNotice->setText(purchase.notice());
         m_paymentNotice->setVisible(!purchase.notice().isEmpty());
         m_paid->setVisible(purchase.pending());
-        m_paid->setEnabled(!purchase.queryingPlatform() && !purchase.cancelling());
+        m_paid->setEnabled((purchase.registration() || signedIn) &&
+                           !purchase.queryingPlatform() && !purchase.cancelling());
         m_paid->setBusy(purchase.queryingPlatform());
         m_dismiss->setText(purchase.pending() ? tr("Cancel payment") : tr("Continue"));
         m_dismiss->setVisible(!purchase.pending() || !purchase.registration());
-        m_dismiss->setEnabled(!purchase.cancelling());
+        m_dismiss->setEnabled((!purchase.pending() || purchase.registration() || signedIn) &&
+                              !purchase.cancelling());
         m_dismiss->setBusy(purchase.cancelling());
         m_signInInstead->setVisible(!signedIn && !m_showAuthWithPurchase);
     }
