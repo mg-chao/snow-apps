@@ -1,16 +1,17 @@
 #include "snow_shot/storage/accountsecretstore.h"
 
 #import <Foundation/Foundation.h>
+#import <LocalAuthentication/LocalAuthentication.h>
 #import <Security/Security.h>
 
 namespace snow_shot::storage {
 namespace {
 NSMutableDictionary* query(const QString& identity) {
     return [NSMutableDictionary dictionaryWithDictionary:@{
-        (id)kSecClass : (id)kSecClassGenericPassword,
-        (id)kSecAttrService : @"com.snowshot.account",
-        (id)kSecAttrAccount : identity.toNSString(),
-        (id)kSecAttrSynchronizable : @NO
+        (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService : @"com.snowshot.account",
+        (__bridge id)kSecAttrAccount : identity.toNSString(),
+        (__bridge id)kSecAttrSynchronizable : @NO
     }];
 }
 } // namespace
@@ -18,13 +19,16 @@ NSMutableDictionary* query(const QString& identity) {
 QByteArray AccountSecretStore::read() const {
     @autoreleasepool {
         auto* attributes = query(m_identity);
-        attributes[(id)kSecReturnData] = @YES;
-        attributes[(id)kSecMatchLimit] = (id)kSecMatchLimitOne;
-        attributes[(id)kSecUseAuthenticationUI] = (id)kSecUseAuthenticationUIFail;
+        attributes[(__bridge id)kSecReturnData] = @YES;
+        attributes[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
+        LAContext* context = [[LAContext alloc] init];
+        context.interactionNotAllowed = YES;
+        attributes[(__bridge id)kSecUseAuthenticationContext] = context;
         CFTypeRef result = nullptr;
-        if (SecItemCopyMatching((CFDictionaryRef)attributes, &result) != errSecSuccess)
+        if (SecItemCopyMatching((__bridge CFDictionaryRef)attributes, &result) != errSecSuccess) {
             return {};
-        auto* data = (NSData*)result;
+        }
+        auto* data = (__bridge NSData*)result;
         const QByteArray bytes(static_cast<const char*>(data.bytes),
                                static_cast<qsizetype>(data.length));
         CFRelease(result);
@@ -35,21 +39,25 @@ QByteArray AccountSecretStore::read() const {
 bool AccountSecretStore::write(const QByteArray& value) const {
     @autoreleasepool {
         auto* attributes = query(m_identity);
-        NSData* bytes = [NSData dataWithBytes:value.constData() length:value.size()];
-        const auto status = SecItemUpdate((CFDictionaryRef)attributes,
-                                          (CFDictionaryRef) @{(id)kSecValueData : bytes});
-        if (status == errSecSuccess)
+        NSData* bytes = [NSData dataWithBytes:value.constData()
+                                       length:static_cast<NSUInteger>(value.size())];
+        const auto status =
+            SecItemUpdate((__bridge CFDictionaryRef)attributes,
+                          (__bridge CFDictionaryRef) @{(__bridge id)kSecValueData : bytes});
+        if (status == errSecSuccess) {
             return true;
-        if (status != errSecItemNotFound)
+        }
+        if (status != errSecItemNotFound) {
             return false;
-        attributes[(id)kSecValueData] = bytes;
-        return SecItemAdd((CFDictionaryRef)attributes, nullptr) == errSecSuccess;
+        }
+        attributes[(__bridge id)kSecValueData] = bytes;
+        return SecItemAdd((__bridge CFDictionaryRef)attributes, nullptr) == errSecSuccess;
     }
 }
 
 bool AccountSecretStore::remove() const {
     @autoreleasepool {
-        const auto status = SecItemDelete((CFDictionaryRef)query(m_identity));
+        const auto status = SecItemDelete((__bridge CFDictionaryRef)query(m_identity));
         return status == errSecSuccess || status == errSecItemNotFound;
     }
 }

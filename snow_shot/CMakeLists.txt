@@ -846,7 +846,23 @@ if(WIN32)
     target_link_libraries(snow_shot_translation PRIVATE crypt32)
 elseif(APPLE)
     target_sources(snow_shot_translation PRIVATE src/platform/macos/accountsecretstore.mm)
-    target_link_libraries(snow_shot_translation PRIVATE "-framework Security" "-framework Foundation")
+    target_compile_options(snow_shot_translation PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    target_link_libraries(snow_shot_translation PRIVATE
+        "-framework Security" "-framework Foundation" "-framework LocalAuthentication")
+    if(SNOW_SHOT_BUILD_TESTS)
+        add_executable(snow-shot-macos-account-secret-store-tests
+            tests/macos_account_secret_store_tests.mm
+            src/storage/accountsecretstore.cpp
+            src/platform/macos/accountsecretstore.mm)
+        target_include_directories(snow-shot-macos-account-secret-store-tests PRIVATE include)
+        target_compile_options(snow-shot-macos-account-secret-store-tests PRIVATE
+            $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+        target_link_libraries(snow-shot-macos-account-secret-store-tests PRIVATE Qt6::Core
+            "-framework Security" "-framework Foundation" "-framework LocalAuthentication")
+        add_test(NAME snow-shot-macos-account-secret-store-tests
+            COMMAND snow-shot-macos-account-secret-store-tests)
+        set_tests_properties(snow-shot-macos-account-secret-store-tests PROPERTIES LABELS "unit;macos")
+    endif()
 endif()
 snow_enable_unity_build(snow_shot_translation)
 target_include_directories(snow_shot_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
