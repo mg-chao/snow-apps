@@ -292,7 +292,6 @@ struct RecordingUiSession final : QObject {
     std::unique_ptr<RecordingEffectPreview> preview;
     std::unique_ptr<snow_shot::presentation::recording::RecordingCountdownOverlay> followCountdown;
     bool followMouseSelected = false;
-    bool areaHiddenForFollowing = false;
     std::unique_ptr<snow_shot::presentation::recording::RecordingColorSampler> colorSampler =
         std::make_unique<snow_shot::presentation::recording::RecordingColorSampler>(*area,
                                                                                     *toolbar);
@@ -612,18 +611,13 @@ struct ScreenRecordingController::Impl {
         }
     }
 
-    bool shouldHideRecordingArea() const {
+    bool shouldMakeRecordingAreaTransparent() const {
         // Preserve the selection and countdown until the capture startup boundary.
-        // Starting must hide the area before the worker can admit its first frame.
+        // Starting must clear the overlay before the worker can admit its first frame.
         return followMouse && !trimRequested &&
                (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
                 sessionStatus.busyOperation() ==
                     ScreenshotToolPalette::RecordingBusyOperation::Starting);
-    }
-
-    QWidget* recordingUiOwner() const {
-        return shouldHideRecordingArea() ? static_cast<QWidget*>(toolbarWindow)
-                                         : static_cast<QWidget*>(areaWindow);
     }
 
     void syncAreaPresentation() {
@@ -646,23 +640,11 @@ struct ScreenRecordingController::Impl {
             }
             uiSession->followMouseSelected = following;
         }
-        const bool hideArea = shouldHideRecordingArea();
-        if (hideArea != uiSession->areaHiddenForFollowing) {
-            if (hideArea) {
-                // Independent tool windows must not retain a hidden native owner.
-                toolbarWindow->setTransientOwnerWindow(nullptr);
-                toolbarWindow->setAutoHideControlOwner(nullptr);
-            } else {
-                areaWindow->show();
-                toolbarWindow->setTransientOwnerWindow(areaWindow);
-                toolbarWindow->setAutoHideControlOwner(areaWindow);
-            }
-            toolbarWindow->palette()->setRecordingSettingsOwnerWindow(recordingUiOwner());
-            uiSession->areaHiddenForFollowing = hideArea;
-        }
-        if (hideArea) {
-            areaWindow->hide();
-        } else if (!areaWindow->isVisible()) {
+        // Keep the area as the native owner and placement anchor for every recording
+        // modal, including template confirmations. Only its visuals disappear while
+        // following the mouse; the existing pass-through input mode remains active.
+        areaWindow->setWindowOpacity(shouldMakeRecordingAreaTransparent() ? 0.0 : 1.0);
+        if (!areaWindow->isVisible()) {
             areaWindow->show();
             areaWindow->raise();
         }
@@ -704,7 +686,7 @@ struct ScreenRecordingController::Impl {
                     return;
                 if (!uiSession->settingsModal) {
                     auto* modal = snow_shot::presentation::createScreenRecordingSettingsDialog(
-                        recordingUiOwner(), uiSession);
+                        areaWindow, uiSession);
                     uiSession->settingsModal = modal;
                     toolbarWindow->setAutoHideBlocked(modal, true);
                     QObject::connect(modal, &adqt::widgets::AdModal::finished,
@@ -1790,8 +1772,8 @@ struct ScreenRecordingController::Impl {
             QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(recordingRegion);
             // Keep placement independent of the selection windows, which may already be closed.
             QRect anchorGeometry;
-            if (recordingUiOwner()) {
-                anchorGeometry = recordingUiOwner()->frameGeometry();
+            if (areaWindow) {
+                anchorGeometry = areaWindow->frameGeometry();
             } else {
 #ifdef Q_OS_MACOS
                 anchorGeometry = recordingRegion;
@@ -1801,7 +1783,7 @@ struct ScreenRecordingController::Impl {
 #endif
             }
             renderJob = new RecordingRenderJob(result.source, !automationOwned, screen, &owner,
-                                               anchorGeometry, recordingUiOwner());
+                                               anchorGeometry, areaWindow);
             if (toolbarWindow)
                 toolbarWindow->setAutoHideBlocked(renderJob, true);
             renderJob->changed = [this, job = renderJob] {
@@ -2387,7 +2369,7 @@ struct ScreenRecordingController::Impl {
         adqt::widgets::AdMessage::Request request;
         request.key = key;
         request.content = content;
-        adqt::widgets::AdMessageService::warning(std::move(request), recordingUiOwner());
+        adqt::widgets::AdMessageService::warning(std::move(request), areaWindow);
     }
 
     void reportToolbarExclusionError() {
@@ -2676,7 +2658,7 @@ struct ScreenRecordingController::Impl {
         using adqt::widgets::AdModal;
         auto* modal = new AdModal(uiSession ? static_cast<QObject*>(uiSession) : &owner);
         modal->setObjectName(QStringLiteral("screenRecordingErrorModal"));
-        snow_shot::presentation::configureScreenRecordingModal(*modal, recordingUiOwner());
+        snow_shot::presentation::configureScreenRecordingModal(*modal, areaWindow);
         if (toolbarWindow) {
             toolbarWindow->setAutoHideBlocked(modal, true);
             QObject::connect(modal, &adqt::widgets::AdModal::finished, uiSession->connections.get(),

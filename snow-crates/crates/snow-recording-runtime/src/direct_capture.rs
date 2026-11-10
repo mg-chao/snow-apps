@@ -29,7 +29,6 @@ impl DirectFrame {
             Self::Gpu(frame) => frame.metadata(),
         }
     }
-    #[cfg(any(not(target_os = "macos"), test, feature = "bench-synthetic-input"))]
     pub fn dimensions(&self) -> (u32, u32) {
         match self {
             Self::Cpu(frame) => frame.dimensions(),

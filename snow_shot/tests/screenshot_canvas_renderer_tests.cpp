@@ -5352,23 +5352,28 @@ void ocrGlyphDeviceCachesMatchDirectPaintingAndInvalidate() {
         presentation->updateLineBoxSelection(QRectF(10.0, 10.0, 260.0, 100.0));
         layer.updateSelection();
         const QImage beforeEviction = renderOcrSelectionLayer(layer, 1.5);
-        layer.setRasterCacheBudgetForTesting(128 * 1024);
+        // Natural tracking can make all visible entries fit below a fixed budget. Evict them
+        // explicitly before checking that a bounded cache rebuilds exactly the same pixels.
+        constexpr qsizetype evictionBudget = 128 * 1024;
+        layer.setRasterCacheBudgetForTesting(0);
         require(layer.glyphRasterBytes() + layer.previewRasterBytes() +
-                        layer.backgroundRasterBytes() <=
-                    128 * 1024,
-                "reducing the shared budget must immediately evict older raster entries");
+                        layer.backgroundRasterBytes() ==
+                    0,
+                "a zero shared budget must immediately evict every raster entry");
+        layer.setRasterCacheBudgetForTesting(evictionBudget);
         const auto buildsBeforeEviction = layer.glyphRasterBuildCount() +
                                           layer.previewRasterBuildCount() +
                                           layer.backgroundRasterBuildCount();
-        require(
-            renderOcrSelectionLayer(layer, 1.5) == beforeEviction &&
-                layer.glyphRasterBuildCount() + layer.previewRasterBuildCount() +
+        require(renderOcrSelectionLayer(layer, 1.5) == beforeEviction,
+                "evicted glyph and preview rasters must rebuild identical pixels");
+        require(layer.glyphRasterBuildCount() + layer.previewRasterBuildCount() +
                         layer.backgroundRasterBuildCount() >
-                    buildsBeforeEviction &&
-                layer.glyphRasterBytes() + layer.previewRasterBytes() +
+                    buildsBeforeEviction,
+                "eviction must force a visible glyph or preview raster to rebuild");
+        require(layer.glyphRasterBytes() + layer.previewRasterBytes() +
                         layer.backgroundRasterBytes() <=
-                    128 * 1024,
-            "evicted glyph and preview rasters must rebuild identical pixels within the budget");
+                    evictionBudget,
+                "rebuilt glyph and preview rasters must respect the reduced budget");
         layer.clearPresentation();
         require(layer.glyphRasterBytes() == 0 && layer.previewRasterBytes() == 0 &&
                     layer.backgroundRasterBytes() == 0,
@@ -6069,8 +6074,8 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
                 renderer.ocrGeometrySynchronizationCountForTesting() ==
                     initialGeometrySynchronizationCount,
             "a stable OCR frame should reuse text geometry without resynchronizing it");
-    require(output.pixelColor(21, 31) == QColor(0, 80, 240),
-            "OCR fill must not alter selection pixels outside recognized lines");
+    require(output.pixelColor(20, 31) == QColor(0, 80, 240),
+            "OCR fill must preserve pixels beyond the expanded erase margin");
     require(output.pixelColor(10, 10) == QColor(0, 80, 240),
             "OCR fill should preserve screenshot pixels outside the selected region");
     bool foundRegionFilter = false;
@@ -6089,19 +6094,20 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     const QRect paintedTextBounds = paintedInkBounds(output, QRect(24, 32, 32, 16), 80);
     require(!paintedTextBounds.isEmpty(),
             "OCR graphics items should render text over the region fill");
-    require(paintedTextBounds.width() >= 30 && paintedTextBounds.height() >= 10,
-            "OCR character spacing should expand short text across the recognized line");
-    require(std::abs(paintedTextBounds.center().x() - 39.5) <= 1.0,
-            "character-spaced OCR text should remain horizontally centered");
+    require(paintedTextBounds.width() < 30 && paintedTextBounds.height() >= 13,
+            "short OCR text must retain natural spacing while using the full estimated height");
+    require(std::abs(paintedTextBounds.left() - 24) <= 1,
+            "naturally spaced OCR text must remain left-aligned");
     auto* textLayer = canvas.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
     require(textLayer != nullptr && textLayer->isVisible(),
             "OCR text widgets should live in a visible layer above the canvas");
     require(!textLayer->scene()->items().isEmpty() &&
                 textLayer->scene()->items().constFirst()->sceneBoundingRect().width() >= 31.0,
-            "the OCR text layout should use the recognized region's available width");
+            "natural glyph spacing must preserve the original recognition region for hit testing");
 
     const ScreenshotOcrTextPosition lineStart = renderer.ocrTextPositionAt(QPointF(-15.5, 0.0));
-    const ScreenshotOcrTextPosition lineMiddle = renderer.ocrTextPositionAt(QPointF(0.0, 0.0));
+    const ScreenshotOcrTextPosition lineMiddle =
+        renderer.ocrTextPositionAt(QPointF(paintedTextBounds.center().x() - 40.0, 0.0));
     require(lineStart.lineIndex == 0 && lineStart.characterIndex == 0 &&
                 lineMiddle.lineIndex == 0 && lineMiddle.characterIndex > 0 &&
                 lineMiddle.characterIndex < line.text.size(),
@@ -6519,12 +6525,14 @@ void mergedParagraphUsesSourceRows() {
         for (const QRect& row :
              {QRect(30, 30, 300, 24), QRect(30, 66, 300, 24), QRect(30, 102, 180, 24)}) {
             const QRect ink = paintedInkBounds(output, row, 80);
-            if (ink.width() < row.width() * 0.9 || ink.height() < row.height() * 0.65) {
+            if (ink.isEmpty() || ink.height() < row.height() * 0.65) {
                 std::cerr << "Source row " << row.y() << " for " << sample.toStdString()
                           << " painted " << ink.width() << 'x' << ink.height() << '\n';
             }
-            require(ink.width() >= row.width() * 0.9 && ink.height() >= row.height() * 0.65,
-                    "merged OCR must fill each source row, including the shorter final row");
+            require(!ink.isEmpty() && ink.width() <= row.width() &&
+                        ink.height() >= row.height() * 0.65 &&
+                        std::abs(ink.left() - row.left()) <= 2,
+                    "merged OCR must retain readable, naturally spaced, left-aligned source rows");
             const auto position =
                 renderer.ocrTextPositionAt(QPointF(ink.left() + 1 - 180, ink.center().y() - 80));
             require(position.valid() && position.characterIndex > previousPosition,
@@ -6574,8 +6582,9 @@ void mergedParagraphUsesSourceRows() {
 
     require(canvas.setViewportCamera(0, 0, 0.75), "zoom source row test");
     const auto zoomed = renderCanvas(canvas);
-    require(paintedInkBounds(zoomed, QRect(68, 43, 224, 17), 80).width() >= 210,
-            "source row fitting must retain width occupancy at fractional zoom");
+    const auto zoomedInk = paintedInkBounds(zoomed, QRect(68, 43, 224, 17), 80);
+    require(!zoomedInk.isEmpty() && zoomedInk.height() >= 11 && zoomedInk.left() <= 70,
+            "source rows must retain readable size and left alignment at fractional zoom");
     const auto last = renderer.ocrTextPositionAt(QPointF(29, 34));
     require(last.valid() && last.characterIndex == line.text.size(),
             "zoomed final row hit testing must reach the end of the text");
@@ -6587,7 +6596,7 @@ void mergedParagraphUsesSourceRows() {
     renderer.setOcrPresentation(presentation);
     const auto shifted = renderCanvas(canvas);
     require(paintedInkBounds(shifted, QRect(30, 66, 28, 24), 80).isEmpty() &&
-                paintedInkBounds(shifted, QRect(60, 66, 270, 24), 80).width() >= 250,
+                !paintedInkBounds(shifted, QRect(60, 66, 270, 24), 80).isEmpty(),
             "updated source geometry must preserve a row's indentation");
 
     presentation->lines[0].sourceLineQuads.clear();
@@ -6640,10 +6649,9 @@ void mergedParagraphWrapsAndFillsAnalyzedRegion() {
         renderer.setOcrPresentation(presentation);
         const auto sampleImage = renderCanvas(canvas);
         const auto sampleInk = paintedInkBounds(sampleImage, QRect(20, 20, 200, 120), 80);
-        require(
-            !sampleInk.isEmpty() && std::abs(sampleInk.center().y() - 79.5) <= 2.0 &&
-                std::abs(sampleInk.center().x() - 119.5) <= 2.0,
-            "paragraph alignment must use painted glyph bounds across scripts and font metrics");
+        require(!sampleInk.isEmpty() && std::abs(sampleInk.center().y() - 79.5) <= 2.0 &&
+                    std::abs(sampleInk.left() - 20) <= 2.0,
+                "paragraph ink must stay left-aligned and vertically centered across scripts");
     }
     presentation->setLineText(0, line.text);
     renderer.setOcrPresentation(presentation);

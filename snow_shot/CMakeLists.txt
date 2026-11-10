@@ -8933,6 +8933,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotpdfexport.cpp
         src/platform/windows/windowchrome.cpp
@@ -9329,6 +9331,20 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-recording-angle-wheel-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25")
+
+    add_executable(snow-shot-ocr-text-layout-tests
+        tests/screenshot_ocr_text_layout_tests.cpp
+        src/presentation/ocr/screenshotocrtextlayout.cpp
+        src/presentation/ocr/screenshotocrpresentation.cpp)
+    target_include_directories(snow-shot-ocr-text-layout-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../snow_draw_engine_qt/include")
+    target_link_libraries(snow-shot-ocr-text-layout-tests PRIVATE Qt6::Gui)
+    snow_shot_import_offscreen_platform(snow-shot-ocr-text-layout-tests)
+    add_test(NAME snow-shot-ocr-text-layout-tests
+        COMMAND snow-shot-ocr-text-layout-tests -platform offscreen)
+    set_tests_properties(snow-shot-ocr-text-layout-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-ocr-background-tests
         tests/screenshot_ocr_background_tests.cpp
@@ -10275,6 +10291,21 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
         COMMAND snow-shot-pinned-window-management-performance-benchmark)
     set_tests_properties(snow-shot-pinned-window-management-performance-benchmark PROPERTIES
         LABELS "benchmark" TIMEOUT 180
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-ocr-text-layout-performance-benchmark
+        tests/screenshot_ocr_text_layout_performance_benchmark.cpp
+        src/presentation/ocr/screenshotocrtextlayout.cpp
+        src/presentation/ocr/screenshotocrpresentation.cpp)
+    target_include_directories(snow-shot-ocr-text-layout-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../snow_draw_engine_qt/include")
+    target_link_libraries(snow-shot-ocr-text-layout-performance-benchmark PRIVATE Qt6::Gui)
+    snow_shot_import_offscreen_platform(snow-shot-ocr-text-layout-performance-benchmark)
+    add_test(NAME snow-shot-ocr-text-layout-performance-benchmark
+        COMMAND snow-shot-ocr-text-layout-performance-benchmark -platform offscreen)
+    set_tests_properties(snow-shot-ocr-text-layout-performance-benchmark PROPERTIES
+        LABELS "benchmark" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-ocr-background-performance-benchmark

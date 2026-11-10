@@ -17,9 +17,9 @@
 #include <vector>
 
 namespace {
-constexpr qreal kOcrRegionExpansionFraction = 0.08;
-constexpr qreal kOcrRegionExpansionMinimum = 1.0;
-constexpr qreal kOcrRegionExpansionMaximum = 4.0;
+constexpr qreal kOcrRegionExpansionFraction = 0.15;
+constexpr qreal kOcrRegionExpansionMinimum = 2.0;
+constexpr qreal kOcrRegionExpansionMaximum = 6.0;
 constexpr qreal kBackgroundBlendAmount = 0.5;
 
 // Work is independent of the image/paragraph area: 4 sides * 3 bands * 24 positions,
@@ -417,24 +417,36 @@ qreal edgeLength(const QPointF& first, const QPointF& second) {
     return std::hypot(second.x() - first.x(), second.y() - first.y());
 }
 
-QPolygonF expandedQuad(const QPolygonF& quad) {
-    if (quad.size() != 4) {
+// Erasure is derived in source pixels, independently of recognition/selection and text fitting.
+// Offset the edges, not the corners radially: a long line needs the same vertical coverage as a
+// short one. The extra pixel protects the outer antialiasing fringe and QRegion's rounding.
+QPolygonF eraseQuad(const QPolygonF& quad) {
+    if (!convexQuad(quad)) {
         return quad;
     }
-    const qreal width =
-        std::max(edgeLength(quad.at(0), quad.at(1)), edgeLength(quad.at(3), quad.at(2)));
-    const qreal height =
-        std::max(edgeLength(quad.at(0), quad.at(3)), edgeLength(quad.at(1), quad.at(2)));
+    const qreal width = std::max(edgeLength(quad[0], quad[1]), edgeLength(quad[3], quad[2]));
+    const qreal height = std::max(edgeLength(quad[0], quad[3]), edgeLength(quad[1], quad[2]));
     const qreal margin = std::clamp(std::min(width, height) * kOcrRegionExpansionFraction,
-                                    kOcrRegionExpansionMinimum, kOcrRegionExpansionMaximum);
-    const QPointF center = quad.boundingRect().center();
+                                    kOcrRegionExpansionMinimum, kOcrRegionExpansionMaximum) +
+                         1;
+    const QPointF center = (quad[0] + quad[1] + quad[2] + quad[3]) / 4;
+    std::array<QPointF, 4> normals;
+    for (int side = 0; side < 4; ++side) {
+        const QPointF edge = quad[(side + 1) % 4] - quad[side];
+        QPointF normal(-edge.y(), edge.x());
+        normal /= std::hypot(normal.x(), normal.y());
+        if (QPointF::dotProduct(normal, center - quad[side]) > 0)
+            normal = -normal;
+        normals[static_cast<std::size_t>(side)] = normal;
+    }
     QPolygonF expanded;
-    expanded.reserve(quad.size());
-    for (const QPointF& point : quad) {
-        const QPointF delta = point - center;
-        const qreal length = std::hypot(delta.x(), delta.y());
-        expanded.push_back(length > 0.0 ? point + delta * (margin / length)
-                                        : point + QPointF(margin, margin));
+    expanded.reserve(4);
+    for (int corner = 0; corner < 4; ++corner) {
+        const QPointF a = normals[static_cast<std::size_t>((corner + 3) % 4)];
+        const QPointF b = normals[static_cast<std::size_t>(corner)];
+        // Bound the miter for malformed, extremely acute detector quads.
+        const qreal denominator = std::max<qreal>(0.25, 1 + QPointF::dotProduct(a, b));
+        expanded.push_back(quad[corner] + (a + b) * (margin / denominator));
     }
     return expanded;
 }
@@ -451,26 +463,19 @@ QPolygon imagePolygonForQuad(const QPolygonF& quad, const QRectF& canvasRect,
     if (!finitePolygon(quad)) {
         return {};
     }
-    if (requireIntersection) {
-        QPolygonF original;
-        original.reserve(quad.size());
-        for (const QPointF& point : quad) {
-            original.push_back(imagePointForCanvasPoint(point, canvasRect, pixelSize));
-        }
-        if (!quadIntersectsImage(original, pixelSize)) {
-            return {};
-        }
-    }
-    const QPolygonF source = expand ? expandedQuad(quad) : quad;
-    QPolygonF polygon;
-    polygon.reserve(source.size());
-    for (const QPointF& point : source) {
+    QPolygonF pixels;
+    pixels.reserve(quad.size());
+    for (const QPointF& point : quad) {
         const QPointF pixel = imagePointForCanvasPoint(point, canvasRect, pixelSize);
         if (!finitePoint(pixel)) {
             return {};
         }
-        polygon.push_back(pixel);
+        pixels.push_back(pixel);
     }
+    if (requireIntersection && !quadIntersectsImage(pixels, pixelSize)) {
+        return {};
+    }
+    const QPolygonF polygon = expand ? eraseQuad(pixels) : pixels;
     return clippedPolygon(polygon, pixelSize);
 }
 
