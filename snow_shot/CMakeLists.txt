@@ -1054,12 +1054,27 @@ unset(_snow_shot_history_source)
 unset(_snow_shot_history_global_pool_call)
 add_library(snow_shot_file_manager STATIC
     include/snow_shot/platform/filemanager.h
+    src/platform/filemanagerbackend_p.h
     src/platform/filemanager.cpp)
 target_include_directories(snow_shot_file_manager PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_file_manager PUBLIC Qt6::Gui)
+if(WIN32)
+    target_sources(snow_shot_file_manager PRIVATE
+        src/platform/windows/filemanagerbackend.cpp
+        src/platform/windows/filemanagerbackend_p.h)
+    target_link_libraries(snow_shot_file_manager PRIVATE shell32 shlwapi ole32 uuid)
+elseif(APPLE)
+    target_sources(snow_shot_file_manager PRIVATE src/platform/macos/filemanagerbackend.mm)
+    target_link_libraries(snow_shot_file_manager PRIVATE "-framework AppKit")
+endif()
 if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-file-manager-tests tests/file_manager_tests.cpp)
     target_link_libraries(snow-shot-file-manager-tests PRIVATE snow_shot_file_manager)
+    target_include_directories(snow-shot-file-manager-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    if(WIN32)
+        target_sources(snow-shot-file-manager-tests PRIVATE tests/file_manager_windows_tests.cpp)
+        target_link_libraries(snow-shot-file-manager-tests PRIVATE shell32 shlwapi advapi32 ole32 uuid)
+    endif()
     add_test(NAME snow-shot-file-manager-tests COMMAND snow-shot-file-manager-tests)
     set_tests_properties(snow-shot-file-manager-tests PROPERTIES LABELS unit
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
