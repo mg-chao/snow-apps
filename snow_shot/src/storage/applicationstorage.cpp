@@ -1013,7 +1013,6 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
     m_status.writeAvailable = false;
     m_configuration->suspendWrites(true);
     m_captureHistory->suspendWrites(true);
-    emitStatusChanged();
     auto* active = operation.get();
     m_directoryChange = std::move(operation);
     auto work = [this, before, destination, migrate, diagnosticOptions, active] {
@@ -1179,6 +1178,10 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
     m_preparingDirectoryChange = false;
     clearPreparing.dismiss();
     active->poll->start();
+    // A listener may synchronously shut storage down or replace its repositories. Publish
+    // the busy snapshot only after teardown can join this operation's valid worker. Nothing
+    // below this callback may use the operation or the repositories it originally borrowed.
+    emitStatusChanged();
     return StorageResult::ok();
 #endif
 }

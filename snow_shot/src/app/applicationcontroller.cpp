@@ -646,6 +646,11 @@ class ApplicationController::Impl {
                     systemTray.setEnabled(false);
                 },
                 [this] { return terminalCheckpointForStoreUpdate(); },
+                [this] {
+                    return handoffPause &&
+                           inspectAdmission(ApplicationOperation::Store, OwnedPause::UpdateHandoff)
+                               .allowed();
+                },
             });
             storeLifecycle->install();
         }
@@ -705,7 +710,8 @@ class ApplicationController::Impl {
         facts.administratorPending = platform::windows::administratorOperationPending();
         if (operation == ApplicationOperation::Trim || operation == ApplicationOperation::Store) {
             facts.captureInteracting =
-                screenshotController && screenshotController->blocksMemoryTrimming();
+                screenshotController &&
+                screenshotController->blocksMemoryTrimming(ownedPause == OwnedPause::None);
             facts.pinOrToolbarInteraction = floatingToolbar.blocksMemoryTrimming();
         }
         if (operation == ApplicationOperation::Store) {

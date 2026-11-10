@@ -8,6 +8,10 @@
 #endif
 
 class ScreenshotOverlayWindow;
+class ScreenshotOverlayInputHandler;
+class ScreenshotSelectionModel;
+class ScreenshotInteractionState;
+class ScreenshotIntelligentSelectionModel;
 class SnowCanvasRuntime;
 class ScreenshotToolbarCommandSink;
 class ScreenshotScrollingCaptureController;
@@ -20,6 +24,11 @@ class ScreenshotControllerTestAccess {
     static void prepareSelection(ScreenshotController& controller, QImage image,
                                  const ScreenshotSelectionParams& selection);
     static SnowCanvasRuntime& runtime(ScreenshotController& controller);
+    static ScreenshotOverlayInputHandler& overlayInput(ScreenshotController& controller);
+    static ScreenshotSelectionModel& selection(ScreenshotController& controller);
+    static ScreenshotInteractionState& interaction(ScreenshotController& controller);
+    static ScreenshotIntelligentSelectionModel&
+    intelligentSelection(ScreenshotController& controller);
     static ScreenshotOverlayWindow* presentSelection(ScreenshotController& controller);
     static void confirmCaptureSelection(ScreenshotController& controller,
                                         ScreenshotController::CaptureAction action);

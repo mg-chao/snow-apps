@@ -6,10 +6,13 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
+#include "screenshot_controller_test_access.h"
+#include "snow_shot/presentation/screenshotselectionparams.h"
 
 #include "widgets/platform_compatibility.h"
 
 #include <QApplication>
+#include <QCloseEvent>
 #include <QEvent>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -17,11 +20,13 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QVector>
 
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <functional>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -29,6 +34,27 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+snow_shot::storage::StorageInitializationOptions isolatedStorageOptions(const QString& root) {
+    snow_shot::storage::StorageInitializationOptions options{root, root, 60000};
+    options.isolateAuxiliaryStorage = true;
+    return options;
+}
+
+void drainRetiredCaptureSurfaces() {
+    QVector<QPointer<QWidget>> retired;
+    for (auto* widget : QApplication::topLevelWidgets()) {
+        if (qobject_cast<ScreenshotOverlayWindow*>(widget) ||
+            qobject_cast<ScreenshotPinnedWindow*>(widget))
+            retired.append(widget);
+    }
+    // Controller shutdown releases native surfaces and queues QObject deletion. A local
+    // processEvents loop in the next fixture does not drain DeferredDelete on its behalf.
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    for (const auto& surface : retired)
+        require(!surface,
+                "retired controller surfaces must finish queued deletion before the next fixture");
 }
 
 ScreenshotPinnedWindow* fixturePin(const QString& id) {
@@ -108,6 +134,225 @@ void directCaptureDestructionKeepsControllerAvailableToActivityObservers() {
         controller.reset();
         require(inactiveNotifications == 2,
                 "direct capture shutdown must release each activity source exactly once");
+    }
+}
+
+class CapturePreparationModal final : public QWidget {
+  public:
+    std::function<void()> closing;
+    bool acceptClose = true;
+
+  protected:
+    void closeEvent(QCloseEvent* event) override {
+        if (acceptClose)
+            hide();
+        closing();
+        event->setAccepted(acceptClose);
+    }
+};
+
+void refusedPreparationPublishesCurrentAvailabilityAfterUnwinding() {
+    enum class Entry { Action, GlobalMouse, Mcp };
+    for (const auto entry : {Entry::Action, Entry::GlobalMouse, Entry::Mcp}) {
+        bool lastAvailability = true;
+        bool returned = false;
+        int restoredNotifications = 0;
+        auto controller = std::make_unique<ScreenshotController>();
+        QObject::connect(controller.get(), &ScreenshotController::captureAvailabilityChanged,
+                         controller.get(), [&](bool available) {
+                             lastAvailability = available;
+                             if (available) {
+                                 require(returned,
+                                         "availability observers run after capture callers unwind");
+                                 ++restoredNotifications;
+                             }
+                         });
+        CapturePreparationModal modal;
+        modal.acceptClose = false;
+        modal.setWindowModality(Qt::ApplicationModal);
+        modal.closing = [&] {
+            controller->setCaptureSuspended(true);
+            controller->setCaptureSuspended(false);
+        };
+        modal.show();
+        require(QApplication::activeModalWidget() == &modal,
+                "refused preparation owns modal input");
+        bool accepted = true;
+        if (entry == Entry::Action) {
+            accepted = controller->captureForAction(ScreenshotController::CaptureAction::Copy);
+        } else if (entry == Entry::GlobalMouse) {
+            accepted = controller->beginGlobalMouseCapture(
+                snow_shot::presentation::settings::SettingsGlobalMouseAction::ScreenshotCopy, 1,
+                QPointF(2, 3));
+        } else {
+            QString error;
+            accepted = controller->mcpBegin({}, &error);
+            require(error == QStringLiteral("capture_unavailable"), "refused MCP preparation");
+        }
+        returned = true;
+        require(!accepted && modal.isVisible() && controller->captureAvailable() &&
+                    !controller->captureAcquisitionActive(),
+                "a refused blocker releases preparation without starting native capture");
+        QCoreApplication::processEvents();
+        require(lastAvailability && restoredNotifications == 1,
+                "refused preparation restores availability for subscribed input producers");
+    }
+}
+
+void preparationAvailabilityRefreshIsCurrentAndLifetimeBound() {
+    bool lastAvailability = true;
+    auto controller = std::make_unique<ScreenshotController>();
+    QObject::connect(controller.get(), &ScreenshotController::captureAvailabilityChanged,
+                     controller.get(), [&](bool available) { lastAvailability = available; });
+    CapturePreparationModal modal;
+    modal.acceptClose = false;
+    modal.setWindowModality(Qt::ApplicationModal);
+    modal.closing = [&] {
+        controller->setCaptureSuspended(true);
+        controller->setCaptureSuspended(false);
+    };
+    modal.show();
+    require(!controller->captureForAction(ScreenshotController::CaptureAction::Copy),
+            "queue an availability refresh after refused preparation");
+    controller->setCaptureSuspended(true);
+    QCoreApplication::processEvents();
+    require(!lastAvailability && !controller->captureAvailable(),
+            "an obsolete idle snapshot cannot reopen a subsequently suspended controller");
+    controller->setCaptureSuspended(false);
+    require(lastAvailability, "ordinary suspension restoration still publishes immediately");
+
+    require(!controller->captureForAction(ScreenshotController::CaptureAction::Copy),
+            "queue another refresh before owner retirement");
+    controller.reset();
+    QCoreApplication::processEvents();
+    require(!controller, "queued availability publication cannot retain its retired controller");
+
+    controller = std::make_unique<ScreenshotController>();
+    QObject::connect(controller.get(), &ScreenshotController::captureAvailabilityChanged,
+                     controller.get(), [&](bool available) {
+                         if (available)
+                             controller.reset();
+                     });
+    require(!controller->captureForAction(ScreenshotController::CaptureAction::Copy),
+            "refused capture returns before availability observers can retire its controller");
+    QCoreApplication::processEvents();
+    require(!controller, "restored availability safely permits observer-driven retirement");
+}
+
+void capturePreparationReservesAdmissionAndRechecksAfterBlockers() {
+    int selectionStarts = 0;
+    int delayedStarts = 0;
+    ScreenshotController controller;
+    QObject::connect(&controller, &ScreenshotController::captureActivityChanged, &controller,
+                     [&](const QString& source, bool active) {
+                         if (!active)
+                             return;
+                         if (source == QStringLiteral("selection")) {
+                             ++selectionStarts;
+                             // Keep this characterization isolated even if admission regresses:
+                             // a declined workflow must never invoke native desktop capture.
+                             controller.setCaptureSuspended(true);
+                         }
+                         if (source == QStringLiteral("delay"))
+                             ++delayedStarts;
+                     });
+    CapturePreparationModal modal;
+    modal.setWindowModality(Qt::ApplicationModal);
+    bool nestedAccepted = true;
+    bool preparationBlocked = false;
+    modal.closing = [&] {
+        preparationBlocked =
+            !controller.captureAvailable() && controller.blocksApplicationUpdate(false) &&
+            controller.blocksMemoryTrimming() && controller.blocksMemoryTrimming(false);
+        nestedAccepted = controller.captureForAction(ScreenshotController::CaptureAction::Copy);
+        controller.startDelayedCapture(1);
+        controller.setCaptureSuspended(true);
+    };
+    modal.show();
+    require(QApplication::activeModalWidget() == &modal,
+            "capture preparation fixture owns modal input");
+    const bool accepted = controller.captureForAction(ScreenshotController::CaptureAction::None);
+    require(
+        !accepted && !nestedAccepted && preparationBlocked && selectionStarts == 0 &&
+            delayedStarts == 0 && !controller.captureAcquisitionActive(),
+        "blocker close reserves admission, rejects nested/new delay work and honors suspension");
+    controller.setCaptureSuspended(false);
+    require(controller.captureAvailable(),
+            "failed preparation releases its reservation for the next independent request");
+    controller.setCaptureSuspended(true);
+    require(controller.blocksMemoryTrimming() && !controller.blocksMemoryTrimming(false),
+            "final Store validation excludes only its own pause on an otherwise idle controller");
+    controller.setCaptureSuspended(false);
+}
+
+void capturePreparationCannotReplaceWorkCreatedWhileClosingABlocker() {
+    ScreenshotController controller;
+    CapturePreparationModal modal;
+    modal.setWindowModality(Qt::ApplicationModal);
+    QImage image(24, 24, QImage::Format_RGBA8888);
+    image.fill(Qt::blue);
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(2, 3, 8, 9);
+    modal.closing = [&] {
+        ScreenshotControllerTestAccess::prepareSelection(controller, image, selection);
+    };
+    modal.show();
+    require(!controller.captureForAction(ScreenshotController::CaptureAction::Copy) &&
+                controller.mcpState().value(QStringLiteral("capture_phase")).toString() ==
+                    QStringLiteral("editing") &&
+                controller.blocksMemoryTrimming(false),
+            "final admission preserves an editor established by blocker close callbacks");
+}
+
+void capturePreparationRechecksAfterActivityObservers() {
+    int starts = 0;
+    int retires = 0;
+    ScreenshotController controller;
+    QObject::connect(&controller, &ScreenshotController::captureActivityChanged, &controller,
+                     [&](const QString& source, bool active) {
+                         if (source != QStringLiteral("selection"))
+                             return;
+                         if (active) {
+                             ++starts;
+                             controller.setCaptureSuspended(true);
+                         } else {
+                             ++retires;
+                         }
+                     });
+    require(!controller.captureForAction(ScreenshotController::CaptureAction::Copy) &&
+                starts == 1 && retires == 1 && !controller.captureAcquisitionActive(),
+            "activity observer suspension declines before native dispatch and retires activity");
+    controller.setCaptureSuspended(false);
+    require(controller.captureAvailable(),
+            "activity observer refusal releases the preparation reservation");
+}
+
+void capturePreparationSurvivesControllerRetirement() {
+    enum class Entry { Action, GlobalMouse, Mcp };
+    for (const auto entry : {Entry::Action, Entry::GlobalMouse, Entry::Mcp}) {
+        auto controller = std::make_unique<ScreenshotController>();
+        auto* retiring = controller.get();
+        CapturePreparationModal modal;
+        modal.setWindowModality(Qt::ApplicationModal);
+        modal.closing = [&] { controller.reset(); };
+        modal.show();
+        require(QApplication::activeModalWidget() == &modal,
+                "retirement fixture closes the blocker before any native capture dispatch");
+        bool accepted = true;
+        if (entry == Entry::Action) {
+            accepted = retiring->captureForAction(ScreenshotController::CaptureAction::Copy);
+        } else if (entry == Entry::GlobalMouse) {
+            accepted = retiring->beginGlobalMouseCapture(
+                snow_shot::presentation::settings::SettingsGlobalMouseAction::ScreenshotCopy, 1,
+                QPointF(2, 3));
+        } else {
+            QString error;
+            accepted = retiring->mcpBegin({}, &error);
+            require(error == QStringLiteral("capture_unavailable"),
+                    "MCP reports preparation refusal after its controller is retired");
+        }
+        require(!accepted && !controller,
+                "each capture caller survives blocker-driven retirement without trailing access");
     }
 }
 
@@ -226,10 +471,22 @@ int runScreenshotControllerLifetimeTests(int argc, char** argv) {
     QTemporaryDir temporary;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(temporary.isValid() &&
-                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+                storage.initialize(isolatedStorageOptions(temporary.path())).success,
             "controller lifetime tests require isolated storage");
 
     directCaptureDestructionKeepsControllerAvailableToActivityObservers();
+    refusedPreparationPublishesCurrentAvailabilityAfterUnwinding();
+    drainRetiredCaptureSurfaces();
+    preparationAvailabilityRefreshIsCurrentAndLifetimeBound();
+    drainRetiredCaptureSurfaces();
+    capturePreparationReservesAdmissionAndRechecksAfterBlockers();
+    drainRetiredCaptureSurfaces();
+    capturePreparationCannotReplaceWorkCreatedWhileClosingABlocker();
+    drainRetiredCaptureSurfaces();
+    capturePreparationRechecksAfterActivityObservers();
+    drainRetiredCaptureSurfaces();
+    capturePreparationSurvivesControllerRetirement();
+    drainRetiredCaptureSurfaces();
     delayedPresentationWaitsForSuspensionRestoration();
     acceptedRestorationBlocksApplicationTransitionsUntilPresentationSettles();
     auto controller = std::make_unique<ScreenshotController>();
@@ -246,7 +503,8 @@ int runScreenshotControllerLifetimeTests(int argc, char** argv) {
         [&](const QString&, bool active) {
             require(!active && !retiring->captureAcquisitionActive(),
                     "final capture activity observers can inspect the inactive controller");
-            static_cast<void>(retiring->captureAvailable());
+            require(!retiring->captureAvailable(),
+                    "shutdown closes capture admission before notifying activity observers");
             static_cast<void>(retiring->blocksMemoryTrimming());
             ++inactiveNotifications;
         });
@@ -265,7 +523,7 @@ int runOcrProxyStartupTests(int argc, char** argv) {
     QTemporaryDir temporary;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(temporary.isValid() &&
-                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+                storage.initialize(isolatedStorageOptions(temporary.path())).success,
             "OCR proxy startup tests require isolated storage");
     const QString saved = QStringLiteral("http://user:p%40ss@127.0.0.1:7890");
     require(storage.configuration().setValues(
@@ -275,7 +533,7 @@ int runOcrProxyStartupTests(int argc, char** argv) {
                 storage.flushNow().success,
             "save proxy preferences before application construction");
     storage.shutdown();
-    require(storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+    require(storage.initialize(isolatedStorageOptions(temporary.path())).success,
             "reload saved proxy settings as on application restart");
     {
         snow_shot::app::ApplicationController controller(application);

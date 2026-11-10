@@ -13,6 +13,9 @@ class ScreenshotMcpSession final : public QObject {
         std::function<QJsonObject()> state;
         std::function<bool(const QJsonObject&, QString*)> begin;
         std::function<void()> cancel;
+        // Synchronous, atomic replacement: false leaves the model and gesture unchanged.
+        // "busy" names a live input transaction; other refusals name an invalid parameter.
+        // Only success invalidates this session's background operations and retained results.
         std::function<bool(const QJsonObject&, QString*)> selection;
         std::function<bool(const QString&, QString*)> tool;
         std::function<bool(const QByteArray&, QJsonObject*, QString*)> annotations;
@@ -71,6 +74,7 @@ class ScreenshotMcpSession final : public QObject {
     bool current(quint64 generation) const;
     void cache(const ScreenshotMcpRequest&, const ScreenshotMcpResponse&);
     void cancelOperation();
+    void invalidateOperations();
     void trimOperations();
     Ports m_ports;
     QString m_session;

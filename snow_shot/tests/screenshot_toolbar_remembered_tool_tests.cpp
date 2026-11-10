@@ -630,7 +630,9 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false, bool captu
         actions.activateScreenshotShortcut = [&](const QString& action) {
             return window.palette()->activateScreenshotShortcut(action);
         };
-        actions.prepareExplicitSelectionCommand = [&] {
+        actions.prepareSelection = [&](ScreenshotSelectionIntent intent) {
+            require(intent == ScreenshotSelectionIntent::SupersedeWithCommand,
+                    "toolbar commands supersede the launch action before restoring tools");
             ++preparations;
             window.suppressRememberedDrawingTool();
         };

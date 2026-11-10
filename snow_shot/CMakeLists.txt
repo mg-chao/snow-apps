@@ -6793,6 +6793,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-mcp-tests --replay-lifecycle-only -platform offscreen)
     set_tests_properties(snow-shot-mcp-replay-lifecycle-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-mcp-transport-tests
+        COMMAND snow-shot-mcp-tests --transport-only -platform offscreen)
+    set_tests_properties(snow-shot-mcp-transport-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-mcp-workflow-operations-tests
+        COMMAND snow-shot-mcp-tests --workflow-operations-only -platform offscreen)
+    set_tests_properties(snow-shot-mcp-workflow-operations-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-stroke-rendering-mcp-tests
         COMMAND snow-shot-mcp-tests --stroke-rendering-only -platform offscreen)
     set_tests_properties(snow-shot-stroke-rendering-mcp-tests PROPERTIES
@@ -11833,6 +11843,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-deferred-startup-tests COMMAND snow-shot-deferred-startup-tests)
     set_tests_properties(snow-shot-deferred-startup-tests PROPERTIES LABELS "unit" TIMEOUT 10
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_executable(snow-shot-delayed-capture-tests tests/screenshot_delayed_capture_tests.cpp)
+    target_include_directories(snow-shot-delayed-capture-tests PRIVATE include)
+    add_test(NAME snow-shot-delayed-capture-tests COMMAND snow-shot-delayed-capture-tests)
+    set_tests_properties(snow-shot-delayed-capture-tests PROPERTIES LABELS "unit" TIMEOUT 10
+        SNOW_TEST_CROSS_PLATFORM TRUE)
     add_executable(snow-shot-deferred-presentation-tests
         tests/screenshot_deferred_presentation_tests.cpp)
     target_include_directories(snow-shot-deferred-presentation-tests PRIVATE src)
@@ -11868,9 +11883,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow_shot --clipboard-pin-tests --history-pin-admission-tests -platform offscreen)
     add_test(NAME snow-shot-mcp-scrolling-admission-tests
         COMMAND snow_shot --clipboard-pin-tests --mcp-scrolling-admission-tests -platform offscreen)
+    add_test(NAME snow-shot-mcp-selection-admission-tests
+        COMMAND snow_shot --clipboard-pin-tests --mcp-selection-admission-tests -platform offscreen)
     set_tests_properties(snow-shot-screenshot-controller-clipboard-tests
         snow-shot-clipboard-formula-pin-tests snow-shot-history-pin-admission-tests
-        snow-shot-mcp-scrolling-admission-tests PROPERTIES
+        snow-shot-mcp-scrolling-admission-tests snow-shot-mcp-selection-admission-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30 RUN_SERIAL TRUE
         ENVIRONMENT "${_snow_controller_clipboard_qpa_environment}")
     add_test(NAME snow-shot-hidpi-image-scaling-controller-tests

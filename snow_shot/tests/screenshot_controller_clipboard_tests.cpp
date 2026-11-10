@@ -3,6 +3,7 @@
 #include "screenshot_controller_test_access.h"
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/shellimagelaunch.h"
+#include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
@@ -21,6 +22,10 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "snow_shot/presentation/screenshotoverlayinputhandler.h"
+#include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshotinteractionstate.h"
+#include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "widgets/modal.h"
 #include "snow_shot/presentation/screenshotsavepreviewcanvas.h"
 #include "snow_shot/presentation/screenshotscrollingsnapshot.h"
@@ -69,6 +74,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -114,6 +120,186 @@ QImage fixture() {
     image.setPixelColor(0, 0, QColor(201, 19, 79, 43));
     image.setColorSpace(QColorSpace::SRgb);
     return image;
+}
+
+void mcpSelectionPreservesLiveInputTransactions() {
+    using namespace snow_shot::app::mcp;
+    const auto requireAdmission = [](bool condition, const char* message) {
+        if (!condition)
+            throw std::runtime_error(message);
+    };
+    enum class Gesture { Resize, Effect, Polyline, Curve, Freehand, Region, SmartPress, External };
+    for (const auto gesture :
+         {Gesture::Resize, Gesture::Effect, Gesture::Polyline, Gesture::Curve, Gesture::Freehand,
+          Gesture::Region, Gesture::SmartPress, Gesture::External}) {
+        ScreenshotController controller;
+        ScreenshotSelectionParams initial;
+        initial.selection = QRect(10, 12, 80, 50);
+        ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), initial);
+        auto& input = ScreenshotControllerTestAccess::overlayInput(controller);
+        auto& selection = ScreenshotControllerTestAccess::selection(controller);
+        selection.setRegionType(ScreenshotRegionType::Rectangle);
+        auto& interaction = ScreenshotControllerTestAccess::interaction(controller);
+        auto& intelligent = ScreenshotControllerTestAccess::intelligentSelection(controller);
+
+        bool started = false;
+        int selectionCalls = 0;
+        int operationCancellations = 0;
+        ScreenshotMcpSession::Ports::CommandCompletion completeOperation;
+        ScreenshotMcpSession::Ports ports;
+        ports.state = [&] {
+            return started ? controller.mcpState()
+                           : QJsonObject{{QStringLiteral("capture_phase"), QStringLiteral("idle")}};
+        };
+        ports.begin = [&](const QJsonObject&, QString*) {
+            started = true;
+            return true;
+        };
+        ports.cancel = [] {};
+        ports.selection = [&](const QJsonObject& params, QString* error) {
+            ++selectionCalls;
+            return controller.mcpSetSelection(params, error);
+        };
+        ports.command = [&](const QString&, const QJsonObject&, auto completion) {
+            completeOperation = std::move(completion);
+        };
+        ports.cancelCommand = [&] { ++operationCancellations; };
+        ScreenshotMcpSession session(std::move(ports));
+        quint64 sequence = 0;
+        const auto call = [&](const QString& method, QJsonObject params,
+                              std::optional<quint64> revision = {}) {
+            ScreenshotMcpRequest request;
+            request.connectionId = 1;
+            request.requestId = request.idempotencyKey = QString::number(++sequence);
+            request.sessionId = session.state().value(QStringLiteral("session_id")).toString();
+            request.method = method;
+            request.params = std::move(params);
+            request.expectedRevision = revision.value_or(static_cast<quint64>(
+                session.state().value(QStringLiteral("revision")).toInteger()));
+            std::optional<ScreenshotMcpResponse> response;
+            session.request(request, [&](auto value) { response = std::move(value); });
+            if (method == QStringLiteral("snow_shot_screenshot_begin") && !response)
+                session.capturePresented();
+            requireAdmission(response.has_value(), "selection admission completes synchronously");
+            return *response;
+        };
+        requireAdmission(call(QStringLiteral("snow_shot_screenshot_begin"), {}).ok,
+                         "selection admission owns a ready editor session");
+        requireAdmission(call(QStringLiteral("snow_shot_screenshot_recognize"),
+                              {{QStringLiteral("kind"), QStringLiteral("text")}})
+                             .ok,
+                         "background recognition can coexist with local input");
+        if (gesture == Gesture::Resize) {
+            requireAdmission(input.beginSelectionResizeAtCanvasPosition(QPointF(90, 32)),
+                             "selection fixture starts a real border resize");
+            input.updateSelectionResizeAtCanvasPosition(QPointF(95, 32));
+        } else if (gesture == Gesture::Effect) {
+            ScreenshotInteractionState::EffectGesture effect;
+            effect.handle = ScreenshotSelectionEffectHandle::TopLeft;
+            effect.originalValue = selection.cornerRadius();
+            effect.rollback = [&, original = effect.originalValue] {
+                static_cast<void>(selection.setCornerRadius(original));
+            };
+            requireAdmission(interaction.beginEffectDrag(std::move(effect)),
+                             "effect transaction starts");
+            static_cast<void>(selection.setCornerRadius(5));
+        } else if (gesture == Gesture::Polyline || gesture == Gesture::Curve ||
+                   gesture == Gesture::Freehand) {
+            interaction.returnToSelectionMode(false);
+            input.setRegionType(gesture == Gesture::Polyline ? ScreenshotRegionType::Polyline
+                                : gesture == Gesture::Curve  ? ScreenshotRegionType::Curve
+                                                             : ScreenshotRegionType::Freehand);
+            input.handleMousePress(nullptr, QPointF(15, 15));
+            if (gesture != Gesture::Freehand) {
+                input.handleMouseRelease(nullptr, QPointF(15, 15));
+                input.handleMousePress(nullptr, QPointF(70, 15));
+                input.handleMouseRelease(nullptr, QPointF(70, 15));
+            }
+            requireAdmission(selection.constructionActive(), "custom region transaction starts");
+        } else if (gesture == Gesture::Region) {
+            input.beginRegionOperation(true);
+            requireAdmission(selection.regionOperationActive(),
+                             "region operand transaction starts");
+        } else if (gesture == Gesture::SmartPress) {
+            interaction.enterOverlayVisible(true);
+            intelligent.beginPress(QPointF(30, 30), initial.selection);
+        } else {
+            input.setExternalDragActive(true);
+        }
+
+        session.observe();
+        const auto revision =
+            static_cast<quint64>(session.state().value(QStringLiteral("revision")).toInteger());
+        const auto before = controller.mcpState();
+        const auto sessionBefore = session.state();
+        const auto modelRevision = selection.changeRevision();
+        const QJsonObject replacement{{QStringLiteral("bounds"), QJsonArray{20, 20, 25, 20}}};
+        requireAdmission(
+            call(QStringLiteral("snow_shot_screenshot_set_selection"), replacement, revision - 1)
+                        .errorCode == QStringLiteral("stale_revision") &&
+                selectionCalls == 0,
+            "stale revision is rejected before consulting input transaction admission");
+        requireAdmission(
+            call(QStringLiteral("snow_shot_screenshot_set_selection"), replacement, revision)
+                        .errorCode == QStringLiteral("busy") &&
+                selectionCalls == 1 && controller.mcpState() == before &&
+                selection.changeRevision() == modelRevision && operationCancellations == 0 &&
+                session.state() == sessionBefore,
+            "busy selection preserves the live input, recognition operation and protocol revision");
+
+        if (gesture == Gesture::Resize) {
+            input.finishSelectionResizeAtCanvasPosition(QPointF(100, 32));
+            requireAdmission(
+                !interaction.dragging() && selection.pixelSelection().left() == 10 &&
+                    selection.pixelSelection().right() >= 98,
+                "denied API replacement preserves resize originals through pointer release");
+        } else if (gesture == Gesture::Effect) {
+            requireAdmission(input.cancelEffectDrag() && selection.cornerRadius() == initial.radius,
+                             "denied API replacement preserves effect rollback ownership");
+            input.handleMouseRelease(nullptr, QPointF(30, 30));
+        } else if (gesture == Gesture::Polyline || gesture == Gesture::Curve) {
+            input.handleMousePress(nullptr, QPointF(40, 55));
+            input.handleMouseRelease(nullptr, QPointF(40, 55));
+            requireAdmission(input.handleRegionDoubleClick(nullptr, QPointF(40, 55)),
+                             "denied API replacement leaves a finishable custom draft");
+            input.handleMouseRelease(nullptr, QPointF(40, 55));
+            requireAdmission(!selection.constructionActive() &&
+                                 selection.selectionRegion().contains(QPointF(40, 30)),
+                             "custom draft commits its original vertices after API rejection");
+        } else if (gesture == Gesture::Freehand) {
+            input.handleMouseMove(nullptr, QPointF(70, 15));
+            input.handleMouseMove(nullptr, QPointF(70, 55));
+            input.handleMouseMove(nullptr, QPointF(15, 55));
+            input.handleMouseRelease(nullptr, QPointF(15, 15));
+            requireAdmission(
+                !selection.constructionActive() && selection.hasPixelSelection(),
+                "freehand release completes the same admitted stroke after API rejection");
+        } else if (gesture == Gesture::Region) {
+            requireAdmission(input.cancelRegionOperation() &&
+                                 selection.pixelSelection() == initial.selection,
+                             "denied API replacement leaves the operand rollback intact");
+        } else if (gesture == Gesture::SmartPress) {
+            input.handleMouseRelease(nullptr, QPointF(30, 30));
+            requireAdmission(!intelligent.pressActive() &&
+                                 selection.pixelSelection() == initial.selection,
+                             "smart release confirms the original frozen press candidate");
+        } else {
+            input.setExternalDragActive(false);
+        }
+        session.observe();
+        requireAdmission(
+            call(QStringLiteral("snow_shot_screenshot_set_selection"), replacement).ok &&
+                selection.pixelSelection() == QRect(20, 20, 25, 20) &&
+                operationCancellations == 1 &&
+                session.state().value(QStringLiteral("operations")).toArray().isEmpty(),
+            "the current API request succeeds after the input owner completes or cancels");
+        const auto committed = session.state();
+        completeOperation({{QStringLiteral("text"), QStringLiteral("obsolete")}}, {});
+        requireAdmission(
+            session.state() == committed,
+            "late recognition cannot restore operations discarded by an accepted selection");
+        session.shutdown();
+    }
 }
 
 ScreenshotOcrRecognitionService::Options isolatedRecognitionOptions(const QString& directory) {
@@ -1784,8 +1970,10 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
     adqt::widgets::initializePlatformCompatibility(application);
     QTemporaryDir directory;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
-    require(directory.isValid() &&
-                storage.initialize({directory.path(), directory.path(), 60000}).success,
+    snow_shot::storage::StorageInitializationOptions options{directory.path(), directory.path(),
+                                                             60000};
+    options.isolateAuxiliaryStorage = true;
+    require(directory.isValid() && storage.initialize(options).success,
             "clipboard controller tests need isolated storage");
     const snow_shot::storage::PinToScreenSettings settings;
     require(settings.setAutomaticTextRecognition(false) &&
@@ -1802,6 +1990,16 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
         scrollingMcpExportCompletesWhenMaterializationIsRejected();
         scrollingMcpExportCompletesWhenSnapshotIsCancelled();
+        return EXIT_SUCCESS;
+    }
+    if (application.arguments().contains(QStringLiteral("--mcp-selection-admission-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        try {
+            mcpSelectionPreservesLiveInputTransactions();
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return EXIT_FAILURE;
+        }
         return EXIT_SUCCESS;
     }
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION

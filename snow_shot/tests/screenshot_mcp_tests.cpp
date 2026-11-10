@@ -12,6 +12,7 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
@@ -244,6 +245,85 @@ QJsonObject request(const QString& id, const QString& method, const QJsonObject&
             {QStringLiteral("request_id"), id},
             {QStringLiteral("method"), method},
             {QStringLiteral("params"), params}};
+}
+void drainAdmission() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "isolated drain admission endpoint");
+    ScreenshotMcpServer server(nullptr, directory.path());
+    int dispatched = 0;
+    server.setRequestHandler([&](const auto&, auto done) {
+        ++dispatched;
+        ScreenshotMcpResponse response;
+        response.ok = true;
+        done(std::move(response));
+    });
+    QString error;
+    require(server.start(&error), qPrintable(error));
+    QFile descriptor(server.descriptorPath());
+    require(descriptor.open(QIODevice::ReadOnly), "drain fixture descriptor");
+    const auto data = QJsonDocument::fromJson(descriptor.readAll()).object();
+    descriptor.close();
+    QLocalSocket client;
+    client.connectToServer(server.socketName());
+    require(client.waitForConnected(2000), "drain fixture peer connects");
+    client.write(
+        frame(request(QStringLiteral("hello"), QStringLiteral("handshake"),
+                      {{QStringLiteral("token"), data.value(QStringLiteral("token"))},
+                       {QStringLiteral("client_protocol"), QStringLiteral("snow-shot-mcp/1")}})));
+    require(receive(client).value(QStringLiteral("ok")).toBool(), "drain peer authenticates");
+
+    // The worker posts the first request to the GUI, then answers the absent cancellation
+    // itself. Waiting on the socket without processing GUI events proves that dispatch is
+    // queued, but no domain handler has run. This does not depend on thread scheduling.
+    client.write(
+        frame(request(QStringLiteral("not-dispatched"),
+                      QStringLiteral("snow_shot_document_sample_color"))) +
+        frame(request(QStringLiteral("worker-barrier"), QStringLiteral("snow_shot_request_cancel"),
+                      {{QStringLiteral("request_id"), QStringLiteral("absent")}})));
+    client.flush();
+    QElapsedTimer deadline;
+    deadline.start();
+    const auto waitForBytes = [&](qint64 count) {
+        while (client.bytesAvailable() < count && deadline.elapsed() < 5000)
+            client.waitForReadyRead(static_cast<int>(5000 - deadline.elapsed()));
+        require(client.bytesAvailable() >= count, "socket-local dispatch barrier arrives");
+    };
+    waitForBytes(8);
+    const auto size = qFromBigEndian<quint32>(client.peek(8).constData());
+    waitForBytes(size + 4);
+    const auto bytes = client.read(size + 4);
+    const auto barrier =
+        QJsonDocument::fromJson(bytes.mid(8, qFromBigEndian<quint32>(bytes.constData() + 4)))
+            .object();
+    require(barrier.value(QStringLiteral("request_id")) == QStringLiteral("worker-barrier") &&
+                dispatched == 0,
+            "worker has queued domain dispatch without GUI admission");
+    bool drained = false;
+    server.drainAndStop([&] { drained = true; });
+    QCoreApplication::sendPostedEvents(&server, QEvent::MetaCall);
+    require(dispatched == 0, "drain closes GUI admission before queued dispatch reaches services");
+    const auto rejected = receive(client);
+    require(rejected.value(QStringLiteral("request_id")) == QStringLiteral("not-dispatched") &&
+                rejected.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")) ==
+                    QStringLiteral("disabled"),
+            "queued dispatch receives the existing disabled response during drain");
+    await([&] { return drained; });
+    require(server.start(&error), "fresh listener can reopen admission after drain retirement");
+    require(descriptor.open(QIODevice::ReadOnly), "fresh listener publishes its own descriptor");
+    const auto replacement = QJsonDocument::fromJson(descriptor.readAll()).object();
+    descriptor.close();
+    QLocalSocket fresh;
+    fresh.connectToServer(server.socketName());
+    require(fresh.waitForConnected(2000), "peer connects after listener replacement");
+    fresh.write(
+        frame(request(QStringLiteral("fresh-hello"), QStringLiteral("handshake"),
+                      {{QStringLiteral("token"), replacement.value(QStringLiteral("token"))},
+                       {QStringLiteral("client_protocol"), QStringLiteral("snow-shot-mcp/1")}})));
+    require(receive(fresh).value(QStringLiteral("ok")).toBool(), "fresh peer authenticates");
+    fresh.write(frame(request(QStringLiteral("fresh-request"), QStringLiteral("probe"))));
+    require(receive(fresh).value(QStringLiteral("ok")).toBool() && dispatched == 1,
+            "replacement listener reopens domain admission exactly once");
+    server.stop();
 }
 void transport() {
     const auto baseline =
@@ -819,6 +899,179 @@ void session() {
             "direct output finishes session");
     session.shutdown();
 }
+void selectionReplacementPreservesOperationsUntilAccepted() {
+    for (const auto& method : {QStringLiteral("snow_shot_screenshot_recognize"),
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+                               QStringLiteral("snow_shot_screenshot_translate"),
+#endif
+                               QStringLiteral("snow_shot_screenshot_auto_filter")}) {
+        for (const bool completed : {false, true}) {
+            QJsonObject editor{{QStringLiteral("capture_phase"), QStringLiteral("idle")}};
+            QString selectionError = QStringLiteral("busy");
+            int selections = 0;
+            int cancellations = 0;
+            ScreenshotMcpSession* current = nullptr;
+            ScreenshotMcpSession::Ports::CommandCompletion deliver;
+            ScreenshotMcpSession::Ports ports;
+            ports.state = [&] { return editor; };
+            ports.begin = [&](const QJsonObject&, QString*) {
+                editor.insert(QStringLiteral("capture_phase"), QStringLiteral("editing"));
+                return true;
+            };
+            ports.cancel = [] {};
+            ports.selection = [&](const QJsonObject&, QString* error) {
+                ++selections;
+                if (!selectionError.isEmpty()) {
+                    *error = selectionError;
+                    return false;
+                }
+                editor.insert(QStringLiteral("selection_replaced"), true);
+                return true;
+            };
+            ports.command = [&](const QString&, const QJsonObject&, auto completion) {
+                deliver = std::move(completion);
+            };
+            ports.cancelCommand = [&] {
+                ++cancellations;
+                if (selectionError.isEmpty())
+                    require(
+                        editor.value(QStringLiteral("selection_replaced")).toBool() &&
+                            current->state()
+                                .value(QStringLiteral("operations"))
+                                .toArray()
+                                .isEmpty(),
+                        "selection and operation retirement commit before cancellation callbacks");
+                deliver({}, QStringLiteral("canceled"));
+            };
+            ScreenshotMcpSession session(std::move(ports));
+            current = &session;
+            int sequence = 0;
+            const auto makeRequest = [&](const QString& name) {
+                ScreenshotMcpRequest request;
+                request.connectionId = 1;
+                request.requestId = request.idempotencyKey = QString::number(++sequence);
+                request.sessionId = session.state().value(QStringLiteral("session_id")).toString();
+                request.expectedRevision = static_cast<quint64>(
+                    session.state().value(QStringLiteral("revision")).toInteger());
+                request.method = name;
+                return request;
+            };
+            std::optional<ScreenshotMcpResponse> response;
+            const auto call = [&](const ScreenshotMcpRequest& request) {
+                response.reset();
+                session.request(request, [&](auto value) { response = std::move(value); });
+            };
+            call(makeRequest(QStringLiteral("snow_shot_screenshot_begin")));
+            session.capturePresented();
+            require(response && response->ok, "selection operation fixture starts an editor");
+            call(makeRequest(method));
+            require(response && response->ok && deliver, "background operation starts");
+            const auto id = response->result.value(QStringLiteral("operation_id")).toString();
+            if (completed)
+                deliver({{QStringLiteral("text"), QStringLiteral("retained")}}, {});
+            const auto before = session.state();
+            auto stale = makeRequest(QStringLiteral("snow_shot_screenshot_set_selection"));
+            --*stale.expectedRevision;
+            call(stale);
+            require(response && response->errorCode == QStringLiteral("stale_revision") &&
+                        selections == 0 && cancellations == 0 && session.state() == before,
+                    "revision admission precedes selection and operation side effects");
+            for (const auto& error : {QStringLiteral("busy"), QStringLiteral("bounds")}) {
+                selectionError = error;
+                call(makeRequest(QStringLiteral("snow_shot_screenshot_set_selection")));
+                require(response &&
+                            response->errorCode == (error == QStringLiteral("busy")
+                                                        ? error
+                                                        : QStringLiteral("invalid_parameters")) &&
+                            cancellations == 0 && session.state() == before,
+                        "refused selection preserves running work, retained results and revisions");
+                auto query = makeRequest(QStringLiteral("snow_shot_screenshot_operation"));
+                query.params.insert(QStringLiteral("operation_id"), id);
+                call(query);
+                require(
+                    response && response->ok &&
+                        response->result.value(QStringLiteral("status")) ==
+                            (completed ? QStringLiteral("completed") : QStringLiteral("running")),
+                    "refused selection leaves the original operation queryable");
+            }
+            if (!completed) {
+                deliver({{QStringLiteral("text"), QStringLiteral("completed after refusal")}}, {});
+                auto query = makeRequest(QStringLiteral("snow_shot_screenshot_operation"));
+                query.params.insert(QStringLiteral("operation_id"), id);
+                call(query);
+                require(response && response->ok &&
+                            response->result.value(QStringLiteral("status")) ==
+                                QStringLiteral("completed") &&
+                            response->result.value(QStringLiteral("result"))
+                                    .toObject()
+                                    .value(QStringLiteral("text")) ==
+                                QStringLiteral("completed after refusal"),
+                        "refused replacement preserves the provider's live completion identity");
+                call(makeRequest(method));
+                require(response && response->ok, "start new work before accepted replacement");
+            }
+            selectionError.clear();
+            const auto replace = makeRequest(QStringLiteral("snow_shot_screenshot_set_selection"));
+            call(replace);
+            require(response && response->ok && cancellations == (completed ? 0 : 1) &&
+                        session.state().value(QStringLiteral("operations")).toArray().isEmpty(),
+                    "accepted selection discards old results and cancels only running work");
+            const auto committed = session.state();
+            deliver({{QStringLiteral("text"), QStringLiteral("obsolete")}}, {});
+            require(session.state() == committed,
+                    "synchronous and late completions cannot resurrect discarded operations");
+            call(replace);
+            require(response && response->ok && selections == 3 &&
+                        cancellations == (completed ? 0 : 1) && session.state() == committed,
+                    "successful replacement replay does not mutate or cancel twice");
+        }
+    }
+}
+
+void selectionReplacementSurvivesSessionRetirement() {
+    for (const bool retireDuringSelection : {false, true}) {
+        std::unique_ptr<ScreenshotMcpSession> session;
+        QJsonObject editor{{QStringLiteral("capture_phase"), QStringLiteral("idle")}};
+        ScreenshotMcpSession::Ports::CommandCompletion deliver;
+        ScreenshotMcpSession::Ports ports;
+        ports.state = [&] { return editor; };
+        ports.begin = [&](const QJsonObject&, QString*) {
+            editor.insert(QStringLiteral("capture_phase"), QStringLiteral("editing"));
+            return true;
+        };
+        ports.cancel = [] {};
+        ports.selection = [&](const QJsonObject&, QString*) {
+            if (retireDuringSelection)
+                session.reset();
+            return true;
+        };
+        ports.command = [&](const QString&, const QJsonObject&, auto completion) {
+            deliver = std::move(completion);
+        };
+        ports.cancelCommand = [&] { session.reset(); };
+        session = std::make_unique<ScreenshotMcpSession>(std::move(ports));
+        int sequence = 0;
+        const auto call = [&](const QString& method, auto completion) {
+            ScreenshotMcpRequest request;
+            request.connectionId = 1;
+            request.requestId = request.idempotencyKey = QString::number(++sequence);
+            request.sessionId = session->state().value(QStringLiteral("session_id")).toString();
+            request.expectedRevision = static_cast<quint64>(
+                session->state().value(QStringLiteral("revision")).toInteger());
+            request.method = method;
+            session->request(request, std::move(completion));
+        };
+        call(QStringLiteral("snow_shot_screenshot_begin"), [](auto) {});
+        session->capturePresented();
+        call(QStringLiteral("snow_shot_screenshot_recognize"), [](auto) {});
+        int completions = 0;
+        call(QStringLiteral("snow_shot_screenshot_set_selection"), [&](auto) { ++completions; });
+        require(!session && completions == 0,
+                "selection or cancellation callback retirement prevents trailing session access");
+        deliver({}, {});
+    }
+}
+
 void workflowOperations() {
     QJsonObject editor{{QStringLiteral("capture_phase"), QStringLiteral("idle")}};
     ScreenshotMcpSession::Ports ports;
@@ -1413,6 +1666,18 @@ int main(int argc, char** argv) {
         session();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--transport-only"))) {
+        drainAdmission();
+        transport();
+        descriptorOverride();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--workflow-operations-only"))) {
+        selectionReplacementPreservesOperationsUntilAccepted();
+        selectionReplacementSurvivesSessionRetirement();
+        workflowOperations();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--selection-style-only"))) {
         selectionStyle();
         return 0;
@@ -1437,8 +1702,11 @@ int main(int argc, char** argv) {
     sequenceNumberPatchesPreserveMixedSelectionProperties(false);
     sequenceNumberPatchesPreserveMixedSelectionProperties(true);
     completeToolStyleContract();
+    selectionReplacementPreservesOperationsUntilAccepted();
+    selectionReplacementSurvivesSessionRetirement();
     workflowOperations();
     annotationRuntime();
+    drainAdmission();
     transport();
     descriptorOverride();
     selection();
