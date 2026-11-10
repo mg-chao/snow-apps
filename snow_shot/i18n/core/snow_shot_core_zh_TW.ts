@@ -885,20 +885,12 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>%1 %2 已發布。請開啟「關於」查看更新選項</translation>
         </message>
         <message>
-            <source>%1 will close and restart to install the update. Continue?</source>
-            <translation>%1 將關閉並重新啟動以安裝更新。是否繼續？</translation>
-        </message>
-        <message>
             <source>An update is ready. Open About to restart and update %1</source>
             <translation>更新已就緒。請開啟「關於」重新啟動並更新 %1</translation>
         </message>
         <message>
             <source>An update is ready. Open About to restart and update Snow Shot</source>
             <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot</translation>
-        </message>
-        <message>
-            <source>Cancel</source>
-            <translation>取消</translation>
         </message>
         <message>
             <source>Could not open the selected file: %1</source>
@@ -917,20 +909,12 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>請先完成截圖、螢幕錄製或匯出，再進行更新</translation>
         </message>
         <message>
-            <source>Restart and update</source>
-            <translation>重新啟動並更新</translation>
-        </message>
-        <message>
             <source>Restart failed</source>
             <translation>重新啟動失敗</translation>
         </message>
         <message>
             <source>Snow Shot %1 is available. Open About for update options</source>
             <translation>Snow Shot %1 已推出。開啟「關於」查看更新選項</translation>
-        </message>
-        <message>
-            <source>Snow Shot will close and restart to install the update. Continue?</source>
-            <translation>Snow Shot 將關閉並重新啟動以安裝更新。是否繼續？</translation>
         </message>
         <message>
             <source>The selected file path is invalid</source>

@@ -885,20 +885,12 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>%1 %2 is available. Open About for update options</translation>
         </message>
         <message>
-            <source>%1 will close and restart to install the update. Continue?</source>
-            <translation>%1 will close and restart to install the update. Continue?</translation>
-        </message>
-        <message>
             <source>An update is ready. Open About to restart and update %1</source>
             <translation>An update is ready. Open About to restart and update %1</translation>
         </message>
         <message>
             <source>An update is ready. Open About to restart and update Snow Shot</source>
             <translation>An update is ready. Open About to restart and update Snow Shot</translation>
-        </message>
-        <message>
-            <source>Cancel</source>
-            <translation>Cancel</translation>
         </message>
         <message>
             <source>Could not open the selected file: %1</source>
@@ -917,20 +909,12 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Finish capturing, recording, or exporting before updating</translation>
         </message>
         <message>
-            <source>Restart and update</source>
-            <translation>Restart and update</translation>
-        </message>
-        <message>
             <source>Restart failed</source>
             <translation>Restart failed</translation>
         </message>
         <message>
             <source>Snow Shot %1 is available. Open About for update options</source>
             <translation>Snow Shot %1 is available. Open About for update options</translation>
-        </message>
-        <message>
-            <source>Snow Shot will close and restart to install the update. Continue?</source>
-            <translation>Snow Shot will close and restart to install the update. Continue?</translation>
         </message>
         <message>
             <source>The selected file path is invalid</source>

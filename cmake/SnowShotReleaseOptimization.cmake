@@ -42,7 +42,6 @@ set(SNOW_SHOT_RELEASE_SIZE_SETTINGS_SOURCES
 
 # The main executable mixes the shell with the latency-sensitive capture UI.
 set(SNOW_SHOT_RELEASE_SIZE_SHELL_SOURCES
-    src/app/updateconfirmationdialog.cpp
     src/app/applicationrestart.cpp
     src/presentation/components/contentcardwidget.cpp
     src/presentation/components/maincontentheaderwidget.cpp
