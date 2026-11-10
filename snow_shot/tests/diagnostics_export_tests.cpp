@@ -81,11 +81,15 @@ DiagnosticsOptions optionsFor(const QString& root) {
 }
 class FixtureCollector final : public CrashCollector {
   public:
+    QString directory;
     QString dump;
-    bool initialize(const QString&, const QString&, const QString&, QString*) override {
+    bool initialize(const QString& path, const QString&, const QString&, QString*) override {
+        directory = path;
         return true;
     }
     QVector<CrashReport> reports() override {
+        if (dump.isEmpty())
+            return {};
         // total_size may include attachments/metadata, rather than just the dump.
         return {{QStringLiteral("report-id"),
                  dump,
@@ -103,24 +107,33 @@ class FixtureCollector final : public CrashCollector {
 
 void pathSelection() {
     QTemporaryDir directory(temporaryTemplate());
-    DiagnosticsPathOptions paths{true,
-                                 directory.filePath(QStringLiteral("custom")),
+    DiagnosticsPathOptions paths{directory.filePath(QStringLiteral("custom")),
                                  directory.filePath(QStringLiteral("roaming")),
                                  directory.filePath(QStringLiteral("temp")),
                                  QStringLiteral("snow_shot"),
                                  {}};
-    const auto unified = diagnosticsOptionsForPaths(paths);
-    require(unified.directories == QStringList{QDir(paths.stableDirectory).filePath("logs")} &&
-                unified.crashCaptureDirectory ==
-                    QDir(paths.stableDirectory).filePath("logs/crashes"),
-            "unified diagnostics ignore custom and temporary locations");
+    const auto custom = diagnosticsOptionsForPaths(paths);
+    require(
+        custom.directories ==
+                QStringList{QDir(paths.selectedDirectory).filePath("logs"),
+                            QDir(paths.stableDirectory).filePath("logs"),
+                            QDir(paths.temporaryDirectory).filePath("SnowShot/snow_shot/logs")} &&
+            custom.crashCaptureDirectory.isEmpty(),
+        "custom storage takes precedence and capture follows the chosen writable log root");
     for (const auto& unavailable : {QString(), QStringLiteral("relative")}) {
         paths.stableDirectory = unavailable;
         const auto options = diagnosticsOptionsForPaths(paths);
-        require(options.directories.isEmpty() && options.crashCaptureDirectory.isEmpty(),
-                "missing unified root never falls back to another location");
+        require(options.directories.size() == 2 &&
+                    options.directories.front() == custom.directories.front() &&
+                    options.crashCaptureDirectory.isEmpty(),
+                "portable/custom logs remain available without AppData");
     }
-    paths.unifiedApplicationData = false;
+    paths.selectedDirectory.clear();
+    paths.temporaryDirectory.clear();
+    require(diagnosticsOptionsForPaths(paths).directories.isEmpty(),
+            "missing and relative roots never resolve into the working directory");
+    paths.selectedDirectory = directory.filePath(QStringLiteral("custom"));
+    paths.temporaryDirectory = directory.filePath(QStringLiteral("temp"));
     paths.stableDirectory = directory.filePath(QStringLiteral("LocalState"));
     paths.packageFamily = QStringLiteral("Package_family");
     const auto store = diagnosticsOptionsForPaths(paths);
@@ -142,7 +155,7 @@ void pathSelection() {
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShot"));
     QCoreApplication::setApplicationName(QStringLiteral("snow_shot"));
     paths.stableDirectory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    paths.unifiedApplicationData = true;
+    paths.selectedDirectory.clear();
     paths.packageFamily.clear();
     const auto full = diagnosticsOptionsForPaths(paths);
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotMini"));
@@ -153,6 +166,53 @@ void pathSelection() {
                 full.directories.front().contains(QStringLiteral("snow_shot")) &&
                 mini.directories.front().contains(QStringLiteral("snow_shot_mini")),
             "standalone and Mini keep separate roaming diagnostics roots");
+}
+
+void captureFollowsWritableLogDirectory() {
+    QTemporaryDir directory(temporaryTemplate());
+    DiagnosticsPathOptions paths{directory.filePath(QStringLiteral("portable/data")),
+                                 directory.filePath(QStringLiteral("appdata")),
+                                 directory.filePath(QStringLiteral("temp")),
+                                 QStringLiteral("snow_shot"),
+                                 {}};
+    auto verify = [&](const QString& expected) {
+        auto options = diagnosticsOptionsForPaths(paths);
+        auto collector = std::make_shared<FixtureCollector>();
+        options.crashCollector = collector;
+        options.installMessageHandler = false;
+        options.mirrorToConsole = false;
+        DiagnosticsService service;
+        require(service.initialize(options) && service.status().crashCaptureAvailable,
+                "logger and crash capture initialize");
+        service.record(QtWarningMsg, QStringLiteral("test"), QStringLiteral("shared.directory"));
+        require(service.flush() && service.status().directory == expected &&
+                    QFileInfo(service.status().currentFile)
+                        .absolutePath()
+                        .startsWith(expected + u'/') &&
+                    collector->directory == QDir(expected).filePath(QStringLiteral("crashes")) &&
+                    service.crashCaptureDirectory() == collector->directory,
+                "application logs and crash capture share the actual writable log directory");
+        require(service.status().fallbackReason.isEmpty() ==
+                    (expected == options.directories.front()),
+                "fallback is reported only when the preferred log directory is blocked");
+    };
+    verify(QDir(paths.selectedDirectory).filePath(QStringLiteral("logs")));
+    require(!QFileInfo::exists(paths.stableDirectory) &&
+                !QFileInfo::exists(paths.temporaryDirectory),
+            "portable mode does not create AppData or temporary log directories");
+    paths.selectedDirectory = directory.filePath(QStringLiteral("custom"));
+    verify(QDir(paths.selectedDirectory).filePath(QStringLiteral("logs")));
+    paths.selectedDirectory = directory.filePath(QStringLiteral("blocked-custom"));
+    put(paths.selectedDirectory, "blocked");
+    verify(QDir(paths.stableDirectory).filePath(QStringLiteral("logs")));
+    paths.stableDirectory = directory.filePath(QStringLiteral("blocked-appdata"));
+    put(paths.stableDirectory, "blocked");
+    verify(QDir(paths.temporaryDirectory).filePath(QStringLiteral("SnowShot/snow_shot/logs")));
+    paths.selectedDirectory = directory.filePath(QStringLiteral("standard"));
+    paths.stableDirectory = paths.selectedDirectory;
+    require(diagnosticsOptionsForPaths(paths).directories.size() == 2,
+            "standard storage does not duplicate its AppData log root");
+    verify(QDir(paths.selectedDirectory).filePath(QStringLiteral("logs")));
 }
 
 void archiveIncludesRetainedEvidenceAndSurvivesPublication() {
@@ -380,6 +440,7 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     try {
         pathSelection();
+        captureFollowsWritableLogDirectory();
         archiveIncludesRetainedEvidenceAndSurvivesPublication();
         concurrentRequestsAndFailedArchives();
         crashOnlyExport();

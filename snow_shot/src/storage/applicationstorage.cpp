@@ -1057,6 +1057,8 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                 return StorageDirectoryChangeResult{false, flush.error, {}};
             auto& diagnostics = diagnostics::DiagnosticsService::instance();
             const bool hadDiagnostics = !diagnosticOptions.directories.isEmpty();
+            // Standalone logs stay with the startup-selected crash database for this process.
+            // The next startup resolves the newly selected data directory for both kinds of log.
             const bool fixedDiagnostics = !app::distribution::isStoreManaged();
             const QString captureDatabase = diagnostics.crashCaptureDirectory();
             if (hadDiagnostics && !fixedDiagnostics) {

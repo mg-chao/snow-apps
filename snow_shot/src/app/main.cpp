@@ -92,19 +92,13 @@ namespace {
 snow_shot::diagnostics::DiagnosticsOptions
 startupDiagnosticsOptions(const QString& selectedDirectory, const QString& applicationName) {
     const bool storeManaged = snow_shot::app::distribution::isStoreManaged();
-    bool unifiedApplicationData = false;
-#ifdef Q_OS_WIN
-    unifiedApplicationData = !storeManaged;
-#endif
     const QString stableRoot =
         storeManaged ? snow_shot::app::distribution::writableDataDirectory()
-                     : QStandardPaths::writableLocation(unifiedApplicationData
-                                                            ? QStandardPaths::AppDataLocation
-                                                            : QStandardPaths::AppLocalDataLocation);
+                     : QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     const QString temporaryRoot =
         QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).canonicalPath();
     return snow_shot::diagnostics::diagnosticsOptionsForPaths(
-        {unifiedApplicationData, selectedDirectory, stableRoot, temporaryRoot, applicationName,
+        {selectedDirectory, stableRoot, temporaryRoot, applicationName,
          storeManaged ? snow_shot::app::distribution::packageFamilyName() : QString()});
 }
 
