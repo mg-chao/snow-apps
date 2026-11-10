@@ -70,6 +70,10 @@ class ScreenshotController : public QObject {
     void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     [[nodiscard]] bool captureAvailable() const;
     void setCaptureSuspended(bool suspended);
+#ifdef Q_OS_MACOS
+    void setCaptureBackgroundWindow(QWidget* window);
+    void releaseCaptureBackgroundWindow();
+#endif
     [[nodiscard]] bool captureAcquisitionActive() const;
     // Final handoff revalidation already owns capture suspension; it must still observe actual
     // work without treating its own closed admission as newly admitted work.

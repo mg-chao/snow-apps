@@ -451,6 +451,7 @@ void MainWindow::showPinToScreenManagement() {
 }
 
 void MainWindow::showAndActivate() {
+    emit aboutToShowAndActivate();
     if (isMinimized()) {
         showNormal();
     } else {

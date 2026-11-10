@@ -1226,6 +1226,9 @@ class ApplicationController::Impl {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), apiClient());
             screenshotController->setCaptureSuspended(applicationSuspended());
+#ifdef Q_OS_MACOS
+            screenshotController->setCaptureBackgroundWindow(mainWindow);
+#endif
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::recordingExportNotificationRequested,
                              &systemTray,
@@ -1389,6 +1392,14 @@ class ApplicationController::Impl {
         if (mainWindow == nullptr) {
             ensureSettingsRuntime();
             mainWindow = new MainWindow(*settingsRegistry, *runtimeSession, nullptr, apiClient());
+#ifdef Q_OS_MACOS
+            if (screenshotController)
+                screenshotController->setCaptureBackgroundWindow(mainWindow);
+            QObject::connect(mainWindow, &MainWindow::aboutToShowAndActivate, &q, [this] {
+                if (screenshotController)
+                    screenshotController->releaseCaptureBackgroundWindow();
+            });
+#endif
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
             QObject::connect(mainWindow, &MainWindow::screenshotRequested, &q, [this]() {

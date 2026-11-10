@@ -659,8 +659,10 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::unique_ptr<snow_shot::platform::windows::CursorRefresh> m_recaptureCursorRefresh;
 #endif
 #ifdef Q_OS_MACOS
+    QPointer<QWidget> m_captureBackgroundWindow;
     std::unique_ptr<snow_shot::platform::macos::ScreenshotSessionFocus> m_sessionFocus =
-        snow_shot::platform::macos::createScreenshotSessionFocus();
+        snow_shot::platform::macos::createScreenshotSessionFocus(
+            {}, [this] { return m_captureBackgroundWindow.data(); });
     std::unique_ptr<snow_shot::platform::macos::RecaptureFocus> m_recaptureFocus;
     QPointer<ScreenshotOverlayWindow> m_recaptureKeyboardOwner;
 #endif
@@ -6699,6 +6701,19 @@ bool ScreenshotController::captureAvailable() const {
     return m_impl->canBeginCapture();
 }
 
+#ifdef Q_OS_MACOS
+void ScreenshotController::setCaptureBackgroundWindow(QWidget* window) {
+    if (m_impl->m_captureBackgroundWindow == window)
+        return;
+    m_impl->m_sessionFocus->releaseBackgroundWindow();
+    m_impl->m_captureBackgroundWindow = window;
+}
+
+void ScreenshotController::releaseCaptureBackgroundWindow() {
+    m_impl->m_sessionFocus->releaseBackgroundWindow();
+}
+#endif
+
 void ScreenshotController::setCaptureSuspended(bool suspended) {
     if (!m_impl->m_captureWorkflow || m_impl->m_captureWorkflow->captureSuspended() == suspended)
         return;
@@ -7161,9 +7176,11 @@ ScreenshotControllerTestAccess::presentSelection(ScreenshotController& controlle
 #ifdef Q_OS_MACOS
 void ScreenshotControllerTestAccess::installSessionFocus(
     ScreenshotController& controller,
-    snow_shot::platform::macos::ScreenshotSessionFocus::Capture capture) {
+    snow_shot::platform::macos::ScreenshotSessionFocus::Capture capture,
+    std::unique_ptr<snow_shot::platform::macos::ScreenshotBackgroundWindowGuard> background) {
     controller.m_impl->m_sessionFocus =
-        std::make_unique<snow_shot::platform::macos::ScreenshotSessionFocus>(std::move(capture));
+        std::make_unique<snow_shot::platform::macos::ScreenshotSessionFocus>(std::move(capture),
+                                                                             std::move(background));
     controller.m_impl->m_sessionFocus->begin(true);
 }
 
