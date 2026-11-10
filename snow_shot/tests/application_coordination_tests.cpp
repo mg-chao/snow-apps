@@ -221,6 +221,79 @@ void verifyLifecycleStartOutcomes() {
     require(!retiring && retiringStops == 1,
             "destruction inside start retires resources without dereferencing an expired owner");
 }
+
+void verifyLifecycleReplacementFailure() {
+    using Lifecycle = snow_shot::app::mcp::McpRuntimeLifecycle;
+    int starts = 0;
+    int stops = 0;
+    bool available = true;
+    std::vector<std::function<void()>> drains;
+    Lifecycle lifecycle({[&] {
+                             ++starts;
+                             return Lifecycle::StartOutcome{available, QStringLiteral("locked")};
+                         },
+                         [&](auto done) { drains.push_back(std::move(done)); }, [&] { ++stops; }});
+    lifecycle.setEnabled(true);
+    lifecycle.setEnabled(false);
+    lifecycle.setEnabled(true);
+    available = false;
+    drains[0]();
+    require(lifecycle.state() == Lifecycle::State::Failed && starts == 2 && stops == 2 &&
+                lifecycle.error() == QStringLiteral("locked"),
+            "unavailable replacement retires both graphs and preserves the startup failure");
+    drains[0]();
+    lifecycle.setEnabled(true);
+    require(starts == 2 && stops == 2 && lifecycle.state() == Lifecycle::State::Failed,
+            "old drain and repeated desired enable cannot retry a failed replacement");
+    available = true;
+    lifecycle.retry();
+    require(starts == 3 && stops == 2 && lifecycle.state() == Lifecycle::State::Running,
+            "explicit retry opens a new graph only after failed replacement cleanup");
+    drains[0]();
+    require(starts == 3 && stops == 2 && lifecycle.state() == Lifecycle::State::Running,
+            "old drain cannot retire the successfully retried graph");
+}
+
+void verifyLifecycleReentrantRetirement() {
+    using Lifecycle = snow_shot::app::mcp::McpRuntimeLifecycle;
+    for (const bool enabledAfterPause : {false, true}) {
+        int starts = 0;
+        int stops = 0;
+        std::vector<std::function<void()>> drains;
+        std::unique_ptr<Lifecycle> lifecycle;
+        lifecycle = std::make_unique<Lifecycle>(Lifecycle::Hooks{
+            [&] {
+                ++starts;
+                return Lifecycle::StartOutcome{true, {}};
+            },
+            [&](auto done) { drains.push_back(std::move(done)); },
+            [&] {
+                ++stops;
+                if (stops != 1)
+                    return;
+                // Native cancellation/checkpoint observers may change configuration and
+                // pause the application while the draining graph is being retired.
+                lifecycle->setEnabled(true);
+                lifecycle->setSuspended(true);
+                lifecycle->setEnabled(enabledAfterPause);
+                require(starts == 1 && lifecycle->state() == Lifecycle::State::Stopping,
+                        "retirement observers cannot open a replacement before stop returns");
+            }});
+        lifecycle->setEnabled(true);
+        lifecycle->setEnabled(false);
+        drains[0]();
+        require(starts == 1 && stops == 1 && lifecycle->state() == Lifecycle::State::Stopped,
+                "pause raised by a retirement observer leaves the graph synchronously stopped");
+        drains[0]();
+        require(starts == 1 && stops == 1,
+                "duplicate drain remains inert after reentrant pause changed its generation");
+        lifecycle->setSuspended(false);
+        require(starts == (enabledAfterPause ? 2 : 1) &&
+                    lifecycle->state() ==
+                        (enabledAfterPause ? Lifecycle::State::Running : Lifecycle::State::Stopped),
+                "resume reconciles configuration changed inside resource retirement");
+    }
+}
 } // namespace
 int main() {
     using namespace snow_shot::app;
@@ -251,6 +324,8 @@ int main() {
     verifyAdmissionMatrix();
     verifyLifecycleInterleavings();
     verifyLifecycleStartOutcomes();
+    verifyLifecycleReplacementFailure();
+    verifyLifecycleReentrantRetirement();
     int starts = 0;
     int stops = 0;
     std::vector<std::function<void()>> drains;

@@ -425,6 +425,121 @@ void asynchronousExceptionsRestoreParticipants() {
     }
 }
 
+void rejectedSuspensionLeavesResourcesAndAdmissionAvailable() {
+    QTemporaryDir fixture;
+    auto& app = storage::ApplicationStorage::instance();
+    const QString source = fixture.filePath(QStringLiteral("source"));
+    const QString target = fixture.filePath(QStringLiteral("target"));
+    storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")), source,
+                                                  60000};
+    options.isolateAuxiliaryStorage = true;
+    require(app.initialize(options).success, "rejected suspension fixture initialized");
+    int suspensions = 0;
+    int resumes = 0;
+    int launches = 0;
+    int completions = 0;
+    app.setDirectoryChangeHooks(
+        [&] {
+            ++suspensions;
+            return suspensions == 1 ? storage::StorageResult::failure(QStringLiteral("busy"))
+                                    : storage::StorageResult::ok();
+        },
+        [&](const QString& root) {
+            require(root == target, "only the acquired retry restores participants");
+            ++resumes;
+        },
+        {},
+        [&](storage::ApplicationStorage::DirectoryChangeTask work) {
+            ++launches;
+            return std::async(std::launch::async, std::move(work));
+        });
+    const auto connection = QObject::connect(
+        &app, &storage::ApplicationStorage::directoryChangeFinished, &app, [&](const auto& result) {
+            require(result.success, "retry completes its committed transaction");
+            ++completions;
+        });
+    const auto rejected = app.requestDirectoryChange(target, true);
+    require(
+        !rejected.success && rejected.error == QStringLiteral("busy") && suspensions == 1 &&
+            resumes == 0 && launches == 0 && completions == 0 && !app.directoryChanging() &&
+            app.configurationDirectory() == source && app.status().writeAvailable &&
+            app.configuration().setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                         QStringLiteral("disabled")) &&
+            app.pinnedWindows().create(pin()).success,
+        "failed acquisition launches no worker, restores no unowned pause and keeps writes open");
+    require(app.requestDirectoryChange(target, true).success,
+            "failed acquisition releases the preparation reservation for retry");
+    app.waitForDirectoryChange();
+    require(suspensions == 2 && resumes == 1 && launches == 1 && completions == 1 &&
+                app.configurationDirectory() == target && !app.directoryChanging(),
+            "successful retry owns exactly one suspension and completion");
+    QObject::disconnect(connection);
+    app.setDirectoryChangeHooks({}, {});
+    app.shutdown();
+}
+
+void transactionCommitDoesNotReleaseWorkerOwnership() {
+    QTemporaryDir fixture;
+    auto& app = storage::ApplicationStorage::instance();
+    const QString source = fixture.filePath(QStringLiteral("source"));
+    const QString target = fixture.filePath(QStringLiteral("target"));
+    storage::StorageInitializationOptions options{fixture.filePath(QStringLiteral("bin")), source,
+                                                  60000};
+    options.isolateAuxiliaryStorage = true;
+    require(app.initialize(options).success, "worker ownership fixture initialized");
+    std::promise<void> transactionFinished;
+    auto transactionReady = transactionFinished.get_future();
+    std::promise<void> releaseWorker;
+    const auto workerReleased = releaseWorker.get_future().share();
+    int resumes = 0;
+    int completions = 0;
+    app.setDirectoryChangeHooks(
+        [] { return storage::StorageResult::ok(); },
+        [&](const QString& root) {
+            require(root == target, "worker restoration uses the committed destination");
+            ++resumes;
+        },
+        {},
+        [&](storage::ApplicationStorage::DirectoryChangeTask work) {
+            return std::async(std::launch::async, [&, work = std::move(work)] {
+                const auto result = work();
+                require(result.success, "worker transaction commits before terminal release");
+                transactionFinished.set_value();
+                workerReleased.wait();
+                return result;
+            });
+        });
+    const auto connection = QObject::connect(
+        &app, &storage::ApplicationStorage::directoryChangeFinished, &app, [&](const auto& result) {
+            require(result.success, "worker release preserves the authoritative transaction");
+            ++completions;
+        });
+    require(app.requestDirectoryChange(target, true).success, "worker ownership request admitted");
+    require(transactionReady.wait_for(std::chrono::seconds(10)) == std::future_status::ready,
+            "transaction commits while the executor still owns borrowed resources");
+    QCoreApplication::processEvents();
+    require(
+        app.directoryChanging() && !app.status().writeAvailable && resumes == 0 &&
+            completions == 0 &&
+            !app.configuration().setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                          QStringLiteral("disabled")) &&
+            !app.pinnedWindows().create(pin()).success &&
+            !app.requestDirectoryChange(fixture.filePath(QStringLiteral("next")), true).success,
+        "transaction completion cannot reopen producers or retire a still occupied worker");
+    releaseWorker.set_value();
+    app.waitForDirectoryChange();
+    QCoreApplication::processEvents();
+    require(resumes == 1 && completions == 1 && !app.directoryChanging() &&
+                app.status().writeAvailable && app.configurationDirectory() == target &&
+                app.configuration().setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                             QStringLiteral("disabled")) &&
+                app.pinnedWindows().create(pin()).success,
+            "only actual worker completion releases admission and restores writes once");
+    QObject::disconnect(connection);
+    app.setDirectoryChangeHooks({}, {});
+    app.shutdown();
+}
+
 void completionPreventsEarlyReentryAndAllowsFinalChaining() {
     QTemporaryDir fixture;
     auto& app = storage::ApplicationStorage::instance();
@@ -884,6 +999,8 @@ int main(int argc, char** argv) {
     liveSwitch(false);
     flushFailureRestoresAvailability();
     asynchronousExceptionsRestoreParticipants();
+    rejectedSuspensionLeavesResourcesAndAdmissionAvailable();
+    transactionCommitDoesNotReleaseWorkerOwnership();
     completionPreventsEarlyReentryAndAllowsFinalChaining();
     busyNotificationOwnsTheWorkerBeforeLifecycleReentry();
     preparationClosesStorageAdmission();

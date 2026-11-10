@@ -232,6 +232,32 @@ void testSafetyAndFailures() {
     {
         Fixture f;
         f.tick(0s);
+        f.beforeSample = [&f] { f.controller.stop(); };
+        f.tick(60s);
+        require(f.calls == 0 && f.reports == 0 && !f.controller.isScheduling(),
+                "shutdown during sampling closes actual trim admission despite enabled settings");
+    }
+    {
+        Fixture f;
+        int checks = 0;
+        auto options = f.options();
+        MemoryOptimizationController* controller = nullptr;
+        options.safe = [&] {
+            if (++checks == 3)
+                controller->stop();
+            return true;
+        };
+        MemoryOptimizationController candidate(f.activity, std::move(options));
+        controller = &candidate;
+        candidate.evaluate();
+        f.now += 60s;
+        candidate.evaluate();
+        require(checks == 3 && f.calls == 0 && f.reports == 0 && !candidate.isScheduling(),
+                "shutdown in admission inspection cannot commit a subsequent native trim");
+    }
+    {
+        Fixture f;
+        f.tick(0s);
         QWidget input;
         f.now += 30s;
         QKeyEvent key(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);

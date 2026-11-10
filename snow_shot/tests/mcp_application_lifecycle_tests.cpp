@@ -16,6 +16,7 @@
 #include "widgets/button.h"
 #ifdef Q_OS_WIN
 #include "snow_shot/app/shellimagelaunch.h"
+#include "snow_shot/app/storeupdatelifecycle.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #endif
 
@@ -37,7 +38,10 @@
 #include <QTimer>
 
 #include <iostream>
+#include <cstdint>
+#include <functional>
 #include <stdexcept>
+#include <utility>
 
 int runMcpApplicationLifecycleTests(int argc, char** argv);
 
@@ -77,6 +81,89 @@ class InputProbe final : public QObject {
         return QObject::event(event);
     }
 };
+
+bool keyInputAvailable() {
+    InputProbe probe;
+    QKeyEvent key(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);
+    QCoreApplication::sendEvent(&probe, &key);
+    return probe.received;
+}
+
+class ReplayShowObserver final : public QObject {
+  public:
+    explicit ReplayShowObserver(std::function<void()> onShow) : m_onShow(std::move(onShow)) {}
+    bool observed = false;
+
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Show && !std::exchange(observed, true))
+            m_onShow();
+        return false;
+    }
+
+  private:
+    std::function<void()> m_onShow;
+};
+
+void verifyStoreQueriesDuringLaunchReplay(snow_shot::app::ApplicationController& controller,
+                                          snow_shot::update::UpdateService& updates,
+                                          snow_shot::app::mcp::ScreenshotMcpServer& server,
+                                          MainWindow& window) {
+    enum class Outcome : std::uint8_t { Rejected, Cancelled, Pending };
+    for (const auto outcome : {Outcome::Rejected, Outcome::Cancelled, Outcome::Pending}) {
+        window.hide();
+        updates.handoffPendingChanged(true);
+        controller.handleLaunchRequest({QStringLiteral("--show-main-window")});
+        bool queryAccepted = false;
+        bool suspendedAtCheckpoint = false;
+        int checkpoints = 0;
+        snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+        hooks.suspend = [&](bool paused) { updates.handoffPendingChanged(paused); };
+        hooks.checkpoint = [&] {
+            ++checkpoints;
+            suspendedAtCheckpoint = !server.isRunning() && !keyInputAvailable();
+            return outcome != Outcome::Rejected;
+        };
+        snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+        ReplayShowObserver observer([&] {
+            queryAccepted = lifecycle.queryEndSession();
+            if (outcome == Outcome::Cancelled)
+                lifecycle.endSession(false);
+        });
+        window.installEventFilter(&observer);
+        const auto removeObserver = qScopeGuard([&] { window.removeEventFilter(&observer); });
+        updates.handoffPendingChanged(false);
+        const bool pending = outcome == Outcome::Pending;
+        require(observer.observed && queryAccepted == (outcome != Outcome::Rejected) &&
+                    lifecycle.pending() == pending && server.isRunning() == !pending &&
+                    keyInputAvailable() == !pending,
+                "Store queries during launch replay own their pause and restore input on rejection "
+                "or cancellation");
+        require(checkpoints == 1 && suspendedAtCheckpoint,
+                "a replay observer synchronously closes resources and input before checkpointing");
+        lifecycle.endSession(false);
+        require(!lifecycle.pending() && server.isRunning() && keyInputAvailable(),
+                "accepted replay preparation remains reversible after the replay stack returns");
+    }
+}
+
+void verifyCoalescedCancellationDuringRestoration(
+    snow_shot::update::UpdateService& updates, snow_shot::app::mcp::ScreenshotMcpServer& server) {
+    updates.handoffPendingChanged(true);
+    int starts = 0;
+    const auto connection =
+        QObject::connect(&server, &snow_shot::app::mcp::ScreenshotMcpServer::runningChanged,
+                         &server, [&](bool running) {
+                             if (running && ++starts == 1) {
+                                 updates.handoffPendingChanged(true);
+                                 updates.handoffPendingChanged(false);
+                             }
+                         });
+    updates.handoffPendingChanged(false);
+    QObject::disconnect(connection);
+    require(starts == 1 && server.isRunning() && keyInputAvailable(),
+            "a re-request cancelled during restoration releases preclosed input without restarting "
+            "the graph again");
+}
 
 QList<ScreenshotPinnedWindow*> visiblePins() {
     QList<ScreenshotPinnedWindow*> pins;
@@ -427,6 +514,48 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
         auto* updates =
             application.findChild<update::UpdateService*>(QStringLiteral("snowShotUpdateService"));
         require(updates && server->isRunning(), "running services exist before committed handoff");
+        bool cancelledDuringAcquisition = false;
+        const auto cancelAcquiringPause = QObject::connect(
+            server, &ScreenshotMcpServer::runningChanged, &controller, [&](bool running) {
+                if (!running && !std::exchange(cancelledDuringAcquisition, true))
+                    updates->handoffPendingChanged(false);
+            });
+        updates->handoffPendingChanged(true);
+        QObject::disconnect(cancelAcquiringPause);
+        require(cancelledDuringAcquisition && server->isRunning(),
+                "handoff cancelled during graph retirement restores after acquisition completes");
+        updates->handoffPendingChanged(true);
+        require(!server->isRunning(),
+                "pause again before testing a new request during restoration");
+        bool requestedDuringRestoration = false;
+        const auto requestRestoringPause = QObject::connect(
+            server, &ScreenshotMcpServer::runningChanged, &controller, [&](bool running) {
+                if (running && !std::exchange(requestedDuringRestoration, true)) {
+                    updates->handoffPendingChanged(true);
+#ifdef Q_OS_WIN
+                    InputProbe pausedInput;
+                    QKeyEvent pausedKey(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);
+                    QCoreApplication::sendEvent(&pausedInput, &pausedKey);
+                    require(!pausedInput.received,
+                            "new pause closes widget input before a restoration observer returns");
+#endif
+                }
+            });
+        updates->handoffPendingChanged(false);
+        QObject::disconnect(requestRestoringPause);
+        require(requestedDuringRestoration && !server->isRunning(),
+                "request during restoration acquires a fresh pause after the old stack returns");
+        updates->handoffPendingChanged(false);
+        require(server->isRunning(), "latest cancellation restores the replacement pause once");
+#ifdef Q_OS_WIN
+        InputProbe restoredInput;
+        QKeyEvent restoredKey(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);
+        QCoreApplication::sendEvent(&restoredInput, &restoredKey);
+        require(restoredInput.received,
+                "cancelled acquisition releases ordinary application input before returning");
+        verifyStoreQueriesDuringLaunchReplay(controller, *updates, *server, *mainWindow);
+        verifyCoalescedCancellationDuringRestoration(*updates, *server);
+#endif
 #ifdef Q_OS_WIN
         mainWindow->showAbout();
         auto* about = mainWindow->findChild<AboutPageWidget*>();
@@ -482,10 +611,29 @@ int runMcpApplicationLifecycleTests(int argc, char** argv) try {
         });
         watchdog.start(3000);
         QTimer::singleShot(0, &application, [&] {
+#ifdef Q_OS_WIN
+            mainWindow->hide();
+            updates->handoffPendingChanged(true);
+            controller.handleLaunchRequest({QStringLiteral("--show-main-window")});
+            ReplayShowObserver observer([&] {
+                updates->handoffPendingChanged(true);
+                suspendedWithoutListener = !server->isRunning();
+                listenerRestarts = 0; // The preceding reversible restoration reopened MCP.
+                pausedIngress();
+                updates->handoffCommitted();
+                updates->handoffPendingChanged(false);
+            });
+            mainWindow->installEventFilter(&observer);
+            const auto removeObserver =
+                qScopeGuard([&] { mainWindow->removeEventFilter(&observer); });
+            updates->handoffPendingChanged(false);
+            require(observer.observed, "terminal handoff runs from the replayed launch observer");
+#else
             updates->handoffPendingChanged(true);
             suspendedWithoutListener = !server->isRunning();
             pausedIngress();
             updates->handoffCommitted();
+#endif
         });
         const int quitResult = application.exec();
         watchdog.stop();

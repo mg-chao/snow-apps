@@ -8,6 +8,7 @@
 #include <QStringList>
 #include <QTemporaryDir>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -285,6 +286,202 @@ void forcedTerminationOwnsReentrantCooperativeCompletion() {
     }
 }
 
+void cooperativePreparationOwnsReentrantQueries() {
+    enum class Boundary : std::uint8_t { Busy, Suspend, Checkpoint, Validation, Restore };
+    for (const auto boundary : {Boundary::Busy, Boundary::Suspend, Boundary::Checkpoint,
+                                Boundary::Validation, Boundary::Restore}) {
+        snow_shot::app::StoreUpdateLifecycle* current = nullptr;
+        bool attempted = false;
+        bool nestedAccepted = true;
+        int suspensions = 0;
+        int checkpoints = 0;
+        int validations = 0;
+        int resumes = 0;
+        const auto query = [&](Boundary point) {
+            if (point == boundary && !std::exchange(attempted, true))
+                nestedAccepted = current->queryEndSession();
+        };
+        snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+        hooks.busy = [&] {
+            query(Boundary::Busy);
+            return false;
+        };
+        hooks.suspend = [&](bool suspended) {
+            if (suspended) {
+                ++suspensions;
+                query(Boundary::Suspend);
+            } else {
+                ++resumes;
+                query(Boundary::Restore);
+            }
+        };
+        hooks.checkpoint = [&] {
+            ++checkpoints;
+            query(Boundary::Checkpoint);
+            return boundary != Boundary::Restore;
+        };
+        hooks.validateAfterCheckpoint = [&] {
+            ++validations;
+            query(Boundary::Validation);
+            return true;
+        };
+        snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+        current = &lifecycle;
+        const bool accepted = boundary != Boundary::Restore;
+        require(
+            lifecycle.queryEndSession() == accepted && lifecycle.pending() == accepted &&
+                attempted && !nestedAccepted && suspensions == 1 && checkpoints == 1 &&
+                validations == (accepted ? 1 : 0) && resumes == (accepted ? 0 : 1),
+            "an in-flight preparation owns its callbacks and cannot acknowledge nested queries");
+        lifecycle.endSession(false);
+        require(!lifecycle.pending() && resumes == 1,
+                "accepted or declined outer query restores its acquired pause exactly once");
+    }
+}
+
+void cancelledPreparationCannotCommit() {
+    enum class Boundary : std::uint8_t { Busy, Suspend, Checkpoint, Validation };
+    for (const auto boundary :
+         {Boundary::Busy, Boundary::Suspend, Boundary::Checkpoint, Boundary::Validation}) {
+        for (const bool throws : {false, true}) {
+            snow_shot::app::StoreUpdateLifecycle* current = nullptr;
+            bool inject = true;
+            bool paused = false;
+            bool suspending = false;
+            int suspensions = 0;
+            int checkpoints = 0;
+            int validations = 0;
+            int resumes = 0;
+            const auto cancel = [&](Boundary point) {
+                if (!inject || point != boundary)
+                    return;
+                current->endSession(false);
+                require(!current->pending(), "cancellation cannot publish preparation as pending");
+                if (throws)
+                    throw std::runtime_error("preparation callback failed after cancellation");
+            };
+            snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+            hooks.busy = [&] {
+                cancel(Boundary::Busy);
+                return false;
+            };
+            hooks.suspend = [&](bool suspended) {
+                if (suspended) {
+                    ++suspensions;
+                    suspending = true;
+                    paused = true;
+                    try {
+                        cancel(Boundary::Suspend);
+                    } catch (...) {
+                        suspending = false;
+                        throw;
+                    }
+                    suspending = false;
+                } else {
+                    require(!suspending,
+                            "cancellation waits for the suspension callback to return");
+                    ++resumes;
+                    paused = false;
+                }
+            };
+            hooks.checkpoint = [&] {
+                ++checkpoints;
+                cancel(Boundary::Checkpoint);
+                return true;
+            };
+            hooks.validateAfterCheckpoint = [&] {
+                ++validations;
+                cancel(Boundary::Validation);
+                return true;
+            };
+            snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+            current = &lifecycle;
+            require(!lifecycle.queryEndSession() && !lifecycle.pending() && !paused &&
+                        suspensions == (boundary == Boundary::Busy ? 0 : 1) &&
+                        checkpoints ==
+                            (boundary == Boundary::Busy || boundary == Boundary::Suspend ? 0 : 1) &&
+                        validations == (boundary == Boundary::Validation ? 1 : 0) &&
+                        resumes == suspensions,
+                    "cancelled preparation cannot continue callbacks or commit stale admission");
+            lifecycle.endSession(false);
+            require(resumes == suspensions, "duplicate cancellation cannot release a pause twice");
+            inject = false;
+            require(lifecycle.queryEndSession() && lifecycle.pending() && paused,
+                    "a cancelled preparation leaves a new independent query retryable");
+            lifecycle.endSession(false);
+            require(!lifecycle.pending() && !paused && resumes == suspensions,
+                    "the replacement query owns and restores its own pause");
+        }
+    }
+}
+
+void terminalNotificationWinsAfterPreparationCancellation() {
+    snow_shot::app::StoreUpdateLifecycle* current = nullptr;
+    int resumes = 0;
+    int checkpoints = 0;
+    int terminalFreezes = 0;
+    int preserved = 0;
+    snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+    hooks.suspend = [&](bool suspended) {
+        if (!suspended) {
+            ++resumes;
+            return;
+        }
+        current->endSession(false);
+        current->endSession(true);
+    };
+    hooks.checkpoint = [&] {
+        ++checkpoints;
+        return true;
+    };
+    hooks.suspendForTermination = [&] { ++terminalFreezes; };
+    hooks.preserveRecording = [&](int budget) {
+        require(budget >= 0 && budget <= 4000, "terminal ownership keeps the shared deadline");
+        ++preserved;
+    };
+    snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+    current = &lifecycle;
+    require(lifecycle.queryEndSession() && lifecycle.pending() && resumes == 0 &&
+                checkpoints == 0 && terminalFreezes == 1 && preserved == 1,
+            "forced termination supersedes cancellation without reopening cooperative admission");
+    lifecycle.endSession(false);
+    require(lifecycle.pending() && resumes == 0 && preserved == 1,
+            "late cancellation cannot undo terminal ownership acquired during preparation");
+}
+
+void acceptedCancellationOwnsRestoration() {
+    snow_shot::app::StoreUpdateLifecycle* current = nullptr;
+    bool nestedAccepted = true;
+    int suspensions = 0;
+    int checkpoints = 0;
+    int resumes = 0;
+    snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+    hooks.suspend = [&](bool suspended) {
+        if (suspended) {
+            ++suspensions;
+            return;
+        }
+        ++resumes;
+        nestedAccepted = current->queryEndSession();
+    };
+    hooks.checkpoint = [&] {
+        ++checkpoints;
+        return true;
+    };
+    snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+    current = &lifecycle;
+    require(lifecycle.queryEndSession(), "accept the initial cooperative query");
+    lifecycle.endSession(false);
+    require(!lifecycle.pending() && !nestedAccepted && suspensions == 1 && checkpoints == 1 &&
+                resumes == 1,
+            "accepted cancellation completes restoration before admitting another query");
+    require(lifecycle.queryEndSession() && suspensions == 2 && checkpoints == 2,
+            "a new query starts after the previous cancellation has restored its resources");
+    lifecycle.endSession(false);
+    require(!lifecycle.pending() && resumes == 2 && !nestedAccepted,
+            "replacement cancellation cannot recursively prepare from its restore callback");
+}
+
 void terminalSavesShareOneDeadline() {
     std::promise<void> pendingSave;
     const auto save = pendingSave.get_future().share();
@@ -310,6 +507,33 @@ void terminalSavesShareOneDeadline() {
 }
 
 #ifdef Q_OS_WIN
+void nativeCancellationRecognizesActivePreparation() {
+    snow_shot::app::StoreUpdateLifecycle* current = nullptr;
+    int resumes = 0;
+    int checkpoints = 0;
+    snow_shot::app::StoreUpdateLifecycle::Hooks hooks;
+    hooks.suspend = [&](bool suspended) {
+        if (!suspended) {
+            ++resumes;
+            return;
+        }
+        MSG message{};
+        message.message = WM_ENDSESSION;
+        message.wParam = FALSE;
+        qintptr result = 0;
+        static_cast<void>(current->nativeEventFilter({}, &message, &result));
+    };
+    hooks.checkpoint = [&] {
+        ++checkpoints;
+        return true;
+    };
+    snow_shot::app::StoreUpdateLifecycle lifecycle(std::move(hooks));
+    current = &lifecycle;
+    require(!lifecycle.queryEndSession() && !lifecycle.pending() && resumes == 1 &&
+                checkpoints == 0,
+            "native cancellation without CLOSEAPP still retires an in-flight query");
+}
+
 int terminalChild(const QString& marker) {
     struct TeardownProbe {
         QString marker;
@@ -356,8 +580,13 @@ int main(int argc, char** argv) {
     exceptionalShutdownTransitions();
     cooperativeCommitRechecksAfterPreparation();
     forcedTerminationOwnsReentrantCooperativeCompletion();
+    cooperativePreparationOwnsReentrantQueries();
+    cancelledPreparationCannotCommit();
+    terminalNotificationWinsAfterPreparationCancellation();
+    acceptedCancellationOwnsRestoration();
     terminalSavesShareOneDeadline();
 #ifdef Q_OS_WIN
+    nativeCancellationRecognizesActivePreparation();
     terminalNativeCallbackSkipsDestructiveTeardown();
 #endif
     return 0;

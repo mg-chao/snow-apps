@@ -3,6 +3,7 @@
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QScopeGuard>
 #include <algorithm>
 #include <utility>
 #include <chrono>
@@ -44,6 +45,13 @@ void StoreUpdateLifecycle::install() {
 bool StoreUpdateLifecycle::queryEndSession() {
     if (m_ended || m_pending)
         return true;
+    // Hooks may synchronously dispatch another native session message. Only the outer query
+    // owns preparation; it cannot acknowledge a duplicate before checkpointing has finished.
+    if (m_preparing)
+        return false;
+    m_preparing = true;
+    m_queryCanceled = false;
+    const auto preparation = qScopeGuard([this] { m_preparing = false; });
     bool suspensionRequested = false;
     const auto restoreAvailability = [this] {
         if (m_ended)
@@ -59,7 +67,7 @@ bool StoreUpdateLifecycle::queryEndSession() {
         const bool busy = m_hooks.busy && m_hooks.busy();
         if (m_ended)
             return true;
-        if (busy)
+        if (busy || m_queryCanceled)
             return false;
         // Suspension can partially complete before an exception. Always restore it when a
         // checkpoint cannot be accepted, including when the suspend hook itself throws.
@@ -68,16 +76,24 @@ bool StoreUpdateLifecycle::queryEndSession() {
             m_hooks.suspend(true);
         if (m_ended)
             return true;
+        if (m_queryCanceled) {
+            restoreAvailability();
+            return m_ended;
+        }
         const bool checkpointed = !m_hooks.checkpoint || m_hooks.checkpoint();
         if (m_ended)
             return true;
+        if (m_queryCanceled) {
+            restoreAvailability();
+            return m_ended;
+        }
         const bool admitted =
             checkpointed && (!m_hooks.validateAfterCheckpoint || m_hooks.validateAfterCheckpoint());
         // A terminal notification owns shutdown even if the cooperative callback declines or
         // throws. Its resources must remain closed, and no later preparation callback may run.
         if (m_ended)
             return true;
-        if (!admitted) {
+        if (!admitted || m_queryCanceled) {
             restoreAvailability();
             return m_ended;
         }
@@ -98,7 +114,15 @@ void StoreUpdateLifecycle::endSession(bool ending) {
     if (m_ended)
         return;
     if (!ending) {
+        if (m_preparing) {
+            // Do not reopen admission while a suspension/checkpoint callback still owns its
+            // stack. The outer query restores any partial pause and discards its admission.
+            m_queryCanceled = true;
+            return;
+        }
         if (std::exchange(m_pending, false) && m_hooks.suspend) {
+            m_preparing = true;
+            const auto restoration = qScopeGuard([this] { m_preparing = false; });
             try {
                 m_hooks.suspend(false);
             } catch (...) {
@@ -159,7 +183,7 @@ bool StoreUpdateLifecycle::nativeEventFilter(const QByteArray& eventType, void* 
         return true;
     }
     if (native->message == WM_ENDSESSION &&
-        (m_pending || (native->lParam & ENDSESSION_CLOSEAPP) != 0)) {
+        (m_pending || m_preparing || (native->lParam & ENDSESSION_CLOSEAPP) != 0)) {
         try {
             endSession(native->wParam != FALSE);
         } catch (...) {
