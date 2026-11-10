@@ -15,6 +15,7 @@
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -22,6 +23,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QMouseEvent>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -110,7 +112,17 @@ class Recognition final : public ScreenshotOcrRecognitionPort {
         completions.push_back(std::move(completion));
         return static_cast<RequestToken>(requests.size());
     }
-    void cancel(RequestToken) override {}
+    RequestToken render(ScreenshotOcrRequest request, QObject*, Completion) override {
+        renders.push_back(std::move(request));
+        return deferRenders ? static_cast<RequestToken>(100 + renders.size()) : 0;
+    }
+    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor&) override {
+        requests[static_cast<qsizetype>(token - 1)].renderFilteredImage = enabled;
+        return true;
+    }
+    void cancel(RequestToken token) override {
+        cancelled.push_back(token);
+    }
     bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override {
         return true;
     }
@@ -133,18 +145,41 @@ class Recognition final : public ScreenshotOcrRecognitionPort {
     }
     QVector<ScreenshotOcrRequest> requests;
     QVector<Completion> completions;
+    QVector<ScreenshotOcrRequest> renders;
+    QVector<RequestToken> cancelled;
+    bool deferRenders = false;
 };
 
 void copyAfterRecognitionOwnsCompletion() {
-    enum class Scenario { Fresh, Cached, Cancelled, Failed, Empty, Superseded, QueuedCancellation };
-    for (const QString& followUp : {QStringLiteral("no_action"), QStringLiteral("enable_edit_mode"),
-                                    QStringLiteral("copy_text")}) {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const auto previousFill = configuration.value(QStringLiteral("text_recognition/fill_style"));
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(
+            configuration.setValue(QStringLiteral("text_recognition/fill_style"), previousFill));
+    });
+    require(configuration.setValue(QStringLiteral("text_recognition/fill_style"),
+                                   QStringLiteral("blur")),
+            "use Blur to verify worker rendering in ordinary activations");
+    enum class Scenario {
+        Fresh,
+        Cached,
+        InFlight,
+        Cancelled,
+        Failed,
+        Empty,
+        Superseded,
+        QueuedCancellation
+    };
+    for (const QString& followUp :
+         {QStringLiteral("no_action"), QStringLiteral("enable_edit_mode"),
+          QStringLiteral("copy_text"), QStringLiteral("copy_text_and_end_screenshot"),
+          QStringLiteral("quick_copy_text_and_end_screenshot")}) {
         require(
             snow_shot::storage::ScreenshotSettings().setAutoExecuteAfterTextRecognition(followUp),
             "configure the general recognition follow-up");
-        for (const auto scenario :
-             {Scenario::Fresh, Scenario::Cached, Scenario::Cancelled, Scenario::Failed,
-              Scenario::Empty, Scenario::Superseded, Scenario::QueuedCancellation}) {
+        for (const auto scenario : {Scenario::Fresh, Scenario::Cached, Scenario::InFlight,
+                                    Scenario::Cancelled, Scenario::Failed, Scenario::Empty,
+                                    Scenario::Superseded, Scenario::QueuedCancellation}) {
             ScreenshotCaptureState capture;
             capture.presentationSuppressed = true;
             ScreenshotInteractionState interaction;
@@ -167,6 +202,7 @@ void copyAfterRecognitionOwnsCompletion() {
             snow_shot::presentation::WindowShortcutManager shortcuts;
             ScreenshotOverlayCoordinator coordinator(events, runtime, shortcuts);
             Recognition recognition;
+            recognition.deferRenders = true;
             int ended = 0;
             int automaticActions = 0;
             ScreenshotOcrController* activeController = nullptr;
@@ -182,15 +218,26 @@ void copyAfterRecognitionOwnsCompletion() {
                                  if (available)
                                      ++automaticActions;
                              });
-            if (scenario == Scenario::Cached) {
+            if (scenario == Scenario::Cached || scenario == Scenario::InFlight) {
                 controller.activate();
-                recognition.complete(0);
+                require(recognition.requests[0].renderFilteredImage,
+                        "ordinary recognition enables worker background rendering for Blur");
+                if (scenario == Scenario::Cached)
+                    recognition.complete(0);
                 automaticActions = 0;
             }
+            const auto previousRenders = recognition.renders.size();
             QApplication::clipboard()->setText(QStringLiteral("Previous clipboard"));
             controller.activateAndCopy();
             require(recognition.requests.size() == 1,
                     "copy recognition must start OCR or reuse the existing result");
+            require(
+                recognition.renders.size() == previousRenders &&
+                    (scenario == Scenario::Cached || !recognition.requests[0].renderFilteredImage),
+                "explicit copy-and-end suppresses new and in-flight background work");
+            if (scenario == Scenario::Cached)
+                require(recognition.cancelled.contains(101),
+                        "copying cached text cancels its outstanding background render");
             if (scenario != Scenario::Cached) {
                 require(ended == 0 && QApplication::clipboard()->text() ==
                                           QStringLiteral("Previous clipboard"),
@@ -205,7 +252,7 @@ void copyAfterRecognitionOwnsCompletion() {
             }
             QCoreApplication::processEvents();
             const bool copied = scenario == Scenario::Fresh || scenario == Scenario::Cached ||
-                                scenario == Scenario::Empty;
+                                scenario == Scenario::InFlight || scenario == Scenario::Empty;
             require(ended == (copied ? 1 : 0) &&
                         QApplication::clipboard()->text() ==
                             (scenario == Scenario::Empty ? QString()
@@ -218,6 +265,8 @@ void copyAfterRecognitionOwnsCompletion() {
             controller.invalidateSession();
             QApplication::clipboard()->setText(QStringLiteral("Next capture"));
             controller.activate();
+            require(recognition.requests.constLast().renderFilteredImage,
+                    "a later ordinary activation restores worker background rendering");
             recognition.complete(recognition.requests.size() - 1);
             require(ended == (copied ? 1 : 0) &&
                         QApplication::clipboard()->text() == QStringLiteral("Next capture"),

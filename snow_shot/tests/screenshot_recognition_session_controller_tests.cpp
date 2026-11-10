@@ -1159,6 +1159,136 @@ void cachedVerificationStaysSilent() {
     require(recognition.requests == 1, "a cached launch must not requeue recognition");
 }
 
+class BackgroundOcrRecognition final : public ScreenshotOcrRecognitionPort {
+  public:
+    RequestToken recognize(ScreenshotOcrRequest request, QObject*, Completion completion) override {
+        requests.push_back(std::move(request));
+        completions.push_back(std::move(completion));
+        return static_cast<RequestToken>(requests.size());
+    }
+    RequestToken render(ScreenshotOcrRequest request, QObject*, Completion completion) override {
+        renders.push_back(std::move(request));
+        renderCompletions.push_back(std::move(completion));
+        return static_cast<RequestToken>(100 + renders.size());
+    }
+    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor&) override {
+        requests[static_cast<qsizetype>(token - 1)].renderFilteredImage = enabled;
+        return true;
+    }
+    void cancel(RequestToken token) override {
+        cancelled.push_back(token);
+    }
+    bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override {
+        return true;
+    }
+    QVector<ScreenshotOcrRequest> requests;
+    QVector<Completion> completions;
+    QVector<ScreenshotOcrRequest> renders;
+    QVector<Completion> renderCompletions;
+    QVector<RequestToken> cancelled;
+};
+
+void textBackgroundPolicyControlsRendering() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    enum class Scenario { Fresh, Cached, InFlight, Prefetch };
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const auto previousFill = configuration.value(QStringLiteral("text_recognition/fill_style"));
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(
+            configuration.setValue(QStringLiteral("text_recognition/fill_style"), previousFill));
+    });
+    for (const auto& fill : {QStringLiteral("blur"), QStringLiteral("background_fill")}) {
+        require(configuration.setValue(QStringLiteral("text_recognition/fill_style"), fill),
+                "select the background policy fixture fill style");
+        for (const auto scenario :
+             {Scenario::Fresh, Scenario::Cached, Scenario::InFlight, Scenario::Prefetch}) {
+            BackgroundOcrRecognition recognition;
+            bool renderBackground = scenario == Scenario::InFlight;
+            int backgrounds = 0;
+            int backgroundImages = 0;
+            int backgroundColors = 0;
+            int renderPreparations = 0;
+            int ready = 0;
+            std::shared_ptr<ScreenshotOcrPresentation> displayed;
+            ScreenshotRecognitionSessionActions actions;
+            actions.shouldRenderTextBackground = [&] { return renderBackground; };
+            actions.applyOcrPresentation = [&](auto presentation) {
+                displayed = std::move(presentation);
+            };
+            actions.applyOcrBackground = [&](auto) { ++backgrounds; };
+            actions.applyOcrBackgroundImage = [&](auto, QImage, QRectF) { ++backgroundImages; };
+            actions.ocrBackgroundColor = [&] {
+                ++backgroundColors;
+                return QColor(Qt::white);
+            };
+            actions.prepareOcrRenderRequest = [&](auto&) { ++renderPreparations; };
+            ScreenshotRecognitionSessionController session(&recognition, nullptr, nullptr, actions);
+            QObject::connect(&session, &ScreenshotRecognitionSessionController::textResultChanged,
+                             &session, [&](bool available) { ready += available; });
+            QImage image(64, 64, QImage::Format_RGB32);
+            image.fill(QColor(30, 40, 50));
+            session.setTarget({QStringLiteral("background-policy"), image, QRectF(0, 0, 64, 64)});
+            auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+            presentation->selection = QRect(0, 0, 64, 64);
+            presentation->lines.push_back(
+                {QStringLiteral("Recognized text"), 1.0,
+                 QPolygonF{QPointF(10, 10), QPointF(50, 10), QPointF(50, 30), QPointF(10, 30)}});
+            presentation->prepareForRendering();
+            if (scenario == Scenario::Cached || scenario == Scenario::Prefetch) {
+                session.prefetchText();
+                if (scenario == Scenario::Cached)
+                    recognition.completions[0]({presentation});
+            } else if (scenario == Scenario::InFlight) {
+                session.activate(Mode::Text);
+                require(recognition.requests[0].renderFilteredImage ==
+                            (fill == QStringLiteral("blur")),
+                        "interactive recognition initially requests the selected worker effect");
+                renderBackground = false;
+            }
+            backgroundColors = 0;
+            session.activate(Mode::Text);
+            require(recognition.requests.size() == 1 &&
+                        !recognition.requests[0].renderFilteredImage,
+                    "copy-only activation reuses recognition and disables its worker effect");
+            if (scenario != Scenario::Cached) {
+                // An effect completed before suppression may still arrive with recognition.
+                recognition.completions[0]({presentation, {}, image, QRectF(0, 0, 64, 64)});
+            }
+            const auto clipboard = session.recognitionClipboardMimeData(displayed.get());
+            require(ready == 1 && displayed == presentation && clipboard &&
+                        clipboard->text() == QStringLiteral("Recognized text"),
+                    "suppressing backgrounds preserves text publication and clipboard content");
+            session.renderTextBackground();
+            require(
+                backgrounds == 0 && backgroundImages == 0 && backgroundColors == 0 &&
+                    renderPreparations == 0 && recognition.renders.isEmpty() &&
+                    !presentation->lines[0].backgroundFillColor.isValid(),
+                "suppressed recognition must skip every background preparation and publication");
+
+            renderBackground = true;
+            session.activate(Mode::Text);
+            require(recognition.requests.size() == 1 && backgrounds == 1 &&
+                        recognition.renders.size() == 1 && renderPreparations == 1 &&
+                        presentation->lines[0].backgroundFillColor.isValid() ==
+                            (fill == QStringLiteral("background_fill")),
+                    "ordinary cached activation restores backgrounds without repeating OCR");
+            renderBackground = false;
+            session.activate(Mode::Text);
+            require(recognition.cancelled.contains(101) && recognition.renders.size() == 1,
+                    "suppression cancels an outstanding render without starting a replacement");
+            renderBackground = true;
+            recognition.renderCompletions[0]({presentation, {}, image, QRectF(0, 0, 64, 64)});
+            require(backgroundImages == 0,
+                    "a cancelled render cannot publish after backgrounds are enabled again");
+            session.renderTextBackground();
+            renderBackground = false;
+            recognition.renderCompletions[1]({presentation, {}, image, QRectF(0, 0, 64, 64)});
+            require(backgroundImages == 0 && !session.busy(),
+                    "render completion rechecks a changed policy and clears its busy state");
+        }
+    }
+}
+
 void cachedRecognitionUsesTheSelectedFillStyle() {
     auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
     require(configuration.setValue(QStringLiteral("text_recognition/fill_style"),
@@ -1675,6 +1805,7 @@ int main(int argc, char** argv) {
     originalImagePreviewFollowsTextSessionLifecycle();
     deactivationNotifiesOnlyOnStateTransition();
     tablePreparationPreservesSessionAndSiblingPopovers();
+    textBackgroundPolicyControlsRendering();
     cachedRecognitionUsesTheSelectedFillStyle();
     translationLanguageSelectsUseCodePrefixGroups();
     displayedRecognitionSnapshotPreservesCachedResults();

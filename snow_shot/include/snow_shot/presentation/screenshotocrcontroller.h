@@ -61,6 +61,8 @@ struct ScreenshotOcrControllerContext {
     std::function<void(const QPointF&)> updateSelectionResize = [](const QPointF&) {};
     std::function<void(const QPointF&)> finishSelectionResize = [](const QPointF&) {};
     snow_shot::presentation::WindowShortcutManager* shortcutManager = nullptr;
+    // Empty keeps text backgrounds enabled for interactive recognition.
+    std::function<bool()> shouldRenderTextBackground{};
 };
 
 class ScreenshotOcrController final : public QObject {
