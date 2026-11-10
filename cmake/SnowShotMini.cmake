@@ -397,7 +397,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             set(_branding_translation_target snow_shot_mini_release_translations)
         endif()
         add_executable(snow-shot-${_edition}-branding-tests ${_branding_sources}
-            tests/mini_branding_tests.cpp src/app/updateconfirmationdialog.cpp)
+            tests/mini_branding_tests.cpp)
         snow_shot_set_source_dependency_edition(snow-shot-${_edition}-branding-tests ${_edition})
         target_include_directories(snow-shot-${_edition}-branding-tests PRIVATE include)
         target_compile_definitions(snow-shot-${_edition}-branding-tests PRIVATE

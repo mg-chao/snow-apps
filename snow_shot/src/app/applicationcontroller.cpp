@@ -7,7 +7,6 @@
 #include "snow_shot/runtime/memoryoptimizationcontroller.h"
 #include "snow_shot/runtime/memoryoptimizationuisafety.h"
 #include "snow_shot/app/applicationrestart.h"
-#include "snow_shot/app/updateconfirmationdialog.h"
 #include "snow_shot/app/applicationactiongate.h"
 #include "snow_shot/app/applicationinputguard.h"
 #include "snow_shot/presentation/apppermissionservice.h"
@@ -470,9 +469,6 @@ class ApplicationController::Impl {
             if (!inspectAdmission(ApplicationOperation::UpdateRequest).allowed()) {
                 updates->reportBlocked(ApplicationController::tr(
                     "Finish capturing, recording, or exporting before updating"));
-                return;
-            }
-            if (!confirmRestartAndUpdate(mainWindow)) {
                 return;
             }
             if (!storage::ApplicationStorage::instance().flushNow().success) {
