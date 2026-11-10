@@ -1066,32 +1066,38 @@ class ScreenshotOcrRecognitionService::Impl final {
             job->running = false;
             job->processSubmitted = false;
             --m_runningCount;
-            const bool renderFiltered = !job->cancelled.load() && result.error.isEmpty() &&
-                                        result.presentation != nullptr &&
-                                        job->request.renderFilteredImage;
-            if (renderFiltered) {
+            const bool prepareColors =
+                !job->cancelled.load() && result.error.isEmpty() &&
+                result.presentation != nullptr &&
+                (!result.presentation->lines.isEmpty() || job->request.renderFilteredImage);
+            if (prepareColors) {
                 job->localRendering = true;
                 ++m_localRenderingCount;
             }
         }
         if (!job->cancelled.load() && result.error.isEmpty() && result.presentation != nullptr &&
-            job->request.renderFilteredImage) {
+            (!result.presentation->lines.isEmpty() || job->request.renderFilteredImage)) {
             const QImage source = job->request.image;
             const QRectF canvasRect = job->request.canvasRect;
             const QColor background = job->request.backgroundColor;
+            const bool renderFiltered = job->request.renderFilteredImage;
             const QPointer<ScreenshotOcrRecognitionService> service(m_owner);
             const auto alive = m_alive;
-            m_localPool->start(QRunnable::create(
-                [service, job, alive, beforeRender = m_beforeLocalRender,
-                 result = std::move(result), source, canvasRect, background]() mutable {
+            m_localPool->start(
+                QRunnable::create([service, job, alive, beforeRender = m_beforeLocalRender,
+                                   result = std::move(result), source, canvasRect, background,
+                                   renderFiltered]() mutable {
                     snow_shot::platform::applyApplicationQoSToCurrentThread();
-                    if (alive->load(std::memory_order_acquire) && beforeRender)
+                    if (renderFiltered && alive->load(std::memory_order_acquire) && beforeRender)
                         beforeRender();
                     SnowCanvasRegionFilterScratch scratch;
-                    if (alive->load(std::memory_order_acquire)) {
-                        result.filteredImage =
-                            renderFilteredImage(source, canvasRect, result.presentation, background,
-                                                &scratch, &result.filteredImageCanvasRect);
+                    if (alive->load(std::memory_order_acquire) && !job->cancelled.load()) {
+                        prepareScreenshotOcrTextColors(*result.presentation, source, canvasRect,
+                                                       &job->cancelled);
+                        if (renderFiltered && !job->cancelled.load())
+                            result.filteredImage = renderFilteredImage(
+                                source, canvasRect, result.presentation, background, &scratch,
+                                &result.filteredImageCanvasRect);
                     }
                     QMetaObject::invokeMethod(
                         service,

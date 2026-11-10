@@ -12,8 +12,10 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -193,6 +195,19 @@ QRgb opaquePixel(const QImage& image, const QPoint& point) {
     case QImage::Format_ARGB32:
     case QImage::Format_ARGB32_Premultiplied:
         return reinterpret_cast<const QRgb*>(image.constScanLine(point.y()))[point.x()];
+    case QImage::Format_RGBA8888:
+    case QImage::Format_RGBA8888_Premultiplied:
+    case QImage::Format_RGBX8888: {
+        const auto* pixel = image.constScanLine(point.y()) + point.x() * 4;
+        return qRgba(pixel[0], pixel[1], pixel[2],
+                     image.format() == QImage::Format_RGBX8888 ? 255 : pixel[3]);
+    }
+    case QImage::Format_RGB888:
+    case QImage::Format_BGR888: {
+        const auto* pixel = image.constScanLine(point.y()) + point.x() * 3;
+        return image.format() == QImage::Format_RGB888 ? qRgb(pixel[0], pixel[1], pixel[2])
+                                                       : qRgb(pixel[2], pixel[1], pixel[0]);
+    }
     default:
         return image.pixelColor(point).rgba();
     }
@@ -413,6 +428,307 @@ QColor estimateBackground(const QImage& source, const QPolygonF& quad,
     return QColor(Qt::white);
 }
 
+constexpr int kTextColorSamples = 2048;
+constexpr int kTextColorBins = 4096;
+
+int rgbDistance(QRgb a, QRgb b) {
+    return std::max({std::abs(qRed(a) - qRed(b)), std::abs(qGreen(a) - qGreen(b)),
+                     std::abs(qBlue(a) - qBlue(b))});
+}
+
+int rgbBin(QRgb rgb) {
+    return ((qRed(rgb) >> 4) << 8) | ((qGreen(rgb) >> 4) << 4) | (qBlue(rgb) >> 4);
+}
+
+struct TextColorSample {
+    QRgb rgb;
+    std::array<int, 3> direction;
+    int distance;
+    int weight;
+    unsigned band;
+};
+
+// One allocation per presentation, reused for every row. No crops, masks, color-space
+// conversions, random initialization, or work proportional to screenshot area.
+struct TextColorScratch {
+    std::array<TextColorSample, kTextColorSamples> samples;
+    std::array<int, kTextColorBins> counts{};
+    std::array<int, kTextColorBins> representatives{};
+};
+
+bool sameTextDirection(const std::array<int, 3>& a, const std::array<int, 3>& b) {
+    return std::max({std::abs(a[0] - b[0]), std::abs(a[1] - b[1]), std::abs(a[2] - b[2])}) <= 56;
+}
+
+int histogramQuantile(const std::array<int, 256>& histogram, int rank) {
+    for (int i = 0; i < 256; ++i) {
+        rank -= histogram[static_cast<std::size_t>(i)];
+        if (rank <= 0)
+            return i;
+    }
+    return 255;
+}
+
+QColor estimateTextColor(const QImage& source, const QPolygonF& quad,
+                         const TextRegionIndex& textRegions, TextColorScratch& scratch) {
+    if (!quadIntersectsImage(quad, source.size()))
+        return {};
+    const QPointF center = (quad[0] + quad[1] + quad[2] + quad[3]) / 4;
+    std::array<QRgb, 64> exterior{};
+    scratch.counts.fill(0);
+    int backgroundBin = 0;
+    int exteriorCount = 0;
+    for (int side = 0; side < 4; ++side) {
+        const QPointF edge = quad[(side + 1) % 4] - quad[side];
+        const qreal length = std::hypot(edge.x(), edge.y());
+        QPointF normal(-edge.y() / length, edge.x() / length);
+        if (QPointF::dotProduct(normal, center - quad[side]) > 0)
+            normal = -normal;
+        for (int i = 0; i < 16; ++i) {
+            const QPointF p = quad[side] + edge * ((i + 0.5) / 16) + normal * 2;
+            if (p.x() < 0 || p.y() < 0 || p.x() >= source.width() || p.y() >= source.height())
+                continue;
+            const QPoint pixel(static_cast<int>(p.x()), static_cast<int>(p.y()));
+            if (textRegions.contains(pixel))
+                continue;
+            const QRgb rgb = opaquePixel(source, pixel);
+            if (qAlpha(rgb) == 255) {
+                exterior[static_cast<std::size_t>(exteriorCount++)] = rgb;
+                const int bin = rgbBin(rgb);
+                ++scratch.counts[static_cast<std::size_t>(bin)];
+                scratch.representatives[static_cast<std::size_t>(bin)] = exteriorCount - 1;
+                if (scratch.counts[static_cast<std::size_t>(bin)] >
+                    scratch.counts[static_cast<std::size_t>(backgroundBin)])
+                    backgroundBin = bin;
+            }
+        }
+    }
+    // Flat screenshot backgrounds need only a small exterior histogram. The existing interior
+    // estimator handles edge-clipped regions with too little exterior evidence.
+    const QRgb bg = exteriorCount >= 8
+                        ? exterior[static_cast<std::size_t>(
+                              scratch.representatives[static_cast<std::size_t>(backgroundBin)])]
+                        : estimateBackground(source, quad, textRegions).rgb();
+    std::array<int, 256> noiseHistogram{};
+    for (int i = 0; i < exteriorCount; ++i)
+        ++noiseHistogram[static_cast<std::size_t>(
+            rgbDistance(exterior[static_cast<std::size_t>(i)], bg))];
+    const int noise =
+        exteriorCount >= 8 ? histogramQuantile(noiseHistogram, (exteriorCount * 3 + 3) / 4) : 0;
+    // A single background model cannot safely distinguish text from textured/split panels.
+    if (noise > 24)
+        return {};
+    const int threshold = std::max(12, noise * 2 + 4);
+    const bool clipped = !QRectF(QPointF(), QSizeF(source.size())).contains(quad.boundingRect());
+    const QRectF bounds = quad.boundingRect().intersected(QRectF(QPointF(), QSizeF(source.size())));
+    const qreal width =
+        clipped ? bounds.width() : std::hypot((quad[1] - quad[0]).x(), (quad[1] - quad[0]).y());
+    const qreal height =
+        clipped ? bounds.height() : std::hypot((quad[3] - quad[0]).x(), (quad[3] - quad[0]).y());
+    if (width < 1 || height < 1)
+        return {};
+    const int columns =
+        std::clamp(static_cast<int>(std::min<qreal>(std::ceil(width),
+                                                    std::sqrt(kTextColorSamples * width / height))),
+                   1, kTextColorSamples);
+    const int rows = std::clamp(
+        static_cast<int>(std::min<qreal>(std::ceil(height), kTextColorSamples / columns)), 1,
+        kTextColorSamples / columns);
+    const bool dense = columns >= std::ceil(width) && rows >= std::ceil(height);
+    int count = 0, opaqueCount = 0, totalWeight = 0;
+    scratch.counts.fill(0);
+    std::array<qreal, kTextColorSamples> yPhases;
+    for (int x = 0; x < columns; ++x)
+        yPhases[static_cast<std::size_t>(x)] =
+            dense ? 0.5 : 0.15 + 0.7 * std::fmod((x + 1) * 0.75487766625, 1.0);
+    for (int y = 0; y < rows; ++y) {
+        const qreal xPhase = dense ? 0.5 : 0.15 + 0.7 * std::fmod((y + 1) * 0.61803398875, 1.0);
+        for (int x = 0; x < columns; ++x) {
+            // Fixed, non-periodic phases avoid aligning a sparse grid with repeated glyph gaps.
+            const qreal u = (x + xPhase) / columns;
+            const qreal v = (y + yPhases[static_cast<std::size_t>(x)]) / rows;
+            const QPointF left = quad[0] * (1 - v) + quad[3] * v;
+            const QPointF right = quad[1] * (1 - v) + quad[2] * v;
+            const QPointF p = clipped ? bounds.topLeft() + QPointF(u * width, v * height)
+                                      : left + (right - left) * u;
+            if (p.x() < 0 || p.y() < 0 || p.x() >= source.width() || p.y() >= source.height() ||
+                (clipped && !quad.containsPoint(p, Qt::OddEvenFill)))
+                continue;
+            const QPoint pixel(static_cast<int>(p.x()), static_cast<int>(p.y()));
+            const QRgb rgb = opaquePixel(source, pixel);
+            // Unknown compositing backgrounds make partially transparent colors ambiguous.
+            if (qAlpha(rgb) != 255)
+                continue;
+            ++opaqueCount;
+            const int distance = rgbDistance(rgb, bg);
+            if (distance <= threshold)
+                continue;
+            int neighbors = 0;
+            QRgb leftRgb = rgb, rightRgb = rgb;
+            for (const QPoint offset : {QPoint(-1, 0), QPoint(1, 0), QPoint(0, -1), QPoint(0, 1)}) {
+                const QPoint neighbor = pixel + offset;
+                if (!source.rect().contains(neighbor))
+                    continue;
+                const QRgb other = opaquePixel(source, neighbor);
+                if (qAlpha(other) != 255)
+                    continue;
+                if (offset.x() < 0)
+                    leftRgb = other;
+                else if (offset.x() > 0)
+                    rightRgb = other;
+                if (rgbDistance(rgb, other) <= 24)
+                    ++neighbors;
+            }
+            // One-pixel-wide strokes survive; isolated noise and subpixel fringes get less weight.
+            // Cap contrast weighting: weak LCD edge fringes get less influence, while ordinary
+            // gray ink and saturated emphasis both receive the same maximum contrast weight.
+            const int weight = (neighbors >= 2 ? 2 : 1) * (distance >= 64 ? 2 : 1);
+            // A three-pixel horizontal filter suppresses LCD color fringes only for family
+            // classification. The output and core statistics still use untouched source pixels.
+            const QRgb directionRgb =
+                qRgb((qRed(leftRgb) + 2 * qRed(rgb) + qRed(rightRgb) + 2) / 4,
+                     (qGreen(leftRgb) + 2 * qGreen(rgb) + qGreen(rightRgb) + 2) / 4,
+                     (qBlue(leftRgb) + 2 * qBlue(rgb) + qBlue(rightRgb) + 2) / 4);
+            const int directionDistance = rgbDistance(directionRgb, bg);
+            if (directionDistance <= threshold / 2)
+                continue;
+            const std::array<int, 3> direction{
+                (qRed(directionRgb) - qRed(bg)) * 255 / directionDistance,
+                (qGreen(directionRgb) - qGreen(bg)) * 255 / directionDistance,
+                (qBlue(directionRgb) - qBlue(bg)) * 255 / directionDistance};
+            const int bin = (((direction[0] + 255) >> 5) << 8) |
+                            (((direction[1] + 255) >> 5) << 4) | ((direction[2] + 255) >> 5);
+            scratch.counts[static_cast<std::size_t>(bin)] += weight;
+            scratch.representatives[static_cast<std::size_t>(bin)] = count;
+            scratch.samples[static_cast<std::size_t>(count++)] = {
+                rgb, direction, distance, weight,
+                1U << std::min(7, static_cast<int>((width >= height ? u : v) * 8))};
+            totalWeight += weight;
+        }
+    }
+    if (count < 8 || count * 5 > opaqueCount * 4)
+        return {};
+    std::array<int, 8> seeds;
+    seeds.fill(-1);
+    for (int i = 0; i < kTextColorBins; ++i) {
+        if (!scratch.counts[static_cast<std::size_t>(i)])
+            continue;
+        for (int rank = 0; rank < 8; ++rank) {
+            if (seeds[static_cast<std::size_t>(rank)] < 0 ||
+                scratch.counts[static_cast<std::size_t>(i)] >
+                    scratch
+                        .counts[static_cast<std::size_t>(seeds[static_cast<std::size_t>(rank)])]) {
+                for (int move = 7; move > rank; --move)
+                    seeds[static_cast<std::size_t>(move)] =
+                        seeds[static_cast<std::size_t>(move - 1)];
+                seeds[static_cast<std::size_t>(rank)] = i;
+                break;
+            }
+        }
+    }
+    std::array<std::array<int, 3>, 4> directions{};
+    int directionCount = 0, bestSupport = 0;
+    unsigned bestBands = 0;
+    std::array<int, 3> bestDirection{};
+    for (int seed : seeds) {
+        if (seed < 0 || directionCount == 4)
+            break;
+        const auto direction = scratch
+                                   .samples[static_cast<std::size_t>(
+                                       scratch.representatives[static_cast<std::size_t>(seed)])]
+                                   .direction;
+        if (std::any_of(
+                directions.begin(), directions.begin() + directionCount,
+                [&](const auto& previous) { return sameTextDirection(previous, direction); }))
+            continue;
+        directions[static_cast<std::size_t>(directionCount++)] = direction;
+        int support = 0;
+        unsigned bands = 0;
+        for (int i = 0; i < count; ++i) {
+            const auto& sample = scratch.samples[static_cast<std::size_t>(i)];
+            if (sameTextDirection(sample.direction, direction)) {
+                support += sample.weight;
+                bands |= sample.band;
+            }
+        }
+        if (support > bestSupport) {
+            bestSupport = support;
+            bestDirection = direction;
+            bestBands = bands;
+        }
+    }
+    // LCD fringes can occupy most pixels of small text and split into many directions. A
+    // spatially distributed fifth of the evidence is sufficient if a stable core also exists.
+    if (bestSupport < 12 || bestSupport * 5 < totalWeight ||
+        (std::max(width, height) >= 48 && std::popcount(bestBands) < 2))
+        return {};
+    // Select the color family BEFORE contrast refinement, so a red minority cannot displace
+    // gray body text just because its contrast is stronger. Grouping by background-relative
+    // direction keeps antialiased shades of the same ink together without iterative k-means.
+    std::array<int, 256> contrastHistogram{};
+    const int projectionScale =
+        std::abs(bestDirection[0]) + std::abs(bestDirection[1]) + std::abs(bestDirection[2]);
+    for (int i = 0; i < count; ++i) {
+        auto& sample = scratch.samples[static_cast<std::size_t>(i)];
+        if (sameTextDirection(sample.direction, bestDirection)) {
+            // Use all channels along the selected color direction, rather than favoring an
+            // extreme single channel from a ClearType fringe when choosing stroke interiors.
+            sample.distance = std::clamp(((qRed(sample.rgb) - qRed(bg)) * bestDirection[0] +
+                                          (qGreen(sample.rgb) - qGreen(bg)) * bestDirection[1] +
+                                          (qBlue(sample.rgb) - qBlue(bg)) * bestDirection[2]) /
+                                             projectionScale,
+                                         0, 255);
+            contrastHistogram[static_cast<std::size_t>(sample.distance)] += sample.weight;
+        }
+    }
+    const int coreThreshold = histogramQuantile(contrastHistogram, (bestSupport * 3 + 3) / 4);
+    scratch.counts.fill(0);
+    int bestBin = 0;
+    for (int i = 0; i < count; ++i) {
+        const auto& sample = scratch.samples[static_cast<std::size_t>(i)];
+        if (sample.distance < coreThreshold || !sameTextDirection(sample.direction, bestDirection))
+            continue;
+        const int bin = rgbBin(sample.rgb);
+        scratch.counts[static_cast<std::size_t>(bin)] += sample.weight;
+        scratch.representatives[static_cast<std::size_t>(bin)] = i;
+        if (scratch.counts[static_cast<std::size_t>(bin)] >
+            scratch.counts[static_cast<std::size_t>(bestBin)])
+            bestBin = bin;
+    }
+    const QRgb seed = scratch
+                          .samples[static_cast<std::size_t>(
+                              scratch.representatives[static_cast<std::size_t>(bestBin)])]
+                          .rgb;
+    int support = 0, red = 0, green = 0, blue = 0;
+    for (int i = 0; i < count; ++i) {
+        const auto& sample = scratch.samples[static_cast<std::size_t>(i)];
+        if (sample.distance >= coreThreshold && rgbDistance(sample.rgb, seed) <= 24 &&
+            sameTextDirection(sample.direction, bestDirection)) {
+            support += sample.weight;
+            red += qRed(sample.rgb) * sample.weight;
+            green += qGreen(sample.rgb) * sample.weight;
+            blue += qBlue(sample.rgb) * sample.weight;
+        }
+    }
+    if (support < 6)
+        return {};
+    const QRgb mean = qRgb((red + support / 2) / support, (green + support / 2) / support,
+                           (blue + support / 2) / support);
+    QRgb representative = seed;
+    int nearest = 256;
+    for (int i = 0; i < count; ++i) {
+        const auto& sample = scratch.samples[static_cast<std::size_t>(i)];
+        if (sample.distance < coreThreshold || !sameTextDirection(sample.direction, bestDirection))
+            continue;
+        const int distance = rgbDistance(sample.rgb, mean);
+        if (distance < nearest || (distance == nearest && sample.rgb < representative)) {
+            nearest = distance;
+            representative = sample.rgb;
+        }
+    }
+    return QColor::fromRgb(representative);
+}
+
 qreal edgeLength(const QPointF& first, const QPointF& second) {
     return std::hypot(second.x() - first.x(), second.y() - first.y());
 }
@@ -480,6 +796,91 @@ QPolygon imagePolygonForQuad(const QPolygonF& quad, const QRectF& canvasRect,
 }
 
 } // namespace
+
+void prepareScreenshotOcrTextColors(ScreenshotOcrPresentation& presentation, const QImage& source,
+                                    const QRectF& canvasRect, const std::atomic_bool* cancelled) {
+    const auto isCancelled = [&] {
+        return cancelled && cancelled->load(std::memory_order_relaxed);
+    };
+    if (isCancelled())
+        return;
+    const QRectF canvas = canvasRect.normalized();
+    const bool valid = !source.isNull() && canvas.isValid() && !canvas.isEmpty() &&
+                       finitePoint(canvas.topLeft()) && finitePoint(canvas.bottomRight());
+    if (valid && presentation.m_textColorImageKey == source.cacheKey() &&
+        presentation.m_textColorCanvasRect == canvas &&
+        presentation.m_textColorGeometry.size() == presentation.lines.size()) {
+        bool matches = true;
+        for (qsizetype i = 0; i < presentation.lines.size(); ++i) {
+            const auto& geometry = presentation.m_textColorGeometry.at(i);
+            const auto& line = presentation.lines.at(i);
+            if (geometry.quad != line.quad || geometry.sourceLineQuads != line.sourceLineQuads) {
+                matches = false;
+                break;
+            }
+        }
+        if (matches)
+            return;
+    }
+    presentation.m_textColorImageKey = 0;
+    presentation.m_textColorGeometry.clear();
+    for (auto& line : presentation.lines) {
+        line.sourceTextColor = QColor();
+        line.sourceLineTextColors.clear();
+    }
+    if (!valid)
+        return;
+    if (presentation.lines.isEmpty()) {
+        presentation.m_textColorCanvasRect = canvas;
+        presentation.m_textColorImageKey = source.cacheKey();
+        return;
+    }
+    QVector<QPolygonF> quads;
+    quads.reserve(presentation.lines.size());
+    QVector<qsizetype> offsets{0};
+    offsets.reserve(presentation.lines.size() + 1);
+    presentation.m_textColorGeometry.reserve(presentation.lines.size());
+    for (const auto& line : presentation.lines) {
+        const auto append = [&](const QPolygonF& input) {
+            QPolygonF quad;
+            for (const auto& point : input)
+                quad.push_back(imagePointForCanvasPoint(point, canvas, source.size()));
+            if (!convexQuad(quad))
+                quad.clear();
+            quads.push_back(std::move(quad));
+        };
+        if (line.sourceLineQuads.isEmpty())
+            append(line.quad);
+        else
+            for (const auto& quad : line.sourceLineQuads)
+                append(quad);
+        offsets.push_back(quads.size());
+    }
+    const TextRegionIndex textRegions(quads, source.rect());
+    auto scratch = std::make_unique<TextColorScratch>();
+    for (qsizetype i = 0; i < presentation.lines.size(); ++i) {
+        auto& line = presentation.lines[i];
+        qreal largestArea = -1;
+        for (qsizetype index = offsets[i]; index < offsets[i + 1]; ++index) {
+            if (isCancelled())
+                return;
+            const QColor color = estimateTextColor(source, quads[index], textRegions, *scratch);
+            if (!line.sourceLineQuads.isEmpty())
+                line.sourceLineTextColors.push_back(color);
+            const QRectF bounds = quads[index].boundingRect();
+            const qreal area = bounds.width() * bounds.height();
+            // Reflowed translations use one representative source-row color; original rows
+            // retain their own estimates. Never invent a blend between distinct row colors.
+            if (color.isValid() && area > largestArea) {
+                line.sourceTextColor = color;
+                largestArea = area;
+            }
+        }
+        presentation.m_textColorGeometry.push_back({line.quad, line.sourceLineQuads});
+    }
+    presentation.m_textColorCanvasRect = canvas;
+    presentation.m_textColorImageKey = source.cacheKey();
+}
 
 void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, const QImage& source,
                                     const QRectF& canvasRect, bool backgroundFill) {

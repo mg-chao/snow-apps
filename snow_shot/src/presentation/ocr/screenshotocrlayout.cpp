@@ -29,6 +29,19 @@ struct Group {
         lines.push_back(line);
     }
 };
+
+QColor representativeSourceColor(const Group& group) {
+    QColor color;
+    qreal largestArea = -1;
+    for (const auto& segment : group.lines) {
+        const qreal area = segment.bounds.width() * segment.bounds.height();
+        if (segment.line.sourceTextColor.isValid() && area > largestArea) {
+            color = segment.line.sourceTextColor;
+            largestArea = area;
+        }
+    }
+    return color;
+}
 qreal median(QVector<qreal> values) {
     values.erase(
         std::remove_if(values.begin(), values.end(), [](qreal value) { return value <= 0; }),
@@ -307,9 +320,12 @@ QVector<Segment> lineSegments(const QVector<Segment>& items) {
         for (const auto& group : groups) {
             Segment segment = group.lines.front();
             segment.line.sourceLineQuads.clear();
+            segment.line.sourceLineTextColors.clear();
+            segment.line.sourceTextColor = representativeSourceColor(group);
             segment.sourceIndices.clear();
             for (const auto& source : group.lines) {
                 segment.line.sourceLineQuads.push_back(source.line.quad);
+                segment.line.sourceLineTextColors.push_back(source.line.sourceTextColor);
                 appendSourceIndices(segment.sourceIndices, source.sourceIndices);
             }
             segment.bounds = group.bounds;
@@ -536,11 +552,14 @@ QVector<ScreenshotOcrLine> paragraphs(const Group& region, qreal height,
         auto output = group.lines.front().line;
         output.paragraph = group.lines.size() > 1 || output.text.contains(QLatin1Char('\n'));
         output.sourceLineQuads.clear();
+        output.sourceLineTextColors.clear();
+        output.sourceTextColor = representativeSourceColor(group);
         QVector<int> indices;
         for (int i = 0; i < group.lines.size(); ++i) {
             if (i > 0)
                 output.text = join(output.text, group.lines[i].line.text, true);
             output.sourceLineQuads += group.lines[i].line.sourceLineQuads;
+            output.sourceLineTextColors += group.lines[i].line.sourceLineTextColors;
             appendSourceIndices(indices, group.lines[i].sourceIndices);
         }
         if (group.lines.size() > 1)

@@ -8,7 +8,10 @@
 #include <QString>
 #include <QTransform>
 #include <QVector>
+#include <atomic>
 #include <optional>
+
+class QImage;
 
 enum class ScreenshotOcrTextDirection {
     Horizontal,
@@ -36,6 +39,10 @@ struct ScreenshotOcrLine {
     std::optional<qreal> fontSizeCapRatio{};
     bool translationStreaming = false;
     std::optional<ScreenshotOcrSourceTextMetrics> sourceTextMetrics{};
+    // Derived from original pixels. Invalid means insufficient evidence; never a render default.
+    QColor sourceTextColor{};
+    // Aligned with sourceLineQuads, including separate word boxes on the same visual row.
+    QVector<QColor> sourceLineTextColors{};
 };
 
 struct ScreenshotOcrTextPosition {
@@ -102,6 +109,16 @@ class ScreenshotOcrPresentation final {
     void copyCommittedSelectionFrom(const ScreenshotOcrPresentation& source);
 
   private:
+    friend void prepareScreenshotOcrTextColors(ScreenshotOcrPresentation&, const QImage&,
+                                               const QRectF&, const std::atomic_bool*);
+    struct ColorGeometry {
+        QPolygonF quad;
+        QVector<QPolygonF> sourceLineQuads;
+    };
+    qint64 m_textColorImageKey = 0;
+    QRectF m_textColorCanvasRect;
+    QVector<ColorGeometry> m_textColorGeometry;
+
     struct CachedLineGeometry {
         QRectF bounds;
         QTransform canvasToNormalized;

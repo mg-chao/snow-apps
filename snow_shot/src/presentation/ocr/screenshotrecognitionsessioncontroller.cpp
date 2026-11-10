@@ -3897,6 +3897,9 @@ void ScreenshotRecognitionSessionController::applyPresentation(
     const bool renderBackground = shouldRenderTextBackground();
     if (!lifetime)
         return;
+    if (presentation != nullptr) {
+        prepareScreenshotOcrTextColors(*presentation, m_target.image, m_target.canvasRect);
+    }
     if (renderBackground && presentation != nullptr) {
         prepareScreenshotOcrFillColors(*presentation, m_target.image, m_target.canvasRect,
                                        backgroundFillEnabled());

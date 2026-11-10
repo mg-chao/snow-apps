@@ -9,14 +9,22 @@
 #include <QRectF>
 #include <QRegion>
 #include <QSize>
+#include <atomic>
 
 struct ScreenshotImageSource;
 class ScreenshotOcrPresentation;
 
 // Bounded interior/perimeter sampling selects an opaque dominant color, including split
-// backgrounds. Disabling fill selects the separate Blur policy and clears every cached estimate.
+// backgrounds. Disabling fill selects the separate Blur policy and clears background estimates.
 void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, const QImage& source,
                                     const QRectF& canvasRect, bool backgroundFill);
+
+// Sample original, unfiltered pixels once per image/geometry. Independent of Background Fill.
+// Invalid estimates retain the renderer's contrast fallback. Cancellation never caches partial
+// work. Normal recognition prepares these on its local worker before publishing the presentation.
+void prepareScreenshotOcrTextColors(ScreenshotOcrPresentation& presentation, const QImage& source,
+                                    const QRectF& canvasRect,
+                                    const std::atomic_bool* cancelled = nullptr);
 
 [[nodiscard]] QRegion screenshotOcrFilterRegion(const ScreenshotOcrPresentation& presentation,
                                                 const QRectF& canvasRect, const QSize& pixelSize);
