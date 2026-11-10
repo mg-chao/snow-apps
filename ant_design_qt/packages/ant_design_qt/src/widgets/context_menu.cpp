@@ -937,11 +937,15 @@ class AdContextMenu::LazySubMenu final : public QObject {
       menu->clear();
       factory_(menu);
     });
-    connect(menu, &QObject::destroyed, this, [this, menu]() {
+    connect(menu, &AdContextMenu::aboutToDestroy, this, [this, menu]() {
       // An immediate parent reopen may already have installed a fresh shell.
-      if (shell_ && shell_ != menu) return;
+      if (shell_ != menu) return;
       shell_ = nullptr;
-      if (!tearingDown_ && parent_->isPopupVisible() && !parent_->isRetiring()) installShell();
+      if (tearingDown_) return;
+      // QAction::setMenu detaches the old menu through QMenu APIs. Do that while
+      // the shell is still a QMenu; QWidget emits destroyed() after QMenu teardown.
+      if (action_->menu() == menu) action_->setMenu(nullptr);
+      if (parent_->isPopupVisible() && !parent_->isRetiring()) installShell();
     });
   }
   AdContextMenu* parent_;
