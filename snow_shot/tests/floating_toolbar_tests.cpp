@@ -927,71 +927,95 @@ void verifyHoverPlacement() {
     for (const auto& size : {QStringLiteral("normal"), QStringLiteral("small")}) {
         configuration.setValue(QStringLiteral("screenshot_ui/toolbar_size"), size);
         for (const double x : {0.7, 0.3, 1.0, 0.0}) {
-            stored.setPlacement({{QStringLiteral("x"), x}, {QStringLiteral("y"), 0.5}});
-            FloatingToolbarController controller(nullptr, [](QScreen*) { return false; });
-            stored.setEnabled(true);
-            pump();
-            auto* iconWindow = window("floatingToolbarIconWindow");
-            require(iconWindow, "placement fixture creates an icon window");
-            auto* icon =
-                iconWindow->findChild<QAbstractButton*>(QStringLiteral("floatingToolbarSnowflake"));
-            require(icon, "placement fixture creates an icon");
-            const QPoint anchor = geometry::restore({x, 0.5}, icon->size(), bounds);
-            const QPoint shown = geometry::tucked(anchor, icon->size(), bounds);
-            // The concealed child origin can cross onto a monitor with another DPR.
-            // Keep this placement comparison in the owning window's logical coordinate space.
-            const auto iconPosition = [&] {
-                return iconWindow->pos() + icon->mapTo(iconWindow, QPoint());
-            };
-            require(iconPosition() == shown,
-                    "first icon show respects saved placement and edge clipping");
-            const QRect iconFrame = iconWindow->geometry();
-            for (int iteration = 0; iteration < 4; ++iteration) {
-                if (iteration == 1 || iteration == 2) {
-                    auto layout = storage::defaultFloatingToolbarLayout();
-                    if (iteration == 1)
-                        layout = toolbar_layout::moveItemToHidden(
-                            layout, storage::ScreenshotToolbarLayoutKind::FloatingTools,
-                            QStringLiteral("screenshot"), 0);
-                    storage::ScreenshotToolbarSettings().setLayout(
-                        storage::ScreenshotToolbarLayoutKind::FloatingTools, layout);
+            for (const double y : {0.5, 0.0, 1.0, 0.01, 0.99}) {
+                FloatingToolbarController controller(nullptr, [](QScreen*) { return false; });
+                // Settle the configured scale before restoring saved placement fractions.
+                pump();
+                stored.setPlacement({{QStringLiteral("x"), x}, {QStringLiteral("y"), y}});
+                stored.setEnabled(true);
+                pump();
+                auto* iconWindow = window("floatingToolbarIconWindow");
+                require(iconWindow, "placement fixture creates an icon window");
+                auto* icon = iconWindow->findChild<QAbstractButton*>(
+                    QStringLiteral("floatingToolbarSnowflake"));
+                require(icon, "placement fixture creates an icon");
+                const QPoint anchor = geometry::restore({x, y}, icon->size(), bounds);
+                const QPoint shown = geometry::tucked(anchor, icon->size(), bounds);
+                // The concealed child origin can cross onto a monitor with another DPR.
+                // Keep this placement comparison in the owning window's logical coordinate space.
+                const auto iconPosition = [&] {
+                    return iconWindow->pos() + icon->mapTo(iconWindow, QPoint());
+                };
+                require(iconPosition() == shown,
+                        "first icon show respects saved placement and edge clipping");
+                const QRect iconFrame = iconWindow->geometry();
+                for (int iteration = 0; iteration < 4; ++iteration) {
+                    if (iteration == 1 || iteration == 2) {
+                        auto layout = storage::defaultFloatingToolbarLayout();
+                        if (iteration == 1)
+                            layout = toolbar_layout::moveItemToHidden(
+                                layout, storage::ScreenshotToolbarLayoutKind::FloatingTools,
+                                QStringLiteral("screenshot"), 0);
+                        storage::ScreenshotToolbarSettings().setLayout(
+                            storage::ScreenshotToolbarLayoutKind::FloatingTools, layout);
+                        pump();
+                    }
+                    reveal(controller);
+                    auto* toolbar = window("floatingToolbarWindow");
+                    require(toolbar && toolbar->isVisible(), "hover shows the toolbar");
+                    ScreenshotToolbarMainPanel* panel = nullptr;
+                    for (auto* child : toolbar->findChildren<QWidget*>())
+                        if (auto* candidate = dynamic_cast<ScreenshotToolbarMainPanel*>(child))
+                            panel = candidate;
+                    require(panel, "hover toolbar has a main panel");
+                    const QPoint panelPosition = toolbar->pos() + panel->mapTo(toolbar, QPoint());
+                    require(
+                        panelPosition.y() == shown.y() + (icon->height() - panel->height()) / 2,
+                        "hover toolbar stays vertically centered on the icon near screen edges");
+                    require(panelPosition.x() == (geometry::rightSide(anchor, icon->size(), bounds)
+                                                      ? shown.x() - panel->width() - 4
+                                                      : shown.x() + icon->width() + 4),
+                            "first and repeated reveals align the settled panel beside the icon");
+                    const QRect panelFrame(panelPosition, panel->size());
+                    require(
+                        bounds.contains(panelFrame) && bounds.contains(toolbar->geometry()),
+                        "hover toolbar surface and shadow allocation stay on the owning screen");
+                    require(toolbar->geometry() ==
+                                panelFrame.marginsAdded(ScreenshotToolbarMainPanel::shadowMargins())
+                                    .intersected(bounds),
+                            "only the hover toolbar shadow is clipped at screen edges");
+                    require(iconPosition() == shown && iconWindow->geometry() == iconFrame,
+                            "hover preserves icon position and partial clipping at either edge");
+                    const QRect toolbarFrame = toolbar->geometry();
+                    QPointer<adqt::widgets::AdContextMenu> menu = context(icon);
+                    require(menu && menu->isVisible(), "icon context menu opens");
+                    require(iconPosition() == shown && iconWindow->geometry() == iconFrame &&
+                                toolbar->geometry() == toolbarFrame,
+                            "opening a menu preserves the icon and hover toolbar placement");
+                    menu->close();
+                    if (iteration == 2 && y != 0.5) {
+                        stored.setPlacement(
+                            {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}});
+                        pump();
+                        const QMargins shadow = ScreenshotToolbarMainPanel::shadowMargins();
+                        require(panel->pos() == QPoint(shadow.left(), shadow.top()) &&
+                                    toolbar->size() ==
+                                        panel->size() + QSize(shadow.left() + shadow.right(),
+                                                              shadow.top() + shadow.bottom()),
+                                "moving the hover toolbar inside restores the complete shadow");
+                        stored.setPlacement({{QStringLiteral("x"), x}, {QStringLiteral("y"), y}});
+                        pump();
+                        require(iconPosition() == shown && iconWindow->geometry() == iconFrame &&
+                                    toolbar->geometry() == toolbarFrame,
+                                "returning to the edge restores the aligned hover toolbar");
+                    }
+                    controller.setCaptureActive(QStringLiteral("placement-test"), true);
+                    controller.setCaptureActive(QStringLiteral("placement-test"), false);
                     pump();
                 }
-                reveal(controller);
-                auto* toolbar = window("floatingToolbarWindow");
-                require(toolbar && toolbar->isVisible(), "hover shows the toolbar");
-                ScreenshotToolbarMainPanel* panel = nullptr;
-                for (auto* child : toolbar->findChildren<QWidget*>())
-                    if (auto* candidate = dynamic_cast<ScreenshotToolbarMainPanel*>(child))
-                        panel = candidate;
-                require(panel, "hover toolbar has a main panel");
-                const QPoint desired(geometry::rightSide(anchor, icon->size(), bounds)
-                                         ? shown.x() - panel->x() - panel->width() - 4
-                                         : shown.x() + icon->width() + 4 - panel->x(),
-                                     shown.y() + (icon->height() - panel->height()) / 2 -
-                                         panel->y());
-                if (toolbar->pos() != geometry::constrain(desired, toolbar->size(), bounds))
-                    std::cerr << "Hover placement: actual=" << toolbar->x() << ',' << toolbar->y()
-                              << " desired=" << desired.x() << ',' << desired.y()
-                              << " panel=" << panel->x() << ',' << panel->y() << ','
-                              << panel->width() << ',' << panel->height() << '\n';
-                require(toolbar->pos() == geometry::constrain(desired, toolbar->size(), bounds),
-                        "first and repeated reveals align the settled panel beside the icon");
-                require(iconPosition() == shown && iconWindow->geometry() == iconFrame,
-                        "hover preserves icon position and partial clipping at either edge");
-                const QRect toolbarFrame = toolbar->geometry();
-                QPointer<adqt::widgets::AdContextMenu> menu = context(icon);
-                require(menu && menu->isVisible(), "icon context menu opens");
-                require(iconPosition() == shown && iconWindow->geometry() == iconFrame &&
-                            toolbar->geometry() == toolbarFrame,
-                        "opening a menu preserves the icon and hover toolbar placement");
-                menu->close();
-                controller.setCaptureActive(QStringLiteral("placement-test"), true);
-                controller.setCaptureActive(QStringLiteral("placement-test"), false);
+                stored.setEnabled(false);
                 pump();
             }
-            stored.setEnabled(false);
-            pump();
         }
     }
     configuration.setValue(QStringLiteral("screenshot_ui/toolbar_size"), QStringLiteral("normal"));
@@ -1735,6 +1759,8 @@ int main(int argc, char** argv) {
         nativeProbe();
     } else if (app.arguments().contains(QStringLiteral("--toolbar-edge-placement-only"))) {
         verifyToolbarEdgePlacement();
+    } else if (app.arguments().contains(QStringLiteral("--hover-placement-only"))) {
+        verifyHoverPlacement();
     } else if (app.arguments().contains(QStringLiteral("--content-drops-only"))) {
         verifyDropIdentity();
         const qsizetype visual = app.arguments().indexOf(QStringLiteral("--visual-output"));

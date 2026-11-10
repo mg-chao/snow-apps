@@ -797,24 +797,20 @@ class FloatingToolbarController::Impl {
                             : QPoint(right() ? shown.x() - panel->x() - panel->width() - 4
                                              : shown.x() + iconSize() + 4 - panel->x(),
                                      shown.y() + (iconSize() - panel->height()) / 2 - panel->y());
-            if (toolbarMode) {
-                // Constrain the visible panel, then clip only its shadow at the monitor edge.
-                const QPoint panelPosition =
-                    floating_toolbar::constrain(desired + panel->pos(), panel->size(), bounds());
-                const QRect frame(panelPosition - panel->pos(), toolbarWindow->size());
-                const QRect visible = frame.intersected(bounds());
-                const QRect panelFrame(panelPosition, panel->size());
-                toolbarWindow->layout()->setContentsMargins(
-                    panelFrame.left() - visible.left(), panelFrame.top() - visible.top(),
-                    visible.right() - panelFrame.right(), visible.bottom() - panelFrame.bottom());
-                // Update the minimum window size before shrinking the shadow allocation.
-                toolbarWindow->layout()->activate();
-                toolbarWindow->setGeometry(visible);
-                toolbarWindow->layout()->setGeometry(toolbarWindow->rect());
-            } else {
-                toolbarWindow->move(
-                    floating_toolbar::constrain(desired, toolbarWindow->size(), bounds()));
-            }
+            // Constrain the visible panel in both modes. Clipping only its shadow keeps
+            // the hover toolbar centered on the icon near the top and bottom edges.
+            const QPoint panelPosition =
+                floating_toolbar::constrain(desired + panel->pos(), panel->size(), bounds());
+            const QRect frame(panelPosition - panel->pos(), toolbarWindow->size());
+            const QRect visible = frame.intersected(bounds());
+            const QRect panelFrame(panelPosition, panel->size());
+            toolbarWindow->layout()->setContentsMargins(
+                panelFrame.left() - visible.left(), panelFrame.top() - visible.top(),
+                visible.right() - panelFrame.right(), visible.bottom() - panelFrame.bottom());
+            // Update the minimum window size before shrinking the shadow allocation.
+            toolbarWindow->layout()->activate();
+            toolbarWindow->setGeometry(visible);
+            toolbarWindow->layout()->setGeometry(toolbarWindow->rect());
             if (auto* shadow = dynamic_cast<ToolbarShadow*>(panel->graphicsEffect()))
                 shadow->setVisibleMargins(toolbarWindow->layout()->contentsMargins());
             toolbarWindow->setUpdatesEnabled(true);
