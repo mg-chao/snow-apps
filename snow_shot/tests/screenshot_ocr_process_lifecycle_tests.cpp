@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "../src/presentation/ocr/screenshotocrtransport.h"
@@ -12,6 +13,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPointer>
+#include <QPainter>
 #include <QProcess>
 #include <QSemaphore>
 #include <QTemporaryDir>
@@ -247,7 +249,17 @@ int runOcrLifecycleChild() {
         QByteArray payload;
         QDataStream stream(&payload, QIODevice::WriteOnly);
         stream.setByteOrder(QDataStream::LittleEndian);
-        stream << quint8(1) << quint32(0) << quint32(0);
+        stream << quint8(1) << quint32(0);
+        if (qEnvironmentVariableIsSet("SNOW_TEST_OCR_TEXT_COLOR")) {
+            stream << quint32(1) << quint32(7);
+            stream.writeRawData("Colored", 7);
+            stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
+            stream << 0.95F;
+            for (float coordinate : {20.F, 20.F, 380.F, 20.F, 380.F, 44.F, 20.F, 44.F})
+                stream << coordinate;
+        } else {
+            stream << quint32(0);
+        }
         reply(5, token, payload);
     };
     while (true) {
@@ -351,7 +363,9 @@ int runOcrLifecycleChild() {
             if (!mapped.open(QIODevice::ReadOnly) || mapped.size() != qint64(mappingBytes))
                 return 8;
             const auto pixels = mapped.readAll().mid(32, stride * height);
-            if (pixels.size() != stride * height || pixels != QByteArray(stride * height, '\xff'))
+            if (pixels.size() != stride * height ||
+                (!qEnvironmentVariableIsSet("SNOW_TEST_OCR_TEXT_COLOR") &&
+                 pixels != QByteArray(stride * height, '\xff')))
                 return 9;
             event("transfer " + QByteArray::number(token));
             QByteArray consumed;
@@ -1106,6 +1120,44 @@ void ocrProcessLifecycleTests() {
                 "protocol 6 workers must be rejected explicitly");
         qunsetenv("SNOW_TEST_OCR_OLD_PROTOCOL");
     }
+    qputenv("SNOW_TEST_OCR_TEXT_COLOR", "1");
+    qputenv("SNOW_TEST_OCR_LIFECYCLE_COMPLETE", "1");
+    for (bool filtered : {false, true}) {
+        ScreenshotOcrRecognitionService service(options);
+        QObject receiver;
+        QImage image(400, 70, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::white);
+        const QColor ink(20, 80, 200);
+        {
+            QPainter painter(&image);
+            for (int x = 24; x < 376; x += 11)
+                painter.fillRect(QRect(x, 23, 3, 18), ink);
+        }
+        const qint64 imageKey = image.cacheKey();
+        ScreenshotOcrRequest request{image, QRectF(100, 200, 200, 35)};
+        request.renderFilteredImage = filtered;
+        bool completed = false;
+        require(service.recognize(
+                    request, &receiver,
+                    [&](ScreenshotOcrRecognitionResult result) {
+                        require(result.error.isEmpty() && result.presentation &&
+                                    result.presentation->lines.size() == 1 &&
+                                    result.presentation->lines[0].sourceTextColor == ink,
+                                "recognition must publish source ink even when filtered rendering "
+                                "is disabled");
+                        require(result.filteredImage.isNull() != filtered,
+                                "color preparation must preserve filtered-image request policy");
+                        require(QThread::currentThread() == QCoreApplication::instance()->thread(),
+                                "color-prepared OCR completion must return to the owner thread");
+                        completed = true;
+                    }) != 0 &&
+                    waitUntil([&] { return completed; }),
+                "the deterministic color recognition fixture must complete");
+        require(image.cacheKey() == imageKey,
+                "worker color preparation must preserve source pixels");
+    }
+    qunsetenv("SNOW_TEST_OCR_TEXT_COLOR");
+    qunsetenv("SNOW_TEST_OCR_LIFECYCLE_COMPLETE");
     processStartFailuresRetainSystemError();
     diagnostics.shutdown();
     qunsetenv("SNOW_TEST_OCR_LIFECYCLE_CHILD");

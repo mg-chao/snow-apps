@@ -41,6 +41,16 @@ int main(int argc, char** argv) {
     expect(paragraph, {QStringLiteral("This is the first line continued on the next line")},
            "paragraph");
     const auto merged = mergeOcrLayout(paragraph);
+    auto coloredParagraph = paragraph;
+    coloredParagraph[0].sourceTextColor = Qt::blue;
+    coloredParagraph[1].sourceTextColor = Qt::red;
+    const auto coloredMerged = mergeOcrLayout(coloredParagraph);
+    require(coloredMerged.size() == 1 &&
+                coloredMerged[0].sourceLineTextColors == QVector<QColor>{Qt::blue, Qt::red} &&
+                coloredMerged[0].sourceTextColor == QColor(Qt::red) &&
+                coloredParagraph[0].sourceLineTextColors.isEmpty(),
+            "paragraph merging must preserve source-row colors and choose one representative for "
+            "reflow");
     auto shifted = paragraph;
     const QPointF origin(-500, -300);
     for (auto& line : shifted)

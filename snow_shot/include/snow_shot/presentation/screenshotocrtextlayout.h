@@ -29,7 +29,8 @@ class ScreenshotOcrTextLayout final {
                    const ScreenshotOcrTextRange& selection, ScreenshotOcrTextDirection direction,
                    qreal targetAspectRatio, bool paragraph, const QVector<QRectF>& sourceRows = {},
                    std::optional<qreal> fontSizeCapRatio = {},
-                   std::optional<TranslationLayout> translation = {});
+                   std::optional<TranslationLayout> translation = {},
+                   const QVector<QColor>& sourceRowColors = {});
     void setSelection(const ScreenshotOcrTextRange& selection);
     [[nodiscard]] int cursorPositionAt(const QPointF& itemPosition) const;
     [[nodiscard]] QVector<ScreenshotTextAnnotationFragment>
@@ -85,6 +86,7 @@ class ScreenshotOcrTextLayout final {
     std::vector<VerticalGlyph> m_verticalGlyphs;
     std::vector<FittedRow> m_fittedRows;
     QVector<QRectF> m_sourceRows;
+    QVector<QColor> m_sourceRowColors;
     QVector<int> m_graphemeBoundaries;
     qreal m_verticalCellAdvance = 0.0;
     qreal m_targetAspectRatio = 0.0;

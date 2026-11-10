@@ -217,6 +217,7 @@ preparePinnedImageRecord(storage::PinnedWindowRecord record,
         if (!presentation || (translated && !ocrTranslationSourceIndices(
                                                 *presentation, *recognition.text->presentation)))
             return prepared;
+        prepareScreenshotOcrTextColors(*presentation, record.image, record.canvasSourceRect);
         prepareScreenshotOcrFillColors(*presentation, record.image, record.canvasSourceRect,
                                        preparation.backgroundFill);
         recognition = transformScreenshotPinnedRecognition(

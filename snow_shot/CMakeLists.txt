@@ -9357,6 +9357,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    add_executable(snow-shot-ocr-text-color-tests
+        tests/screenshot_ocr_text_color_tests.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp)
+    target_include_directories(snow-shot-ocr-text-color-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-ocr-text-color-tests PRIVATE Qt6::Gui snow_draw_engine_qt_canvas)
+    add_test(NAME snow-shot-ocr-text-color-tests COMMAND snow-shot-ocr-text-color-tests)
+    set_tests_properties(snow-shot-ocr-text-color-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-ocr-presentation-tests
         tests/screenshot_ocr_presentation_tests.cpp
         include/snow_shot/presentation/screenshotocrpresentation.h
@@ -10318,6 +10329,19 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     add_test(NAME snow-shot-ocr-background-performance-benchmark
         COMMAND snow-shot-ocr-background-performance-benchmark)
     set_tests_properties(snow-shot-ocr-background-performance-benchmark PROPERTIES
+        LABELS "benchmark" TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-ocr-text-color-performance-benchmark
+        tests/screenshot_ocr_text_color_performance_benchmark.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp)
+    target_include_directories(snow-shot-ocr-text-color-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-ocr-text-color-performance-benchmark PRIVATE
+        Qt6::Gui snow_draw_engine_qt_canvas)
+    add_test(NAME snow-shot-ocr-text-color-performance-benchmark
+        COMMAND snow-shot-ocr-text-color-performance-benchmark)
+    set_tests_properties(snow-shot-ocr-text-color-performance-benchmark PROPERTIES
         LABELS "benchmark" TIMEOUT 120
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
@@ -11403,7 +11427,9 @@ if(WIN32)
     # The OCR background executables also reach the shared Rust bundle through the canvas.
     foreach(_snow_shot_ocr_background_target IN ITEMS
             snow-shot-ocr-background-tests
-            snow-shot-ocr-background-performance-benchmark)
+            snow-shot-ocr-background-performance-benchmark
+            snow-shot-ocr-text-color-tests
+            snow-shot-ocr-text-color-performance-benchmark)
         if(TARGET ${_snow_shot_ocr_background_target})
             target_link_libraries(${_snow_shot_ocr_background_target} PRIVATE
                 PkgConfig::SNOW_SHOT_FFMPEG)

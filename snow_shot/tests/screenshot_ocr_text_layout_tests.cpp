@@ -136,6 +136,105 @@ void translationRetainsSourceSizeAndBaseline() {
     require(layout.sourceTextMetrics().spacingEm == 0,
             "translation must retain natural spacing after source fitting changes");
 }
+int coloredPixels(const QImage& image, const QColor& color, const QRect& area) {
+    int count = 0;
+    const QRect bounds = area.intersected(image.rect());
+    for (int y = bounds.top(); y <= bounds.bottom(); ++y)
+        for (int x = bounds.left(); x <= bounds.right(); ++x) {
+            const QColor pixel = image.pixelColor(x, y);
+            if (pixel.alpha() >= 180 && std::abs(pixel.red() - color.red()) <= 3 &&
+                std::abs(pixel.green() - color.green()) <= 3 &&
+                std::abs(pixel.blue() - color.blue()) <= 3)
+                ++count;
+        }
+    return count;
+}
+
+void sourceColorsPaintWithoutChangingSelectionOrShaping() {
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Colored readable text");
+    line.quad = quad(QRectF(20, 20, 700, 30));
+    line.backgroundFillColor = Qt::white;
+    line.sourceTextColor = QColor(20, 40, 190);
+    ScreenshotOcrTextLayout layout;
+    QTransform transform;
+    const QFont font = QGuiApplication::font();
+    require(configureScreenshotOcrTextLayout(layout, line, {}, font, Qt::black, {}, &transform),
+            "colored source text must configure");
+    auto image = paint(layout, transform);
+    require(coloredPixels(image, line.sourceTextColor, image.rect()) > 30,
+            "estimated ink must override the black/white contrast fallback");
+    const auto bounds = layout.boundingRect();
+    line.sourceTextColor = QColor(190, 30, 25);
+    require(configureScreenshotOcrTextLayout(layout, line, {}, font, Qt::black, {}, &transform),
+            "a color-only update must configure");
+    image = paint(layout, transform);
+    require(coloredPixels(image, line.sourceTextColor, image.rect()) > 30 &&
+                layout.boundingRect() == bounds,
+            "cached shaping must accept a new color without moving glyphs");
+    layout.setSelection({0, static_cast<int>(line.text.size())});
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        painter.setTransform(transform);
+        layout.paint(&painter, Qt::yellow, Qt::green);
+    }
+    require(coloredPixels(image, Qt::green, image.rect()) > 30 &&
+                coloredPixels(image, line.sourceTextColor, image.rect()) == 0,
+            "selection foreground must still override source ink");
+    layout.setSelection({});
+    image.fill(Qt::transparent);
+    {
+        QPainter painter(&image);
+        painter.setTransform(transform);
+        layout.paint(&painter, Qt::yellow, Qt::green,
+                     ScreenshotOcrTextLayout::PaintMode::SelectionOnly);
+    }
+    require(coloredPixels(image, line.sourceTextColor, image.rect()) == 0,
+            "selection-only overlays must never reveal estimated text");
+    line.sourceTextColor = QColor();
+    line.backgroundFillColor = Qt::black;
+    require(configureScreenshotOcrTextLayout(layout, line, {}, font, Qt::black, {}, &transform),
+            "uncertain source text must configure");
+    image = paint(layout, transform);
+    require(coloredPixels(image, Qt::white, image.rect()) > 30,
+            "uncertain text must retain the existing dark-background fallback");
+}
+
+void sourceRowsKeepTheirColorsAfterSorting() {
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Colored text Colored text Colored text Colored text");
+    line.paragraph = true;
+    line.quad = quad(QRectF(20, 20, 800, 80));
+    line.sourceLineQuads = {quad(QRectF(20, 70, 800, 30)), quad(QRectF(20, 20, 800, 30))};
+    line.sourceTextColor = Qt::blue;
+    line.sourceLineTextColors = {Qt::red, Qt::blue};
+    ScreenshotOcrTextLayout layout;
+    QTransform transform;
+    const QFont font = QGuiApplication::font();
+    require(configureScreenshotOcrTextLayout(layout, line, {}, font, Qt::black, {}, &transform) &&
+                layout.usesSourceRows(),
+            "colored source rows must configure");
+    auto image = paint(layout, transform);
+    require(coloredPixels(image, Qt::blue, QRect(0, 0, 1000, 60)) > 30 &&
+                coloredPixels(image, Qt::red, QRect(0, 60, 1000, 120)) > 30,
+            "normalizing row order must preserve color/geometry associations");
+    line.sourceLineTextColors = {Qt::green, Qt::red};
+    require(configureScreenshotOcrTextLayout(layout, line, {}, font, Qt::black, {}, &transform),
+            "source-row colors must update through the shaping cache");
+    image = paint(layout, transform);
+    require(coloredPixels(image, Qt::red, QRect(0, 0, 1000, 60)) > 30 &&
+                coloredPixels(image, Qt::green, QRect(0, 60, 1000, 120)) > 30,
+            "cached source rows must paint updated colors");
+    line.fontSizeCapRatio = 0.8;
+    require(configureScreenshotOcrTextLayout(layout, line, {}, font, Qt::black, {}, &transform),
+            "translated paragraphs must configure with source color");
+    image = paint(layout, transform);
+    require(coloredPixels(image, Qt::blue, image.rect()) > 30 &&
+                coloredPixels(image, Qt::red, image.rect()) == 0 &&
+                coloredPixels(image, Qt::green, image.rect()) == 0,
+            "reflowed translations must use the representative color, not stale row mappings");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -144,5 +243,7 @@ int main(int argc, char** argv) {
     sourceRowsKeepNaturalSpacingAndSelection();
     verticalSourceTextDoesNotStretchItsSpacing();
     translationRetainsSourceSizeAndBaseline();
+    sourceColorsPaintWithoutChangingSelectionOrShaping();
+    sourceRowsKeepTheirColorsAfterSorting();
     return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
