@@ -551,6 +551,10 @@
             <translation>Enter a positive paper dimension</translation>
         </message>
         <message>
+            <source>Enter an image quality from 0% to 100%</source>
+            <translation>Enter an image quality from 0% to 100%</translation>
+        </message>
+        <message>
             <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
             <translation>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</translation>
         </message>

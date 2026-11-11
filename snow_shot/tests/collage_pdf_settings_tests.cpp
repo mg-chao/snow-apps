@@ -13,6 +13,7 @@
 #include "widgets/input_number.h"
 #include "widgets/segmented.h"
 #include "widgets/select.h"
+#include "widgets/slider.h"
 
 #include <QApplication>
 #include <QColorSpace>
@@ -42,6 +43,7 @@ using adqt::widgets::AdFormItem;
 using adqt::widgets::AdLineEdit;
 using adqt::widgets::AdSegmented;
 using adqt::widgets::AdSelect;
+using adqt::widgets::AdSlider;
 namespace storage = snow_shot::storage;
 
 namespace {
@@ -117,6 +119,7 @@ void validSettingsUpdateAndValidation() {
     auto* paper = control<AdSelect>(widget, "collagePdfPaperSize");
     auto* orientation = control<AdSegmented>(widget, "collagePdfOrientation");
     auto* exportMode = control<AdSegmented>(widget, "collagePdfExportMode");
+    auto* quality = control<AdSlider>(widget, "collagePdfImageQuality");
     auto* width = control<AdLineEdit>(widget, "collagePdfCustomWidth");
     auto* height = control<AdLineEdit>(widget, "collagePdfCustomHeight");
     auto* margin = control<AdLineEdit>(widget, "collagePdfMargin");
@@ -137,6 +140,10 @@ void validSettingsUpdateAndValidation() {
                 uniformMargins(document.pdfSettings(), 10),
             "A4 with one ten-millimeter margin is selected by default and custom dimensions stay "
             "hidden");
+    require(quality->isVisible() && quality->value() == 100 && quality->minimum() == 0 &&
+                quality->maximum() == 100 && quality->singleStep() == 1 && !quality->tracking() &&
+                document.pdfSettings().imageQuality == 100,
+            "the PDF quality slider defaults to lossless and matches the save dialog range");
     QStringList fields;
     QObject::connect(&widget, &ImageStitchingPdfSettingsWidget::settingsEdited, &widget,
                      [&](const QString& field) { fields.append(field); });
@@ -155,11 +162,13 @@ void validSettingsUpdateAndValidation() {
     QObject::disconnect(changed);
     require(marginChanges == 1, "one margin edit emits one document change");
     exportMode->setCurrentValue(static_cast<int>(ImageStitchingPdfExportMode::PerPage));
+    quality->setValue(0);
     const auto settings = document.pdfSettings();
     require(custom->isVisible() && settings.customWidthMm == 123.75 &&
                 settings.customHeightMm == 234.5 && uniformMargins(settings, 4.125) &&
                 settings.orientation == ImageStitchingPdfOrientation::Landscape &&
                 settings.exportMode == ImageStitchingPdfExportMode::PerPage &&
+                settings.imageQuality == 0 && quality->value() == 0 &&
                 document.lastValidPdfSettings() == settings,
             "valid decimal fields promptly update custom paper and one margin on every side");
     const auto layout = calculateImageStitchingPdfPageLayout({12, 8}, settings);
@@ -177,7 +186,8 @@ void validSettingsUpdateAndValidation() {
                 !fields.contains(QStringLiteral("margin_left_mm")) &&
                 !fields.contains(QStringLiteral("margin_right_mm")) &&
                 fields.contains(QStringLiteral("orientation")) &&
-                fields.contains(QStringLiteral("export_mode")),
+                fields.contains(QStringLiteral("export_mode")) &&
+                fields.count(QStringLiteral("image_quality")) == 1,
             "a uniform margin emits one persistence alias while other fields remain independent");
 
     width->setText(QStringLiteral("0"));
@@ -616,6 +626,7 @@ void fieldEditsMergeAndRetranslate() {
             "one window's latest uniform margin merges without overwriting another window's paper "
             "dimensions");
     auto* margin = control<AdLineEdit>(firstEditor, "collagePdfMargin");
+    auto* quality = control<AdSlider>(firstEditor, "collagePdfImageQuality");
     margin->setText(QStringLiteral("-2.25"));
     const auto persisted = store.readPdf();
     for (const auto* locale : {"en_US", "zh_CN", "zh_TW"}) {
@@ -627,6 +638,16 @@ void fieldEditsMergeAndRetranslate() {
         refresh();
         const auto label =
             QCoreApplication::translate("ImageStitchingPdfSettingsWidget", "Page margin");
+        const auto qualityLabel =
+            QCoreApplication::translate("ScreenshotSaveAsFileDialog", "Quality");
+        const auto marks = quality->marks();
+        require(quality->accessibleName() == qualityLabel &&
+                    fieldFor(quality)->label() == qualityLabel && marks.size() == 2 &&
+                    marks.value(0).label ==
+                        QCoreApplication::translate("ScreenshotSaveAsFileDialog", "0%") &&
+                    marks.value(100).label ==
+                        QCoreApplication::translate("ScreenshotSaveAsFileDialog", "Lossless"),
+                "language changes restore the same quality label and marks as the save dialog");
         require(margin->text() == QStringLiteral("-2.25") &&
                     margin->status() == AdLineEdit::Status::Error &&
                     margin->accessibleName() == label && fieldFor(margin)->label() == label &&
@@ -650,8 +671,8 @@ void templateSettingsPersistIndependently() {
     const auto defaults = store.readPdf();
     require(defaults.stitchingMethod == ImageStitchingPdfStitchingMethod::PageBased &&
                 defaults.templateType == ImageStitchingPdfTemplateType::TwoImages &&
-                defaults.imageSpacingMm == 5,
-            "missing preferences use page-based stitching, two images and five millimeters");
+                defaults.imageSpacingMm == 5 && defaults.imageQuality == 100,
+            "missing preferences retain the original layout and lossless image quality defaults");
     auto first = defaults;
     first.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
     first.templateType = ImageStitchingPdfTemplateType::SevenImages;
@@ -682,6 +703,10 @@ void templateSettingsPersistIndependently() {
                 store.readPdf() == restored,
             "invalid spacing and template preferences are rejected without replacing remembered "
             "choices");
+    const auto qualityKey = QStringLiteral("collage/pdf_image_quality");
+    require(!configuration.setValue(qualityKey, -1) && !configuration.setValue(qualityKey, 101) &&
+                !configuration.setValue(qualityKey, 75.5) && store.readPdf() == restored,
+            "stored image quality must be an integer between 0 and 100");
 }
 
 void renderPdfEditor(const QString& path) {

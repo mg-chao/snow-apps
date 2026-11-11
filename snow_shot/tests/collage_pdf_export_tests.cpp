@@ -506,12 +506,51 @@ void invalidInput(const QString& directory) {
     require(!exportImageStitchingPdf(document.items(), settings, {path}).succeeded() &&
                 !QFileInfo::exists(path),
             "invalid settings must fail before creating any output file");
+    settings.paperSize = ImageStitchingPdfPaperSize::ImageSize;
+    for (int quality : {-1, 101}) {
+        settings.imageQuality = quality;
+        require(!exportImageStitchingPdf(document.items(), settings, {path}).succeeded() &&
+                    !QFileInfo::exists(path),
+                "out-of-range image quality must be rejected for image-sized paper too");
+    }
     require(!exportImageStitchingPdf({}, {}, {path}).succeeded() &&
                 !exportImageStitchingPdf(document.items(), {}, {}).succeeded(),
             "empty document and missing destination must be rejected");
     require(exportImageStitchingPdf(document.items(), {}, {path}, [] { return true; }).cancelled &&
                 !QFileInfo::exists(path),
             "pre-canceled exports must not create files");
+}
+
+void imageQualityControlsCompression(const QString& directory) {
+    ImageStitchingDocument document;
+    require(document.append(fixture({257, 257}), QStringLiteral("quality.png")),
+            "quality fixture must import");
+    ImageStitchingPdfSettings settings;
+    for (const auto method : {ImageStitchingPdfStitchingMethod::PageBased,
+                              ImageStitchingPdfStitchingMethod::TemplateBased}) {
+        settings.stitchingMethod = method;
+        for (const auto mode :
+             {ImageStitchingPdfExportMode::Combined, ImageStitchingPdfExportMode::PerPage}) {
+            settings.exportMode = mode;
+            const auto exportAtQuality = [&](int quality) {
+                settings.imageQuality = quality;
+                const auto path = QDir(directory).filePath(QStringLiteral("quality-%1-%2-%3")
+                                                               .arg(static_cast<int>(method))
+                                                               .arg(static_cast<int>(mode))
+                                                               .arg(quality));
+                const auto result = exportImageStitchingPdf(document.items(), settings, {path});
+                require(result.succeeded(), qPrintable(result.errorMessage()));
+                const auto pdf = read(result.paths.first());
+                structure(pdf, 1);
+                require(pdf.contains("/Filter /DCTDecode /Width 257 /Height 257"),
+                        "lossy export must embed JPEG at the original pixel dimensions");
+                return pdf.size();
+            };
+            const auto lowQualitySize = exportAtQuality(0);
+            require(lowQualitySize < exportAtQuality(95),
+                    "the JPEG encoder must use the selected quality");
+        }
+    }
 }
 
 void admittedLongImage(const QString& directory) {
@@ -717,6 +756,7 @@ int main(int argc, char** argv) {
         exportNamesPreserveImageStitchingPolicy(temporary.path());
         cancellationAndPartialFailure(temporary.path());
         invalidInput(temporary.path());
+        imageQualityControlsCompression(temporary.path());
         admittedLongImage(temporary.path());
         overwritePermissionBindsSelectedFilename(temporary.path());
         positiveTinyPaperKeepsNonzeroGeometry(temporary.path());

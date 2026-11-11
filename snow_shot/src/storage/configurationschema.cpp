@@ -1694,6 +1694,8 @@ constexpr SchemaEntryDescriptor kEntryDescriptors[] = {
     {u"collage/pdf_margin_right_mm", numberDefault(10.0), ConfigurationValueKind::Structured},
     {u"collage/pdf_export_mode", stringDefault(u"combined"), ConfigurationValueKind::String,
      nullptr, &kSchemaAllowed68},
+    {u"collage/pdf_image_quality", integerDefault(100), ConfigurationValueKind::Integer,
+     &kSchemaRange3},
     {u"screenshot/manual_save_format_options", emptyObjectDefault(),
      ConfigurationValueKind::Structured},
     {u"screenshot/image_format", stringDefault(u"png"), ConfigurationValueKind::String, nullptr,

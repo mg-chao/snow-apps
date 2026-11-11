@@ -300,9 +300,11 @@ ImageStitchingPdfExportResult exportImageStitchingPdf(
             const auto rows = pageRows(items[cell.itemIndex], cancelled, error);
             if (!rows.isValid())
                 return false;
-            auto payload = screenshot_pdf::prepare(rows, 100, error, true, [&](qreal fraction) {
-                reportProgress(pageIndex, 0.85 * (qreal(prepared) + fraction) / qreal(occupied));
-            });
+            auto payload = screenshot_pdf::prepare(
+                rows, settings.imageQuality, error, true, [&](qreal fraction) {
+                    reportProgress(pageIndex,
+                                   0.85 * (qreal(prepared) + fraction) / qreal(occupied));
+                });
             if (!payload)
                 return false;
             page->layers.append(

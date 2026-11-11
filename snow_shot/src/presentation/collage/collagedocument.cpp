@@ -541,7 +541,7 @@ bool operator==(const ImageStitchingPdfSettings& first, const ImageStitchingPdfS
            first.templateType == second.templateType &&
            equalNumber(first.imageSpacingMm, second.imageSpacingMm) &&
            first.paperSize == second.paperSize && first.orientation == second.orientation &&
-           first.exportMode == second.exportMode &&
+           first.exportMode == second.exportMode && first.imageQuality == second.imageQuality &&
            equalNumber(first.customWidthMm, second.customWidthMm) &&
            equalNumber(first.customHeightMm, second.customHeightMm) &&
            equalNumber(first.marginTopMm, second.marginTopMm) &&
@@ -778,6 +778,10 @@ validateImageStitchingPdfSettings(const ImageStitchingPdfSettings& settings) {
         errors.insert(
             QStringLiteral("export_mode"),
             QCoreApplication::translate("ImageStitchingDocument", "Select an export mode"));
+    if (settings.imageQuality < 0 || settings.imageQuality > 100)
+        errors.insert(QStringLiteral("image_quality"),
+                      QCoreApplication::translate("ImageStitchingDocument",
+                                                  "Enter an image quality from 0% to 100%"));
     if (settings.paperSize == ImageStitchingPdfPaperSize::ImageSize && !templateBased)
         return errors;
     if (settings.paperSize == ImageStitchingPdfPaperSize::Custom) {

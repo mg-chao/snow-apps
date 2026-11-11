@@ -135,6 +135,7 @@ class ImageStitchingSettingsStore final {
             value(QStringLiteral("export_mode")).toString() == QStringLiteral("per_page")
                 ? ImageStitchingPdfExportMode::PerPage
                 : ImageStitchingPdfExportMode::Combined;
+        result.imageQuality = value(QStringLiteral("image_quality")).toInt(result.imageQuality);
         // Individual values can be valid while a hand-edited configuration or edits from
         // independent windows produce an unusable combination. Start with a usable form.
         return validateImageStitchingPdfSettings(result).isEmpty() ? result
@@ -244,7 +245,9 @@ class ImageStitchingSettingsStore final {
                 value = settings.exportMode == ImageStitchingPdfExportMode::Combined
                             ? QStringLiteral("combined")
                             : QStringLiteral("per_page");
-            } else if (field == QStringLiteral("custom_width_mm"))
+            } else if (field == QStringLiteral("image_quality"))
+                value = settings.imageQuality;
+            else if (field == QStringLiteral("custom_width_mm"))
                 value = settings.customWidthMm;
             else if (field == QStringLiteral("custom_height_mm"))
                 value = settings.customHeightMm;
