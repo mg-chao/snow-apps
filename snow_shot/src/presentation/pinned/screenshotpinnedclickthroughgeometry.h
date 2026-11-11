@@ -12,10 +12,10 @@ struct ControlsGeometry {
     QRect moveButton;
     QRect exitButton;
 };
-[[nodiscard]] ControlsGeometry controlsGeometry(const QRect& pinnedNativeGeometry,
+[[nodiscard]] ControlsGeometry controlsGeometry(const QRect& pinnedContentGeometry,
                                                 const QRect& screenPhysicalBounds,
                                                 qreal devicePixelRatio);
-[[nodiscard]] QRect exitButtonGeometry(const QRect& pinnedNativeGeometry,
+[[nodiscard]] QRect exitButtonGeometry(const QRect& pinnedContentGeometry,
                                        const QRect& screenPhysicalBounds, qreal devicePixelRatio);
 } // namespace screenshot_pinned_click_through
 
