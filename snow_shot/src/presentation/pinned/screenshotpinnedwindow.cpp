@@ -8875,7 +8875,7 @@ bool ScreenshotPinnedWindow::updateClickThroughExitButtonGeometry() {
     if (m_clickThroughExitButton == nullptr || !isVisible()) {
         return false;
     }
-    const QRect pinnedGeometry = currentNativeGeometry();
+    const QRect contentGeometry = currentContentNativeGeometry();
     QScreen* screen = windowHandle() != nullptr ? windowHandle()->screen() : nullptr;
     if (screen == nullptr) {
         screen = QGuiApplication::screenAt(geometry().center());
@@ -8885,7 +8885,7 @@ bool ScreenshotPinnedWindow::updateClickThroughExitButtonGeometry() {
     }
     const QRect physicalBounds = screenshot_pinned_hide_to_top::screenGeometry(screen).workArea;
     const auto geometry = screenshot_pinned_click_through::controlsGeometry(
-        pinnedGeometry, physicalBounds,
+        contentGeometry, physicalBounds,
         pinned_platform::pinnedGeometryScale(screen->devicePixelRatio()));
     if (geometry.exitButton.isEmpty() || geometry.opacityEditor.isEmpty() ||
         m_clickThroughOpacityEditor == nullptr || m_clickThroughMoveButton == nullptr) {
