@@ -1864,6 +1864,7 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
     updateRecordingExportSettingsControls();
     refreshRecordingMouseOptions();
     refreshRecordingKeyboardOptions();
+    refreshRecordingFollowMouseOptions();
     updateRecordingControlMetrics();
     refreshRecordingPostProcessingOptions();
 }
@@ -2500,6 +2501,20 @@ bool ScreenshotToolPalette::recordingFollowMouseEnabled() const {
     return m_recordingFollowMouseEnabled;
 }
 
+void ScreenshotToolPalette::setRecordingFollowMouseOptions(bool smoothMovement, bool reduceJitter) {
+    if (m_recordingFollowMouseSmoothMovement == smoothMovement &&
+        m_recordingFollowMouseReduceJitter == reduceJitter) {
+        return;
+    }
+    m_recordingFollowMouseSmoothMovement = smoothMovement;
+    m_recordingFollowMouseReduceJitter = reduceJitter;
+    refreshRecordingFollowMouseOptions();
+}
+
+adqt::widgets::AdPopover* ScreenshotToolPalette::recordingFollowMousePopover() const {
+    return m_recordFollowMousePopover;
+}
+
 void ScreenshotToolPalette::setRecordingWebcamEnabled(bool enabled) {
     m_recordingWebcamEnabled = enabled;
     updateRecordingExportSettingsControls();
@@ -2785,6 +2800,40 @@ void ScreenshotToolPalette::refreshRecordingKeyboardOptions() {
         checkbox->setFont(textFont);
     }
     if (auto* content = m_recordKeyboardPopover->contentWidget()) {
+        content->layout()->setSpacing(scaledMetric(8));
+    }
+}
+
+void ScreenshotToolPalette::refreshRecordingFollowMouseOptions() {
+    if (!m_recordFollowMouseSmoothMovementCheckbox || !m_recordFollowMouseReduceJitterCheckbox) {
+        return;
+    }
+    const auto updateCheckbox = [this](adqt::widgets::AdCheckbox* checkbox, const QString& label,
+                                       const QString& description, bool checked) {
+        const QSignalBlocker blocker(checkbox);
+        checkbox->setText(label);
+        checkbox->setAccessibleName(label);
+        checkbox->setToolTip(description);
+        checkbox->setAccessibleDescription(description);
+        checkbox->setChecked(checked);
+        auto tokens = adqt::widgets::AdCheckbox::ComponentTokens{};
+        tokens.metrics.checkboxSize = scaledMetric(16);
+        tokens.metrics.labelPaddingInlineStart = scaledMetric(8);
+        tokens.metrics.textLineHeight = scaledMetric(22);
+        checkbox->setComponentTokens(tokens);
+        QFont textFont = font();
+        textFont.setPixelSize(scaledMetric(14));
+        checkbox->setFont(textFont);
+    };
+    updateCheckbox(m_recordFollowMouseSmoothMovementCheckbox, tr("Smooth movement"),
+                   tr("Animate the recording area as it follows the cursor."),
+                   m_recordingFollowMouseSmoothMovement);
+    updateCheckbox(
+        m_recordFollowMouseReduceJitterCheckbox, tr("Reduce jitter"),
+        tr("Start moving the recording area when the cursor enters the outer quarter of its width "
+           "or height."),
+        m_recordingFollowMouseReduceJitter);
+    if (auto* content = m_recordFollowMousePopover->contentWidget()) {
         content->layout()->setSpacing(scaledMetric(8));
     }
 }
@@ -4055,7 +4104,9 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     if (m_recordFollowMouseButton) {
         configureScreenshotToolPaletteStyleButton(m_recordFollowMouseButton, "Follow mouse",
                                                   styleButtonMetrics(m_physicalScale));
+        m_recordFollowMouseButton->setFocusPolicy(Qt::StrongFocus);
     }
+    refreshRecordingFollowMouseOptions();
     if (m_recordWebcamButton) {
         configureScreenshotToolPaletteStyleButton(m_recordWebcamButton, "Record webcam",
                                                   styleButtonMetrics(m_physicalScale));
@@ -4607,46 +4658,84 @@ void ScreenshotToolPalette::finishScrollingSelectionMove() {
 }
 
 bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
-    if (event && m_recordKeyboardPopover) {
+    if (event && (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress ||
+                  event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)) {
         const auto* widget = qobject_cast<QWidget*>(watched);
-        const auto* content = m_recordKeyboardPopover->contentWidget();
-        const bool inKeyboardOptions =
-            content && widget && (content == widget || content->isAncestorOf(widget));
-        if (inKeyboardOptions &&
-            (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress)) {
-            // Keep keyboard or pointer editing open until it is explicitly dismissed.
-            m_recordKeyboardPopover->show();
-        }
-        if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride) {
+        adqt::widgets::AdPopover* visiblePopoverToDismiss = nullptr;
+        for (auto* popover : {m_recordKeyboardPopover, m_recordFollowMousePopover}) {
+            if (!popover) {
+                continue;
+            }
+            const auto* content = popover->contentWidget();
+            const bool inOptions =
+                content && widget && (content == widget || content->isAncestorOf(widget));
+            if (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress) {
+                if (inOptions) {
+                    // Keep keyboard or pointer editing open until it is dismissed.
+                    popover->show();
+                }
+                continue;
+            }
+            auto* source = popover->sourceWidget();
             auto* key = static_cast<QKeyEvent*>(event);
             const bool sourceDown =
-                watched == m_recordKeyboardButton && key->key() == Qt::Key_Down &&
+                watched == source && key->key() == Qt::Key_Down &&
                 (key->modifiers() == Qt::NoModifier || key->modifiers() == Qt::AltModifier);
-            const bool escape = key->key() == Qt::Key_Escape &&
-                                (m_recordKeyboardPopover->isVisible() || inKeyboardOptions);
+            const bool escape = key->key() == Qt::Key_Escape;
+            const bool dismissThisPopover =
+                escape && (inOptions || (popover->isVisible() && watched == source));
+            if (escape && popover->isVisible()) {
+                visiblePopoverToDismiss = popover;
+            }
             if (event->type() == QEvent::ShortcutOverride) {
-                if (sourceDown || escape || inKeyboardOptions) {
+                if (sourceDown || dismissThisPopover || inOptions) {
+                    if (escape && inOptions && source) {
+                        // The popup host can close and release the options before the key press
+                        // reaches this filter. Save the trigger while the options still exist.
+                        QMetaObject::invokeMethod(
+                            source,
+                            [source, popup = QPointer(popover)] {
+                                if (popup && !popup->isVisible() && source->isVisible() &&
+                                    source->isEnabled() && !source->hasFocus()) {
+                                    source->window()->activateWindow();
+                                    source->setFocus(Qt::OtherFocusReason);
+                                }
+                            },
+                            Qt::QueuedConnection);
+                    }
                     key->accept();
                     return true;
                 }
-            } else if (escape) {
-                m_recordKeyboardPopover->hide();
-                if (inKeyboardOptions) {
-                    m_recordKeyboardButton->window()->activateWindow();
-                    m_recordKeyboardButton->setFocus(Qt::OtherFocusReason);
+            } else if (dismissThisPopover) {
+                popover->hide();
+                if (inOptions) {
+                    source->window()->activateWindow();
+                    source->setFocus(Qt::OtherFocusReason);
                 }
                 key->accept();
                 return true;
-            } else if (sourceDown && m_recordKeyboardPopover->isEnabled()) {
-                m_recordKeyboardPopover->show();
-                if (m_recordNumberKeysCheckbox && m_recordKeyboardPopover->surfaceWidget() &&
-                    m_recordKeyboardPopover->surfaceWidget()->isVisible()) {
-                    m_recordKeyboardPopover->surfaceWidget()->activateWindow();
-                    m_recordNumberKeysCheckbox->setFocus(Qt::OtherFocusReason);
+            } else if (sourceDown && popover->isEnabled()) {
+                popover->show();
+                auto* surface = popover->surfaceWidget();
+                if (const auto* options = popover->contentWidget();
+                    options && surface && surface->isVisible()) {
+                    auto* firstCheckbox =
+                        options->findChild<adqt::widgets::AdCheckbox*>(Qt::FindDirectChildrenOnly);
+                    if (firstCheckbox) {
+                        surface->activateWindow();
+                        firstCheckbox->setFocus(Qt::OtherFocusReason);
+                    }
                 }
                 key->accept();
                 return true;
             }
+        }
+        if (visiblePopoverToDismiss) {
+            if (event->type() == QEvent::KeyPress) {
+                visiblePopoverToDismiss->hide();
+            }
+            event->accept();
+            return true;
         }
     }
     if (event && watched && watched == m_backgroundOpacityEditor) {
@@ -7663,6 +7752,7 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
     m_recordFollowMouseButton->setObjectName(QStringLiteral("screenRecordingFollowMouse"));
     m_recordFollowMouseButton->setCheckable(true);
     m_recordFollowMouseButton->setCheckedUsesActiveStyle(false);
+    m_recordFollowMouseButton->setFocusPolicy(Qt::StrongFocus);
     layout->addWidget(m_recordFollowMouseButton);
     connect(m_recordFollowMouseButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         if (m_recordingSession.state() != RecordingState::Idle || recordingBusy())
@@ -7670,6 +7760,44 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         setRecordingFollowMouseEnabled(!m_recordingFollowMouseEnabled);
         emit recordingFollowMouseEnabledChanged(m_recordingFollowMouseEnabled);
     });
+    m_recordFollowMousePopover = new adqt::widgets::AdPopover(m_recordFollowMouseButton);
+    m_recordFollowMousePopover->setObjectName(QStringLiteral("screenRecordingFollowMousePopover"));
+    m_recordFollowMousePopover->setSourceWidget(m_recordFollowMouseButton);
+    m_recordFollowMousePopover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    m_recordFollowMousePopover->setPlacement(adqt::widgets::AdPopover::Placement::Bottom);
+    m_recordFollowMousePopover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    m_recordFollowMousePopover->setContentFactory(
+        [this]() -> QWidget* {
+            auto* content = new QWidget;
+            content->setObjectName(QStringLiteral("screenRecordingFollowMouseOptions"));
+            auto* options = new QVBoxLayout(content);
+            options->setContentsMargins(0, 0, 0, 0);
+            options->setSpacing(scaledMetric(8));
+            m_recordFollowMouseSmoothMovementCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordFollowMouseSmoothMovementCheckbox->setObjectName(
+                QStringLiteral("screenRecordingFollowMouseSmoothMovement"));
+            m_recordFollowMouseReduceJitterCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordFollowMouseReduceJitterCheckbox->setObjectName(
+                QStringLiteral("screenRecordingFollowMouseReduceJitter"));
+            options->addWidget(m_recordFollowMouseSmoothMovementCheckbox);
+            options->addWidget(m_recordFollowMouseReduceJitterCheckbox);
+            refreshRecordingFollowMouseOptions();
+            connect(m_recordFollowMouseSmoothMovementCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool enabled) {
+                        m_recordingFollowMouseSmoothMovement = enabled;
+                        emit recordingFollowMouseSmoothMovementChanged(enabled);
+                    });
+            connect(m_recordFollowMouseReduceJitterCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool enabled) {
+                        m_recordingFollowMouseReduceJitter = enabled;
+                        emit recordingFollowMouseReduceJitterChanged(enabled);
+                    });
+            installWheelFilters(this, content);
+            emit materializedScope(content);
+            return content;
+        },
+        adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
+
     m_recordWebcamButton = createScreenshotToolPaletteStyleActionButton(
         m_recordExportSettingsPanel, "Record webcam", custom_outlined_icons::RecordingCamera(),
         styleButtonMetrics(m_physicalScale));
@@ -8164,6 +8292,7 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
     }
     refreshRecordingMouseOptions();
     refreshRecordingKeyboardOptions();
+    refreshRecordingFollowMouseOptions();
     refreshRecordingPostProcessingOptions();
     if (m_recordPostProcessingButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordPostProcessingButton,
@@ -8217,6 +8346,9 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     }
     if (!visible && m_recordKeyboardPopover) {
         m_recordKeyboardPopover->hide();
+    }
+    if (!visible && m_recordFollowMousePopover) {
+        m_recordFollowMousePopover->hide();
     }
     if (!visible && m_recordSettingsModal != nullptr) {
         m_recordSettingsModal->close();
@@ -8276,6 +8408,12 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
         m_recordKeyboardPopover->setEnabled(editable);
         if (!editable) {
             m_recordKeyboardPopover->hide();
+        }
+    }
+    if (m_recordFollowMousePopover) {
+        m_recordFollowMousePopover->setEnabled(editable);
+        if (!editable) {
+            m_recordFollowMousePopover->hide();
         }
     }
     if (m_recordSettingsForm != nullptr) {

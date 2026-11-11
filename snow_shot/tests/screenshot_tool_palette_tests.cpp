@@ -591,6 +591,18 @@ void recordingCursorOptionsAreIndependentAndLazy() {
             "busy recording must dismiss and disable cursor options");
 }
 
+class RecordingOptionsTranslator final : public QTranslator {
+  public:
+    bool isEmpty() const override {
+        return false;
+    }
+    QString translate(const char* context, const char* source, const char*, int) const override {
+        return qstrcmp(context, "ScreenshotToolPalette") == 0
+                   ? QStringLiteral("Translated ") + QString::fromUtf8(source)
+                   : QString();
+    }
+};
+
 void recordingKeyboardOptionsAreIndependentAndLazy() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = true;
@@ -688,18 +700,7 @@ void recordingKeyboardOptionsAreIndependentAndLazy() {
     require(palette.setPhysicalScale(1.5) && layout->spacing() == 12 &&
                 number->font().pixelSize() == 21,
             "materialized keyboard options must follow the toolbar scale");
-    class KeyboardOptionsTranslator final : public QTranslator {
-      public:
-        bool isEmpty() const override {
-            return false;
-        }
-        QString translate(const char* context, const char* source, const char*,
-                          int) const override {
-            return qstrcmp(context, "ScreenshotToolPalette") == 0
-                       ? QStringLiteral("Translated ") + QString::fromUtf8(source)
-                       : QString();
-        }
-    } translator;
+    RecordingOptionsTranslator translator;
     QCoreApplication::installTranslator(&translator);
     QCoreApplication::processEvents();
     require(number->text() == QStringLiteral("Translated Number keys") &&
@@ -741,6 +742,115 @@ void recordingKeyboardOptionsAreIndependentAndLazy() {
             "busy recording must disable and dismiss keyboard options");
     palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::recording());
     require(!popover->isEnabled(), "active recording must keep keyboard filters disabled");
+}
+
+void recordingFollowMouseOptionsAreIndependentAndLazy() {
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    ScreenshotToolPalette palette(options);
+    auto* exportSettings = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingExportSettings"));
+    require(exportSettings, "Follow mouse options require the export settings row");
+    if (!palette.recordingExportSettingsVisible())
+        exportSettings->click();
+    palette.show();
+    palette.prepareForDisplay();
+    QCoreApplication::processEvents();
+    auto* trigger =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingFollowMouse"));
+    auto* popover = palette.recordingFollowMousePopover();
+    require(trigger && popover && !popover->contentWidget() && popover->sourceWidget() == trigger &&
+                popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
+                popover->placement() == adqt::widgets::AdPopover::Placement::Bottom &&
+                popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool,
+            "Follow mouse exposes a lazy hover popover matching the recording controls");
+
+    const auto checkbox = [popover](const QString& name) {
+        return popover->contentWidget()->findChild<adqt::widgets::AdCheckbox*>(name);
+    };
+    const auto smoothName = QStringLiteral("screenRecordingFollowMouseSmoothMovement");
+    const auto jitterName = QStringLiteral("screenRecordingFollowMouseReduceJitter");
+    const QPoint previousCursor = QCursor::pos();
+    const auto restoreCursor = qScopeGuard([&] { QCursor::setPos(previousCursor); });
+    const QPoint local = trigger->rect().center();
+    QCursor::setPos(trigger->mapToGlobal(local));
+    QEventLoop loop;
+    QObject::connect(popover, &adqt::widgets::AdPopover::visibleChanged, &loop,
+                     [&loop](bool visible) {
+                         if (visible)
+                             loop.quit();
+                     });
+    QEnterEvent enter(local, trigger->mapTo(trigger->window(), local), trigger->mapToGlobal(local));
+    QCoreApplication::sendEvent(trigger, &enter);
+    QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+    if (!popover->isVisible())
+        loop.exec();
+    require(popover->isVisible() && popover->contentWidget(),
+            "hovering Follow mouse opens its options without a click");
+    popover->show();
+    auto* smooth = checkbox(smoothName);
+    auto* jitter = checkbox(jitterName);
+    auto* layout = popover->contentWidget()->layout();
+    require(popover->isVisible() && !trigger->isChecked() && smooth && jitter && layout &&
+                layout->count() == 2 && layout->itemAt(0)->widget() == smooth &&
+                layout->itemAt(1)->widget() == jitter &&
+                smooth->text() == QStringLiteral("Smooth movement") &&
+                jitter->text() == QStringLiteral("Reduce jitter"),
+            "Follow mouse options can be configured with the main toggle off");
+    for (auto* option : {smooth, jitter}) {
+        require(option->isChecked() && option->isEnabled() &&
+                    option->accessibleName() == option->text() &&
+                    !option->accessibleDescription().isEmpty(),
+                "each Follow mouse option defaults to checked and exposes accessible text");
+    }
+    int smoothChanges = 0;
+    int jitterChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingFollowMouseSmoothMovementChanged,
+                     &palette, [&](bool) { ++smoothChanges; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingFollowMouseReduceJitterChanged,
+                     &palette, [&](bool) { ++jitterChanges; });
+    smooth->click();
+    require(!smooth->isChecked() && jitter->isChecked() && !trigger->isChecked(),
+            "changing Smooth movement leaves Reduce jitter and Follow mouse untouched");
+    jitter->click();
+    trigger->click();
+    require(smoothChanges == 1 && jitterChanges == 1 && !smooth->isChecked() &&
+                !jitter->isChecked() && trigger->isChecked(),
+            "the options and main toggle act independently");
+    palette.setRecordingFollowMouseOptions(false, true);
+    require(!smooth->isChecked() && jitter->isChecked() && smoothChanges == 1 && jitterChanges == 1,
+            "programmatic preference changes update the options without emitting user signals");
+    require(palette.setPhysicalScale(1.5) && layout->spacing() == 12 &&
+                smooth->font().pixelSize() == 21,
+            "open Follow mouse options use the toolbar scale");
+    RecordingOptionsTranslator translator;
+    QCoreApplication::installTranslator(&translator);
+    QCoreApplication::processEvents();
+    require(popover->isVisible() &&
+                smooth->text() == QStringLiteral("Translated Smooth movement") &&
+                jitter->text() == QStringLiteral("Translated Reduce jitter") &&
+                smooth->accessibleName() == smooth->text() &&
+                jitter->accessibleName() == jitter->text() &&
+                smooth->accessibleDescription().startsWith(QStringLiteral("Translated ")) &&
+                jitter->accessibleDescription().startsWith(QStringLiteral("Translated ")),
+            "open Follow mouse options retranslate their labels and accessible descriptions");
+    QCoreApplication::removeTranslator(&translator);
+    QCoreApplication::processEvents();
+
+    trigger->click();
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    require(!popover->isVisible() && !popover->contentWidget(),
+            "closing the export settings row releases Follow mouse options");
+    exportSettings->click();
+    popover->show();
+    require(popover->isVisible() && !checkbox(smoothName)->isChecked() &&
+                checkbox(jitterName)->isChecked(),
+            "recreated Follow mouse options restore their individual preferences");
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::starting());
+    require(!popover->isEnabled() && !popover->isVisible() && !trigger->isEnabled(),
+            "starting a recording disables and dismisses Follow mouse options");
 }
 
 void recordingPostProcessingOptionsBindState() {
@@ -909,10 +1019,11 @@ void recordingEffectSettingsModal() {
     require(webcam && !palette.recordingWebcamEnabled() && palette.recordingWebcamSize() == 150 &&
                 palette.recordingWebcamShape() == QStringLiteral("square"),
             "webcam controls default off at 150 px square");
-    require(webcam->parentWidget() == keyboard->parentWidget() &&
-                webcam->parentWidget()->layout()->indexOf(webcam) ==
-                    keyboard->parentWidget()->layout()->indexOf(keyboard) + 1,
-            "webcam toggle must be immediately after keystrokes");
+    auto* follow = palette.recordingFollowMousePopover()->sourceWidget();
+    auto* optionsRow = keyboard->parentWidget()->layout();
+    require(optionsRow->indexOf(follow) == optionsRow->indexOf(keyboard) + 1 &&
+                optionsRow->indexOf(webcam) == optionsRow->indexOf(follow) + 1,
+            "Follow mouse sits between keystrokes and the webcam toggle");
     int webcamChanges = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::recordingWebcamEnabledChanged, &palette,
                      [&](bool enabled) {
@@ -21016,6 +21127,7 @@ int main(int argc, char** argv) {
         recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
         recordingCursorOptionsAreIndependentAndLazy();
         recordingKeyboardOptionsAreIndependentAndLazy();
+        recordingFollowMouseOptionsAreIndependentAndLazy();
         recordingPostProcessingOptionsBindState();
         recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();

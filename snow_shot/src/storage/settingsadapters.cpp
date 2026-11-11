@@ -2143,6 +2143,19 @@ bool RecordingSettings::followMouse() const {
 bool RecordingSettings::setFollowMouse(bool enabled) const {
     return cache().setValue(QStringLiteral("screen_recording/follow_mouse"), enabled);
 }
+bool RecordingSettings::followMouseSmoothMovement() const {
+    return cache().value(QStringLiteral("screen_recording/follow_mouse_smooth_movement")).toBool();
+}
+bool RecordingSettings::setFollowMouseSmoothMovement(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/follow_mouse_smooth_movement"),
+                            enabled);
+}
+bool RecordingSettings::followMouseReduceJitter() const {
+    return cache().value(QStringLiteral("screen_recording/follow_mouse_reduce_jitter")).toBool();
+}
+bool RecordingSettings::setFollowMouseReduceJitter(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/follow_mouse_reduce_jitter"), enabled);
+}
 
 bool RecordingSettings::webcamEnabled() const {
     return cache().value(QStringLiteral("screen_recording/enable_webcam")).toBool();

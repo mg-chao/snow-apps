@@ -31,6 +31,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use snow_capture::region::MonitorGeometry;
 use snow_capture::{CaptureSystem, MonitorLayout};
+use snow_media::follow_mouse::FollowMouseOptions;
 use snow_recording_export::{ExportFormat, VideoCodec, scaled_output_dimensions};
 use snow_recording_model::VideoEncodingSpeed;
 #[cfg(any(
@@ -135,6 +136,7 @@ enum FollowMouseMode {
 
 struct Options {
     follow_mouse: Option<FollowMouseMode>,
+    follow_mouse_options: FollowMouseOptions,
     webcam_size: Option<u32>,
     webcam_shape: snow_webcam::WebcamShape,
     webcam_orientation: snow_webcam::WebcamOrientation,
@@ -190,6 +192,8 @@ bench-stage-timing,bench-compositor-timing,bench-pipeline-timing \
   --restoration-only         restore overlays only while the background is unchanged\n\
   --skip-unneeded-cursor     omit cursor observations when cursor and trail are disabled\n\
   --follow-mouse <mode>      synthetic desktop following: stationary, pan, boundary\n\
+  --follow-mouse-smooth-movement  animate viewport movement during following\n\
+  --follow-mouse-reduce-jitter    hold the viewport while the cursor is in its middle half\n\
   --force-hardware-failure    simulate failure of the preferred hardware encoder\n\
   --warmup-seconds <n>       discarded warmup recording per scenario, 0 disables (default: \
 {DEFAULT_WARMUP_SECONDS})\n\
@@ -229,6 +233,7 @@ fn parse_codec(value: &str) -> Result<VideoCodec> {
 fn parse_args() -> Result<Options> {
     let mut options = Options {
         follow_mouse: None,
+        follow_mouse_options: FollowMouseOptions::default(),
         webcam_size: None,
         webcam_shape: snow_webcam::WebcamShape::Square,
         webcam_orientation: snow_webcam::WebcamOrientation::Identity,
@@ -331,6 +336,8 @@ fn parse_args() -> Result<Options> {
                     },
                 );
             }
+            "--follow-mouse-smooth-movement" => options.follow_mouse_options.smooth_movement = true,
+            "--follow-mouse-reduce-jitter" => options.follow_mouse_options.reduce_jitter = true,
             "--half-resize" => options.half_resize = true,
             "--direct-output" => options.direct_output = true,
             "--skip-unneeded-cursor" => options.skip_unneeded_cursor = true,
@@ -422,6 +429,12 @@ fn parse_args() -> Result<Options> {
     }
     if !["continuous", "static", "sparse"].contains(&options.workload.as_str()) {
         bail!("--workload must be continuous, static, or sparse");
+    }
+    if options.follow_mouse.is_none()
+        && (options.follow_mouse_options.smooth_movement
+            || options.follow_mouse_options.reduce_jitter)
+    {
+        bail!("follow mouse movement options require --follow-mouse");
     }
     if options.duration_seconds == 0 {
         bail!("--duration-seconds must be greater than zero");
@@ -516,6 +529,7 @@ struct ProcessUsage {
 
 struct SampleResult {
     follow_mouse: Option<FollowMouseMode>,
+    follow_mouse_options: FollowMouseOptions,
     workload_monitor_count: usize,
     workload: String,
     published_frames: u64,
@@ -714,8 +728,10 @@ pub(crate) fn run() -> Result<()> {
     fs::write(
         options.output_directory.join("follow-mouse-metadata.txt"),
         format!(
-            "mode={:?}\nworkload_monitors={}\nphysical_input_injected=false\nvalidation={}\n",
+            "mode={:?}\nsmooth_movement={}\nreduce_jitter={}\nworkload_monitors={}\nphysical_input_injected=false\nvalidation={}\n",
             options.follow_mouse,
+            options.follow_mouse_options.smooth_movement,
+            options.follow_mouse_options.reduce_jitter,
             workload_regions.len(),
             if options.follow_mouse.is_some() {
                 "fixed_dimensions,monotonic_pts,nonblank,spatial_changes"
@@ -1105,6 +1121,7 @@ fn run_sample(
     };
     let config = DirectRecordingConfig {
         follow_mouse: options.follow_mouse.is_some(),
+        follow_mouse_options: options.follow_mouse_options,
         keyboard_filter: Default::default(),
         webcam: options
             .webcam_size
@@ -1298,6 +1315,7 @@ fn run_sample(
 
     Ok(SampleResult {
         follow_mouse: options.follow_mouse,
+        follow_mouse_options: options.follow_mouse_options,
         workload_monitor_count: workload_regions.len(),
         workload: options.workload.clone(),
         published_frames,
@@ -1420,8 +1438,12 @@ fn print_sample(result: &SampleResult) {
     }
     if let Some(mode) = result.follow_mouse {
         println!(
-            "  follow: mode={mode:?} workload_monitors={} decoded_frames={} spatial_changes={} validation=fixed_dimensions,monotonic_pts,nonblank",
-            result.workload_monitor_count, result.decoded_frames, result.fresh_frames
+            "  follow: mode={mode:?} smooth_movement={} reduce_jitter={} workload_monitors={} decoded_frames={} spatial_changes={} validation=fixed_dimensions,monotonic_pts,nonblank",
+            result.follow_mouse_options.smooth_movement,
+            result.follow_mouse_options.reduce_jitter,
+            result.workload_monitor_count,
+            result.decoded_frames,
+            result.fresh_frames
         );
     }
     println!(
@@ -1555,6 +1577,14 @@ fn write_summary_csv(output_directory: &Path, rows: &[SampleResult]) -> Result<P
                 ),
             ),
             ("follow_mouse".into(), format!("{:?}", row.follow_mouse)),
+            (
+                "follow_mouse_smooth_movement".into(),
+                row.follow_mouse_options.smooth_movement.to_string(),
+            ),
+            (
+                "follow_mouse_reduce_jitter".into(),
+                row.follow_mouse_options.reduce_jitter.to_string(),
+            ),
             (
                 "workload_monitor_count".into(),
                 row.workload_monitor_count.to_string(),

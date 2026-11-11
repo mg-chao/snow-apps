@@ -132,21 +132,23 @@ pub(crate) fn prepare_capture(
     use std::time::{Duration, Instant};
     crate::capture_policy::try_recording_gpu_capture(config.capture_backend, |backend| {
         diagnostics.stage = Some("capture_startup".into());
-        let spawn = if config.follow_mouse {
-            GpuCaptureStream::spawn_follow_mouse
-        } else {
-            GpuCaptureStream::spawn
+        let region = snow_capture::CaptureRegion {
+            x: config.region.x,
+            y: config.region.y,
+            width: config.region.width,
+            height: config.region.height,
         };
-        let stream = spawn(
-            snow_capture::CaptureRegion {
-                x: config.region.x,
-                y: config.region.y,
-                width: config.region.width,
-                height: config.region.height,
-            },
-            backend,
-            crate::direct::capture::stream_config(config, include_cursor),
-        )?;
+        let stream_config = crate::direct::capture::stream_config(config, include_cursor);
+        let stream = if config.follow_mouse {
+            GpuCaptureStream::spawn_follow_mouse_with_motion(
+                region,
+                backend,
+                stream_config,
+                config.follow_mouse_options,
+            )
+        } else {
+            GpuCaptureStream::spawn(region, backend, stream_config)
+        }?;
         diagnostics.adapter = Some(stream.device().identity().description.clone());
         diagnostics.stage = Some("capture_probe".into());
         let deadline = Instant::now() + Duration::from_secs(5);

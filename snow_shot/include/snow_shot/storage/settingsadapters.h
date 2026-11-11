@@ -565,6 +565,10 @@ class RecordingSettings final {
     bool setMouseClickColor(const QColor& color) const;
     [[nodiscard]] bool followMouse() const;
     bool setFollowMouse(bool enabled) const;
+    [[nodiscard]] bool followMouseSmoothMovement() const;
+    bool setFollowMouseSmoothMovement(bool enabled) const;
+    [[nodiscard]] bool followMouseReduceJitter() const;
+    bool setFollowMouseReduceJitter(bool enabled) const;
     [[nodiscard]] bool webcamEnabled() const;
     bool setWebcamEnabled(bool enabled) const;
     [[nodiscard]] int webcamSize() const;

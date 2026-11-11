@@ -1,5 +1,46 @@
 //! Resource-free follow geometry; desktop points stay independent of backing pixels.
+use std::time::{Duration, Instant};
+
 use snow_media::geometry::{DesktopRect, GeometryError};
+
+pub(super) struct MotionCadence {
+    interval: Duration,
+    next: Option<Instant>,
+}
+
+impl MotionCadence {
+    pub(super) fn new(fps: u32) -> Self {
+        Self {
+            interval: Duration::from_nanos(1_000_000_000u64.div_ceil(u64::from(fps))),
+            next: None,
+        }
+    }
+
+    pub(super) fn take_frame(&mut self, now: Instant) -> bool {
+        let scheduled = self.next.unwrap_or(now);
+        if now < scheduled {
+            return false;
+        }
+        let next = scheduled + self.interval;
+        self.next = Some(if next > now {
+            next
+        } else {
+            now + self.interval
+        });
+        true
+    }
+
+    pub(super) fn wait_limit(&self, now: Instant, timeout: Duration) -> Duration {
+        // A missing cursor sample can leave an elapsed deadline pending.
+        self.next
+            .filter(|&next| next > now)
+            .map_or(timeout, |next| timeout.min(next.duration_since(now)))
+    }
+
+    pub(super) fn restart(&mut self) {
+        self.next = None;
+    }
+}
 
 pub(super) fn contains(bounds: DesktopRect, cursor: (f64, f64)) -> bool {
     cursor.0.is_finite()
@@ -135,5 +176,28 @@ mod tests {
         assert!(!can_publish(false, 1, 2, true, right, (500.0, 400.0)));
         assert!(!can_publish(false, 1, 1, false, right, (500.0, 400.0)));
         assert!(can_publish(true, 1, 2, false, left, (500.0, 400.0)));
+    }
+
+    #[test]
+    fn motion_cadence_bounds_frequent_polls_and_skips_missed_frames() {
+        let now = Instant::now();
+        let mut cadence = MotionCadence::new(20);
+        let at = |millis| now + Duration::from_millis(millis);
+        let timeout = Duration::from_millis(20);
+        assert!(cadence.take_frame(at(0)));
+        assert!(!cadence.take_frame(at(49)));
+        assert_eq!(
+            cadence.wait_limit(at(49), timeout),
+            Duration::from_millis(1)
+        );
+        assert_eq!(cadence.wait_limit(at(50), timeout), timeout);
+        assert_eq!(cadence.wait_limit(at(54), timeout), timeout);
+        assert!(cadence.take_frame(at(55)));
+        assert!(!cadence.take_frame(at(99)));
+        assert!(cadence.take_frame(at(100)));
+        assert!(cadence.take_frame(at(270)));
+        assert!(!cadence.take_frame(at(271)));
+        cadence.restart();
+        assert!(cadence.take_frame(at(271)));
     }
 }

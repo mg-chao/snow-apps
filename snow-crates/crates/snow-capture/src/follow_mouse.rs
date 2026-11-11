@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender};
 use snow_cursor::{CursorProjector, CursorSampler, CursorShape, CursorSnapshot, CursorTargetInfo};
 use snow_d3d11::{Rect, SharedDevice, TexturePool, VideoLayer};
+use snow_media::follow_mouse::{FollowMouseMotion, FollowMouseOptions};
 use snow_media::geometry::{DesktopRect, DesktopSpace, DesktopTransform, PixelSize};
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
@@ -95,6 +96,16 @@ fn crop(nominal: CaptureRegion, bounds: CaptureRegion, x: i32, y: i32) -> Captur
         y: top as i32,
         width: width as u32,
         height: height as u32,
+    }
+}
+
+fn desktop_rect(region: CaptureRegion) -> DesktopRect {
+    DesktopRect {
+        space: DesktopSpace::PhysicalPixels,
+        x: f64::from(region.x),
+        y: f64::from(region.y),
+        width: f64::from(region.width),
+        height: f64::from(region.height),
     }
 }
 
@@ -260,6 +271,7 @@ pub(crate) struct Settings {
     pub preferred: CaptureBackendKind,
     pub options: CaptureOptions,
     pub config: CaptureStreamConfig,
+    pub motion: FollowMouseOptions,
     pub gpu: bool,
     pub recycled: Option<Receiver<Frame>>,
 }
@@ -397,7 +409,10 @@ fn backend_order(preferred: CaptureBackendKind) -> Vec<CaptureBackendKind> {
 
 struct SourceControl {
     canceled: AtomicBool,
-    paused: AtomicBool,
+    // Odd revisions are paused. The transition and its revision are observed
+    // together so the source never integrates across a pause/resume race.
+    pause_revision: AtomicU32,
+    admitted: AtomicBool,
     timing: Mutex<(Option<Instant>, u32)>,
     wake: Sender<()>,
     changes: Receiver<()>,
@@ -407,7 +422,8 @@ impl SourceControl {
         let (wake, changes) = crossbeam_channel::bounded(1);
         Self {
             canceled: AtomicBool::new(false),
-            paused: AtomicBool::new(false),
+            pause_revision: AtomicU32::new(0),
+            admitted: AtomicBool::new(false),
             timing: Mutex::new((None, fps)),
             wake,
             changes,
@@ -421,7 +437,13 @@ impl SourceControl {
         self.canceled.load(Ordering::Acquire)
     }
     fn set_paused(&self, paused: bool) {
-        if self.paused.swap(paused, Ordering::AcqRel) != paused {
+        if self
+            .pause_revision
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |revision| {
+                ((revision & 1 != 0) != paused).then(|| revision.wrapping_add(1))
+            })
+            .is_ok()
+        {
             let _ = self.wake.try_send(());
         }
     }
@@ -453,7 +475,7 @@ impl SourceControl {
         }
     }
     fn wait_until_resumed(&self) -> bool {
-        while self.paused.load(Ordering::Acquire) && !self.is_canceled() {
+        while self.pause_revision.load(Ordering::Acquire) & 1 != 0 && !self.is_canceled() {
             if self.changes.recv().is_err() {
                 return false;
             }
@@ -640,6 +662,7 @@ pub(crate) fn run(
         publish(frame);
     };
     emit(first, active.monitor);
+    active.control.admitted.store(true, Ordering::Release);
     let mut pending: Option<SourceWorker> = None;
     let mut retiring: Option<SourceWorker> = None;
     let mut handoff = Handoff::new(active.monitor, Instant::now());
@@ -690,6 +713,7 @@ pub(crate) fn run(
                         // on the same monitor and crop. Always admit its first image.
                         frame.metadata_mut().is_duplicate = false;
                         emit(frame, active.monitor);
+                        active.control.admitted.store(true, Ordering::Release);
                     }
                     Some(Err(error)) => {
                         if source_geometry_changed(&error) {
@@ -1027,13 +1051,7 @@ fn annotate(
     let now = Instant::now();
     metadata.capture_transform = Some(
         DesktopTransform::new(
-            DesktopRect {
-                space: DesktopSpace::PhysicalPixels,
-                x: f64::from(region.x),
-                y: f64::from(region.y),
-                width: f64::from(region.width),
-                height: f64::from(region.height),
-            },
+            desktop_rect(region),
             PixelSize::new(region.width, region.height).map_err(CaptureError::platform)?,
         )
         .map_err(CaptureError::platform)?,
@@ -1110,8 +1128,9 @@ fn source_loop(
             );
             match candidate.capture(settings, region, point, &mut projector, &mut shape) {
                 Ok(Some(frame)) => {
+                    let initial_region = frame.region();
                     publish_source_frame(frame, &mut unversioned_content, send, discard);
-                    source = Some(candidate);
+                    source = Some((candidate, initial_region));
                     break;
                 }
                 Err(error @ (CaptureError::ResolutionChanged(..) | CaptureError::MonitorLost)) => {
@@ -1137,7 +1156,13 @@ fn source_loop(
             break;
         }
     }
-    let mut source = source.ok_or(last_error)?;
+    let (mut source, initial_region) = source.ok_or(last_error)?;
+    let mut motion = FollowMouseMotion::new(
+        desktop_rect(initial_region),
+        desktop_rect(monitor.bounds),
+        settings.motion,
+        Instant::now(),
+    );
     let mut cadence = AlignedCaptureCadence {
         origin: Instant::now(),
         fps: settings.config.target_fps,
@@ -1145,6 +1170,7 @@ fn source_loop(
     };
     let mut failures = 0usize;
     let mut previous_origin = None;
+    let mut last_pause_revision = 0;
     while control.wait_until_resumed() {
         let (origin, fps) = *control
             .timing
@@ -1158,18 +1184,31 @@ fn source_loop(
         }
         if cadence.wait_interruptibly(Instant::now(), |wait| control.wait(wait))
             || control.is_canceled()
-            || control.paused.load(Ordering::Acquire)
         {
+            continue;
+        }
+        let pause_revision = control.pause_revision.load(Ordering::Acquire);
+        if pause_revision & 1 != 0 {
             continue;
         }
         let point = sample_cursor(&mut cursor, settings).unwrap_or_else(|_| last_cursor.clone());
         last_cursor = point.clone();
-        let region = crop(
-            settings.nominal,
-            monitor.bounds,
-            point.absolute_x,
-            point.absolute_y,
-        );
+        if pause_revision != last_pause_revision {
+            motion.restart_clock();
+            last_pause_revision = pause_revision;
+        }
+        let now = Instant::now();
+        let position = (f64::from(point.absolute_x), f64::from(point.absolute_y));
+        let view = if control.admitted.load(Ordering::Acquire) {
+            motion.advance(position, now)
+        } else {
+            motion.center(position, now)
+        };
+        let region = CaptureRegion {
+            x: view.x as i32,
+            y: view.y as i32,
+            ..initial_region
+        };
         match source.capture(settings, region, point, &mut projector, &mut shape) {
             Ok(Some(frame)) => {
                 failures = 0;

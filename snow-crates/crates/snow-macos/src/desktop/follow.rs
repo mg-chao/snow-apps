@@ -2,6 +2,7 @@
 //! discovery, startup, first-frame readiness and teardown never block encoding.
 use super::*;
 use crossbeam_channel::{Receiver, TryRecvError};
+use snow_media::follow_mouse::FollowMouseMotion;
 
 pub(super) struct Prepared {
     pub display: DisplayInfo,
@@ -26,6 +27,9 @@ enum Flight {
 pub(super) struct FollowState {
     pub nominal: DesktopRect,
     pub display: DisplayInfo,
+    motion_options: FollowMouseOptions,
+    motion: Option<FollowMouseMotion>,
+    motion_cadence: super::follow_policy::MotionCadence,
     pub changed_at: Instant,
     flight: Option<Flight>,
     retry_at: Instant,
@@ -81,6 +85,9 @@ impl FollowState {
             Self {
                 nominal,
                 display,
+                motion_options: config.follow_mouse_options,
+                motion: None,
+                motion_cadence: super::follow_policy::MotionCadence::new(config.fps),
                 changed_at: Instant::now(),
                 flight: None,
                 retry_at: Instant::now(),
@@ -95,6 +102,53 @@ impl FollowState {
 
     pub fn viewport(&self, cursor: (f64, f64)) -> MacResult<DesktopRect> {
         super::follow_policy::viewport(self.nominal, self.display.bounds, cursor).map_err(geometry)
+    }
+
+    pub fn advance_viewport(
+        &mut self,
+        cursor: (f64, f64),
+        now: Instant,
+    ) -> MacResult<Option<DesktopRect>> {
+        let frame_due = self.motion_cadence.take_frame(now);
+        if self.published
+            && let Some(motion) = &mut self.motion
+        {
+            let motion_enabled = self.motion_options != FollowMouseOptions::default();
+            return Ok((frame_due || !motion_enabled).then(|| motion.advance(cursor, now)));
+        }
+        let viewport = self.viewport(cursor)?;
+        self.motion = Some(FollowMouseMotion::new(
+            viewport,
+            self.display.bounds,
+            self.motion_options,
+            now,
+        ));
+        Ok(Some(viewport))
+    }
+
+    pub fn set_display(&mut self, display: DisplayInfo) {
+        self.display = display;
+        self.motion = None;
+        self.motion_cadence.restart();
+    }
+
+    pub fn restart_motion_clock(&mut self) {
+        self.motion_cadence.restart();
+        if let Some(motion) = &mut self.motion {
+            motion.restart_clock();
+        }
+    }
+
+    pub fn motion_wait_limit(&self, now: Instant, timeout: Duration) -> Duration {
+        if self
+            .motion
+            .as_ref()
+            .is_some_and(FollowMouseMotion::is_moving)
+        {
+            self.motion_cadence.wait_limit(now, timeout)
+        } else {
+            timeout
+        }
     }
 
     pub fn poll(

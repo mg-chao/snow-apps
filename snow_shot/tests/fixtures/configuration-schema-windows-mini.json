@@ -1406,6 +1406,36 @@
       "defaultStringIsNull": false,
       "defaultValue": false,
       "integerRange": null,
+      "key": "screen_recording/follow_mouse",
+      "maximumListItems": -1,
+      "valueKind": "Boolean"
+    },
+    {
+      "allowedStringValues": [],
+      "defaultJsonType": 1,
+      "defaultStringIsNull": false,
+      "defaultValue": true,
+      "integerRange": null,
+      "key": "screen_recording/follow_mouse_smooth_movement",
+      "maximumListItems": -1,
+      "valueKind": "Boolean"
+    },
+    {
+      "allowedStringValues": [],
+      "defaultJsonType": 1,
+      "defaultStringIsNull": false,
+      "defaultValue": true,
+      "integerRange": null,
+      "key": "screen_recording/follow_mouse_reduce_jitter",
+      "maximumListItems": -1,
+      "valueKind": "Boolean"
+    },
+    {
+      "allowedStringValues": [],
+      "defaultJsonType": 1,
+      "defaultStringIsNull": false,
+      "defaultValue": false,
+      "integerRange": null,
       "key": "screen_recording/enable_webcam",
       "maximumListItems": -1,
       "valueKind": "Boolean"

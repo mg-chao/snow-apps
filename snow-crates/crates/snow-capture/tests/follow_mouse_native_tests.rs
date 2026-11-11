@@ -10,6 +10,7 @@ use snow_capture::{
     CaptureEvent, CaptureOptions, CaptureRegion, CaptureStream, CaptureStreamConfig,
     CaptureWorkload, CapturedFrame, FrameMetadata, MonitorLayout, set_bench_follow_mouse_position,
 };
+use snow_media::follow_mouse::FollowMouseOptions;
 
 struct Reset;
 impl Drop for Reset {
@@ -67,6 +68,15 @@ fn gpu_hidden_at(stream: &GpuCaptureStream, x: i32, y: i32) -> GpuCapturedFrame 
     }
 }
 fn gpu_at(stream: &GpuCaptureStream, x: i32, y: i32) -> GpuCapturedFrame {
+    gpu_at_when(stream, x, y, |_| true)
+}
+
+fn gpu_at_when(
+    stream: &GpuCaptureStream,
+    x: i32,
+    y: i32,
+    ready: impl Fn(&FrameMetadata) -> bool,
+) -> GpuCapturedFrame {
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         assert!(
@@ -74,12 +84,85 @@ fn gpu_at(stream: &GpuCaptureStream, x: i32, y: i32) -> GpuCapturedFrame {
             "following GPU source did not reach target"
         );
         match stream.recv_timeout(Duration::from_millis(100)) {
-            Ok(GpuCaptureEvent::Frame(frame)) if at(frame.metadata(), x, y) => return frame,
+            Ok(GpuCaptureEvent::Frame(frame))
+                if at(frame.metadata(), x, y) && ready(frame.metadata()) =>
+            {
+                return frame;
+            }
             Ok(GpuCaptureEvent::Error(error)) => panic!("following GPU capture: {error}"),
             Ok(GpuCaptureEvent::StreamEnded) => panic!("following GPU capture ended"),
             _ => {}
         }
     }
+}
+
+#[test]
+#[ignore = "requires a live interactive desktop; uses synthetic pointer coordinates"]
+fn follow_mouse_native_motion_reprojects_cursor_without_stationary_geometry_revisions() {
+    let _reset = Reset;
+    let layout = MonitorLayout::snapshot().unwrap();
+    let monitor = layout
+        .monitors
+        .iter()
+        .find(|monitor| monitor.width >= 640 && monitor.height >= 400)
+        .expect("a display must fit the test viewport and its pan");
+    let (x, y) = (
+        monitor.x + (monitor.width / 2) as i32,
+        monitor.y + (monitor.height / 2) as i32,
+    );
+    let region = CaptureRegion {
+        x: x - 160,
+        y: y - 90,
+        width: 320,
+        height: 180,
+    };
+    set_bench_follow_mouse_position(Some((x, y)));
+    let stream = GpuCaptureStream::spawn_follow_mouse_with_motion(
+        region,
+        CaptureBackendKind::WindowsGraphicsCapture,
+        config(),
+        FollowMouseOptions {
+            smooth_movement: true,
+            reduce_jitter: true,
+        },
+    )
+    .unwrap();
+    let first = gpu_at(&stream, x, y);
+    let left = f64::from(region.x);
+    assert_eq!(first.metadata().capture_transform().unwrap().source.x, left);
+
+    set_bench_follow_mouse_position(Some((x + 40, y + 30)));
+    let inside = gpu_at(&stream, x + 40, y + 30);
+    assert_eq!(
+        inside.metadata().configuration_generation(),
+        first.metadata().configuration_generation()
+    );
+
+    let goal = left + 96.0;
+    set_bench_follow_mouse_position(Some((x + 96, y)));
+    let panning = gpu_at_when(&stream, x + 96, y, |metadata| {
+        let origin = metadata.capture_transform().unwrap().source.x;
+        origin > left && origin < goal
+    });
+    assert!(
+        panning.metadata().configuration_generation()
+            > inside.metadata().configuration_generation()
+    );
+    let settled = gpu_at_when(&stream, x + 96, y, |metadata| {
+        metadata.capture_transform().unwrap().source.x == goal
+    });
+    assert!(
+        settled.metadata().configuration_generation()
+            > panning.metadata().configuration_generation()
+    );
+
+    set_bench_follow_mouse_position(Some((x + 60, y)));
+    let held = gpu_at(&stream, x + 60, y);
+    assert_eq!(
+        held.metadata().configuration_generation(),
+        settled.metadata().configuration_generation()
+    );
+    stream.stop_and_drain();
 }
 
 fn cpu_at(stream: &CaptureStream, x: i32, y: i32) -> CapturedFrame {

@@ -156,7 +156,7 @@ typedef struct SnowCaptureExclusions {
 } SnowCaptureExclusions;
 #endif
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 18u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 19u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -251,6 +251,9 @@ typedef struct SnowCaptureDirectRecordingConfig {
     /* Version 18: follow the mouse within its monitor. 0 disables, 1 enables.
        The nominal source extent and encoded output size remain fixed. */
     uint32_t follow_mouse;
+    /* Version 19: follow motion options, each 0 or 1. Older callers use immediate centering. */
+    uint32_t follow_mouse_smooth_movement;
+    uint32_t follow_mouse_reduce_jitter;
 } SnowCaptureDirectRecordingConfig;
 
 #define SNOW_RECORDING_DEFERRED_OPTIONS_VERSION 1u

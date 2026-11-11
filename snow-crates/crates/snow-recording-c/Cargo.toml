@@ -8,6 +8,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 snow-webcam = { path = "../snow-webcam" }
 snow-memory = { path = "../snow-memory" }
+snow-media = { path = "../snow-media" }
 snow-capture = { path = "../snow-capture" }
 snow-screen-recorder = { path = "../snow-screen-recorder", default-features = false }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
@@ -16,7 +17,6 @@ snow-recording-export = { path = "../snow-recording-export", default-features = 
 
 [target.'cfg(target_os = "macos")'.dependencies]
 snow-macos = { path = "../snow-macos" }
-snow-media = { path = "../snow-media" }
 
 [features]
 default = ["legacy-capture", "hdr-encoding"]

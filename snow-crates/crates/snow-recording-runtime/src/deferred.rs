@@ -2093,6 +2093,7 @@ mod tests {
     fn test_config(output_path: PathBuf) -> DirectRecordingConfig {
         DirectRecordingConfig {
             follow_mouse: false,
+            follow_mouse_options: Default::default(),
             keyboard_filter: Default::default(),
             webcam: None,
             loop_animated_images: false,

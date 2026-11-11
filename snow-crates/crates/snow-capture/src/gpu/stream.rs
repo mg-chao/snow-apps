@@ -7,6 +7,7 @@ use snow_core::error::{RecvTimeoutError, TryRecvError};
 use snow_core::event::{DeliveryLane, StreamEvent};
 use snow_core::stream_queue::StreamQueue;
 use snow_d3d11::SharedDevice;
+use snow_media::follow_mouse::FollowMouseOptions;
 
 use super::{GpuCaptureSession, GpuCapturedFrame};
 use crate::backend::CaptureBackendKind;
@@ -70,6 +71,20 @@ impl GpuCaptureStream {
         backend: CaptureBackendKind,
         config: CaptureStreamConfig,
     ) -> CaptureResult<Self> {
+        Self::spawn_follow_mouse_with_motion(
+            nominal_region,
+            backend,
+            config,
+            FollowMouseOptions::default(),
+        )
+    }
+
+    pub fn spawn_follow_mouse_with_motion(
+        nominal_region: CaptureRegion,
+        backend: CaptureBackendKind,
+        config: CaptureStreamConfig,
+        motion: FollowMouseOptions,
+    ) -> CaptureResult<Self> {
         if config.target_fps == 0 || nominal_region.width == 0 || nominal_region.height == 0 {
             return Err(CaptureError::InvalidConfig(
                 "following requires nonempty geometry and positive FPS".into(),
@@ -104,6 +119,7 @@ impl GpuCaptureStream {
                             ..Default::default()
                         },
                         config,
+                        motion,
                         gpu: true,
                         recycled: None,
                     },
