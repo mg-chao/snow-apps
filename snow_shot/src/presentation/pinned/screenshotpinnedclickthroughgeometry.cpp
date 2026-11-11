@@ -24,11 +24,18 @@ screenshot_pinned_click_through::ControlsGeometry screenshot_pinned_click_throug
 
     const int preferredLeft =
         pinnedNativeGeometry.x() + pinnedNativeGeometry.width() - inset - totalWidth;
-    const int preferredTop = pinnedNativeGeometry.y() - inset - size;
     const int maximumLeft = screenPhysicalBounds.x() + screenPhysicalBounds.width() - totalWidth;
     const int maximumTop = screenPhysicalBounds.y() + screenPhysicalBounds.height() - size;
+    const int aboveTop = pinnedNativeGeometry.top() - inset - size;
+    const int belowTop = pinnedNativeGeometry.bottom() + 1 + inset;
+    int top = pinnedNativeGeometry.top() + inset;
+    if (aboveTop >= screenPhysicalBounds.top() && aboveTop <= maximumTop) {
+        top = aboveTop;
+    } else if (belowTop >= screenPhysicalBounds.top() && belowTop <= maximumTop) {
+        top = belowTop;
+    }
     const QPoint origin(qBound(screenPhysicalBounds.x(), preferredLeft, maximumLeft),
-                        qBound(screenPhysicalBounds.y(), preferredTop, maximumTop));
+                        qBound(screenPhysicalBounds.y(), top, maximumTop));
     return {QRect(origin, QSize(editorWidth, size)),
             QRect(origin + QPoint(editorWidth + spacing, 0), QSize(size, size)),
             QRect(origin + QPoint(editorWidth + 2 * spacing + size, 0), QSize(size, size))};
