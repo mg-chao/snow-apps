@@ -8980,7 +8980,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     # opening capture devices, recording the desktop, or exporting media.
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
         screenshotWindowNamesAtPoint=test_recording_window_names_at_point)
-    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state set_audio_gain set_audio_metering take_audio_levels request_exclusions exclusion_status)
+    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state set_audio_gain set_audio_metering take_audio_levels capture_viewport request_exclusions exclusion_status)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
             "snow_recording_session_${_operation}=test_recording_session_${_operation}")
     endforeach()
@@ -9031,6 +9031,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-follow-mouse-tests
         COMMAND snow-shot-screen-recording-controller-tests --follow-mouse-only -platform offscreen)
     set_tests_properties(snow-shot-recording-follow-mouse-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    if(WIN32)
+        add_test(NAME snow-shot-recording-follow-area-native-tests
+            COMMAND snow-shot-screen-recording-controller-tests --follow-area-native-only -platform windows)
+        set_tests_properties(snow-shot-recording-follow-area-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
+    endif()
     add_test(NAME snow-shot-recording-follow-mouse-icon-tests
         COMMAND snow-shot-generated-icon-pack-tests --follow-mouse-only -platform offscreen)
     set_tests_properties(snow-shot-recording-follow-mouse-icon-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -9347,6 +9355,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-recording-angle-wheel-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25")
+
+    foreach(_follow_scale IN ITEMS 1 1.25 1.5 1.75 2)
+        add_test(NAME snow-shot-recording-follow-viewport-dpi-${_follow_scale}-tests
+            COMMAND snow-shot-screen-recording-area-window-tests --follow-viewport-only -platform offscreen)
+        set_tests_properties(snow-shot-recording-follow-viewport-dpi-${_follow_scale}-tests PROPERTIES
+            LABELS "unit" TIMEOUT 30 ENVIRONMENT "QT_SCALE_FACTOR=${_follow_scale}")
+    endforeach()
+    if(WIN32)
+        add_test(NAME snow-shot-recording-follow-viewport-native-tests
+            COMMAND snow-shot-screen-recording-area-window-tests --follow-viewport-only -platform windows)
+        set_tests_properties(snow-shot-recording-follow-viewport-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30)
+    endif()
 
     add_executable(snow-shot-ocr-text-layout-tests
         tests/screenshot_ocr_text_layout_tests.cpp
@@ -11186,6 +11207,21 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+
+    if(TARGET snow-shot-screen-recording-area-window-tests)
+        target_sources(snow-shot-screen-recording-area-window-tests PRIVATE
+            tests/screen_recording_follow_performance_benchmark.cpp
+            tests/screen_recording_follow_performance_benchmark.h
+            src/presentation/recording/screenrecordingperfinstrumentation.cpp)
+        target_compile_definitions(snow-shot-screen-recording-area-window-tests PRIVATE
+            SNOW_RECORDING_FOLLOW_BENCHMARK=1 SNOW_SHOT_RECORDING_PERF_INSTRUMENTATION=1)
+        add_test(NAME snow-shot-recording-follow-performance-benchmark
+            COMMAND snow-shot-screen-recording-area-window-tests --follow-performance -platform offscreen)
+        set_tests_properties(snow-shot-recording-follow-performance-benchmark PROPERTIES
+            LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT "QT_SCALE_FACTOR=1.25"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
 
     add_custom_target(snow-shot-keyboard-recording-performance-benchmark

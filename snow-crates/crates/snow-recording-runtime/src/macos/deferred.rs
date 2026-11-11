@@ -129,6 +129,9 @@ pub(crate) fn run_capture(
                 recording.step(schedule.wait(clock.active_elapsed_duration(Instant::now())))?;
             match event {
                 NativeRecordingEvent::Frame { pts } => {
+                    capture_controls
+                        .viewport
+                        .publish(Some(recording.source_transform()));
                     frame_index.push(pts)?;
                     admitted = true;
                 }

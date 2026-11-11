@@ -129,6 +129,7 @@ pub(crate) enum Command {
 }
 #[derive(Clone)]
 pub(crate) struct DeferredCaptureControls {
+    pub viewport: crate::capture_viewport::CaptureViewportState,
     pub audio: AudioControlHandle,
     #[cfg(target_os = "macos")]
     pub exclusions: snow_macos::desktop::ExclusionControl,
@@ -183,6 +184,7 @@ impl DeferredRecordingSession {
             stop_boundary: Arc::new(Mutex::new(None)),
             control_clock: Arc::new(Mutex::new(None)),
             capture_controls: DeferredCaptureControls {
+                viewport: Default::default(),
                 audio,
                 #[cfg(target_os = "macos")]
                 exclusions: Default::default(),
@@ -253,6 +255,10 @@ impl DeferredRecordingSession {
             _ => RecordingState::Created,
         }
     }
+    pub fn capture_viewport(&self) -> Option<crate::CaptureViewport> {
+        self.capture_controls.viewport.snapshot()
+    }
+
     pub fn audio_control(&self) -> AudioControlHandle {
         self.capture_controls.audio.clone()
     }
@@ -1029,6 +1035,9 @@ fn run_capture(
                         }
                     }
                 }
+                capture_controls
+                    .viewport
+                    .publish(frame.metadata().capture_transform());
                 source_changed = false;
                 frame_index.push(slot.pts)?;
                 admitted = true;

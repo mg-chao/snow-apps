@@ -77,6 +77,47 @@ pub struct SnowRecordingSessionImpl {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnowRecordingCaptureViewport {
+    pub revision: u64,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_session_capture_viewport(
+    session: *const SnowRecordingSessionImpl,
+    viewport: *mut SnowRecordingCaptureViewport,
+) -> u8 {
+    if viewport.is_null() {
+        return 0;
+    }
+    let Some(session) = (unsafe { session.as_ref() }) else {
+        return 0;
+    };
+    let snapshot = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => recording.capture_viewport(),
+        Some(RecordingSessionKind::Deferred(recording)) => recording.capture_viewport(),
+        _ => None,
+    };
+    let Some(snapshot) = snapshot else {
+        return 0;
+    };
+    unsafe {
+        *viewport = SnowRecordingCaptureViewport {
+            revision: snapshot.revision,
+            x: snapshot.source.x,
+            y: snapshot.source.y,
+            width: snapshot.source.width,
+            height: snapshot.source.height,
+        };
+    }
+    1
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct SnowRecordingAudioLevel {
     pub peak: f32,
@@ -2030,6 +2071,53 @@ mod tests {
             config.system_audio_gain_db = system;
             config.microphone_gain_db = microphone;
             assert!(parse_direct_recording_config(&config).is_err());
+        }
+    }
+
+    #[test]
+    fn capture_viewport_ffi_is_unavailable_until_output_accepts_a_frame() {
+        let config = direct_config(c"viewport.mp4");
+        for deferred in [false, true] {
+            let config = parse_direct_recording_config(&config).unwrap();
+            let recording = if deferred {
+                RecordingSessionKind::Deferred(Box::new(
+                    snow_screen_recorder::DeferredRecordingSession::create(
+                        config,
+                        Default::default(),
+                    )
+                    .unwrap(),
+                ))
+            } else {
+                RecordingSessionKind::Direct(Box::new(
+                    DirectRecordingSession::create(config).unwrap(),
+                ))
+            };
+            let session = SnowRecordingSessionImpl {
+                recording: Some(recording),
+                state: RecordingState::Created,
+            };
+            let sentinel = SnowRecordingCaptureViewport {
+                revision: 99,
+                x: -0.5,
+                y: 12.25,
+                width: 300.5,
+                height: 150.75,
+            };
+            let mut viewport = sentinel;
+            assert_eq!(
+                unsafe { snow_recording_session_capture_viewport(&session, &mut viewport) },
+                0
+            );
+            assert_eq!(viewport, sentinel);
+            assert_eq!(
+                unsafe { snow_recording_session_capture_viewport(&session, ptr::null_mut()) },
+                0
+            );
+            assert_eq!(
+                unsafe { snow_recording_session_capture_viewport(ptr::null(), &mut viewport) },
+                0
+            );
+            assert_eq!(viewport, sentinel);
         }
     }
 

@@ -155,11 +155,12 @@ bool matchesBackground(const QImage& image) {
 }
 
 bool verifyStream(QWidget& toolbar, const QString& directory, const QString& phase,
-                  SnowCaptureBackendKind backend, bool excluded, bool backgroundOnly = false) {
+                  SnowCaptureBackendKind backend, bool excluded, bool backgroundOnly = false,
+                  int inset = 3) {
     QCoreApplication::processEvents();
     toolbar.repaint();
     DwmFlush();
-    const QRect bounds = nativeContentRect(toolbar).adjusted(3, 3, -3, -3);
+    const QRect bounds = nativeContentRect(toolbar).adjusted(inset, inset, -inset, -inset);
     SnowCaptureStreamConfig config{};
     config.version = SNOW_CAPTURE_STREAM_CONFIG_VERSION;
     config.struct_size = sizeof(config);
@@ -227,6 +228,42 @@ bool verifyStream(QWidget& toolbar, const QString& directory, const QString& pha
     return saved && consecutive == 5 && visible && affinityMatches;
 }
 } // namespace
+
+int verifyFollowAreaCaptureExclusion(QWidget& area, const std::function<void()>& move) {
+    const QString directory =
+        QDir::current().filePath(QStringLiteral("capture-exclusion-evidence/follow-area"));
+    if (!QDir().mkpath(directory))
+        return 1;
+    Background background;
+    background.setGeometry(QApplication::primaryScreen()->geometry());
+    background.show();
+    background.raise();
+    area.show();
+    area.raise();
+    const auto verify = [&](const QString& phase, bool excluded) {
+        bool passed = true;
+        for (const auto backend : {SNOW_CAPTURE_BACKEND_DXGI, SNOW_CAPTURE_BACKEND_WGC})
+            passed = verifyStream(area, directory, phase, backend, excluded, false, 0) && passed;
+        const HWND handle = reinterpret_cast<HWND>(area.winId());
+        const QRect bounds = nativeContentRect(area);
+        for (const auto point : {bounds.topLeft(), bounds.center()}) {
+            passed = SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(point.x(), point.y())) ==
+                         HTTRANSPARENT &&
+                     passed;
+        }
+        return passed && area.isVisible() && area.windowOpacity() == 1.0;
+    };
+    bool passed = verify(QStringLiteral("visible"), false);
+    passed = excludeToolbarAndCheckFallback(area) && passed;
+    passed = verify(QStringLiteral("excluded"), true) && passed;
+    move();
+    QCoreApplication::processEvents();
+    passed = verify(QStringLiteral("moved-excluded"), true) && passed;
+    passed = snow_shot::platform::setWindowExcludedFromCapture(&area, false) && passed;
+    passed = verify(QStringLiteral("restored"), false) && passed;
+    area.hide();
+    return passed ? 0 : 1;
+}
 
 int verifyToolbarCaptureExclusionAffinity(QWidget& window, const char* name, bool showWindow) {
     std::cout << "Affinity lifecycle: " << name << std::endl;

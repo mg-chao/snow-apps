@@ -422,6 +422,22 @@ typedef struct SnowRecordingExclusionStatus {
     /* 0: ready; 1: pending; 2: failed. */
     uint32_t status;
 } SnowRecordingExclusionStatus;
+
+typedef struct SnowRecordingCaptureViewport {
+    uint64_t revision;
+    double x;
+    double y;
+    double width;
+    double height;
+} SnowRecordingCaptureViewport;
+/* Nonblocking snapshot of the last successfully submitted video frame. Desktop
+ * coordinates are physical pixels on Windows and points on macOS. Returns 0
+ * without modifying output when unavailable (including before the first frame).
+ * Revision changes only when the rectangle changes; it is local to this session.
+ * Do not call concurrently with session destruction, stop, or finalization. */
+uint8_t snow_recording_session_capture_viewport(const SnowRecordingSession* session,
+                                                SnowRecordingCaptureViewport* viewport);
+
 /* Copies all IDs immediately. Required windows must appear in the native content snapshot. */
 uint8_t snow_recording_session_request_exclusions(SnowRecordingSession* session,
                                                   const SnowCaptureExclusions* exclusions,

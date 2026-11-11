@@ -83,6 +83,40 @@ void recordingFrameStaysOutsideTheSelection(qreal scale) {
             "recording frame padding should remain one physical pixel on every side");
 }
 
+void followFramePansWithoutResizingOrClipping() {
+    for (qreal scale : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+        for (QSizeF extent :
+             {QSizeF(8.25, 6.5), QSizeF(641.2, 359.6), QSizeF(1920, 1080), QSizeF(3840, 2160)}) {
+            QSize windowSize;
+            for (int step = 0; step < 160; ++step) {
+                const QRectF selection(
+                    QPointF((-80 + step * 0.25) / scale, (40 + step * 0.125) / scale),
+                    extent / scale);
+                const auto geometry =
+                    recording::screenRecordingFollowFrameGeometry(selection, scale);
+                if (step == 0)
+                    windowSize = geometry.windowGeometry.size();
+                require(geometry.windowGeometry.size() == windowSize,
+                        "panning a fixed viewport must retain a fixed backing-store extent");
+                require(geometry.selectionRect.translated(geometry.windowGeometry.topLeft()) ==
+                            selection,
+                        "stable backing geometry must preserve the exact fractional viewport");
+                // Model independent rounding of the native window origin and extent.
+                const QRectF native(QPointF(qRound(geometry.windowGeometry.x() * scale) / scale,
+                                            qRound(geometry.windowGeometry.y() * scale) / scale),
+                                    QSizeF(qRound(windowSize.width() * scale) / scale,
+                                           qRound(windowSize.height() * scale) / scale));
+                const QRectF frame =
+                    geometry.frameRect.translated(geometry.windowGeometry.topLeft());
+                require(native.contains(frame),
+                        "native rounding must not clip any side of the moving border");
+            }
+        }
+    }
+    require(!recording::screenRecordingFollowFrameGeometry({}, 1.25).windowGeometry.isValid(),
+            "an invalid viewport must not produce a follow window");
+}
+
 void physicalSelectionMapsToItsLogicalSubregion() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "geometry test requires a primary screen");
@@ -449,6 +483,7 @@ void minimumRegionsAndCrossingEdges() {
 int main(int argc, char** argv) {
     QGuiApplication application(argc, argv);
     minimumRegionsAndCrossingEdges();
+    followFramePansWithoutResizingOrClipping();
     observedNativeGeometryFollowsDisplaysWithoutRescalingPhysicalCoordinates();
     physicalSelectionMapsToItsLogicalSubregion();
     recordingFrameStaysOutsideTheSelection(1.0);

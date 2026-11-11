@@ -94,6 +94,29 @@ ScreenRecordingAreaFrameGeometry screenRecordingAreaFrameGeometry(const QRectF& 
     };
 }
 
+ScreenRecordingAreaFrameGeometry screenRecordingFollowFrameGeometry(const QRectF& logicalRegion,
+                                                                    qreal physicalScale) {
+    auto geometry = screenRecordingAreaFrameGeometry(logicalRegion, physicalScale);
+    if (!logicalRegion.isValid() || logicalRegion.isEmpty())
+        return geometry;
+    // Keep one physical pixel outside the frame for native origin/size rounding.
+    // The extra logical pixel covers every fractional origin without resizing
+    // the backing store as the viewport pans. The painted frame remains exact.
+    const qreal guard = 1.0 / validScale(physicalScale);
+    const QRectF frame = logicalRegion.adjusted(-geometry.borderWidth - geometry.paddingWidth,
+                                                -geometry.borderWidth - geometry.paddingWidth,
+                                                geometry.borderWidth + geometry.paddingWidth,
+                                                geometry.borderWidth + geometry.paddingWidth);
+    const QRectF envelope = frame.adjusted(-guard, -guard, guard, guard);
+    geometry.windowGeometry = QRect(QPoint(static_cast<int>(std::floor(envelope.left())),
+                                           static_cast<int>(std::floor(envelope.top()))),
+                                    QSize(static_cast<int>(std::ceil(envelope.width())) + 1,
+                                          static_cast<int>(std::ceil(envelope.height())) + 1));
+    geometry.selectionRect = logicalRegion.translated(-geometry.windowGeometry.topLeft());
+    geometry.frameRect = frame.translated(-geometry.windowGeometry.topLeft());
+    return geometry;
+}
+
 ScreenRecordingAreaBorderGeometry screenRecordingAreaBorderGeometry(const QRectF& frameRect,
                                                                     const QRectF& selectionRect,
                                                                     qreal paddingWidth) {

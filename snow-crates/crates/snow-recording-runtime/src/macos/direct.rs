@@ -158,6 +158,7 @@ enum Command {
     Finish(Instant),
 }
 pub struct DirectSession {
+    capture_viewport: crate::capture_viewport::CaptureViewportState,
     config: Option<DirectRecordingConfig>,
     commands: Option<crossbeam_channel::Sender<Command>>,
     worker: Option<JoinHandle<Result<NativeRecordingReport>>>,
@@ -190,6 +191,7 @@ impl DirectSession {
             config.microphone_gain_db,
         )?;
         Ok(Self {
+            capture_viewport: Default::default(),
             config: Some(config),
             commands: None,
             worker: None,
@@ -214,6 +216,7 @@ impl DirectSession {
         let exclusion_control = self.exclusion_control.clone();
         let stop_boundary = Arc::clone(&self.stop_boundary);
         let control_clock = Arc::clone(&self.control_clock);
+        let capture_viewport = self.capture_viewport.clone();
         let worker = std::thread::Builder::new()
             .name("snow-macos-recording".into())
             .spawn(move || {
@@ -260,8 +263,12 @@ impl DirectSession {
                             }
                             None => {}
                         }
-                        if let Err(error) = recording.step(Duration::from_millis(20)) {
-                            return Err(recording.preserve_failure(error));
+                        match recording.step(Duration::from_millis(20)) {
+                            Ok(NativeRecordingEvent::Frame { .. }) => {
+                                capture_viewport.publish(Some(recording.source_transform()));
+                            }
+                            Ok(_) => {}
+                            Err(error) => return Err(recording.preserve_failure(error)),
                         }
                     }
                 })();
@@ -298,6 +305,10 @@ impl DirectSession {
             .try_send(command)
             .map_err(|_| ScreenRecorderError::Encode("recording worker stopped".into()))
     }
+    pub fn capture_viewport(&self) -> Option<crate::CaptureViewport> {
+        self.capture_viewport.snapshot()
+    }
+
     pub fn audio_control(&self) -> AudioControlHandle {
         self.audio_control.clone()
     }
