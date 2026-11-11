@@ -845,6 +845,7 @@ mod tests {
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
             follow_mouse: false,
+            follow_mouse_options: Default::default(),
             keyboard_filter: Default::default(),
             webcam: None,
             audio_mode: Default::default(),

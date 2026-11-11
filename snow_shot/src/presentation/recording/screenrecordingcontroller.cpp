@@ -313,6 +313,8 @@ struct ScreenRecordingController::Impl {
         keyboardSize = settings.keyboardSize();
         webcamEnabled = settings.webcamEnabled();
         followMouse = settings.followMouse();
+        followMouseSmoothMovement = settings.followMouseSmoothMovement();
+        followMouseReduceJitter = settings.followMouseReduceJitter();
         webcamSize = settings.webcamSize();
         webcamOffset = QPoint(settings.webcamOffsetLeft(), settings.webcamOffsetBottom());
         webcamShape = settings.webcamShape();
@@ -342,7 +344,11 @@ struct ScreenRecordingController::Impl {
                                  areaHistoryIndex = -1;
                                  return;
                              }
-                             if (key == QStringLiteral("screen_recording/follow_mouse")) {
+                             if (key == QStringLiteral("screen_recording/follow_mouse") ||
+                                 key == QStringLiteral(
+                                            "screen_recording/follow_mouse_smooth_movement") ||
+                                 key == QStringLiteral(
+                                            "screen_recording/follow_mouse_reduce_jitter")) {
                                  followSettingsRefreshPending = true;
                                  if (!automationOwned && recordingOptionsEditable())
                                      syncUi();
@@ -957,6 +963,24 @@ struct ScreenRecordingController::Impl {
                              snow_shot::storage::RecordingSettings().setFollowMouse(enabled);
                              syncUi();
                          });
+        QObject::connect(
+            palette, &ScreenshotToolPalette::recordingFollowMouseSmoothMovementChanged,
+            uiSession->connections.get(), [this](bool enabled) {
+                if (recordingOptionsEditable()) {
+                    setOption(followMouseSmoothMovement, enabled);
+                    snow_shot::storage::RecordingSettings().setFollowMouseSmoothMovement(enabled);
+                }
+                syncUi();
+            });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingFollowMouseReduceJitterChanged,
+                         uiSession->connections.get(), [this](bool enabled) {
+                             if (recordingOptionsEditable()) {
+                                 setOption(followMouseReduceJitter, enabled);
+                                 snow_shot::storage::RecordingSettings().setFollowMouseReduceJitter(
+                                     enabled);
+                             }
+                             syncUi();
+                         });
         QObject::connect(palette, &ScreenshotToolPalette::recordingWebcamEnabledChanged,
                          uiSession->connections.get(), [this](bool enabled) {
                              setOption(webcamEnabled, enabled);
@@ -1337,6 +1361,9 @@ struct ScreenRecordingController::Impl {
         }
         setCaptureActivity(true);
         startScheduled = true;
+        if (auto* popover = toolbarWindow->palette()->recordingFollowMousePopover()) {
+            popover->hide();
+        }
         syncPreview();
         uiSession->preview->stopAndClear(true);
         operation = QUuid::createUuid().toString(QUuid::Id128);
@@ -1459,6 +1486,8 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(recordControlKeys),
                 static_cast<uint32_t>(preserveKeyboardShortcuts),
                 static_cast<uint32_t>(followMouse),
+                static_cast<uint32_t>(followMouseSmoothMovement),
+                static_cast<uint32_t>(followMouseReduceJitter),
             };
             sessionLoopAnimatedImages = config.loop_animated_images != 0;
             const QDateTime outputTimestamp = QDateTime::currentDateTime();
@@ -2575,7 +2604,10 @@ struct ScreenRecordingController::Impl {
         if (followSettingsRefreshPending && !automationOwned && !automationNextStart &&
             recordingOptionsEditable()) {
             followSettingsRefreshPending = false;
-            setOption(followMouse, snow_shot::storage::RecordingSettings().followMouse());
+            const snow_shot::storage::RecordingSettings settings;
+            setOption(followMouse, settings.followMouse());
+            setOption(followMouseSmoothMovement, settings.followMouseSmoothMovement());
+            setOption(followMouseReduceJitter, settings.followMouseReduceJitter());
         }
         refreshAudioGains();
         refreshWebcamSettings();
@@ -2609,6 +2641,8 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingKeyboardSize(keyboardSize);
             palette->setRecordingWebcamEnabled(webcamEnabled);
             palette->setRecordingFollowMouseEnabled(followMouse);
+            palette->setRecordingFollowMouseOptions(followMouseSmoothMovement,
+                                                    followMouseReduceJitter);
             palette->setRecordingWebcamSize(webcamSize);
             palette->setRecordingWebcamShape(webcamShape);
             palette->setRecordingKeyboardBackgroundColor(keyboardBackgroundColor);
@@ -2736,6 +2770,8 @@ struct ScreenRecordingController::Impl {
     snow_shot::storage::ScreenshotWindowNames sessionWindowNames;
     bool webcamEnabled = false;
     bool followMouse = false;
+    bool followMouseSmoothMovement = true;
+    bool followMouseReduceJitter = true;
     bool followSettingsRefreshPending = false;
     int webcamSize = 150;
     QPoint webcamOffset{48, 48};
@@ -3131,6 +3167,8 @@ bool ScreenRecordingController::startAutomation(const QRect& region, const QJson
         options.value(QStringLiteral("start_delay_seconds")).toInt(settings.startDelaySeconds());
     s.showCursor = options.value(QStringLiteral("show_cursor")).toBool(settings.showCursor());
     s.followMouse = options.value(QStringLiteral("follow_mouse")).toBool(settings.followMouse());
+    s.followMouseSmoothMovement = settings.followMouseSmoothMovement();
+    s.followMouseReduceJitter = settings.followMouseReduceJitter();
     s.showKeyboard = options.value(QStringLiteral("show_keyboard")).toBool(settings.showKeyboard());
     s.recordNumberKeys =
         options.value(QStringLiteral("record_number_keys")).toBool(settings.recordNumberKeys());

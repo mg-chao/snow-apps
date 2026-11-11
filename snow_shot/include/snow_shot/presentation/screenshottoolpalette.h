@@ -422,6 +422,8 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] int recordingKeyboardSize() const;
     void setRecordingFollowMouseEnabled(bool enabled);
     [[nodiscard]] bool recordingFollowMouseEnabled() const;
+    void setRecordingFollowMouseOptions(bool smoothMovement, bool reduceJitter);
+    [[nodiscard]] adqt::widgets::AdPopover* recordingFollowMousePopover() const;
     void setRecordingWebcamEnabled(bool enabled);
     [[nodiscard]] bool recordingWebcamEnabled() const;
     void setRecordingWebcamSize(int size);
@@ -650,6 +652,8 @@ class ScreenshotToolPalette final : public QWidget,
     void recordingMouseTrailDurationMsChanged(int value);
     void recordingKeyboardSizeChanged(int value);
     void recordingFollowMouseEnabledChanged(bool enabled);
+    void recordingFollowMouseSmoothMovementChanged(bool enabled);
+    void recordingFollowMouseReduceJitterChanged(bool enabled);
     void recordingWebcamEnabledChanged(bool enabled);
     void recordingWebcamSizeChanged(int size);
     void recordingWebcamShapeChanged(const QString& shape);
@@ -761,6 +765,7 @@ class ScreenshotToolPalette final : public QWidget,
     void refreshRecordingEffectSettingsModalText();
     void refreshRecordingMouseOptions();
     void refreshRecordingKeyboardOptions();
+    void refreshRecordingFollowMouseOptions();
     void refreshRecordingPostProcessingOptions();
     void refreshRecordingHighlightSwatch();
     bool activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
@@ -1083,7 +1088,12 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_recordingRecordControlKeys = true;
     bool m_recordingPreserveKeyboardShortcuts = true;
     adqt::widgets::AdButton* m_recordFollowMouseButton = nullptr;
+    adqt::widgets::AdPopover* m_recordFollowMousePopover = nullptr;
+    QPointer<adqt::widgets::AdCheckbox> m_recordFollowMouseSmoothMovementCheckbox;
+    QPointer<adqt::widgets::AdCheckbox> m_recordFollowMouseReduceJitterCheckbox;
     bool m_recordingFollowMouseEnabled = false;
+    bool m_recordingFollowMouseSmoothMovement = true;
+    bool m_recordingFollowMouseReduceJitter = true;
     adqt::widgets::AdButton* m_recordWebcamButton = nullptr;
     adqt::widgets::AdInputNumber* m_recordWebcamSizeInput = nullptr;
     adqt::widgets::AdSelect* m_recordWebcamShapeSelect = nullptr;

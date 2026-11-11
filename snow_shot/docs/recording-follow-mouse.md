@@ -1,15 +1,20 @@
 # Follow mouse recording
 
 The **Follow mouse** toggle is immediately before **Record webcam**. It starts off and remembers
-the last saved choice. Choose the mode before starting; countdown, recording, pause, and
-finalization keep the session's mode fixed. Automation's `follow_mouse` start option overrides
-the saved choice for that session only.
+the last saved choice. Hover over the control or focus it and press Down or Alt+Down to open its
+options. **Smooth movement** and **Reduce jitter** start checked and save independently. The
+recording uses the choices made before the countdown. Automation's `follow_mouse` start option
+overrides the toggle for that session and uses the saved motion options.
 
-The selected rectangle determines the nominal capture extent and output aspect ratio. The capture
-centers on the mouse, clamping to the full bounds of its monitor. If the nominal extent exceeds
-that monitor, it shrinks uniformly to fit and scales into the original encoded dimensions. Raster
-rounding can differ by less than one source pixel per axis. Moving onto a larger monitor restores
-the nominal extent. Cursor visibility does not affect following.
+The selected rectangle determines the nominal capture extent and output aspect ratio. Capture
+starts centered on the cursor and clamps to the monitor bounds. Reduce jitter holds the crop while
+the cursor is within its central half. Entering an outer quarter triggers a recenter. Smooth
+movement eases the crop toward its target. A fast cursor jump can temporarily leave the frame.
+With both options off, the crop immediately centers on each cursor sample.
+
+If the nominal extent exceeds the monitor, it shrinks uniformly to fit and scales into the original
+encoded dimensions. Raster rounding can differ by less than one source pixel per axis. Moving onto
+a larger monitor restores the nominal extent. Cursor visibility does not affect following.
 
 Follow mode keeps the area overlay visible while preparing and during the countdown, then hides it
 before capture starts. The area remains hidden during recording, pause, and finalization, and
@@ -54,8 +59,9 @@ Each admitted frame carries its actual desktop transform. Cursor observations re
 that frame. Click and trail history reprojects through the moving viewport without renewing its
 age or releasing held keys. Deferred input format 3 adds streamed viewport reprojections; readers
 continue to accept formats 1 and 2. The media footer retains the initial canvas geometry rather
-than accumulating an in-memory entry for every pan. The C recording configuration is version 18;
-versions 1 through 17 default following to disabled.
+than accumulating an in-memory entry for every pan. C recording configuration version 19 adds the
+two motion flags. Version 18 uses immediate centering when following is enabled. Versions 1 through
+17 use fixed capture.
 
 Deferred replay uses the encoded source's color matrix and range, keeping small cropped
 recordings consistent with direct output.
@@ -66,6 +72,7 @@ Build the affected C++ targets, then run filtered CTest cases for follow mode, r
 shortcuts, and the follow icon. From `snow-crates/`, Rust follow cases can be selected with:
 
 ```powershell
+cargo test -p snow-media follow_mouse
 cargo test -p snow-recording-runtime -p snow-recording-c -p snow-recording-effects -p snow-recording-model follow_mouse
 cargo test -p snow-capture follow_mouse
 cargo test -p snow-macos --test follow_mouse_policy_tests
@@ -74,8 +81,9 @@ cargo test -p snow-macos --test follow_mouse_policy_tests
 Native capture tests require an interactive desktop and opt into synthetic desktop observations;
 they never move the physical mouse. Native macOS capture and compositor execution requires macOS.
 
-The Release performance harness accepts `-FollowMouse off|stationary|pan|boundary`. It drives
-synthetic desktop positions without moving the physical mouse and reports preparation count,
+The Release performance harness accepts `-FollowMouse off|stationary|pan|boundary`. Add
+`-FollowMouseSmoothMovement` and `-FollowMouseReduceJitter` to measure the application defaults.
+It drives synthetic desktop positions without moving the physical mouse and reports preparation count,
 switch count, peak native sources, preparation latency, CPU, memory, and frame statistics. Boundary
 mode requires at least two monitors and writes an explicit skip artifact otherwise. Follow-mode
 validation decodes output dimensions, presentation timestamps, nonblank content, and spatial

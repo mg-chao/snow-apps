@@ -8185,6 +8185,9 @@ void recordingFollowMouseTests() {
                     preview->stops == previewStopsBeforeRetoggle &&
                     effectSources.back().lock() == preview,
                 "toggling follow reuses the same live composite preview source");
+        tools->recordingFollowMouseSmoothMovementChanged(false);
+        require(!settings.followMouseSmoothMovement() && settings.followMouseReduceJitter(),
+                "editing smoothing through the palette persists only that option");
         tools->recordingStartDelaySecondsChanged(1);
         std::promise<void> releaseStart;
         sessionCreateEntered = false;
@@ -8207,6 +8210,8 @@ void recordingFollowMouseTests() {
                     !previewTileVisible(*area, *preview),
                 "following keeps its area and countdown visible while retiring the preview "
                 "before native startup");
+        require(settings.setFollowMouseReduceJitter(false),
+                "save a different jitter preference for the next start during countdown");
         wait(
             [&] {
                 if (tools->recordingBusyOperation() ==
@@ -8232,8 +8237,10 @@ void recordingFollowMouseTests() {
         sessionCreateGate = {};
         wait([&] { return controller.isRecording(); }, "follow countdown starts the recording");
         require(!countdown->isVisible() && area->isVisible() && area->windowOpacity() == 0.0 &&
-                    !preview->active && lastDirectConfig.follow_mouse == 1,
-                "recording snapshots follow mode and removes the countdown");
+                    !preview->active && lastDirectConfig.follow_mouse == 1 &&
+                    lastDirectConfig.follow_mouse_smooth_movement == 0 &&
+                    lastDirectConfig.follow_mouse_reduce_jitter == 1,
+                "recording preserves both accepted motion flags through countdown");
         tools->recordingPauseRequested();
         require(area->isVisible() && area->windowOpacity() == 0.0 && !preview->active &&
                     tools->recordingSession().state() ==
@@ -8263,8 +8270,14 @@ void recordingFollowMouseTests() {
         require(area->isVisible(), "a queued restart keeps the preparation area visible");
         waitForRecording(controller);
         require(settings.setFollowMouse(false), "save next recording preference while active");
+        tools->recordingFollowMouseSmoothMovementChanged(true);
+        require(!settings.followMouseSmoothMovement(), "active controls cannot edit smoothing");
+        require(settings.setFollowMouseSmoothMovement(true),
+                "save a different smoothing preference for the next start");
         require(tools->recordingFollowMouseEnabled() && area->isVisible() &&
-                    area->windowOpacity() == 0.0 && lastDirectConfig.follow_mouse == 1,
+                    area->windowOpacity() == 0.0 && lastDirectConfig.follow_mouse == 1 &&
+                    lastDirectConfig.follow_mouse_smooth_movement == 0 &&
+                    lastDirectConfig.follow_mouse_reduce_jitter == 0,
                 "active recording retains the accepted follow snapshot");
         PhysicalKeyEvent closePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
         QApplication::sendEvent(toolbar, &closePress);
@@ -8322,7 +8335,9 @@ void recordingFollowMouseTests() {
         controller.open({40, 40, 320, 240});
         controller.startRecording();
         waitForRecording(controller);
-        require(palette()->recordingFollowMouseEnabled() && lastDirectConfig.follow_mouse == 1,
+        require(palette()->recordingFollowMouseEnabled() && lastDirectConfig.follow_mouse == 1 &&
+                    lastDirectConfig.follow_mouse_smooth_movement == 1 &&
+                    lastDirectConfig.follow_mouse_reduce_jitter == 0,
                 "a manual start after automation restores the saved follow preference");
         palette()->recordingCloseRequested();
         waitForIdle(controller);
@@ -8346,7 +8361,9 @@ void recordingFollowMouseTests() {
             },
             "failed follow startup reports its error");
         require(controller.isOpen() && !controller.isRecording() &&
-                    palette()->recordingFollowMouseEnabled(),
+                    palette()->recordingFollowMouseEnabled() &&
+                    lastDirectConfig.follow_mouse_smooth_movement == 1 &&
+                    lastDirectConfig.follow_mouse_reduce_jitter == 0,
                 "failed startup leaves usable follow controls");
         bool visibleArea = false;
         for (auto* widget : QApplication::topLevelWidgets()) {
@@ -8372,7 +8389,8 @@ void recordingFollowMouseTests() {
         palette()->recordingCloseRequested();
     }
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    require(settings.setFollowMouse(false) && settings.setStartDelaySeconds(0) &&
+    require(settings.setFollowMouse(false) && settings.setFollowMouseSmoothMovement(true) &&
+                settings.setFollowMouseReduceJitter(true) && settings.setStartDelaySeconds(0) &&
                 settings.setWebcamEnabled(false),
             "restore follow fixture defaults");
 }

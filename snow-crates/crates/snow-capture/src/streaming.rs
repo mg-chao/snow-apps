@@ -15,6 +15,8 @@ use crossbeam_channel as mpsc;
 use snow_core::cancellation::CancellationToken;
 use snow_core::error::{RecvError, RecvTimeoutError, TryRecvError};
 use snow_core::stream_queue::StreamQueue;
+#[cfg(windows)]
+use snow_media::follow_mouse::FollowMouseOptions;
 
 use crate::backend::CaptureWorkload;
 use crate::capture_session::CaptureSession;
@@ -247,6 +249,23 @@ impl CaptureStream {
         options: crate::CaptureOptions,
         config: CaptureStreamConfig,
     ) -> CaptureResult<Self> {
+        Self::spawn_follow_mouse_with_motion(
+            nominal_region,
+            preferred_backend,
+            options,
+            config,
+            FollowMouseOptions::default(),
+        )
+    }
+
+    #[cfg(windows)]
+    pub fn spawn_follow_mouse_with_motion(
+        nominal_region: crate::CaptureRegion,
+        preferred_backend: crate::backend::CaptureBackendKind,
+        options: crate::CaptureOptions,
+        config: CaptureStreamConfig,
+        motion: FollowMouseOptions,
+    ) -> CaptureResult<Self> {
         if config.target_fps == 0
             || nominal_region.width == 0
             || nominal_region.height == 0
@@ -293,6 +312,7 @@ impl CaptureStream {
                         preferred: preferred_backend,
                         options,
                         config,
+                        motion,
                         gpu: false,
                         recycled: Some(recycle_rx),
                     },

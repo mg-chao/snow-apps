@@ -141,22 +141,29 @@ bool ScreenRecordingShortcutController::canActivate(
                 (context.event && context.event->key() == Qt::Key_Escape))
                 return false;
         }
-        if (const auto* popup = m_toolbar->palette()->recordingKeyboardPopover(); popup) {
-            const bool opensKeyboardOptions = receiver == popup->sourceWidget() && context.event &&
-                                              context.event->key() == Qt::Key_Down &&
-                                              (context.event->modifiers() == Qt::NoModifier ||
-                                               context.event->modifiers() == Qt::AltModifier);
-            if (opensKeyboardOptions)
+        auto* followOptions = m_toolbar->palette()->recordingFollowMousePopover();
+        if (followOptions && receiver == followOptions->sourceWidget() && context.event &&
+            context.event->key() == Qt::Key_Space && context.event->modifiers() == Qt::NoModifier)
+            return false;
+        for (const auto* popup :
+             {m_toolbar->palette()->recordingKeyboardPopover(), followOptions}) {
+            if (!popup)
+                continue;
+            const bool opensOptions = receiver == popup->sourceWidget() && context.event &&
+                                      context.event->key() == Qt::Key_Down &&
+                                      (context.event->modifiers() == Qt::NoModifier ||
+                                       context.event->modifiers() == Qt::AltModifier);
+            if (opensOptions)
                 return false;
             const QWidget* content = popup->contentWidget();
-            const bool keyboardOptionsFocused =
+            const bool optionsFocused =
                 content && context.focusWidget &&
                 (content == context.focusWidget || content->isAncestorOf(context.focusWidget));
             const QWidget* surface = popup->surfaceWidget();
-            const bool keyboardOptionsReceiver =
+            const bool optionsReceiver =
                 (content && (content == receiver || content->isAncestorOf(receiver))) ||
                 (surface && (surface == receiver || surface->isAncestorOf(receiver)));
-            if (popup->isVisible() && (keyboardOptionsFocused || keyboardOptionsReceiver ||
+            if (popup->isVisible() && (optionsFocused || optionsReceiver ||
                                        (context.event && context.event->key() == Qt::Key_Escape)))
                 return false;
         }

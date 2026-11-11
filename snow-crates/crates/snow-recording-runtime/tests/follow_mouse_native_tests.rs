@@ -191,6 +191,10 @@ unsafe extern "system" fn panel_proc(hwnd: HWND, message: u32, wp: WPARAM, lp: L
 fn config(path: &Path, initial: (i32, i32)) -> DirectRecordingConfig {
     DirectRecordingConfig {
         follow_mouse: true,
+        follow_mouse_options: snow_media::follow_mouse::FollowMouseOptions {
+            smooth_movement: true,
+            reduce_jitter: true,
+        },
         region: RecordingRegion::new(initial.0 - 160, initial.1 - 90, 321, 181),
         output_path: path.into(),
         capture_backend: CaptureBackendKind::Gdi,

@@ -2717,7 +2717,9 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
         for (const auto* key :
              {"screen_recording/record_number_keys", "screen_recording/record_letters_and_symbols",
               "screen_recording/record_control_keys",
-              "screen_recording/preserve_keyboard_shortcuts"}) {
+              "screen_recording/preserve_keyboard_shortcuts",
+              "screen_recording/follow_mouse_smooth_movement",
+              "screen_recording/follow_mouse_reduce_jitter"}) {
             const auto configurationKey = QString::fromLatin1(key);
             defaults.insert(configurationKey,
                             storage::ConfigurationSchema::defaultValue(configurationKey));
@@ -3168,6 +3170,12 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
             {QStringLiteral("screen_recording/follow_mouse"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/follow_mouse"))},
+            {QStringLiteral("screen_recording/follow_mouse_smooth_movement"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/follow_mouse_smooth_movement"))},
+            {QStringLiteral("screen_recording/follow_mouse_reduce_jitter"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/follow_mouse_reduce_jitter"))},
             {QStringLiteral("screen_recording/webcam_size"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/webcam_size"))},

@@ -141,6 +141,7 @@ pub struct DirectRecordingConfig {
     pub region: RecordingRegion,
     /// Follow the desktop pointer within its monitor, preserving the encoded size.
     pub follow_mouse: bool,
+    pub follow_mouse_options: snow_media::follow_mouse::FollowMouseOptions,
     /// Preferred recording backend on Windows; other backends remain available as fallbacks.
     pub capture_backend: CaptureBackendKind,
     pub output_path: PathBuf,
@@ -3705,6 +3706,7 @@ mod tests {
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
             follow_mouse: false,
+            follow_mouse_options: Default::default(),
             keyboard_filter: Default::default(),
             webcam: None,
             audio_mode: Default::default(),

@@ -10,6 +10,7 @@ use crate::{
 use objc2_screen_capture_kit::SCShareableContent;
 use snow_media::{
     CursorMode, DynamicRange, PixelFormat,
+    follow_mouse::FollowMouseOptions,
     geometry::{DesktopRect, DesktopSpace, DesktopTransform, PixelRect, PixelSize},
     macos::PixelBuffer,
     time::MediaTime,
@@ -142,6 +143,7 @@ pub struct DesktopConfig {
     pub persistent_window: bool,
     /// Record a fixed-size viewport of the monitor containing the pointer.
     pub follow_mouse: bool,
+    pub follow_mouse_options: FollowMouseOptions,
 }
 impl DesktopConfig {
     pub fn new(target: DesktopTarget) -> Self {
@@ -158,6 +160,7 @@ impl DesktopConfig {
             opaque: false,
             persistent_window: false,
             follow_mouse: false,
+            follow_mouse_options: FollowMouseOptions::default(),
         }
     }
     fn validate(&self, support: crate::capabilities::CaptureSupport) -> MacResult<()> {
@@ -810,7 +813,7 @@ impl DesktopSession {
         {
             let previous = std::mem::replace(&mut self.streams, vec![prepared.stream]);
             self.latest = vec![Some(prepared.frame)];
-            follow.display = prepared.display;
+            follow.set_display(prepared.display);
             follow.recover = false;
             self.topology = current_topology;
             // A destination can become ready before the original producer
@@ -821,8 +824,9 @@ impl DesktopSession {
             follow.changed_at = Instant::now();
             follow.retire(previous);
         }
-        let source = follow.viewport(cursor)?;
-        if source != self.plan.transform.source {
+        if let Some(source) = follow.advance_viewport(cursor, Instant::now())?
+            && source != self.plan.transform.source
+        {
             self.plan.transform.source = source;
             self.generation = self
                 .generation
@@ -896,8 +900,18 @@ impl DesktopSession {
                 )?);
             }
             self.streams = streams;
+            if let Some(follow) = &mut self.follow {
+                // Reopening a native stream after pause can take longer than
+                // the motion interval. Resume from the first usable source.
+                follow.restart_motion_clock();
+            }
         }
-        let deadline = Instant::now()
+        let now = Instant::now();
+        let timeout = self
+            .follow
+            .as_ref()
+            .map_or(timeout, |follow| follow.motion_wait_limit(now, timeout));
+        let deadline = now
             .checked_add(timeout)
             .ok_or_else(|| geometry("timeout overflow"))?;
         // A failed composition leaves the latest sources newer than the last
@@ -1160,6 +1174,7 @@ impl DesktopSession {
     pub fn release_capture_access(&mut self) {
         if let Some(follow) = &mut self.follow {
             follow.cancel_prepare();
+            follow.restart_motion_clock();
         }
         self.streams.clear();
         self.latest.fill(None);

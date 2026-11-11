@@ -39,6 +39,19 @@ int main(int argc, char** argv) {
     require(!applicationStorage.configuration().setValue(followKey, QStringLiteral("true")) &&
                 recording.setFollowMouse(true) && recording.followMouse(),
             "follow mouse accepts and persists only boolean values");
+    const QString smoothKey = QStringLiteral("screen_recording/follow_mouse_smooth_movement");
+    const QString jitterKey = QStringLiteral("screen_recording/follow_mouse_reduce_jitter");
+    require(recording.followMouseSmoothMovement() && recording.followMouseReduceJitter() &&
+                storage::ConfigurationSchema::defaultValue(smoothKey).toBool() &&
+                storage::ConfigurationSchema::defaultValue(jitterKey).toBool(),
+            "both follow motion options default to checked");
+    require(!applicationStorage.configuration().setValue(smoothKey, QStringLiteral("false")) &&
+                !applicationStorage.configuration().setValue(jitterKey, QStringLiteral("false")),
+            "follow motion options reject non-boolean preferences");
+    require(recording.setFollowMouseSmoothMovement(false) &&
+                !recording.followMouseSmoothMovement() && recording.followMouseReduceJitter() &&
+                recording.setFollowMouseReduceJitter(false),
+            "follow motion options can be disabled independently");
     const QStringList keyboardKeys{QStringLiteral("screen_recording/record_number_keys"),
                                    QStringLiteral("screen_recording/record_letters_and_symbols"),
                                    QStringLiteral("screen_recording/record_control_keys"),
@@ -135,6 +148,8 @@ int main(int argc, char** argv) {
     storage::ConfigurationStore reloaded(temporary.filePath(QStringLiteral("data/config.json")),
                                          true, true, 60000);
     require(reloaded.value(followKey).toBool(), "follow mouse survives configuration reload");
+    require(!reloaded.value(smoothKey).toBool() && !reloaded.value(jitterKey).toBool(),
+            "unchecked follow motion options survive configuration reload");
     require(reloaded.value(QStringLiteral("screen_recording/enable_webcam")).toBool() &&
                 reloaded.value(QStringLiteral("screen_recording/webcam_size")).toInt() == 500 &&
                 reloaded.value(QStringLiteral("screen_recording/webcam_shape")).toString() ==
@@ -168,6 +183,9 @@ int main(int argc, char** argv) {
     require(recording.recordNumberKeys() && recording.recordLettersAndSymbols() &&
                 recording.recordControlKeys() && recording.preserveKeyboardShortcuts(),
             "Action Toolbar reset must restore all keyboard options to checked");
+    require(recording.followMouse() && recording.followMouseSmoothMovement() &&
+                recording.followMouseReduceJitter(),
+            "Action Toolbar reset checks both motion options and preserves Follow mouse");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenRecordingCapture) &&
                 backend.switchValue(autoHideBinding) && !backend.switchValue(promptsBinding),
             "recording capture reset must preserve toolbar auto-hide");

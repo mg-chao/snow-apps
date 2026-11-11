@@ -125,7 +125,7 @@ impl DirectCapture {
     pub fn cpu(config: &DirectRecordingConfig, include_cursor: bool) -> Result<Self> {
         #[cfg(windows)]
         if config.follow_mouse {
-            return Ok(Self::Cpu(CaptureStream::spawn_follow_mouse(
+            return Ok(Self::Cpu(CaptureStream::spawn_follow_mouse_with_motion(
                 snow_capture::CaptureRegion {
                     x: config.region.x,
                     y: config.region.y,
@@ -135,6 +135,7 @@ impl DirectCapture {
                 config.capture_backend,
                 capture_options(config),
                 stream_config(config, include_cursor),
+                config.follow_mouse_options,
             )?));
         }
         let system = crate::capture_policy::recording_capture_system(

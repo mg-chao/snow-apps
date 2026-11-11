@@ -30,6 +30,8 @@ param(
     [switch]$SkipUnneededCursor,
     [string]$RegionSize = "",
     [ValidateSet("off", "stationary", "pan", "boundary")][string]$FollowMouse = "off",
+    [switch]$FollowMouseSmoothMovement,
+    [switch]$FollowMouseReduceJitter,
     [switch]$BuildOnly,
     [string]$Executable = "",
     [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
@@ -81,6 +83,8 @@ if ($DirectOutput) { $benchmarkArguments += "--direct-output" }
 if ($SkipUnneededCursor) { $benchmarkArguments += "--skip-unneeded-cursor" }
 if ($RegionSize) { $benchmarkArguments += @("--region-size", $RegionSize) }
 if ($FollowMouse -ne 'off') { $benchmarkArguments += @('--follow-mouse', $FollowMouse) }
+if ($FollowMouseSmoothMovement) { $benchmarkArguments += '--follow-mouse-smooth-movement' }
+if ($FollowMouseReduceJitter) { $benchmarkArguments += '--follow-mouse-reduce-jitter' }
 if ($PreferHardware) {
     $benchmarkArguments += "--prefer-hardware"
 }

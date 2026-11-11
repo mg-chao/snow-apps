@@ -651,7 +651,7 @@ void recordingModalsBlockSessionShortcuts() {
             "drawing and recording shortcuts must resume after closing the recording modal");
 }
 
-void recordingKeyboardOptionsOwnKeyboardInput() {
+void recordingOptionPopoversOwnKeyboardInput() {
     namespace storage = snow_shot::storage;
     const storage::DrawingShortcutSettings drawing;
     const storage::ScreenRecordingShortcutSettings recording;
@@ -687,36 +687,70 @@ void recordingKeyboardOptionsOwnKeyboardInput() {
                      [&] { ++closes; });
     area.show();
     toolbar.show();
-    auto* trigger =
-        palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowKeyboard"));
-    require(trigger && palette->recordingKeyboardPopover(), "keyboard options trigger exists");
-    focus(*trigger);
-    press(*trigger, Qt::Key_Down);
-    auto* popup = palette->recordingKeyboardPopover();
-    require(popup->isVisible() && popup->contentWidget() && shapes == 0,
-            "Down on the keyboard trigger must open its options before the drawing shortcut");
-    auto* number = popup->contentWidget()->findChild<adqt::widgets::AdCheckbox*>(
-        QStringLiteral("screenRecordingRecordNumberKeys"));
-    require(number && number->isChecked(), "number keys are initially included");
-    focus(*number);
-    press(*number, Qt::Key_Space);
-    require(!number->isChecked() && !palette->recordingRecordNumberKeys() && shapes == 0 &&
-                popup->isVisible(),
-            "Space must edit the checkbox without activating the drawing shortcut");
-    press(*number, Qt::Key_F8);
-    require(starts == 0 && popup->isVisible(),
-            "recording commands must remain suppressed while editing keyboard options");
-    auto escape = keyEvent(QEvent::KeyPress, Qt::Key_Escape);
-    QCoreApplication::sendEvent(number, &escape);
-    require(!popup->isVisible() && closes == 0, "Escape must dismiss only the keyboard popover");
-    auto escapeRelease = keyEvent(QEvent::KeyRelease, Qt::Key_Escape);
-    QCoreApplication::sendEvent(trigger, &escapeRelease);
-    require(closes == 0, "dismissing options must not arm the close-on-release shortcut");
-    focus(*trigger);
-    press(*trigger, Qt::Key_Down, Qt::AltModifier);
-    require(popup->isVisible() && popup->contentWidget() && starts == 0,
-            "Alt+Down on the keyboard trigger must open its options before the recording shortcut");
-    popup->hide();
+    const auto verifyPopover = [&](adqt::widgets::AdPopover* popup, const QString& optionName) {
+        require(popup && popup->sourceWidget(), "recording options trigger exists");
+        auto* trigger = popup->sourceWidget();
+        focus(*trigger);
+        press(*trigger, Qt::Key_Down);
+        QCoreApplication::processEvents();
+        require(popup->isVisible() && popup->contentWidget() && shapes == 0,
+                "Down opens recording options before the drawing shortcut");
+        auto* option = popup->contentWidget()->findChild<adqt::widgets::AdCheckbox*>(optionName);
+        require(option && option->isChecked() && QApplication::focusWidget() == option,
+                "Down focuses the first checked recording option");
+        press(*option, Qt::Key_Space);
+        require(!option->isChecked() && shapes == 0 && popup->isVisible(),
+                "Space must edit the checkbox without activating the drawing shortcut");
+        press(*option, Qt::Key_F8);
+        require(starts == 0 && popup->isVisible(),
+                "recording commands must remain suppressed while editing popover options");
+        auto escape = keyEvent(QEvent::KeyPress, Qt::Key_Escape);
+        QCoreApplication::sendEvent(option, &escape);
+        QCoreApplication::processEvents();
+        require(!popup->isVisible() && closes == 0, "Escape dismisses only the popover");
+        require(QApplication::focusWidget() == trigger,
+                "Escape restores focus to the popover's trigger");
+        auto escapeRelease = keyEvent(QEvent::KeyRelease, Qt::Key_Escape);
+        QCoreApplication::sendEvent(trigger, &escapeRelease);
+        require(closes == 0, "dismissing options must not arm the close-on-release shortcut");
+        focus(*trigger);
+        press(*trigger, Qt::Key_Down, Qt::AltModifier);
+        require(popup->isVisible() && popup->contentWidget() && starts == 0,
+                "Alt+Down opens recording options before the recording shortcut");
+        option = popup->contentWidget()->findChild<adqt::widgets::AdCheckbox*>(optionName);
+        require(option && !option->isChecked(), "reopening restores the changed option");
+
+        // Simulate clicking another focusable button without activating its command.
+        auto* otherPopup = popup == palette->recordingKeyboardPopover()
+                               ? palette->recordingFollowMousePopover()
+                               : palette->recordingKeyboardPopover();
+        auto* outside = qobject_cast<adqt::widgets::AdButton*>(otherPopup->sourceWidget());
+        require(outside, "the adjacent popover has a focusable trigger button");
+        const QPoint local = outside->rect().center();
+        QMouseEvent outsidePress(
+            QEvent::MouseButtonPress, local, outside->mapTo(outside->window(), local),
+            outside->mapToGlobal(local), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(outside, &outsidePress);
+        outside->setDown(false);
+        // Qt does not assign click focus for a synthetic press.
+        focus(*outside);
+        require(!popup->isVisible() && QApplication::focusWidget() == outside,
+                "outside press closes the popover and leaves focus on the clicked control");
+    };
+    verifyPopover(palette->recordingKeyboardPopover(),
+                  QStringLiteral("screenRecordingRecordNumberKeys"));
+    require(!palette->recordingRecordNumberKeys(), "Space updates the keystroke option");
+    verifyPopover(palette->recordingFollowMousePopover(),
+                  QStringLiteral("screenRecordingFollowMouseSmoothMovement"));
+    require(!palette->recordingFollowMouseEnabled(), "editing options leaves Follow mouse off");
+    auto* follow = palette->recordingFollowMousePopover()->sourceWidget();
+    focus(*follow);
+    press(*follow, Qt::Key_Space);
+    require(palette->recordingFollowMouseEnabled() && shapes == 0,
+            "Space on the Follow mouse button toggles it without drawing");
+    press(*follow, Qt::Key_Space);
+    require(!palette->recordingFollowMouseEnabled() && shapes == 0,
+            "Space on the Follow mouse button can turn it off again");
     focus(area);
     press(area, Qt::Key_F8);
     press(area, Qt::Key_Escape);
@@ -1471,7 +1505,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--keyboard-options-only"))) {
-        recordingKeyboardOptionsOwnKeyboardInput();
+        recordingOptionPopoversOwnKeyboardInput();
         storage.shutdown();
         return 0;
     }
@@ -1526,7 +1560,7 @@ int main(int argc, char* argv[]) {
     recordingSelectionEditsAnnotationsAndPreservesPassThrough();
     recordingControlShortcutsFollowButtonsAndSettings();
     recordingModalsBlockSessionShortcuts();
-    recordingKeyboardOptionsOwnKeyboardInput();
+    recordingOptionPopoversOwnKeyboardInput();
     recordingShortcutsFollowBothWindowsAndConfiguredKeys();
     autoHiddenRecordingToolbarRetainsAreaShortcuts();
     storage.shutdown();
