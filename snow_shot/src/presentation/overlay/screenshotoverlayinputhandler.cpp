@@ -1190,7 +1190,6 @@ bool ScreenshotOverlayInputHandler::toggleIntelligentSelectionTargetShortcut() {
         return false;
     }
 
-    m_context.actions.persistSelectionTarget(m_context.intelligentSelection.selectionTarget());
     m_selectionWheelSteps.reset();
     m_angleWheelSteps.reset();
     m_context.intelligentSelection.clearPress();

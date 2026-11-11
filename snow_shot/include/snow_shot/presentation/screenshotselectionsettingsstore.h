@@ -2,7 +2,6 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONSETTINGSSTORE_H
 
 #include "snow_shot/presentation/screenshotselectionparams.h"
-#include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionaspectratio.h"
 
 #include <QVector>
@@ -26,9 +25,6 @@ class ScreenshotSelectionSettingsStore final {
     [[nodiscard]] bool aspectRatioLocked() const;
     void setAspectRatioPreference(ScreenshotSelectionAspectRatioPreset preset, bool locked);
     void setAspectRatioLocked(bool locked);
-
-    [[nodiscard]] ScreenshotIntelligentSelectionTarget selectionTarget() const;
-    void setSelectionTarget(ScreenshotIntelligentSelectionTarget target);
 
     [[nodiscard]] QVector<ScreenshotSelectionPreset> presets() const;
     void setPresets(const QVector<ScreenshotSelectionPreset>& presets);

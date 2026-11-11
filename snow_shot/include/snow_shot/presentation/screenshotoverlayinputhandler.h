@@ -30,7 +30,6 @@ class SnowCanvasWidget;
 struct ScreenshotCaptureState;
 struct ScreenshotSelectionParams;
 enum class ScreenshotActiveTool;
-enum class ScreenshotIntelligentSelectionTarget;
 
 // Only a border resize retains the recognition window that owns the pointer gesture.
 enum class ScreenshotToolActivationReason { Command, SelectionResize, Reselection };
@@ -117,8 +116,6 @@ struct ScreenshotOverlayInputActions {
 
     // Keep new actions at the end so positional test and application initializers remain valid.
     std::function<bool()> physicalCursorMovementAvailable = []() { return false; };
-    std::function<void(ScreenshotIntelligentSelectionTarget)> persistSelectionTarget =
-        [](ScreenshotIntelligentSelectionTarget) {};
     std::function<bool()> recaptureAvailable = []() { return false; };
     std::function<bool()> cancelCaptureViaShortcut = []() { return false; };
     std::function<void(const QPoint&, quint32)> requestUiSelectorHitTestOnDisplay;

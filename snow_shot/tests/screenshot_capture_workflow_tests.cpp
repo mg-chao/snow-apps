@@ -1716,7 +1716,7 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
     enabledWorkflow.startCapture();
     require(enabledIntelligentSelection.selectionTarget() ==
                 ScreenshotIntelligentSelectionTarget::WindowSubElement,
-            "capture without a persistence callback must retain the default child-element mode");
+            "a new capture session must use the configured child-element mode");
 
     ScreenshotCaptureState disabledState;
     disabledState.sessionState = ScreenshotSessionState::IdlePrepared;
