@@ -42,6 +42,7 @@ class AccountPageWidget final : public QWidget {
     void showRegistration(bool value);
     void showRequestError();
     void rebuildTransactions();
+    void rebuildPreviousRegistrations(const QJsonArray& registrations);
 
     QPointer<snow_shot::app::AccountSessionService> m_service;
     PageContainerWidget* m_container = nullptr;
@@ -88,6 +89,7 @@ class AccountPageWidget final : public QWidget {
     adqt::widgets::AdButton* m_paid = nullptr;
     adqt::widgets::AdButton* m_dismiss = nullptr;
     adqt::widgets::AdButton* m_signInInstead = nullptr;
+    QWidget* m_previousRegistrations = nullptr;
     QWidget* m_history = nullptr;
     QLabel* m_historyTitle = nullptr;
     QLabel* m_historyDescription = nullptr;
@@ -99,6 +101,7 @@ class AccountPageWidget final : public QWidget {
     adqt::widgets::AdButton* m_refresh = nullptr;
     adqt::widgets::AdButton* m_more = nullptr;
     QJsonArray m_renderedTransactions;
+    QJsonArray m_renderedPreviousRegistrations;
     QString m_captchaData;
     QString m_codeData;
     QString m_displayedRequest;

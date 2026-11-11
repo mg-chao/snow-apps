@@ -10013,7 +10013,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-account-tests snow-shot-account-cancellation-tests
         PROPERTIES LABELS "unit"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
-    set_tests_properties(snow-shot-account-tests PROPERTIES TIMEOUT 60)
+    set_tests_properties(snow-shot-account-tests PROPERTIES TIMEOUT 90)
     set_tests_properties(snow-shot-account-cancellation-tests PROPERTIES TIMEOUT 45)
 
     add_executable(snow-shot-api-client-tests

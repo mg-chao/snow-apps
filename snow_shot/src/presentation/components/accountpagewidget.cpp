@@ -409,6 +409,12 @@ AccountPageWidget::AccountPageWidget(AccountSessionService* service, QWidget* pa
     paymentRow->addStretch();
     layout->addLayout(paymentRow);
 
+    m_previousRegistrations = new QWidget(content);
+    m_previousRegistrations->setObjectName(QStringLiteral("accountPreviousRegistrations"));
+    column(m_previousRegistrations, 8);
+    m_previousRegistrations->hide();
+    layout->addWidget(m_previousRegistrations);
+
     m_history = new QWidget(content);
     m_history->setObjectName(QStringLiteral("accountHistoryCard"));
     auto* history = column(m_history, 0);
@@ -493,7 +499,8 @@ AccountPageWidget::AccountPageWidget(AccountSessionService* service, QWidget* pa
             const bool retryRegistration =
                 purchase.registration() && !m_service->signedIn() &&
                 purchase.request().value(QStringLiteral("state")).toString() != u"fulfilled";
-            m_showAuthWithPurchase = false;
+            const bool keepOrderVisible = retryRegistration && purchase.shouldPollPayment();
+            m_showAuthWithPurchase = keepOrderVisible;
             if (retryRegistration) {
                 m_registration = true;
                 m_username->setText(
@@ -501,7 +508,10 @@ AccountPageWidget::AccountPageWidget(AccountSessionService* service, QWidget* pa
                 m_captchaAnswer->clear();
                 retranslateUi();
             }
-            m_service->dismissPurchase();
+            if (keepOrderVisible)
+                updateState();
+            else
+                m_service->dismissPurchase();
             if (retryRegistration) {
                 m_service->loadCaptcha();
                 m_username->setFocus();
@@ -625,6 +635,7 @@ void AccountPageWidget::retranslateUi() {
     m_code->setAccessibleName(tr("Scan this Mini Program code with WeChat"));
     m_renderedTransactions = {};
     rebuildTransactions();
+    rebuildPreviousRegistrations(m_service ? m_service->previousRegistrations() : QJsonArray{});
 }
 
 void AccountPageWidget::updateState() {
@@ -726,9 +737,19 @@ void AccountPageWidget::updateState() {
             status = request.value(QStringLiteral("completion_kind")).toString() == u"account_link"
                          ? tr("Account linked")
                          : tr("Payment received");
-        else if (state == u"expired")
-            status = tr("This purchase code has expired");
-        else if (state == u"failed")
+        else if (state == u"expired") {
+            const auto orderState = request.value(QStringLiteral("order_state")).toString();
+            if (orderState == u"paid")
+                status = tr("Payment received");
+            else if (orderState == u"refunded")
+                status = tr("Payment refunded");
+            else if (orderState == u"unavailable")
+                status = tr("Payment status unavailable");
+            else if (orderState == u"closed" || orderState == u"failed")
+                status = tr("Payment failed or the order was closed");
+            else
+                status = tr("This purchase code has expired");
+        } else if (state == u"failed")
             status = tr("Payment failed or the order was closed");
         else
             status = tr("The payment result is still being checked");
@@ -749,37 +770,119 @@ void AccountPageWidget::updateState() {
                                            Qt::ISODateWithMs)
                                            .toLocalTime()
                                            .toString(QStringLiteral("HH:mm:ss"))));
-        } else if (purchase.pending()) {
+        } else if (purchase.shouldPollPayment()) {
             m_expiry->setText(
                 tr("Payment confirmation continues after the code's original expiry"));
         } else {
             m_expiry->clear();
         }
-        m_paymentHelp->setText(
-            state == u"expired"
-                ? tr("Return to registration and generate a new code. Your previous "
-                     "order records are retained")
-                : tr("Scan with your own WeChat account. An existing temporary account will be "
-                     "linked and signed in automatically using these desktop credentials. "
-                     "Otherwise, select a package and confirm your order. The WeChat link cannot "
-                     "be changed"));
+        if (state == u"expired" &&
+            request.value(QStringLiteral("order_state")).toString() == u"paid")
+            m_paymentHelp->setText(
+                tr("View your balance in the Mini Program with the WeChat account used to pay."));
+        else if (state == u"expired")
+            m_paymentHelp->setText(
+                tr("Return to registration and generate a new code. Your previous "
+                   "order records are retained"));
+        else
+            m_paymentHelp->setText(
+                tr("Scan with your own WeChat account. An existing temporary account will be "
+                   "linked and signed in automatically using these desktop credentials. "
+                   "Otherwise, select a package and confirm your order. The WeChat link cannot "
+                   "be changed"));
         m_paymentNotice->setText(purchase.notice());
         m_paymentNotice->setVisible(!purchase.notice().isEmpty());
-        m_paid->setVisible(purchase.pending());
+        m_paid->setVisible(purchase.canRefreshPayment());
         m_paid->setEnabled((purchase.registration() || signedIn) && !purchase.queryingPlatform() &&
                            !purchase.cancelling());
         m_paid->setBusy(purchase.queryingPlatform());
         m_dismiss->setText(purchase.pending() ? tr("Cancel payment") : tr("Continue"));
-        m_dismiss->setVisible(!purchase.pending() || !purchase.registration());
+        m_dismiss->setVisible(
+            (!purchase.pending() || !purchase.registration()) &&
+            !(m_showAuthWithPurchase && m_registration && purchase.shouldPollPayment()));
         m_dismiss->setEnabled((!purchase.pending() || purchase.registration() || signedIn) &&
                               !purchase.cancelling());
         m_dismiss->setBusy(purchase.cancelling());
         m_signInInstead->setVisible(!signedIn && !m_showAuthWithPurchase);
     }
     m_more->setVisible(m_service->hasMoreTransactions());
+    const auto previousRegistrations = m_service->previousRegistrations();
+    if (m_renderedPreviousRegistrations != previousRegistrations)
+        rebuildPreviousRegistrations(previousRegistrations);
     if (m_renderedTransactions != m_service->transactions())
         rebuildTransactions();
     updateCompactGeometry();
+}
+
+void AccountPageWidget::rebuildPreviousRegistrations(const QJsonArray& registrations) {
+    auto* layout = static_cast<QVBoxLayout*>(m_previousRegistrations->layout());
+    while (auto* item = layout->takeAt(0)) {
+        item->widget()->hide();
+        item->widget()->deleteLater();
+        delete item;
+    }
+    m_renderedPreviousRegistrations = registrations;
+    m_previousRegistrations->setVisible(!registrations.isEmpty());
+    if (registrations.isEmpty())
+        return;
+    auto* title = copyLabel(m_previousRegistrations);
+    title->setText(tr("Previous registration orders"));
+    layout->addWidget(title);
+    for (const auto& value : registrations) {
+        const auto entry = value.toObject();
+        const auto requestId = entry.value(QStringLiteral("request_id")).toString();
+        const auto orderId = entry.value(QStringLiteral("order_id")).toString();
+        const auto state = entry.value(QStringLiteral("order_state")).toString();
+        const bool canRefresh = entry.value(QStringLiteral("can_refresh")).toBool();
+        const bool refreshing = entry.value(QStringLiteral("refreshing")).toBool();
+        QString status = tr("Confirming payment");
+        if (state == u"paid")
+            status = tr("Payment received");
+        else if (state == u"refunded")
+            status = tr("Payment refunded");
+        else if (state == u"closed" || state == u"failed")
+            status = tr("Payment failed or the order was closed");
+        else if (state == u"unavailable")
+            status = tr("Payment status unavailable");
+        auto* row = new QWidget(m_previousRegistrations);
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        auto* label = copyLabel(row);
+        label->setTextFormat(Qt::PlainText);
+        QString labelText = orderId + QStringLiteral(" · ") + status;
+        if (state == u"paid" && entry.value(QStringLiteral("state")).toString() == u"expired")
+            labelText +=
+                u'\n' +
+                tr("View your balance in the Mini Program with the WeChat account used to pay.");
+        else if (state == u"paid") {
+            const auto username = entry.value(QStringLiteral("username")).toString();
+            if (!username.isEmpty())
+                labelText.prepend(username + QStringLiteral(" · "));
+        }
+        label->setText(labelText);
+        rowLayout->addWidget(label, 1);
+        const auto addAction = [&](bool refresh) {
+            auto* action = new AdButton(row);
+            action->setText(refresh ? tr("Refresh") : tr("Dismiss"));
+            action->setButtonStyle(AdButton::ButtonStyle::Text);
+            action->setEnabled(!refreshing);
+            action->setBusy(refresh && refreshing);
+            connect(action, &AdButton::clicked, this, [this, requestId, refresh] {
+                if (!m_service)
+                    return;
+                if (refresh)
+                    m_service->refreshPreviousRegistration(requestId);
+                else
+                    m_service->dismissPreviousRegistration(requestId);
+            });
+            rowLayout->addWidget(action);
+        };
+        if (canRefresh)
+            addAction(true);
+        if (entry.value(QStringLiteral("can_dismiss")).toBool())
+            addAction(false);
+        layout->addWidget(row);
+    }
 }
 
 void AccountPageWidget::rebuildTransactions() {

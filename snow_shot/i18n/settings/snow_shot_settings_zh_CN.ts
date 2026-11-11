@@ -80,6 +80,10 @@
             <translation>日期</translation>
         </message>
         <message>
+            <source>Dismiss</source>
+            <translation>关闭</translation>
+        </message>
+        <message>
             <source>Failed</source>
             <translation>失败</translation>
         </message>
@@ -136,8 +140,20 @@
             <translation>已确认到账</translation>
         </message>
         <message>
+            <source>Payment refunded</source>
+            <translation>款项已退回</translation>
+        </message>
+        <message>
+            <source>Payment status unavailable</source>
+            <translation>暂时无法查询支付状态</translation>
+        </message>
+        <message>
             <source>Pending</source>
             <translation>待处理</translation>
+        </message>
+        <message>
+            <source>Previous registration orders</source>
+            <translation>以前的注册订单</translation>
         </message>
         <message>
             <source>Privacy policy</source>
@@ -254,6 +270,10 @@
         <message>
             <source>Username</source>
             <translation>用户名</translation>
+        </message>
+        <message>
+            <source>View your balance in the Mini Program with the WeChat account used to pay.</source>
+            <translation>请使用付款时的微信账号，在小程序中查看余额。</translation>
         </message>
         <message>
             <source>Waiting for payment</source>
