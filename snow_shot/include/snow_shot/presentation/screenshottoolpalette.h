@@ -388,7 +388,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void setSelectionOpacity(qreal opacity, bool mixed = false);
     void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
-    bool handleToolbarWheel(QWheelEvent* event);
+    bool handleToolbarWheel(QWheelEvent* event, const QWidget* receiver = nullptr);
     void resetAngleWheelInput();
     [[nodiscard]] bool canActivateRecordingShortcut(const QString& actionId) const;
     bool activateRecordingShortcut(const QString& actionId);
