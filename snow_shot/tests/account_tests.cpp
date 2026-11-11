@@ -71,6 +71,9 @@ class Api {
     QString state = QStringLiteral("awaiting_payment");
     QString username = QStringLiteral("TestUser");
     QString completionKind;
+    QString orderId;
+    QString orderState;
+    QMap<QString, QJsonObject> registrationStatuses;
     int polls = 0;
     int claims = 0;
     int refreshes = 0;
@@ -90,6 +93,8 @@ class Api {
     bool emptyTransactions = false;
     bool holdPurchasePolls = false;
     QList<std::function<void()>> heldPurchasePolls;
+    bool holdRegistrationReplies = false;
+    QList<std::function<void()>> heldRegistrationReplies;
     QString requestId = QStringLiteral("request1");
     QByteArray registrationBody;
     QString balance = QStringLiteral("9900000000");
@@ -176,7 +181,8 @@ class Api {
                             responseStatus = 503;
                         proofSeen = headers.contains("x-registration-proof: private-proof");
                         manualQuery = manualQuery || (post && path.endsWith("/refresh"));
-                        data = purchase();
+                        data = registrationStatuses.value(
+                            QString::fromUtf8(path.split('/').value(5)), purchase());
                         data.insert(QStringLiteral("mini_program_code_data_url"), QJsonValue());
                     } else if (path == "/api/v2/purchases/requests" && post) {
                         requestId = QStringLiteral("purchase%1").arg(++purchases);
@@ -266,8 +272,10 @@ class Api {
                                       QByteArray::number(response.size()) + "\r\n\r\n" + response);
                         socket->disconnectFromHost();
                     };
-                    if (holdPurchasePolls && path.startsWith("/api/v2/purchases/requests/") &&
-                        !path.endsWith("/cancel"))
+                    if (holdRegistrationReplies && path == "/api/v2/registration/requests" && post)
+                        heldRegistrationReplies.append(respond);
+                    else if (holdPurchasePolls && path.startsWith("/api/v2/purchases/requests/") &&
+                             !path.endsWith("/cancel"))
                         heldPurchasePolls.append(respond);
                     else
                         respond();
@@ -286,10 +294,14 @@ class Api {
     QJsonObject purchase() const {
         return {
             {QStringLiteral("request_id"), requestId},
-            {QStringLiteral("username"), username},
+            {QStringLiteral("username"), state == u"expired" && !orderId.isEmpty()
+                                             ? QJsonValue(QJsonValue::Null)
+                                             : QJsonValue(username)},
             {QStringLiteral("state"), state},
             {QStringLiteral("completion_kind"), completionKind},
-            {QStringLiteral("order_id"), QJsonValue(QJsonValue::Null)},
+            {QStringLiteral("order_id"),
+             orderId.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(orderId)},
+            {QStringLiteral("order_state"), orderState},
             {QStringLiteral("expires_at"),
              QDateTime::currentDateTimeUtc().addSecs(expirySeconds).toString(Qt::ISODate)},
             {QStringLiteral("server_time"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
@@ -373,10 +385,14 @@ void passwordInputsEnforceMaximumLength() {
 }
 
 void registrationReconcilesBeyondExpiryAndClaims() {
+    using namespace adqt::widgets;
     Api api;
     api.expirySeconds = -120;
     SnowShotApiClient client(api.origin());
     AccountSessionService service(client, options());
+    AccountPageWidget page(&service);
+    page.resize(640, 640);
+    page.show();
     int activations = 0;
     QObject::connect(&service, &AccountSessionService::registrationActivated, &service,
                      [&] { ++activations; });
@@ -399,6 +415,20 @@ void registrationReconcilesBeyondExpiryAndClaims() {
     service.refreshPurchase(true);
     await([&] { return api.manualQuery; });
     require(!service.signedIn(), "manual refresh cannot locally grant activation");
+    api.state = QStringLiteral("expired");
+    api.orderId = QStringLiteral("old-registration-order");
+    api.orderState = QStringLiteral("payment_pending");
+    await([&] {
+        return service.purchase().request().value(QStringLiteral("state")).toString() == u"expired";
+    });
+    require(!service.purchase().pending() && service.purchase().canRefreshPayment(),
+            "expiration releases the registration form while automatic order polling continues");
+    page.findChild<AdButton*>(QStringLiteral("accountDismissPurchase"))->click();
+    const auto* username = page.findChild<QLineEdit*>(QStringLiteral("accountUsername"));
+    require(
+        username && username->isVisibleTo(&page) && username->text() == u"TestUser" &&
+            page.findChild<AdButton*>(QStringLiteral("accountRefreshPayment"))->isVisibleTo(&page),
+        "the registration form and old-order query stay available together");
     api.state = QStringLiteral("fulfilled");
     await([&] { return service.signedIn() && !service.account().isEmpty(); });
     require(api.claims == 1 && api.officialAuthSeen && activations == 1,
@@ -409,6 +439,319 @@ void registrationReconcilesBeyondExpiryAndClaims() {
                     u"long-password" &&
                 submitted.value(QStringLiteral("captcha_id")).toString() == u"challenge",
             "registration sends contract confirmation and challenge fields");
+}
+
+void failedReplacementResumesDeferredOriginalClaim() {
+    for (const bool invalidCaptcha : {true, false}) {
+        Api api;
+        auto config = options();
+        config.pollIntervalMs = 60000;
+        SnowShotApiClient client(api.origin());
+        AccountSessionService service(client, config);
+        const auto submit = [&] {
+            service.registerAccount(QStringLiteral("OriginalUser"), QStringLiteral("long-password"),
+                                    QStringLiteral("long-password"), QStringLiteral("abcd"));
+        };
+        submit();
+        await([&] { return !service.purchase().request().isEmpty(); });
+        api.state = QStringLiteral("expired");
+        api.orderId = QStringLiteral("original-order");
+        api.orderState = QStringLiteral("payment_pending");
+        service.refreshPurchase();
+        await([&] { return !service.purchase().polling() && !service.purchase().pending(); });
+
+        api.failurePath = QStringLiteral("/api/v2/registration/requests");
+        api.failureCode = invalidCaptcha ? QStringLiteral("invalid_captcha")
+                                         : QStringLiteral("service_unavailable");
+        api.failureStatus = invalidCaptcha ? 400 : 503;
+        api.holdRegistrationReplies = true;
+        submit();
+        await([&] { return !api.heldRegistrationReplies.isEmpty() && service.busy(); });
+        api.state = QStringLiteral("fulfilled");
+        service.refreshPurchase();
+        await([&] {
+            return service.purchase().request().value(QStringLiteral("state")).toString() ==
+                   u"fulfilled";
+        });
+        require(api.claims == 0, "the old claim waits for the replacement response");
+        api.heldRegistrationReplies.takeFirst()();
+        await([&] { return service.signedIn() && !service.account().isEmpty(); });
+        require(api.claims == 1 && api.proofSeen && service.purchase().request().isEmpty(),
+                "a failed replacement resumes the fulfilled original registration claim once");
+    }
+}
+
+void registrationClaimRetriesWithoutDependingOnPaymentPolling() {
+    Api api;
+    auto config = options();
+    config.pollIntervalMs = 150;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    service.registerAccount(QStringLiteral("OriginalUser"), QStringLiteral("long-password"),
+                            QStringLiteral("long-password"), QStringLiteral("abcd"));
+    await([&] { return !service.purchase().request().isEmpty(); });
+    api.state = QStringLiteral("fulfilled");
+    api.failurePath =
+        QStringLiteral("/api/v2/registration/requests/") + api.requestId + QStringLiteral("/claim");
+    api.failureCode = QStringLiteral("service_unavailable");
+    api.failureStatus = 503;
+    service.refreshPurchase();
+    await([&] { return api.claims == 1 && !service.purchase().notice().isEmpty(); });
+    api.rejectPolls = true;
+    const int paymentPolls = api.polls;
+    await([&] { return api.claims == 2; });
+    api.failurePath.clear();
+    await([&] { return service.signedIn() && !service.account().isEmpty(); });
+    require(
+        api.claims == 3 && api.polls == paymentPolls && service.purchase().request().isEmpty(),
+        "known fulfillment retries the original claim through transient errors without polling");
+}
+
+void registrationStopsPollingAfterProofRevocation(bool observedExpiry) {
+    using namespace adqt::widgets;
+    Api api;
+    QTemporaryDir directory;
+    require(directory.isValid(), "create isolated registration secret storage");
+    auto config = options();
+    config.persistSecrets = true;
+    config.secretDirectory = directory.path();
+    config.profileIdentity = directory.path();
+    config.pollIntervalMs = 30;
+    SnowShotApiClient client(api.origin());
+    {
+        AccountSessionService service(client, config);
+        AccountPageWidget page(&service);
+        page.show();
+        service.registerAccount(QStringLiteral("RevokedProofUser"), QStringLiteral("long-password"),
+                                QStringLiteral("long-password"), QStringLiteral("abcd"));
+        await([&] { return !service.purchase().request().isEmpty(); });
+        api.state = observedExpiry ? QStringLiteral("expired") : QStringLiteral("payment_pending");
+        api.orderId = QStringLiteral("original-order");
+        api.orderState = QStringLiteral("payment_pending");
+        service.refreshPurchase();
+        await([&] {
+            return service.purchase().request().value(QStringLiteral("state")).toString() ==
+                   api.state;
+        });
+        require(service.purchase().canRefreshPayment(), "order is still queryable");
+
+        api.failurePath = QStringLiteral("/api/v2/registration/requests/") + api.requestId;
+        api.failureCode = QStringLiteral("invalid_registration_proof");
+        api.failureStatus = 401;
+        await([&] { return !service.purchase().canRefreshPayment(); });
+        require(!service.purchase().pending() && !service.purchase().request().contains(
+                                                     QStringLiteral("mini_program_code_data_url")),
+                "revoked proof releases the registration form and removes the old code");
+        const auto* status = page.findChild<QLabel*>(QStringLiteral("accountPurchaseStatus"));
+        const auto* refresh = page.findChild<AdButton*>(QStringLiteral("accountRefreshPayment"));
+        require(status->text() == u"Payment status unavailable" && !refresh->isVisibleTo(&page),
+                "revoked proof is shown as unavailable without a refresh action");
+    }
+    const auto polls = api.polls;
+    AccountSessionService restarted(client, config);
+    require(restarted.purchase().request().value(QStringLiteral("order_state")).toString() ==
+                u"unavailable",
+            "unavailable status survives restart");
+    restarted.refreshPurchase(true);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    await([&] { return elapsed.elapsed() >= 3 * config.pollIntervalMs; });
+    require(api.polls == polls, "revoked proof is never queried again");
+}
+
+void previousRegistrationSurvivesRestart(bool replace) {
+    using namespace adqt::widgets;
+    Api api;
+    QTemporaryDir secrets;
+    require(secrets.isValid(), "create isolated registration secret storage");
+    auto config = options();
+    config.persistSecrets = true;
+    config.secretDirectory = secrets.path();
+    config.profileIdentity = secrets.path();
+    config.pollIntervalMs = 60000;
+    const auto oldId = api.requestId;
+    const auto newId = replace ? QStringLiteral("replacement-request") : QString();
+    QJsonObject oldStatus;
+    {
+        SnowShotApiClient client(api.origin());
+        AccountSessionService service(client, config);
+        AccountPageWidget page(&service);
+        page.resize(640, 640);
+        page.show();
+        service.registerAccount(QStringLiteral("OriginalUser"), QStringLiteral("long-password"),
+                                QStringLiteral("long-password"), QStringLiteral("abcd"));
+        await([&] { return !service.purchase().request().isEmpty(); });
+        api.state = QStringLiteral("expired");
+        api.orderId = QStringLiteral("original-order");
+        api.orderState = QStringLiteral("payment_pending");
+        oldStatus = api.purchase();
+        api.registrationStatuses.insert(oldId, oldStatus);
+        service.refreshPurchase();
+        await([&] { return !service.purchase().pending(); });
+        if (replace) {
+            api.requestId = newId;
+            api.state = QStringLiteral("awaiting_payment");
+            api.orderId.clear();
+            api.orderState.clear();
+            service.registerAccount(QStringLiteral("ReplacementUser"),
+                                    QStringLiteral("long-password"),
+                                    QStringLiteral("long-password"), QStringLiteral("abcd"));
+            await([&] {
+                return service.purchase()
+                           .request()
+                           .value(QStringLiteral("request_id"))
+                           .toString() == newId;
+            });
+        } else {
+            service.signIn(QStringLiteral("ExistingUser"), QStringLiteral("long-password"));
+            await([&] { return service.signedIn(); });
+            auto* dismiss = page.findChild<AdButton*>(QStringLiteral("accountDismissPurchase"));
+            require(dismiss && dismiss->isVisibleTo(&page) && dismiss->text() == u"Continue",
+                    "a signed-in user can continue past the expired registration");
+            dismiss->click();
+            require(service.purchase().request().isEmpty(),
+                    "continuing clears the current purchase view");
+        }
+        require(service.previousRegistrations().size() == 1, "keep one previous registration");
+        const auto previous = service.previousRegistrations().at(0).toObject();
+        require(previous.value(QStringLiteral("request_id")).toString() == oldId &&
+                    previous.value(QStringLiteral("can_refresh")).toBool() &&
+                    !previous.contains(QStringLiteral("registration_proof")),
+                "keep the pending old order without exposing its proof");
+        auto* card = page.findChild<QWidget*>(QStringLiteral("accountPreviousRegistrations"));
+        require(card && card->isVisibleTo(&page), "the old order remains visible");
+        auto* refresh = card->findChild<AdButton*>();
+        require(refresh && refresh->text() == u"Refresh", "the old order offers manual refresh");
+        api.proofSeen = false;
+        refresh->click();
+        await([&] { return api.manualQuery && api.proofSeen; });
+    }
+    oldStatus.insert(QStringLiteral("order_state"), QStringLiteral("refunded"));
+    api.registrationStatuses.insert(oldId, oldStatus);
+    config.pollIntervalMs = 20;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService restarted(client, config);
+    await([&] {
+        return restarted.previousRegistrations()
+                   .at(0)
+                   .toObject()
+                   .value(QStringLiteral("order_state"))
+                   .toString() == u"refunded";
+    });
+    const auto settled = restarted.previousRegistrations().at(0).toObject();
+    require(!settled.value(QStringLiteral("can_refresh")).toBool() &&
+                restarted.purchase().request().value(QStringLiteral("request_id")).toString() ==
+                    newId &&
+                api.claims == 0,
+            "automatic polling restores and settles the old order independently after restart");
+    restarted.dismissPreviousRegistration(oldId);
+    require(restarted.previousRegistrations().isEmpty(), "settled old orders can be dismissed");
+}
+
+void closedPreviousRegistrationCanBeRefreshed() {
+    using namespace adqt::widgets;
+    Api api;
+    auto config = options();
+    config.pollIntervalMs = 60000;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    AccountPageWidget page(&service);
+    page.show();
+    service.registerAccount(QStringLiteral("OriginalUser"), QStringLiteral("long-password"),
+                            QStringLiteral("long-password"), QStringLiteral("abcd"));
+    await([&] { return service.purchase().pending(); });
+    api.state = QStringLiteral("failed");
+    api.orderId = QStringLiteral("original-order");
+    api.orderState = QStringLiteral("closed");
+    service.refreshPurchase();
+    await([&] { return !service.purchase().pending(); });
+    require(service.purchase().canRefreshPayment() && !service.purchase().shouldPollPayment(),
+            "an order closed before the deadline is available for manual refresh");
+
+    api.failurePath = QStringLiteral("/api/v2/registration/requests/") + api.requestId +
+                      QStringLiteral("/refresh");
+    api.failureCode.clear();
+    api.failureStatus = 404;
+    service.refreshPurchase(true);
+    await([&] { return !service.purchase().queryingPlatform(); });
+    require(!service.error().isEmpty() && service.purchase().canRefreshPayment() &&
+                service.purchase().request().value(QStringLiteral("state")).toString() == u"failed",
+            "a generic 404 preserves the current registration proof and status");
+
+    service.dismissPurchase();
+    require(service.previousRegistrations().size() == 1, "retain the closed order");
+
+    const auto previous = [&] { return service.previousRegistrations().at(0).toObject(); };
+    service.refreshPreviousRegistration(api.requestId);
+    await([&] { return !previous().value(QStringLiteral("refreshing")).toBool(); });
+    require(previous().value(QStringLiteral("order_state")).toString() == u"closed" &&
+                previous().value(QStringLiteral("can_refresh")).toBool() &&
+                previous().value(QStringLiteral("can_dismiss")).toBool(),
+            "a generic 404 preserves the archived proof and allows a retry");
+    const auto* history = page.findChild<QWidget*>(QStringLiteral("accountPreviousRegistrations"));
+    require(history, "the expired order has a history card");
+    AdButton* refresh = nullptr;
+    await([&] {
+        refresh = nullptr;
+        bool dismissVisible = false;
+        for (auto* action : history->findChildren<AdButton*>()) {
+            if (!action->isVisibleTo(&page))
+                continue;
+            if (action->text() == u"Refresh")
+                refresh = action;
+            else if (action->text() == u"Dismiss")
+                dismissVisible = true;
+        }
+        return refresh && dismissVisible;
+    });
+
+    api.failurePath.clear();
+    api.state = QStringLiteral("expired");
+    api.orderState = QStringLiteral("paid");
+    api.proofSeen = false;
+    refresh->click();
+    await([&] { return previous().value(QStringLiteral("order_state")).toString() == u"paid"; });
+    require(api.proofSeen && !previous().value(QStringLiteral("can_refresh")).toBool(),
+            "manual refresh uses the retained proof and displays the late payment");
+}
+
+void previousRegistrationHistoryClearsWhenOriginChanges() {
+    Api first;
+    Api second;
+    second.requestId = QStringLiteral("other-origin-request");
+    QTemporaryDir secrets;
+    require(secrets.isValid(), "create isolated registration secret storage");
+    auto config = options();
+    config.persistSecrets = true;
+    config.secretDirectory = secrets.path();
+    config.profileIdentity = secrets.path();
+    config.pollIntervalMs = 60000;
+    const auto save = [&](const Api& api, const QJsonObject& state) {
+        const auto identity = QCoreApplication::applicationName() + u'|' + config.profileIdentity +
+                              u'|' + api.origin();
+        snow_shot::storage::AccountSecretStore store(identity, config.secretDirectory);
+        require(store.write(QJsonDocument(state).toJson(QJsonDocument::Compact)),
+                "save the origin's registration state");
+    };
+    save(first,
+         {{QStringLiteral("previous_registrations"),
+           QJsonArray{QJsonObject{{QStringLiteral("request_id"), first.requestId},
+                                  {QStringLiteral("order_id"), QStringLiteral("old-order")},
+                                  {QStringLiteral("order_state"), QStringLiteral("paid")}}}}});
+    save(second, {{QStringLiteral("purchase"), second.purchase()},
+                  {QStringLiteral("registration_proof"), QStringLiteral("private-proof")}});
+
+    SnowShotApiClient client(first.origin());
+    AccountSessionService service(client, config);
+    AccountPageWidget page(&service);
+    page.show();
+    const auto* history = page.findChild<QWidget*>(QStringLiteral("accountPreviousRegistrations"));
+    require(history && history->isVisibleTo(&page), "the first origin shows its previous order");
+    require(client.setBaseUrl(second.origin()), "switch to the second origin");
+    require(service.purchase().request().value(QStringLiteral("request_id")).toString() ==
+                    second.requestId &&
+                service.previousRegistrations().isEmpty() && !history->isVisibleTo(&page),
+            "the restored registration has no previous orders from the first origin");
 }
 
 void temporaryAccountLinkClaimsWithoutPayment() {
@@ -890,10 +1233,21 @@ void registrationDraftSurvivesExpiredPurchase() {
     require(!username->isVisibleTo(&page) && dismiss->isHidden(),
             "payment confirmation keeps the registration draft hidden beyond code expiry");
     api.state = QStringLiteral("expired");
+    api.orderId = QStringLiteral("old-registration-order");
+    api.orderState = QStringLiteral("payment_pending");
     service.refreshPurchase();
     await([&] { return !service.purchase().pending(); });
     require(dismiss->isVisibleTo(&page) && !code->isVisibleTo(&page),
             "confirmed expiry offers a return action and hides the expired code");
+    auto* query = page.findChild<AdButton*>(QStringLiteral("accountRefreshPayment"));
+    require(query && query->isVisibleTo(&page),
+            "an expired registration with an unresolved order can still query WeChat");
+    api.orderState = QStringLiteral("refunded");
+    query->click();
+    await([&] { return api.manualQuery && !service.purchase().polling(); });
+    const auto* status = page.findChild<QLabel*>(QStringLiteral("accountPurchaseStatus"));
+    require(!query->isVisibleTo(&page) && status && status->text() == u"Payment refunded",
+            "a confirmed refund ends order polling and displays the terminal result");
     const int previousCaptchas = api.captchas;
     dismiss->click();
     await([&] { return api.captchas > previousCaptchas && !service.captcha().isEmpty(); });
@@ -906,6 +1260,8 @@ void registrationDraftSurvivesExpiredPurchase() {
     require(agreement->isChecked(), "retrying the same registration draft retains its consent");
     captcha->setText(QStringLiteral("efgh"));
     api.state = QStringLiteral("awaiting_payment");
+    api.orderId.clear();
+    api.orderState.clear();
     submit->click();
     await([&] { return api.registrations == 2 && !service.busy(); });
     const auto submitted = QJsonDocument::fromJson(api.registrationBody).object();
@@ -2019,6 +2375,14 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (arguments.contains(QStringLiteral("--payment-ui-only"))) {
+        registrationClaimRetriesWithoutDependingOnPaymentPolling();
+        failedReplacementResumesDeferredOriginalClaim();
+        registrationStopsPollingAfterProofRevocation(true);
+        registrationStopsPollingAfterProofRevocation(false);
+        previousRegistrationSurvivesRestart(true);
+        previousRegistrationSurvivesRestart(false);
+        closedPreviousRegistrationCanBeRefreshed();
+        previousRegistrationHistoryClearsWhenOriginChanges();
         automaticPaymentPollingDoesNotShowButtonLoading();
         paymentActionsStayInOneRowAndDetailsAreCentered();
         uncertainPollingBacksOffAndManualRefreshRecovers();
@@ -2040,6 +2404,14 @@ int main(int argc, char** argv) {
     registrationEnforcesPasswordLength();
     passwordInputsEnforceMaximumLength();
     registrationReconcilesBeyondExpiryAndClaims();
+    failedReplacementResumesDeferredOriginalClaim();
+    registrationClaimRetriesWithoutDependingOnPaymentPolling();
+    registrationStopsPollingAfterProofRevocation(true);
+    registrationStopsPollingAfterProofRevocation(false);
+    previousRegistrationSurvivesRestart(true);
+    previousRegistrationSurvivesRestart(false);
+    closedPreviousRegistrationCanBeRefreshed();
+    previousRegistrationHistoryClearsWhenOriginChanges();
     temporaryAccountLinkClaimsWithoutPayment();
     explicitIdentityChoiceSuppressesAutomaticClaim();
     automaticPaymentPollingDoesNotShowButtonLoading();

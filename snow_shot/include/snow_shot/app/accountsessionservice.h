@@ -31,6 +31,8 @@ class AccountPurchaseCoordinator final : public QObject {
         return m_request;
     }
     [[nodiscard]] bool pending() const;
+    [[nodiscard]] bool canRefreshPayment() const;
+    [[nodiscard]] bool shouldPollPayment() const;
     [[nodiscard]] bool polling() const {
         return m_pollBusy;
     }
@@ -108,6 +110,7 @@ class AccountSessionService final : public QObject {
     [[nodiscard]] AccountPurchaseCoordinator& purchase() {
         return m_purchase;
     }
+    [[nodiscard]] QJsonArray previousRegistrations() const;
     [[nodiscard]] static QString formatCredits(const QString& nanos);
     [[nodiscard]] static QString formatCreditAmount(const QString& nanos);
 
@@ -118,6 +121,8 @@ class AccountSessionService final : public QObject {
                          const QString& confirmation, const QString& answer);
     void beginTopUp();
     void refreshPurchase(bool queryPlatform = false);
+    void refreshPreviousRegistration(const QString& requestId);
+    void dismissPreviousRegistration(const QString& requestId);
     void cancelPurchase();
     void dismissPurchase();
     void refreshAccount();
@@ -146,8 +151,14 @@ class AccountSessionService final : public QObject {
     void refreshSession(std::function<void(bool)> completion);
     void acceptSession(const QJsonObject& session, bool sameAccountRefresh = false);
     void acceptPurchase(const QJsonObject& request, bool registration);
+    void retainPreviousRegistration();
+    [[nodiscard]] qsizetype previousRegistrationIndex(const QString& requestId) const;
+    void schedulePreviousRegistrationPoll();
+    void pollPreviousRegistration();
+    void queryPreviousRegistration(const QString& requestId, bool queryPlatform);
     void clearPurchase();
     void claimRegistration();
+    void resetRegistrationClaimRetry();
     void resetOrigin();
     void persist();
     void setBusy(bool value);
@@ -161,7 +172,14 @@ class AccountSessionService final : public QObject {
     std::unique_ptr<storage::AccountSecretStore> m_secrets;
     Options m_options;
     AccountPurchaseCoordinator m_purchase;
+    QJsonArray m_previousRegistrations;
+    QSet<QString> m_previousRegistrationQueries;
+    QSet<QString> m_previousManualRefreshes;
+    QTimer m_previousRegistrationPoll;
+    qsizetype m_previousRegistrationCursor = 0;
     QTimer m_accountRefresh;
+    QTimer m_registrationClaimRetry;
+    int m_registrationClaimFailures = 0;
     QTimer m_tokenRefresh;
     QSet<QNetworkReply*> m_replies;
     QString m_origin;

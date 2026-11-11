@@ -80,6 +80,10 @@
             <translation>Date</translation>
         </message>
         <message>
+            <source>Dismiss</source>
+            <translation>Dismiss</translation>
+        </message>
+        <message>
             <source>Failed</source>
             <translation>Failed</translation>
         </message>
@@ -136,8 +140,20 @@
             <translation>Payment received</translation>
         </message>
         <message>
+            <source>Payment refunded</source>
+            <translation>Payment refunded</translation>
+        </message>
+        <message>
+            <source>Payment status unavailable</source>
+            <translation>Payment status unavailable</translation>
+        </message>
+        <message>
             <source>Pending</source>
             <translation>Pending</translation>
+        </message>
+        <message>
+            <source>Previous registration orders</source>
+            <translation>Previous registration orders</translation>
         </message>
         <message>
             <source>Privacy policy</source>
@@ -254,6 +270,10 @@
         <message>
             <source>Username</source>
             <translation>Username</translation>
+        </message>
+        <message>
+            <source>View your balance in the Mini Program with the WeChat account used to pay.</source>
+            <translation>View your balance in the Mini Program with the WeChat account used to pay.</translation>
         </message>
         <message>
             <source>Waiting for payment</source>
