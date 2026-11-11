@@ -10028,14 +10028,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     snow_shot_add_translations(snow-shot-account-tests)
     snow_shot_import_offscreen_platform(snow-shot-account-tests)
+    qt_import_plugins(snow-shot-account-tests EXCLUDE Qt6::QJpegPlugin)
     add_test(NAME snow-shot-account-tests COMMAND snow-shot-account-tests -platform offscreen)
     add_test(NAME snow-shot-account-cancellation-tests
         COMMAND snow-shot-account-tests -platform offscreen --top-up-cancellation-only)
+    add_test(NAME snow-shot-account-mini-program-code-tests
+        COMMAND snow-shot-account-tests -platform offscreen --mini-program-code-only)
     set_tests_properties(snow-shot-account-tests snow-shot-account-cancellation-tests
+        snow-shot-account-mini-program-code-tests
         PROPERTIES LABELS "unit"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     set_tests_properties(snow-shot-account-tests PROPERTIES TIMEOUT 90)
-    set_tests_properties(snow-shot-account-cancellation-tests PROPERTIES TIMEOUT 45)
+    set_tests_properties(snow-shot-account-cancellation-tests snow-shot-account-mini-program-code-tests
+        PROPERTIES TIMEOUT 45)
 
     add_executable(snow-shot-api-client-tests
         tests/snowshot_api_client_tests.cpp

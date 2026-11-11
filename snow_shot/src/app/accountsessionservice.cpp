@@ -19,6 +19,9 @@
 
 namespace snow_shot::app {
 namespace {
+const auto registrationRequestsPath = QStringLiteral("/registration/requests");
+const auto purchaseRequestsPath = QStringLiteral("/purchases/requests");
+
 QString translatedAccountMessage(const QString& source) {
     if (source.isEmpty())
         return {};
@@ -212,6 +215,8 @@ void AccountSessionService::send(const QByteArray& method, const QString& path,
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Content-Type", "application/json");
     request.setRawHeader("X-Request-ID", requestId.toUtf8());
+    if (method == "POST" && (path == registrationRequestsPath || path == purchaseRequestsPath))
+        request.setRawHeader("X-Mini-Program-Code-Format", "jpeg");
     if (authenticated && !m_accessToken.isEmpty())
         request.setRawHeader("Authorization", "Bearer " + m_accessToken.toUtf8());
     if (!proof.isEmpty())
@@ -555,7 +560,7 @@ void AccountSessionService::registerAccount(const QString& username, const QStri
     }
     m_error.clear();
     setBusy(true);
-    send("POST", QStringLiteral("/registration/requests"),
+    send("POST", registrationRequestsPath,
          {{QStringLiteral("username"), username},
           {QStringLiteral("password"), password},
           {QStringLiteral("password_confirmation"), confirmation},
@@ -590,7 +595,7 @@ void AccountSessionService::beginTopUp() {
     m_error.clear();
     setBusy(true);
     send(
-        "POST", QStringLiteral("/purchases/requests"), {},
+        "POST", purchaseRequestsPath, {},
         [this](const QJsonObject& data, const RequestFailure& error) {
             setBusy(false);
             if (!error.isEmpty())

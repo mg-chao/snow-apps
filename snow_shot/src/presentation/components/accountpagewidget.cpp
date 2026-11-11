@@ -2,6 +2,7 @@
 
 #include "snow_shot/app/accountsessionservice.h"
 #include "snow_shot/app/distribution.h"
+#include "snowimageqtcodec.h"
 #include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
@@ -176,8 +177,15 @@ class AccountTransactionRow final : public QWidget {
 void imageFromData(QLabel* label, const QString& data, const QSize& bounds) {
     const auto comma = data.indexOf(u',');
     QPixmap pixmap;
-    if (data.startsWith(QStringLiteral("data:image/")) && comma > 0 && data.size() < 4000000)
-        pixmap.loadFromData(QByteArray::fromBase64(data.mid(comma + 1).toLatin1()));
+    if (data.startsWith(QStringLiteral("data:image/")) && comma > 0 && data.size() < 4000000) {
+        const auto encoded = QByteArray::fromBase64(data.mid(comma + 1).toLatin1());
+        if (encoded.startsWith(QByteArrayLiteral("\xff\xd8\xff"))) {
+            pixmap = QPixmap::fromImage(
+                snow_shot::image_codec::decodeFirstFrame(encoded, snow::image::Format::jpeg));
+        } else {
+            pixmap.loadFromData(encoded);
+        }
+    }
     if (!pixmap.isNull()) {
         const qreal ratio = label->devicePixelRatioF();
         const QSize pixels(std::max(1, qFloor(bounds.width() * ratio)),

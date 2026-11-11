@@ -30,6 +30,7 @@
 #include <QNetworkProxy>
 #include <QElapsedTimer>
 #include <QFontDatabase>
+#include <QImageReader>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QKeyEvent>
@@ -84,6 +85,7 @@ class Api {
     int logins = 0;
     bool manualQuery = false;
     bool proofSeen = false;
+    bool jpegCodeRequested = false;
     bool officialAuthSeen = false;
     bool rejectPolls = false;
     QString failurePath;
@@ -157,7 +159,7 @@ class Api {
                     const QByteArray path = first.value(1);
                     const bool post = first.value(0) == "POST";
                     const auto body = QJsonDocument::fromJson(bytes->mid(headerEnd + 4)).object();
-                    const auto headers = bytes->left(headerEnd).toLower();
+                    const auto headers = bytes->left(headerEnd + 2).toLower();
                     QJsonObject data;
                     int responseStatus = 200;
                     if (path == "/api/v2/registration/captcha") {
@@ -166,6 +168,8 @@ class Api {
                                 {QStringLiteral("image_data_url"), captchaData}};
                     } else if (path == "/api/v2/registration/requests" && post) {
                         ++registrations;
+                        jpegCodeRequested =
+                            headers.contains("\nx-mini-program-code-format: jpeg\r");
                         registrationBody = bytes->mid(headerEnd + 4);
                         username = body.value(QStringLiteral("username")).toString();
                         data = purchase();
@@ -186,6 +190,8 @@ class Api {
                         data.insert(QStringLiteral("mini_program_code_data_url"), QJsonValue());
                     } else if (path == "/api/v2/purchases/requests" && post) {
                         requestId = QStringLiteral("purchase%1").arg(++purchases);
+                        jpegCodeRequested =
+                            headers.contains("\nx-mini-program-code-format: jpeg\r");
                         data = purchase();
                     } else if (path.startsWith("/api/v2/purchases/requests/") &&
                                path.endsWith("/cancel") && post) {
@@ -818,6 +824,45 @@ void uncertainPollingBacksOffAndManualRefreshRecovers() {
     await([&] { return api.manualQuery && !service.purchase().polling(); });
     require(service.purchase().nextPollDelayMs() == 100 && service.purchase().notice().isEmpty(),
             "manual refresh bypasses backoff and successful queries reset it");
+}
+
+void miniProgramCodeRenders(bool registration, bool jpeg) {
+    Api api;
+    if (jpeg) {
+        // 16 by 16 grayscale JPEG, black on the left and white on the right.
+        api.codeData = QStringLiteral("data:image/jpeg;base64,"
+                                      "/9j/4AAQSkZJRgABAQAAAQABAAD/"
+                                      "2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"
+                                      "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAAQABABAREA/"
+                                      "8QAFAABAAAAAAAAAAAAAAAAAAAAC//EABQQAQAA"
+                                      "AAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AP/P8ABz/AA//2Q==");
+    }
+    auto config = options();
+    config.pollIntervalMs = 60000;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    AccountPageWidget page(&service);
+    page.resize(640, 640);
+    page.show();
+    if (registration) {
+        service.registerAccount(QStringLiteral("TestUser"), QStringLiteral("long-password"),
+                                QStringLiteral("long-password"), QStringLiteral("abcd"));
+    } else {
+        service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+        await([&] { return !service.account().isEmpty(); });
+        service.beginTopUp();
+    }
+    await([&] { return !service.purchase().request().isEmpty(); });
+    require(api.jpegCodeRequested, "creating a purchase request advertises JPEG support");
+    const auto* code = page.findChild<QLabel*>(QStringLiteral("accountMiniProgramCode"));
+    require(code && code->isVisibleTo(&page) && !code->pixmap().isNull(),
+            "the payment card displays the Mini Program code");
+    if (jpeg) {
+        const QImage image = code->pixmap().toImage();
+        require(qGray(image.pixel(0, image.height() / 2)) < 10 &&
+                    qGray(image.pixel(image.width() - 1, image.height() / 2)) > 245,
+                "the displayed code preserves the JPEG's dark and light regions");
+    }
 }
 
 void paymentActionsStayInOneRowAndDetailsAreCentered() {
@@ -2371,6 +2416,17 @@ int main(int argc, char** argv) {
     if (arguments.contains(QStringLiteral("--top-up-cancellation-only"))) {
         topUpCanBeCancelledAndRestarted();
         topUpCancellationPreservesUnconfirmedOrCompletedPayments();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (arguments.contains(QStringLiteral("--mini-program-code-only"))) {
+        QCoreApplication::setLibraryPaths({});
+        require(!QImageReader::supportedImageFormats().contains(QByteArrayLiteral("jpeg")),
+                "the Mini Program code test must run without Qt's JPEG decoder");
+        for (const bool registration : {true, false}) {
+            miniProgramCodeRenders(registration, true);
+            miniProgramCodeRenders(registration, false);
+        }
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
