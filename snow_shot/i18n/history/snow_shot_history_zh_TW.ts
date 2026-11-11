@@ -551,6 +551,10 @@
             <translation>請輸入正數的紙張尺寸</translation>
         </message>
         <message>
+            <source>Enter an image quality from 0% to 100%</source>
+            <translation>請輸入 0% 至 100% 之間的影像品質</translation>
+        </message>
+        <message>
             <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
             <translation>此影像拼接需要過多暫存記憶體。請減少影像數量或使用較小的影像</translation>
         </message>

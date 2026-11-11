@@ -55,6 +55,7 @@ struct ImageStitchingPdfSettings final {
     qreal marginLeftMm = 10;
     qreal marginRightMm = 10;
     ImageStitchingPdfExportMode exportMode = ImageStitchingPdfExportMode::Combined;
+    int imageQuality = 100;
 
     // Treat two NaNs as the same incomplete field so UI refreshes do not emit repeatedly.
     friend bool operator==(const ImageStitchingPdfSettings&, const ImageStitchingPdfSettings&);
