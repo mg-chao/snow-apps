@@ -12,6 +12,7 @@
 #include "translation_test_support.h"
 #include "recognition_attachment_test_access.h"
 #include <QKeyEvent>
+#include <QKeySequence>
 #include "widgets/select.h"
 
 #include <QApplication>
@@ -104,6 +105,7 @@ void cropSessionCopyUsesAttachedController() {
     const QPointer<Session> cropped = editor.recognition();
     require(cropped && cropped != original && cropped->hasTextResult(),
             "crop B gets independent deterministic recognition");
+    editor.palette()->textEditRequested();
     cropped->setTextDraft(QStringLiteral("B draft"));
     editor.palette()->moveRequested();
     require(editor.document()->undo(), "copy fixture undoes crop B");
@@ -114,8 +116,11 @@ void cropSessionCopyUsesAttachedController() {
     auto* view = editor.canvas()->parentWidget()->findChild<ScreenshotRecognitionWindow*>(
         QStringLiteral("imageEditingRecognition"));
     require(view && original->ownsContentAttachment(), "A owns the shared view after undo");
-    require(ScreenshotRecognitionWindowTestAccess::canvasSelection(*view) ==
-                editor.document()->bounds(),
+    const auto viewport = [&] {
+        return editor.canvas()->canvasToViewTransform().inverted().mapRect(
+            QRectF(editor.canvas()->rect()));
+    };
+    require(ScreenshotRecognitionWindowTestAccess::canvasSelection(*view) == viewport(),
             "cached activation presents the restored crop geometry");
     const snow_shot::storage::ScreenshotTranslationSettings settings;
     const bool previousCopy = settings.copyTranslationResultsAsImage();
@@ -184,9 +189,9 @@ void cropSessionCopyUsesAttachedController() {
     editor.palette()->moveRequested();
     require(editor.document()->redo(), "copy fixture redoes B");
     editor.palette()->ocrRequested();
+    editor.palette()->textEditRequested();
     require(editor.recognition() == cropped && cropped->textDraft() == QStringLiteral("B draft") &&
-                ScreenshotRecognitionWindowTestAccess::canvasSelection(*view) ==
-                    editor.document()->bounds() &&
+                ScreenshotRecognitionWindowTestAccess::canvasSelection(*view) == viewport() &&
                 view->copyVisibleContentToClipboard() &&
                 QApplication::clipboard()->text() == QStringLiteral("B draft"),
             "redo restores B's recognition draft and current Copy policy");
@@ -212,7 +217,7 @@ void editCachedTranslation(const ImageEditingSource& source) {
     QPointer<QTextEdit> text = editor.canvas()->parentWidget()->findChild<QTextEdit*>();
     require(session && session->translating() && session->editing() &&
                 !session->originalImageTranslationActive(),
-            "independent cached translation uses editable text instead of the image overlay");
+            "cached translation respects the editable text preference");
     require(text && text->isVisible() && !text->isReadOnly() &&
                 text->toPlainText() == QStringLiteral("Translated text") &&
                 session->textDraft() == text->toPlainText(),
@@ -278,11 +283,6 @@ void liveAndPersistedTranslationImports() {
     require(pin.present(config, [&](bool success, QImage) { published = success; }),
             "translation source pin presents");
     awaitCondition([&] { return published; }, "translation source pin publishes its image");
-    ImageEditingSource cached;
-    cached.image = image;
-    cached.canvasRect = config.canvasSourceRect;
-    cached.recognition = recognitionFixture();
-    editCachedTranslation(cached);
     auto* session = pin.findChild<Session*>();
     awaitCondition([&] { return session && session->hasTextResult(); },
                    "the pinned source seeds its cached text presentation");
@@ -311,23 +311,59 @@ void liveAndPersistedTranslationImports() {
     pin.hide();
 }
 
-void independentFreshTranslationKeepsTextPresentation() {
-    auto cached = recognitionFixture();
-    cached.translatedText.reset();
-    QImage image(100, 60, QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::white);
-    Session session(nullptr, nullptr, nullptr, {});
-    session.setIndependentEditing(true);
-    session.setTarget({cached.key, image, QRectF(0, 0, 100, 60)});
-    session.seedRecognitionResults(cached);
-    session.activate(Session::Mode::Text);
-    session.beginTextTranslation();
-    require(session.translating() && session.editing() &&
-                !session.originalImageTranslationActive() && session.textDraft().isEmpty(),
-            "a fresh independent translation keeps text editing even with image mode enabled");
+void copyCachedTranslationOverlay(const ImageEditingSource& source) {
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const bool previousCopy = settings.copyTranslationResultsAsImage();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(settings.setCopyTranslationResultsAsImage(previousCopy)); });
+    require(settings.setCopyTranslationResultsAsImage(true), "select translated image copy");
+    ImageEditingWindow editor;
+    editor.present(source);
+    editor.palette()->textTranslationRequested();
+    auto* session = editor.recognition();
+    auto* view = editor.canvas()->findChild<ScreenshotRecognitionWindow*>();
+    require(session && view && view->boxSelectionEnabled() &&
+                session->originalImageTranslationActive() && !editor.dirty(),
+            "cached translation is selectable on the image and preserves the import checkpoint");
+    require(session->findChildren<snow_shot::translation::TranslationJob*>().isEmpty(),
+            "cached overlay avoids a new translation request");
+    editor.canvas()->actualSize();
+    editor.palette()->copyRequested();
+    const auto* mime = QApplication::clipboard()->mimeData();
+    const auto image = qvariant_cast<QImage>(mime->imageData());
+    require(mime->hasImage() && !mime->hasText() && image.size() == source.image.size() &&
+                image.pixelColor(0, 0) == source.image.pixelColor(0, 0) && image != source.image,
+            "translation image copy composites text over the base image at source resolution");
+    view->setFocus();
+    QApplication::processEvents();
+    auto* presentation = ScreenshotRecognitionWindowTestAccess::ocrPresentation(*view);
+    require(presentation, "the translated OCR presentation belongs to the shared view");
+    presentation->selectAll();
+    view->updateOcrSelection();
+    adqt::widgets::AdContextMenu menu(view);
+    ScreenshotRecognitionWindowTestAccess::populateOcrMenu(*view, menu);
+    auto* copy = menu.findChild<QAction*>(QStringLiteral("screenshotOcrCopyAction"));
+    require(copy && copy->isEnabled(), "the translated overlay has a context Copy action");
+    copy->trigger();
+    require(QApplication::clipboard()->text() == QStringLiteral("Translated text") &&
+                !QApplication::clipboard()->mimeData()->hasImage(),
+            "selected translated text takes precedence over image copy");
+    editor.palette()->copyRequested();
+    require(QApplication::clipboard()->text() == QStringLiteral("Translated text") &&
+                !editor.dirty(),
+            "toolbar copy uses the same selection and preserves the checkpoint");
+    QApplication::clipboard()->setText(QStringLiteral("keyboard copy sentinel"));
+    const auto key = QKeySequence::keyBindings(QKeySequence::Copy).first()[0];
+    for (const auto type : {QEvent::ShortcutOverride, QEvent::KeyPress, QEvent::KeyRelease}) {
+        QKeyEvent event(type, int(key.key()), key.keyboardModifiers());
+        QApplication::sendEvent(view, &event);
+    }
+    require(QApplication::clipboard()->text() == QStringLiteral("Translated text"),
+            "keyboard copy uses the same translated selection");
+    editor.shutdown();
 }
 
-void quickServicePickerDiscoversModelsWithoutATranslationJob() {
+void quickServicePickerDiscoversModelsWithoutATranslationJob(bool imageMode) {
     const snow_shot::storage::ScreenshotTranslationSettings settings;
     const auto original = settings.configuration();
     const auto restore =
@@ -357,6 +393,7 @@ void quickServicePickerDiscoversModelsWithoutATranslationJob() {
             api, snow_shot::storage::ApplicationStorage::instance().configuration(),
             QLocale::English);
         require(session && select && session->translating() && select->options().size() == 1 &&
+                    session->originalImageTranslationActive() == imageMode &&
                     select->currentValue() == configuration.modelId && server.modelRequests == 0 &&
                     session->findChildren<snow_shot::translation::TranslationJob*>().isEmpty(),
                 "a fresh free-service picker starts with usable local options and cached text");
@@ -408,7 +445,35 @@ void quickServicePickerDiscoversModelsWithoutATranslationJob() {
         require(body.value(QStringLiteral("model")) == QStringLiteral("general") &&
                     content.value(QStringLiteral("content")) == QStringLiteral("Original text"),
                 "switching services sends the original source to the selected model");
-        server.delta(0, QStringLiteral("Server translation"));
+        server.delta(0, QStringLiteral("Server"));
+        auto* view = editor.canvas()->findChild<ScreenshotRecognitionWindow*>();
+        awaitCondition([&] { return session->textDraft() == QStringLiteral("Server"); },
+                       "the selected service publishes an incremental translation");
+        require(view && view->showsOcrLayer() == imageMode,
+                "streaming updates the selected recognition page");
+        if (imageMode) {
+            auto* presentation = ScreenshotRecognitionWindowTestAccess::ocrPresentation(*view);
+            require(presentation && presentation->lines[0].text == QStringLiteral("Server") &&
+                        presentation->lines[0].translationStreaming,
+                    "the shared OCR layer displays incremental translated text");
+        }
+        if (imageMode && rejectFirst) {
+            ImageEditingSource replacement;
+            replacement.image = QImage(60, 40, QImage::Format_ARGB32_Premultiplied);
+            replacement.image.fill(Qt::green);
+            replacement.canvasRect = QRectF(0, 0, 60, 40);
+            server.delta(0, QStringLiteral(" late result"));
+            server.finish(0);
+            editor.present(std::move(replacement));
+            QApplication::processEvents();
+            require(!editor.recognition() && view->isHidden() &&
+                        editor.document()->image().size() == QSize(60, 40),
+                    "a replaced document retires the streaming overlay");
+            editor.shutdown();
+            require(settings.setConfiguration(configuration), "restore the free service");
+            continue;
+        }
+        server.delta(0, QStringLiteral(" translation"));
         server.finish(0);
         awaitCondition([&] { return session->textDraft() == QStringLiteral("Server translation"); },
                        "the selected service publishes its translation");
@@ -427,8 +492,6 @@ void independentModeAfterSeedingKeepsCapturedText() {
     session.seedRecognitionResults(cached);
     session.setIndependentEditing(true);
     session.activate(Session::Mode::Text);
-    require(!session.activateCachedTextTranslation(),
-            "cached overlay activation cannot bypass independent presentation mode");
     session.beginTextTranslation();
     require(session.editing() && !session.originalImageTranslationActive() &&
                 session.textDraft() == QStringLiteral("Translated text"),
@@ -458,13 +521,20 @@ void runImageEditingTranslationTests() {
     const bool originalImage = settings.originalImageTranslationEnabled();
     const auto restore = qScopeGuard(
         [&] { static_cast<void>(settings.setOriginalImageTranslationEnabled(originalImage)); });
-    require(settings.setOriginalImageTranslationEnabled(true),
-            "translation regression selects image translation for ordinary hosts");
+    require(settings.setOriginalImageTranslationEnabled(false), "select editable translation");
+    ImageEditingSource cached;
+    cached.image = QImage(100, 60, QImage::Format_ARGB32_Premultiplied);
+    cached.image.fill(Qt::white);
+    cached.canvasRect = QRectF(0, 0, 100, 60);
+    cached.recognition = recognitionFixture();
     cropSessionCopyUsesAttachedController();
-    liveAndPersistedTranslationImports();
-    quickServicePickerDiscoversModelsWithoutATranslationJob();
+    editCachedTranslation(cached);
+    quickServicePickerDiscoversModelsWithoutATranslationJob(false);
     independentModeAfterSeedingKeepsCapturedText();
-    independentFreshTranslationKeepsTextPresentation();
+    require(settings.setOriginalImageTranslationEnabled(true), "select on-image translation");
+    copyCachedTranslationOverlay(cached);
+    quickServicePickerDiscoversModelsWithoutATranslationJob(true);
+    liveAndPersistedTranslationImports();
     ordinaryHostsKeepCapturedOverlay();
 #endif
 }

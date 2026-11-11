@@ -252,7 +252,8 @@ void coordinatorShutdownDestroysRecognitionSessions() {
     presentation->selection = second->document()->bounds().toRect();
     presentation->prepareForRendering();
     provider.complete(1, std::move(presentation));
-    require(second->recognition()->editing(), "completed OCR opens its recognition editor");
+    require(second->recognition()->hasTextResult() && !second->recognition()->editing(),
+            "completed OCR opens its image overlay");
     require(second->document()->crop(ImageEditingDocument::CropAxis::Columns, 2, 4),
             "crop creates a second recognition state");
     second->palette()->ocrRequested();

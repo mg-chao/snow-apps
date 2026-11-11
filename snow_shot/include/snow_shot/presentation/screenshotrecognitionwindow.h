@@ -87,6 +87,7 @@ struct ScreenshotRecognitionWindowActions {
     std::function<void(const QPointF&)> finishSelectionResizeAtGlobalPosition = ignoreResize;
     std::function<void()> selectionResizeFinished = noAction;
     std::function<void()> handleCopy = noAction;
+    std::function<bool()> copyOcrResult{};
 };
 
 struct ScreenshotTextSelectionSnapshot {
@@ -138,6 +139,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
                                                const QRectF& canvasSelection);
 
     void setShowOriginalImage(bool show);
+    [[nodiscard]] bool showsOcrLayer() const;
     void setOriginalImagePreviewEnabled(bool enabled);
     [[nodiscard]] bool originalImagePreviewEnabled() const;
     void setOriginalImagePreviewSource(QImage image, const QRectF& canvasRect);
@@ -231,6 +233,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void cancelLineBoxSelection();
 
   signals:
+    void resultPageChanged();
     void textSelectionChanged();
     void textSelectionGeometryChanged();
     void embeddedContextMenuRequested(const QPoint& globalPosition);

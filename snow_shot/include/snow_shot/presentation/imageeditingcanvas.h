@@ -17,6 +17,14 @@ class ImageEditingCanvas final : public SnowCanvasWidget, private SnowCanvasCust
     }
     void fit();
     void actualSize();
+    void setRecognitionDisplay(bool active, bool showImage, bool showFiltered);
+    void setRecognitionBackground(QImage image = {}, const QRectF& canvasRect = {});
+    [[nodiscard]] const QImage& recognitionBackground() const {
+        return m_recognitionBackground;
+    }
+    [[nodiscard]] const QRectF& recognitionBackgroundRect() const {
+        return m_recognitionBackgroundRect;
+    }
     double zoom() const {
         return m_zoom;
     }
@@ -26,6 +34,7 @@ class ImageEditingCanvas final : public SnowCanvasWidget, private SnowCanvasCust
     std::function<void(ImageEditingDocument::CropAxis, int, int)> cropRequested;
     std::function<bool(QWheelEvent*)> styleWheel;
     std::function<void(bool)> historyRequested;
+    std::function<void()> viewportChanged;
 
   protected:
     void mousePressEvent(QMouseEvent* event) override;
@@ -60,5 +69,10 @@ class ImageEditingCanvas final : public SnowCanvasWidget, private SnowCanvasCust
     QPointF m_last;
     QPointF m_firstPixel;
     QPointF m_lastPixel;
+    QImage m_recognitionBackground;
+    QRectF m_recognitionBackgroundRect;
+    bool m_recognitionActive = false;
+    bool m_showImage = true;
+    bool m_showFiltered = false;
 };
 } // namespace snow_shot::presentation
