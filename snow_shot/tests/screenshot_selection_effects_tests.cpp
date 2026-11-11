@@ -124,8 +124,6 @@ void selectionEffectsPersistAcrossRestarts() {
             "missing shadow color preferences must use the selection model default");
     require(!settings.aspectRatioLocked(),
             "new installations must default to an unlocked selection aspect ratio");
-    require(settings.selectionTarget() == ScreenshotIntelligentSelectionTarget::WindowSubElement,
-            "new installations must default to the existing child-element selection mode");
     require(settings.layoutCompaction() == ScreenshotLayoutCompaction{}, "compaction defaults");
     settings.setLayoutCompaction({true, 1000});
     require(settings.layoutCompaction() == ScreenshotLayoutCompaction{true, 100},
@@ -153,12 +151,8 @@ void selectionEffectsPersistAcrossRestarts() {
                 settings.borderType() == ScreenshotSelectionBorderType::Border &&
                 settings.borderColor() == QColor(Qt::yellow),
             "preferences and presets retain border settings");
-    settings.setSelectionTarget(ScreenshotIntelligentSelectionTarget::Window);
-    require(settings.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window &&
-                storage.smartSelectionMode() == snow_shot::SmartSelectionMode::Window &&
-                storage.configuration().value(QStringLiteral(
-                    "screenshot_selection/smart_selection")) == QStringLiteral("window"),
-            "Tab target preference and smart-selection dropdown must share one stored mode");
+    require(storage.requestSmartSelectionMode(snow_shot::SmartSelectionMode::Window),
+            "failed to configure window-only smart selection");
 
     QObject parent;
     ScreenshotCaptureState state;
@@ -227,9 +221,6 @@ void selectionEffectsPersistAcrossRestarts() {
     workflow.toggleSelectionAspectRatioLockFromToolbar();
     require(!restartedSettings.aspectRatioLocked(),
             "disabling the toolbar aspect-ratio toggle must update the saved preference");
-    require(restartedSettings.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window,
-            "selection target preference must survive a storage restart");
-    restartedSettings.setSelectionTarget(ScreenshotIntelligentSelectionTarget::WindowSubElement);
 
     workflow.openSelectionResizeModalFromToolbar();
     require(static_cast<bool>(applyResize), "resize workflow must expose its apply callback");
@@ -313,8 +304,8 @@ void selectionEffectsPersistAcrossRestarts() {
             "clearing selection settings must reset the shadow color");
     require(!settings.aspectRatioLocked(),
             "clearing selection settings must reset the aspect-ratio lock preference");
-    require(settings.selectionTarget() == ScreenshotIntelligentSelectionTarget::WindowSubElement,
-            "selection target preference must remain independently persisted when effects clear");
+    require(storage.smartSelectionMode() == snow_shot::SmartSelectionMode::Window,
+            "clearing selection effects must preserve the smart selection setting");
     storage.shutdown();
 }
 

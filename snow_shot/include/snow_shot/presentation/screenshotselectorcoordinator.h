@@ -25,7 +25,8 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
   public:
     explicit ScreenshotSelectorCoordinator(
         QObject* parent = nullptr, std::function<qint64()> now = {},
-        std::function<snow_shot::SmartSelectionMode()> mode = {});
+        std::function<snow_shot::SmartSelectionMode()> configuredMode = {},
+        std::function<snow_shot::SmartSelectionMode()> sessionMode = {});
     ~ScreenshotSelectorCoordinator() override;
 
     [[nodiscard]] bool ready() const override;
@@ -65,7 +66,8 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     QTimer m_refinementTimer;
     QElapsedTimer m_clock;
     std::function<qint64()> m_now;
-    std::function<snow_shot::SmartSelectionMode()> m_mode;
+    std::function<snow_shot::SmartSelectionMode()> m_configuredMode;
+    std::function<snow_shot::SmartSelectionMode()> m_sessionMode;
     qint64 m_targetChangedAt = 0;
     ScreenshotSelectorResult m_initial;
     quint64 m_targetGeneration = 0;

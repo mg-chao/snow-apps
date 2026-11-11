@@ -9,10 +9,12 @@
 
 ScreenshotSelectorCoordinator::ScreenshotSelectorCoordinator(
     QObject* parent, std::function<qint64()> now,
-    std::function<snow_shot::SmartSelectionMode()> mode)
-    : QObject(parent), m_now(std::move(now)), m_mode(std::move(mode)) {
-    if (!m_mode)
-        m_mode = [] {
+    std::function<snow_shot::SmartSelectionMode()> configuredMode,
+    std::function<snow_shot::SmartSelectionMode()> sessionMode)
+    : QObject(parent), m_now(std::move(now)), m_configuredMode(std::move(configuredMode)),
+      m_sessionMode(std::move(sessionMode)) {
+    if (!m_configuredMode)
+        m_configuredMode = [] {
             return snow_shot::storage::ApplicationStorage::instance().smartSelectionMode();
         };
     m_clock.start();
@@ -44,7 +46,7 @@ ScreenshotSelectorCoordinator::ScreenshotSelectorCoordinator(
                     const QVector<std::uintptr_t> excludedHwnds = m_lastExcludedHwnds;
                     const QVector<CapturedDisplayModel> displays = m_lastDisplays;
                     releaseCache();
-                    if (refreshRequired && m_mode() != snow_shot::SmartSelectionMode::Disabled) {
+                    if (refreshRequired) {
                         if (displays.isEmpty())
                             static_cast<void>(startRefresh(excludedHwnds));
                         else
@@ -117,7 +119,7 @@ void ScreenshotSelectorCoordinator::destroyService() {
 
 bool ScreenshotSelectorCoordinator::dispatchRefresh(const QVector<std::uintptr_t>& excludedHwnds,
                                                     const QVector<CapturedDisplayModel>* displays) {
-    if (m_mode() == snow_shot::SmartSelectionMode::Disabled || m_refreshInFlight ||
+    if (m_configuredMode() == snow_shot::SmartSelectionMode::Disabled || m_refreshInFlight ||
         (displays != nullptr && displays->isEmpty()))
         return false;
     resetHitTestState();
@@ -156,12 +158,13 @@ bool ScreenshotSelectorCoordinator::requestHitTest(const QPoint& physicalPoint,
 bool ScreenshotSelectorCoordinator::requestHitTestOnDisplay(const QPoint& physicalPoint,
                                                             ScreenshotSelectorHitTestMode mode,
                                                             quint32 displayId) {
-    if (m_mode() == snow_shot::SmartSelectionMode::Disabled || (!m_ready && !m_refreshInFlight) ||
-        !m_serviceClient->hasService()) {
+    const auto sessionMode = m_sessionMode ? m_sessionMode() : m_configuredMode();
+    if (sessionMode == snow_shot::SmartSelectionMode::Disabled ||
+        (!m_ready && !m_refreshInFlight) || !m_serviceClient->hasService()) {
         return false;
     }
 
-    if (m_mode() == snow_shot::SmartSelectionMode::Window)
+    if (sessionMode == snow_shot::SmartSelectionMode::Window)
         mode = ScreenshotSelectorHitTestMode::Window;
 
     if (m_hasTarget && m_pendingHitTestPoint == physicalPoint && m_pendingHitTestMode == mode &&
@@ -271,14 +274,16 @@ void ScreenshotSelectorCoordinator::handleResult(const ScreenshotSelectorResult&
         if (!m_hitTestInFlight || result.requestId != m_hitTestRequestId)
             return;
         m_hitTestInFlight = false;
+        bool superseded = result.mode != m_pendingHitTestMode;
 #ifdef Q_OS_MACOS
-        if (!m_hasTarget || result.generation != m_targetGeneration ||
-            result.point != m_pendingHitTestPoint || result.mode != m_pendingHitTestMode ||
-            result.displayId != m_pendingDisplayId) {
+        superseded = superseded || !m_hasTarget || result.generation != m_targetGeneration ||
+                     result.point != m_pendingHitTestPoint ||
+                     result.displayId != m_pendingDisplayId;
+#endif
+        if (superseded) {
             startNextHitTest();
             return;
         }
-#endif
         m_initial = result.canRefine ? result : ScreenshotSelectorResult{};
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_finished");
         SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.hit_test_ok", result.ok ? 1 : 0);

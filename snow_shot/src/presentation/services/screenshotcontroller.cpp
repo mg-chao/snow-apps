@@ -1227,7 +1227,8 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
     m_toolbarPresenter = std::make_unique<ScreenshotToolbarPresenter>(*m_overlayCoordinator,
                                                                       m_geometry, m_displaySession);
     m_selectorCoordinator = new ScreenshotSelectorCoordinator(
-        &owner, {}, [this] { return smartSelectionModeForCurrentRequest(); });
+        &owner, {}, [this] { return smartSelectionModeForCurrentRequest(); },
+        [this] { return m_intelligentSelection.smartSelectionMode(); });
     m_selectionSettings = std::make_unique<ScreenshotSelectionSettingsStore>();
     m_presentationServices =
         std::make_unique<ScreenshotPresentationServices>(ScreenshotPresentationServicesContext{
@@ -2113,9 +2114,6 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             updateCanvasColorSamplingPreview(overlay, localPosition);
         },
         [this]() { return m_physicalCursor != nullptr && m_physicalCursor->isSupported(); },
-        [this](ScreenshotIntelligentSelectionTarget target) {
-            m_selectionSettings->setSelectionTarget(target);
-        },
         [this]() { return canRecapture(); },
         [this]() { return requestCancelCaptureViaShortcut(); },
         [this](const QPoint& point, quint32 displayId) {

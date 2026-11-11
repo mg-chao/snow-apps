@@ -243,6 +243,49 @@ void smartSelectionModesPersistAndDisablePendingLookup(const QString& configurat
             "restore default mode");
 }
 
+void sessionModeChangesRetargetLookupWithoutRefreshing() {
+    using snow_shot::SmartSelectionMode;
+    auto& app = storage::ApplicationStorage::instance();
+    require(app.requestSmartSelectionMode(SmartSelectionMode::Window),
+            "failed to configure window-only smart selection");
+    auto sessionMode = app.smartSelectionMode();
+    automaticReply = false;
+    submissions.clear();
+    ScreenshotSelectorCoordinator coordinator(
+        nullptr, {}, [&app] { return app.smartSelectionMode(); },
+        [&sessionMode] { return sessionMode; });
+    int results = 0;
+    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
+                     [&results] { ++results; });
+    require(coordinator.startRefresh({}), "session selector refresh failed");
+    QCoreApplication::sendPostedEvents();
+    const int refreshes = refreshed;
+    const QPoint cursor(10, 20);
+    require(coordinator.requestHitTest(cursor, ScreenshotSelectorHitTestMode::Window) &&
+                submissions.size() == 1 &&
+                submissions.last().query.mode == SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW,
+            "the session must initially dispatch a window lookup");
+
+    sessionMode = SmartSelectionMode::WindowSubElement;
+    require(coordinator.requestHitTest(cursor, ScreenshotSelectorHitTestMode::WindowSubElement),
+            "switching the session mode must accept a lookup at the same position");
+    deliver(submissions.first(), SNOW_UI_SELECTOR_INITIAL, SNOW_UI_SELECTOR_COMPLETE);
+    QCoreApplication::sendPostedEvents();
+    require(results == 0 && submissions.size() == 2 &&
+                submissions.last().query.mode == SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT,
+            "switching modes must discard the old result and dispatch an element lookup");
+    deliver(submissions.last(), SNOW_UI_SELECTOR_INITIAL, SNOW_UI_SELECTOR_COMPLETE);
+    QCoreApplication::sendPostedEvents();
+    require(results == 1 && refreshed == refreshes &&
+                app.smartSelectionMode() == SmartSelectionMode::Window,
+            "the element lookup must reuse the selector snapshot and preserve the saved mode");
+
+    coordinator.releaseCache();
+    automaticReply = true;
+    require(app.requestSmartSelectionMode(SmartSelectionMode::WindowSubElement),
+            "failed to restore the default smart selection setting");
+}
+
 void settingsPersistAndResetToUia(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -1133,6 +1176,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--smart-selection-only"))) {
         smartSelectionModesPersistAndDisablePendingLookup(
             temporary.filePath(QStringLiteral("data/config.json")));
+        sessionModeChangesRetargetLookupWithoutRefreshing();
         applicationStorage.shutdown();
         return 0;
     }
@@ -1171,6 +1215,7 @@ int main(int argc, char** argv) {
     if (!selectorOnly) {
         smartSelectionModesPersistAndDisablePendingLookup(
             temporary.filePath(QStringLiteral("data/config.json")));
+        sessionModeChangesRetargetLookupWithoutRefreshing();
         recordingApiModePersistsAndResets(temporary.filePath(QStringLiteral("data/config.json")));
         settingsPersistAndResetToUia(temporary.filePath(QStringLiteral("data/config.json")));
         shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));

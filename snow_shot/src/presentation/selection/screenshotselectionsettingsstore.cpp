@@ -142,22 +142,6 @@ void ScreenshotSelectionSettingsStore::setAspectRatioLocked(bool locked) {
         locked ? aspectRatioPreset() : ScreenshotSelectionAspectRatioPreset::Free, locked);
 }
 
-ScreenshotIntelligentSelectionTarget ScreenshotSelectionSettingsStore::selectionTarget() const {
-    return configuration().value(QStringLiteral("screenshot_selection/smart_selection")) ==
-                   QStringLiteral("window")
-               ? ScreenshotIntelligentSelectionTarget::Window
-               : ScreenshotIntelligentSelectionTarget::WindowSubElement;
-}
-
-void ScreenshotSelectionSettingsStore::setSelectionTarget(
-    ScreenshotIntelligentSelectionTarget target) {
-    static_cast<void>(
-        configuration().setValue(QStringLiteral("screenshot_selection/smart_selection"),
-                                 target == ScreenshotIntelligentSelectionTarget::Window
-                                     ? QStringLiteral("window")
-                                     : QStringLiteral("window_sub_element")));
-}
-
 void ScreenshotSelectionSettingsStore::setPresets(
     const QVector<ScreenshotSelectionPreset>& presets) {
     QJsonArray array;
