@@ -219,7 +219,7 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
                                     setPendingTextRecognitionRendering,
                                 true))
                         return;
-                    if (m_presentation != nullptr) {
+                    if (m_presentation != nullptr && !editing()) {
                         if (!notify(&ScreenshotRecognitionSessionController::applyPresentation,
                                     m_presentation, QImage{}, QRectF{}))
                             return;
@@ -489,8 +489,6 @@ void ScreenshotRecognitionSessionController::setProviders(
 
 void ScreenshotRecognitionSessionController::setIndependentEditing(bool enabled) {
     m_independentEditing = enabled;
-    if (enabled)
-        setShowOriginalImage(false);
     updateOriginalImagePreview();
 }
 
@@ -1492,12 +1490,6 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
                 if (!notify(&ScreenshotRecognitionSessionController::startTextRender))
                     return;
             }
-            // Independent hosts may start translation from the ready notification.
-            // Establish text editing first, as the fresh-result path does, so restoring
-            // OCR cannot subsequently replace the translation editor or restart its request.
-            if (m_independentEditing &&
-                !notify(&ScreenshotRecognitionSessionController::beginTextEditing))
-                return;
             if (!notify(&ScreenshotRecognitionSessionController::textResultChanged, true))
                 return;
             if (!m_independentEditing && cached->editing) {
@@ -2063,11 +2055,12 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
     if (!m_active || m_mode != Mode::Text || !hasTextResult() || m_translating) {
         return;
     }
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
     const auto cached = m_textCache.constFind(m_target.key);
     if (cached != m_textCache.cend() && cached->overlayTranslation.captured &&
+        (!m_independentEditing || settings.originalImageTranslationEnabled()) &&
         (!cached->hasTranslationConfiguration ||
-         cached->translationConfiguration ==
-             snow_shot::storage::ScreenshotTranslationSettings().configuration()) &&
+         cached->translationConfiguration == settings.configuration()) &&
         activateCachedTextTranslation()) {
         return;
     }
@@ -2080,10 +2073,8 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
         return;
     }
     it->editing = false;
-    const snow_shot::storage::ScreenshotTranslationSettings settings;
-    const bool originalImage = !m_independentEditing &&
-                               settings.originalImageTranslationEnabled() && !it->formatted &&
-                               it->presentation != nullptr;
+    const bool originalImage =
+        settings.originalImageTranslationEnabled() && !it->formatted && it->presentation != nullptr;
     if (originalImage != m_translationInImage) {
         if (!cancelTranslationRequests())
             return;
@@ -2149,7 +2140,7 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
 
 bool ScreenshotRecognitionSessionController::activateCachedTextTranslation() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-    if (!m_active || m_mode != Mode::Text || m_independentEditing) {
+    if (!m_active || m_mode != Mode::Text) {
         return false;
     }
     auto entry = m_textCache.find(m_target.key);
@@ -2781,8 +2772,6 @@ bool ScreenshotRecognitionSessionController::originalImageTranslationActive() co
 }
 
 void ScreenshotRecognitionSessionController::setShowOriginalImage(bool show) {
-    if (m_independentEditing)
-        show = false;
     show = show && m_active;
     if (m_showOriginalImage == show) {
         return;
@@ -3113,11 +3102,11 @@ void ScreenshotRecognitionSessionController::renderTextBackground() {
 }
 
 void ScreenshotRecognitionSessionController::startTextRender() {
-    if (m_independentEditing || !shouldRenderTextBackground())
+    if (!shouldRenderTextBackground())
         return;
     const QPointer<ScreenshotRecognitionSessionController> lifetime(this);
     if (!m_active || m_mode != Mode::Text || !hasTarget() || m_recognition == nullptr ||
-        m_presentation == nullptr || !m_actions.applyOcrBackgroundImage) {
+        editing() || m_presentation == nullptr || !m_actions.applyOcrBackgroundImage) {
         return;
     }
     if (m_textRenderRequestToken != 0) {
@@ -3155,7 +3144,7 @@ void ScreenshotRecognitionSessionController::startTextRender() {
             }
             const QPointer<ScreenshotRecognitionSessionController> guard(this);
             const bool current = generation == m_textRenderGeneration && key == m_target.key &&
-                                 m_active && m_mode == Mode::Text;
+                                 m_active && m_mode == Mode::Text && !editing();
             if (!current || !shouldRenderTextBackground()) {
                 if (!guard)
                     return;
@@ -3479,9 +3468,6 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
             if (!notify(&ScreenshotRecognitionSessionController::startTextRender))
                 return;
         }
-        if (m_independentEditing &&
-            !notify(&ScreenshotRecognitionSessionController::beginTextEditing))
-            return;
         if (!notify(&ScreenshotRecognitionSessionController::textResultChanged, true))
             return;
     }

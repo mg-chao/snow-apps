@@ -45,6 +45,7 @@
 #include "widgets/color_picker.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "recognition_attachment_test_access.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshottextannotationgeometry.h"
@@ -530,11 +531,12 @@ class DeferredOcr final : public ScreenshotOcrRecognitionPort {
     ScreenshotOcrAssetStatus assetStatus() const override {
         return assets;
     }
-    void complete(int index, std::shared_ptr<ScreenshotOcrPresentation> result,
-                  QString error = {}) {
+    void complete(int index, std::shared_ptr<ScreenshotOcrPresentation> result, QString error = {},
+                  QImage filtered = {}, QRectF filteredBounds = {}) {
         auto callback = pending[index].completion;
         if (pending[index].receiver)
-            callback(ScreenshotOcrRecognitionResult{std::move(result), std::move(error)});
+            callback(ScreenshotOcrRecognitionResult{std::move(result), std::move(error),
+                                                    std::move(filtered), filteredBounds});
     }
 };
 snow_shot::presentation::ImageEditingSource source() {
@@ -545,6 +547,139 @@ snow_shot::presentation::ImageEditingSource source() {
             value.image.setPixel(x, y, qRgba(x * 10, y * 11, x + y, 20 + x + y));
     value.canvasRect = QRectF(-20, 15, 6, 5);
     return value;
+}
+void verifyRecognitionOverlayViewport() {
+    using namespace snow_shot::presentation;
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const auto fillKey = QStringLiteral("text_recognition/fill_style");
+    const auto oldFill = configuration.value(fillKey);
+    const auto restoreFill = qScopeGuard([&] { configuration.setValue(fillKey, oldFill); });
+    require(configuration.setValue(fillKey, QStringLiteral("blur")), "select filtered OCR");
+    const snow_shot::storage::TextRecognitionSettings settings;
+    const bool highlight = settings.showTextHighlighting();
+    const auto restoreHighlight = qScopeGuard([&] { settings.setShowTextHighlighting(highlight); });
+    require(settings.setShowTextHighlighting(false), "disable OCR highlighting in pixel fixture");
+
+    DeferredOcr provider;
+    QImage printed;
+    ScreenshotPrintService printing([&](QWidget*, QImage image, auto completion) {
+        printed = std::move(image);
+        completion({ScreenshotPrintService::Status::Submitted, {}});
+    });
+    ImageEditingServices services;
+    services.providers = [&] { return ScreenshotPinnedRecognitionProviders{&provider}; };
+    services.printing = &printing;
+    ImageEditingWindow window(services);
+    ImageEditingSource input;
+    input.image = QImage(160, 100, QImage::Format_ARGB32_Premultiplied);
+    input.image.fill(Qt::blue);
+    input.canvasRect = QRectF(-20.5, 15.5, 80, 50);
+    window.present(input);
+    require(window.document()->crop(ImageEditingDocument::CropAxis::Rows, 68, 80),
+            "overlay fixture crops the recognition target");
+    window.palette()->ocrRequested();
+    const auto bounds = window.document()->bounds();
+    require(provider.pending.size() == 1 && provider.pending[0].request.canvasRect == bounds &&
+                provider.pending[0].request.image == window.document()->image() &&
+                provider.pending[0].request.renderFilteredImage,
+            "fresh OCR and its filtered background use the cropped image");
+    const QRectF lineBounds(bounds.topLeft() + QPointF(18, 10), QSizeF(40, 8));
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = bounds.toAlignedRect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Recognized text");
+    line.quad = {lineBounds.topLeft(), lineBounds.topRight(), lineBounds.bottomRight(),
+                 lineBounds.bottomLeft()};
+    presentation->lines.append(line);
+    presentation->prepareForRendering();
+    QImage filtered(128, 44, QImage::Format_ARGB32_Premultiplied);
+    filtered.fill(Qt::green);
+    const QRectF filteredBounds(bounds.topLeft() + QPointF(8, 5), QSizeF(64, 22));
+    provider.complete(0, presentation, {}, filtered, filteredBounds);
+
+    auto* canvas = window.canvas();
+    auto* view = canvas->findChild<ScreenshotRecognitionWindow*>();
+    require(view && canvas->isVisible() && view->boxSelectionEnabled() &&
+                !canvas->canvasContentVisible(),
+            "the shared selectable OCR layer covers the base image while drawings are hidden");
+    const auto aligned = [&] {
+        return view->geometry() == canvas->rect() &&
+               ScreenshotRecognitionWindowTestAccess::canvasSelection(*view) ==
+                   canvas->canvasToViewTransform().inverted().mapRect(QRectF(canvas->rect()));
+    };
+    const auto sampledColor = [&] {
+        const QImage pixels = canvas->grab().toImage();
+        const QPointF pixel =
+            canvas->canvasToViewTransform().map(filteredBounds.topLeft() + QPointF(3, 3));
+        return pixels.pixelColor((pixel * pixels.devicePixelRatio()).toPoint());
+    };
+    require(aligned(), "the first OCR result is aligned to the cropped image viewport");
+    require(sampledColor() == QColor(Qt::green),
+            "the shared background painter places the worker crop at its canvas coordinates");
+    window.palette()->showOriginalImageRequested(true);
+    require(!view->boxSelectionEnabled() && sampledColor() == QColor(Qt::blue),
+            "the original-image action hides the text and filtered background");
+    window.palette()->showOriginalImageRequested(false);
+    require(view->boxSelectionEnabled() && sampledColor() == QColor(Qt::green),
+            "restoring results reuses the filtered crop");
+
+    canvas->actualSize();
+    require(aligned(), "Actual Size keeps the overlay aligned");
+    const auto zoom = canvas->zoom();
+    const QPointF center = canvas->rect().center();
+    QWheelEvent wheel(center, canvas->mapToGlobal(center), {}, QPoint(0, 120), Qt::NoButton,
+                      Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(view, &wheel);
+    require(canvas->zoom() > zoom && aligned(), "wheel zoom keeps the overlay aligned");
+    const auto beforePan = canvas->center();
+    const auto mouse = [&](QEvent::Type type, const QPointF& point, Qt::MouseButton button,
+                           Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, view->mapToGlobal(point), button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(view, &event);
+    };
+    mouse(QEvent::MouseButtonPress, center, Qt::MiddleButton, Qt::MiddleButton);
+    mouse(QEvent::MouseMove, center + QPointF(24, 8), Qt::NoButton, Qt::MiddleButton);
+    mouse(QEvent::MouseButtonRelease, center + QPointF(24, 8), Qt::MiddleButton, Qt::NoButton);
+    require(canvas->center() != beforePan && aligned(), "middle drag keeps the overlay aligned");
+    canvas->resize(canvas->size() - QSize(32, 24));
+    require(aligned(), "resize keeps the overlay aligned");
+    canvas->fit();
+    require(aligned(), "Fit keeps the overlay aligned");
+    bool printCompleted = false;
+    QObject::connect(&window, &ImageEditingWindow::exportFinished, &window,
+                     [&](bool success) { printCompleted = success; });
+    window.palette()->printRequested();
+    awaitCondition([&] { return printCompleted && !printed.isNull(); },
+                   "printing receives an immutable OCR viewport");
+    const auto printedColor = [&](const QPointF& point) {
+        const auto position = canvas->canvasToViewTransform().map(point);
+        return printed.pixelColor(qRound(position.x() * printed.width() / view->width()),
+                                  qRound(position.y() * printed.height() / view->height()));
+    };
+    require(printedColor(bounds.topLeft() + QPointF(3, 3)) == QColor(Qt::blue) &&
+                printedColor(filteredBounds.topLeft() + QPointF(3, 3)) == QColor(Qt::green),
+            "printing composites both the original and filtered pixels beneath OCR");
+    const auto transform = canvas->canvasToViewTransform();
+    const QPointF selectionStart = transform.map(lineBounds.center());
+    const QPointF selectionEnd =
+        transform.map(QPointF(lineBounds.right() + 4, lineBounds.center().y()));
+    mouse(QEvent::MouseButtonPress, selectionStart, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseMove, selectionEnd, Qt::NoButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, selectionEnd, Qt::LeftButton, Qt::NoButton);
+    const QString selectedText = presentation->selectedText();
+    require(!selectedText.isEmpty(), "left drag selects the mapped image text");
+    window.palette()->copyRequested();
+    require(QApplication::clipboard()->text() == selectedText, "selected OCR text can be copied");
+    window.palette()->textEditRequested();
+    require(window.recognition()->editing() && !view->showsOcrLayer(),
+            "Edit opens the OCR text draft");
+    window.palette()->textEditRequested();
+    require(!window.recognition()->editing() && view->boxSelectionEnabled() && aligned(),
+            "Edit toggles back to the aligned OCR layer");
+    window.palette()->moveRequested();
+    require(canvas->canvasContentVisible() && view->isHidden(),
+            "leaving recognition restores drawing layers");
+    window.shutdown();
 }
 void verifyRecognitionFeedback(snow_shot::presentation::ImageEditingSource original) {
     using namespace snow_shot::presentation;
@@ -588,8 +723,9 @@ void verifyRecognitionFeedback(snow_shot::presentation::ImageEditingSource origi
     presentation->selection = original.canvasRect.toRect();
     presentation->prepareForRendering();
     provider.complete(1, presentation);
-    require(!editorMessage(window, recognitionKey) && window.recognition()->editing(),
-            "successful recognition dismisses progress and enters editing");
+    require(!editorMessage(window, recognitionKey) && window.recognition()->hasTextResult() &&
+                !window.recognition()->editing(),
+            "successful recognition dismisses progress and shows the image overlay");
     window.shutdown();
     require(!editorMessage(window, recognitionKey) && !editorMessage(window, statusKey),
             "closing the editor dismisses recognition feedback");
@@ -1081,6 +1217,13 @@ void verifyRecognitionHistoryShortcuts() {
     presentation->prepareForRendering();
     recognized.recognition.key = QStringLiteral("editor-history");
     recognized.recognition.text = ScreenshotOcrRecognitionResult{presentation};
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const bool imageMode = settings.originalImageTranslationEnabled();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(settings.setOriginalImageTranslationEnabled(imageMode)); });
+    require(settings.setOriginalImageTranslationEnabled(false), "select editable translation");
+#endif
     for (const bool translation : {false, true}) {
 #if !SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         if (translation)
@@ -1089,6 +1232,7 @@ void verifyRecognitionHistoryShortcuts() {
         ImageEditingWindow window;
         window.present(recognized);
         window.palette()->ocrRequested();
+        window.palette()->textEditRequested();
         auto* session = window.recognition();
         require(session && session->editing(), "image editor opens editable cached OCR");
         if (translation) {
@@ -1382,6 +1526,7 @@ void runImageEditingTests() {
     if (QApplication::arguments().contains(
             QStringLiteral("--image-editing-recognition-feedback-only"))) {
         verifyRecognitionFeedback(source());
+        verifyRecognitionOverlayViewport();
         return;
     }
     const bool nativeToolbar =
@@ -1518,6 +1663,7 @@ void runImageEditingTests() {
     verifyCanvasToolbar(original);
     verifyLoadingFeedback(original);
     verifyRecognitionFeedback(original);
+    verifyRecognitionOverlayViewport();
     verifySourceLoading(original);
     verifyScrollingSourceImport();
     ImageEditingDocument document;
@@ -1839,10 +1985,12 @@ void runImageEditingTests() {
     ImageEditingWindow ocr;
     ocr.present(recognized);
     ocr.palette()->ocrRequested();
-    require(ocr.recognition() && ocr.recognition()->editing(),
-            "cached OCR enters editing directly");
-    ocr.recognition()->setShowOriginalImage(true);
-    require(!ocr.recognition()->showOriginalImage(), "original image mode remains disabled");
+    require(ocr.recognition() && ocr.recognition()->hasTextResult() &&
+                !ocr.recognition()->editing() && ocr.canvas()->isVisible(),
+            "cached OCR opens on the original image");
+    ocr.palette()->showOriginalImageRequested(true);
+    require(ocr.recognition()->showOriginalImage(), "the original-image action hides recognition");
+    ocr.palette()->textEditRequested();
     const auto camera = ocr.canvas()->center();
     const auto cameraZoom = ocr.canvas()->zoom();
     ocr.recognition()->setTextDraft(QStringLiteral("Unsaved draft"));
@@ -1854,6 +2002,10 @@ void runImageEditingTests() {
     ocr.palette()->ocrRequested();
     require(ocr.recognition()->textDraft() == QStringLiteral("Unsaved draft"),
             "recognition draft survives mode switches");
+    ocr.palette()->copyRequested();
+    require(ocr.dirty() && QApplication::clipboard()->text() == QStringLiteral("Original text"),
+            "copying the visible OCR result preserves the hidden unsaved draft");
+    ocr.palette()->textEditRequested();
     bool copied = false;
     QObject::connect(&ocr, &ImageEditingWindow::exportFinished, &ocr,
                      [&](bool success) { copied = success; });
@@ -1872,22 +2024,22 @@ void runImageEditingTests() {
     ocr.palette()->ocrRequested();
     require(ocr.recognition()->textDraft() == QStringLiteral("Unsaved draft"),
             "matching cache and draft reused after undo");
-    bool cachedReadyInEditMode = false;
+    bool cachedReadyOnImage = false;
     const auto cachedConnection = QObject::connect(
         ocr.recognition(), &ScreenshotRecognitionSessionController::textResultChanged, &ocr,
         [&](bool ready) {
             if (ready)
-                cachedReadyInEditMode = ocr.recognition()->editing();
+                cachedReadyOnImage = !ocr.recognition()->editing();
         });
     ocr.palette()->moveRequested();
     ocr.palette()->ocrRequested();
-    require(cachedReadyInEditMode,
-            "cached OCR establishes editing before notifying result consumers");
+    require(cachedReadyOnImage, "cached OCR publishes the overlay before notifying consumers");
     QObject::disconnect(cachedConnection);
     auto* recognitionView = ocr.canvas()->parentWidget()->findChild<ScreenshotRecognitionWindow*>();
+    ocr.palette()->textEditRequested();
     auto* textEditor = recognitionView ? recognitionView->findChild<QTextEdit*>() : nullptr;
-    require(textEditor && ocr.canvas()->isHidden() &&
-                recognitionView->geometry() == ocr.canvas()->parentWidget()->rect(),
+    require(textEditor && !ocr.canvas()->canvasContentVisible() &&
+                recognitionView->geometry() == ocr.canvas()->rect(),
             "recognition fills the preview at UI scale");
     const auto textFont = textEditor->font();
     QWheelEvent textWheel(QPointF(20, 20), textEditor->mapToGlobal(QPoint(20, 20)), {},
@@ -1949,7 +2101,8 @@ void runImageEditingTests() {
     require(provider.pending.size() == 1, "fresh OCR starts once");
     require(provider.pending[0].request.image == original.image, "recognition uses base pixels");
     provider.complete(0, presentation);
-    require(fresh.recognition()->editing(), "fresh OCR enters editing directly");
+    require(fresh.recognition()->hasTextResult() && !fresh.recognition()->editing(),
+            "fresh OCR opens on the image");
     fresh.palette()->moveRequested();
     require(fresh.document()->crop(Axis::Rows, 1, 3), "new recognition state");
     fresh.palette()->ocrRequested();

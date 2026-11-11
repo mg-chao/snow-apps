@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/presentation/imageeditingcanvas.h"
 #include "snow_shot/presentation/canvastexteditingpreferences.h"
+#include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include <QPainter>
 #include <QCoreApplication>
@@ -64,6 +65,25 @@ void ImageEditingCanvas::actualSize() {
 }
 void ImageEditingCanvas::syncCamera() {
     setViewportCamera(m_center.x(), m_center.y(), m_zoom);
+    if (viewportChanged)
+        viewportChanged();
+}
+void ImageEditingCanvas::setRecognitionDisplay(bool active, bool showImage, bool showFiltered) {
+    if (m_recognitionActive == active && m_showImage == showImage && m_showFiltered == showFiltered)
+        return;
+    m_recognitionActive = active;
+    m_showImage = showImage;
+    m_showFiltered = showFiltered;
+    setCanvasContentVisible(!active);
+    update();
+}
+void ImageEditingCanvas::setRecognitionBackground(QImage image, const QRectF& canvasRect) {
+    if (m_recognitionBackground.isNull() && image.isNull())
+        return;
+    const QRect previous = viewRectForCanvasRect(m_recognitionBackgroundRect, 1);
+    m_recognitionBackground = std::move(image);
+    m_recognitionBackgroundRect = m_recognitionBackground.isNull() ? QRectF() : canvasRect;
+    update(QRegion(previous) | viewRectForCanvasRect(m_recognitionBackgroundRect, 1));
 }
 QPointF ImageEditingCanvas::pixelAt(QPointF view) const {
     return m_document.imagePixelAt(canvasToViewTransform().inverted().map(view));
@@ -161,7 +181,8 @@ void ImageEditingCanvas::wheelEvent(QWheelEvent* event) {
         SnowCanvasWidget::wheelEvent(event);
         return;
     }
-    if (event->modifiers() != Qt::NoModifier && styleWheel && styleWheel(event))
+    if (!m_recognitionActive && event->modifiers() != Qt::NoModifier && styleWheel &&
+        styleWheel(event))
         return;
     const auto anchor = canvasToViewTransform().inverted().map(event->position());
     const double steps = event->pixelDelta().isNull() ? event->angleDelta().y() / 120.0
@@ -215,15 +236,31 @@ std::optional<SnowCanvasFilterRenderReference> ImageEditingCanvas::filterRenderR
 }
 void ImageEditingCanvas::renderBeforeCanvas(QPainter& painter,
                                             const SnowCanvasRenderContext& context) {
+    const bool recognition =
+        m_recognitionActive && context.purpose == SnowCanvasRenderContext::Purpose::Widget;
+    if (recognition && !m_showImage)
+        return;
+    painter.save();
+    renderOriginalBackground(painter, context);
+    painter.restore();
+    if (recognition && m_showFiltered) {
+        painter.save();
+        painter.setClipRect(context.canvasToViewTransform.mapRect(m_document.bounds()),
+                            Qt::IntersectClip);
+        paintScreenshotOcrFilteredImage(
+            painter, m_recognitionBackground,
+            context.canvasToViewTransform.mapRect(m_recognitionBackgroundRect),
+            context.exposedRegion, true);
+        painter.restore();
+    }
+}
+void ImageEditingCanvas::renderOriginalBackground(QPainter& painter,
+                                                  const SnowCanvasRenderContext& context) {
     // Filter replay and eraser restoration translate their painter into a bounded tile.
     // Compose the image projection with that view-to-tile transform to sample the same pixels.
     painter.setTransform(context.canvasToViewTransform, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     painter.drawImage(m_document.bounds(), m_document.image());
-}
-void ImageEditingCanvas::renderOriginalBackground(QPainter& painter,
-                                                  const SnowCanvasRenderContext& context) {
-    renderBeforeCanvas(painter, context);
 }
 QRectF ImageEditingCanvas::cropStrip(int* pixelCount) const {
     if ((m_mode != Mode::CropRows && m_mode != Mode::CropColumns) || m_panning)

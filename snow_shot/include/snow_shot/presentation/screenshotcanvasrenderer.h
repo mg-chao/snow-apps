@@ -118,6 +118,10 @@ ScreenshotGuideLineRenderDiagnostics guideLineRenderDiagnosticsForCurrentThread(
 void resetGuideLineRenderDiagnosticsForCurrentThread();
 #endif
 
+void paintScreenshotOcrFilteredImage(QPainter& painter, const QImage& image,
+                                     const QRectF& targetRect, const QRegion& exposedRegion,
+                                     bool smooth);
+
 class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
   public:
     enum class RenderMode {

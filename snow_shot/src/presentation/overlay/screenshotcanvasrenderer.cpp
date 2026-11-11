@@ -3684,6 +3684,20 @@ void ScreenshotCanvasRenderer::maskSelectionPreview(QPainter& painter,
     }
 }
 
+void paintScreenshotOcrFilteredImage(QPainter& painter, const QImage& image,
+                                     const QRectF& targetRect, const QRegion& exposedRegion,
+                                     bool smooth) {
+    if (image.isNull() || !targetRect.isValid() ||
+        !exposedRegion.intersects(targetRect.toAlignedRect()))
+        return;
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, smooth);
+    painter.setClipRegion(exposedRegion, Qt::IntersectClip);
+    painter.setClipRect(targetRect, Qt::IntersectClip);
+    painter.drawImage(targetRect, image);
+    painter.restore();
+}
+
 void ScreenshotCanvasRenderer::paintBackground(QPainter& painter,
                                                const SnowCanvasRenderContext& context,
                                                bool originalOnly) {
@@ -3819,19 +3833,12 @@ void ScreenshotCanvasRenderer::paintBackground(QPainter& painter,
                                       ? m_ocrFilteredCanvasRect
                                       : QRectF(m_ocrPresentation->selection).normalized();
         const QRectF targetRect = context.canvasToViewTransform.mapRect(canvasRect);
-        if (!canvasRect.isEmpty() && targetRect.isValid() && !targetRect.isEmpty() &&
-            context.exposedRegion.intersects(targetRect.toAlignedRect())) {
-            painter.save();
-            if (m_renderMode == RenderMode::PinnedResult) {
-                painter.setRenderHint(QPainter::SmoothPixmapTransform,
-                                      pinnedResultUsesLinearFiltering(context, targetRect,
-                                                                      m_ocrFilteredImage.size()));
-            }
-            painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
-            painter.setClipRect(targetRect, Qt::IntersectClip);
-            painter.drawImage(targetRect, m_ocrFilteredImage);
-            painter.restore();
-        }
+        const bool smooth =
+            m_renderMode == RenderMode::PinnedResult
+                ? pinnedResultUsesLinearFiltering(context, targetRect, m_ocrFilteredImage.size())
+                : painter.testRenderHint(QPainter::SmoothPixmapTransform);
+        paintScreenshotOcrFilteredImage(painter, m_ocrFilteredImage, targetRect,
+                                        context.exposedRegion, smooth);
     }
 }
 

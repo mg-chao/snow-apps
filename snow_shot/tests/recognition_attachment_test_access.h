@@ -8,6 +8,9 @@ struct ScreenshotRecognitionWindowTestAccess {
     static QRectF canvasSelection(const ScreenshotRecognitionWindow& window) {
         return window.m_canvasSelection;
     }
+    static ScreenshotOcrPresentation* ocrPresentation(const ScreenshotRecognitionWindow& window) {
+        return window.m_ocrPresentation.get();
+    }
     static void populateOcrMenu(ScreenshotRecognitionWindow& window,
                                 adqt::widgets::AdContextMenu& menu) {
         window.populateOcrContextMenu(menu);

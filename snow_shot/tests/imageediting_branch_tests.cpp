@@ -114,7 +114,8 @@ void reachableSessionsPreserveDraftsAndSavedCheckpoints() {
     window.present(source());
     window.palette()->ocrRequested();
     const QPointer<Session> original = window.recognition();
-    require(original && original->editing(), "original cached recognition enters editing");
+    require(original && original->hasTextResult() && !original->editing(),
+            "original cached recognition opens on the image");
     copyCurrent(window);
     require(!window.dirty(), "exported original recognition starts clean");
     window.palette()->moveRequested();
@@ -123,6 +124,7 @@ void reachableSessionsPreserveDraftsAndSavedCheckpoints() {
     window.palette()->ocrRequested();
     provider.complete(presentation(window.document()->bounds()));
     const QPointer<Session> cropped = window.recognition();
+    window.palette()->textEditRequested();
     cropped->setTextDraft(QStringLiteral("Saved cropped draft"));
     copyCurrent(window);
     window.palette()->moveRequested();
@@ -154,6 +156,7 @@ void reachableSessionsPreserveDraftsAndSavedCheckpoints() {
     require(window.recognition() == cropped &&
                 cropped->textDraft() == QStringLiteral("Unsaved reachable draft"),
             "redo recovers the exact unsaved draft");
+    window.palette()->textEditRequested();
     copyCurrent(window);
     require(!window.dirty(), "exporting a recovered draft restores the clean checkpoint");
     window.shutdown();
@@ -203,6 +206,7 @@ void abandonedBranchesReleaseRecognition(bool cropFork) {
         window.palette()->ocrRequested();
         provider.complete(presentation(window.document()->bounds()));
         const QPointer<Session> current = window.recognition();
+        window.palette()->textEditRequested();
         current->setTextDraft(QStringLiteral("Current crop draft"));
         copyCurrent(window);
         drainEvents();
@@ -223,7 +227,9 @@ void replacementRetiresSessionsOnlyAfterSuccessfulLoad() {
     window.present(source());
     window.palette()->ocrRequested();
     QPointer<Session> previous = window.recognition();
-    require(previous && previous->editing(), "replacement fixture opens cached recognition");
+    require(previous && previous->hasTextResult() && !previous->editing(),
+            "replacement fixture opens cached recognition on the image");
+    window.palette()->textEditRequested();
     previous->setTextDraft(QStringLiteral("Draft before replacement"));
     const auto checkpoint = window.contentCheckpoint();
     const std::weak_ptr<ScreenshotOcrPresentation> backing =
@@ -248,7 +254,7 @@ void replacementRetiresSessionsOnlyAfterSuccessfulLoad() {
                    "successful replacement releases the previous state-zero session and backing");
     require(!window.dirty(), "a successfully loaded replacement starts at a clean checkpoint");
     window.palette()->ocrRequested();
-    require(window.recognition() && window.recognition()->editing() &&
+    require(window.recognition() && !window.recognition()->editing() &&
                 window.recognition()->textDraft() == QStringLiteral("Replacement recognition"),
             "replacement state-zero recognition uses the newly loaded document");
     copyCurrent(window);

@@ -41,6 +41,7 @@
 #include "widgets/button.h"
 #include <QApplication>
 #include <QClipboard>
+#include <QContextMenuEvent>
 #include <QCursor>
 #include <QMimeData>
 #include <QDragEnterEvent>
@@ -187,6 +188,7 @@ struct ImageEditingWindow::Impl {
     QVector<WindowShortcutManager::BindingHandle> commandBindings;
     ScreenshotAutoFilterController* autoFilter;
     ScreenshotRecognitionWindow* recognitionView = nullptr;
+    bool recognitionVisible = false;
     QPointer<Session> session;
     struct RecognitionState {
         QPointer<Session> controller;
@@ -375,6 +377,7 @@ struct ImageEditingWindow::Impl {
         };
         canvas->historyRequested = [this](bool redo) { undo(redo); };
         canvas->cropRequested = [this](auto axis, int first, int last) { crop(axis, first, last); };
+        canvas->viewportChanged = [this] { syncRecognitionGeometry(); };
         QObject::connect(palette, &ScreenshotToolPalette::undoRequested, &q,
                          [this] { undo(false); });
         QObject::connect(palette, &ScreenshotToolPalette::redoRequested, &q,
@@ -759,9 +762,6 @@ struct ImageEditingWindow::Impl {
             floating->moveContentTo(placement.contentPosition);
         }
         floating->show();
-        if (recognitionView)
-            static_cast<void>(
-                recognitionView->updateSelectionGeometry(surface->rect(), document.bounds()));
     }
     void rememberToolbarOffset() {
         if (editorWindow)
@@ -939,12 +939,16 @@ struct ImageEditingWindow::Impl {
         }
     }
     ScreenshotRecognitionWindow* ensureRecognitionView();
+    void syncRecognitionGeometry();
+    void syncRecognitionDisplay();
+    [[nodiscard]] bool showsRecognitionImage() const;
+    bool routeRecognitionViewportEvent(QObject* watched, QEvent* event);
     QByteArray recognitionCheckpoint(Session* target) const {
         if (!target)
             return {};
         return target->contentCheckpoints().value(target->activeContentKey());
     }
-    void exportContent(ExportOperation operation);
+    bool exportContent(ExportOperation operation);
     void translateConfirmation() {
         confirmation->setWindowTitle(ImageEditingWindow::tr("Discard changes?"));
         confirmation->setText(ImageEditingWindow::tr("This editing window has unsaved changes"));
@@ -953,11 +957,71 @@ struct ImageEditingWindow::Impl {
     }
 };
 
+bool ImageEditingWindow::Impl::showsRecognitionImage() const {
+    return recognitionVisible && recognitionView && session && session->active() &&
+           session->mode() == Session::Mode::Text &&
+           (session->showOriginalImage() || recognitionView->showsOcrLayer());
+}
+
+void ImageEditingWindow::Impl::syncRecognitionGeometry() {
+    if (!recognitionVisible || !recognitionView)
+        return;
+    const QRect viewport = canvas->rect();
+    const auto bounds = canvas->canvasToViewTransform().inverted().mapRect(QRectF(viewport));
+    static_cast<void>(recognitionView->updateSelectionGeometry(viewport, bounds));
+}
+
+void ImageEditingWindow::Impl::syncRecognitionDisplay() {
+    const bool showImage = showsRecognitionImage();
+    const bool showFiltered = showImage && !session->showOriginalImage();
+    canvas->setRecognitionDisplay(recognitionVisible, !recognitionVisible || showImage,
+                                  showFiltered);
+    zoomToolbar->setVisible(!recognitionVisible || showImage);
+    if (showImage)
+        zoomToolbar->raise();
+    fit->setEnabled(!recognitionVisible || showImage);
+    actual->setEnabled(!recognitionVisible || showImage);
+}
+
+bool ImageEditingWindow::Impl::routeRecognitionViewportEvent(QObject* watched, QEvent* event) {
+    const auto* widget = qobject_cast<QWidget*>(watched);
+    if (!showsRecognitionImage() || !widget ||
+        (widget != recognitionView && !recognitionView->isAncestorOf(widget)))
+        return false;
+    if (event->type() == QEvent::Wheel) {
+        const auto* wheelEvent = static_cast<QWheelEvent*>(event);
+        const QPointF position = canvas->mapFromGlobal(wheelEvent->globalPosition());
+        QWheelEvent forwarded(position, wheelEvent->globalPosition(), wheelEvent->pixelDelta(),
+                              wheelEvent->angleDelta(), wheelEvent->buttons(),
+                              wheelEvent->modifiers(), wheelEvent->phase(), wheelEvent->inverted(),
+                              wheelEvent->source(), wheelEvent->pointingDevice());
+        QCoreApplication::sendEvent(canvas, &forwarded);
+    } else if (event->type() == QEvent::MouseButtonPress ||
+               event->type() == QEvent::MouseButtonRelease || event->type() == QEvent::MouseMove) {
+        const auto* mouse = static_cast<QMouseEvent*>(event);
+        const bool middle = event->type() == QEvent::MouseMove
+                                ? mouse->buttons().testFlag(Qt::MiddleButton)
+                                : mouse->button() == Qt::MiddleButton;
+        if (!middle)
+            return false;
+        const QPointF position = canvas->mapFromGlobal(mouse->globalPosition());
+        QMouseEvent forwarded(mouse->type(), position, canvas->mapTo(canvas->window(), position),
+                              mouse->globalPosition(), mouse->button(), mouse->buttons(),
+                              mouse->modifiers(), mouse->pointingDevice());
+        QCoreApplication::sendEvent(canvas, &forwarded);
+    } else {
+        return false;
+    }
+    event->accept();
+    return true;
+}
+
 ScreenshotRecognitionWindow* ImageEditingWindow::Impl::ensureRecognitionView() {
     if (!recognitionView) {
         ScreenshotRecognitionWindowActions actions;
         actions.handleCancel = [this] { drawing(ImageEditingCanvas::Mode::Pan); };
         actions.handleCopy = [this] { exportContent(ExportOperation::Copy); };
+        actions.copyOcrResult = [this] { return exportContent(ExportOperation::Copy); };
         actions.handleTextEdited = [this](const QString& text) {
             if (session && session->ownsContentAttachment())
                 session->setTextDraft(text);
@@ -969,17 +1033,35 @@ ScreenshotRecognitionWindow* ImageEditingWindow::Impl::ensureRecognitionView() {
                 session->handleTableCommandState(state);
         };
         recognitionView = new ScreenshotRecognitionWindow(
-            actions, surface, ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild,
+            actions, canvas, ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild,
             &shortcuts);
         recognitionView->setObjectName(QStringLiteral("imageEditingRecognition"));
         recognitionView->setOriginalImagePreviewSuppressed(true);
-        stack->addWidget(recognitionView);
+        recognitionView->setEmbeddedPointerEventHandler([this](QObject* watched, QEvent* event) {
+            return routeRecognitionViewportEvent(watched, event);
+        });
+        recognitionView->setTextSelectionFocusPreserver([this](QWidget* widget) {
+            return widget && (widget->window() == floating || widget == zoomToolbar ||
+                              zoomToolbar->isAncestorOf(widget));
+        });
+        QObject::connect(recognitionView, &ScreenshotRecognitionWindow::resultPageChanged, &q,
+                         [this] { syncRecognitionDisplay(); });
+        QObject::connect(
+            recognitionView, &ScreenshotRecognitionWindow::embeddedContextMenuRequested, &q,
+            [this](const QPoint& global) {
+                if (!recognitionView->boxSelectionEnabled())
+                    return;
+                QContextMenuEvent event(QContextMenuEvent::Other,
+                                        recognitionView->mapFromGlobal(global), global);
+                QCoreApplication::sendEvent(recognitionView, &event);
+            });
     }
     ScreenshotRecognitionWindow::Config config;
     config.presentationMode = ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild;
     config.screen = surface->screen();
-    config.geometry = surface->rect();
-    config.canvasSelection = document.bounds();
+    config.geometry = canvas->rect();
+    config.canvasSelection =
+        canvas->canvasToViewTransform().inverted().mapRect(QRectF(config.geometry));
     config.transientOwner = surface->window();
     static_cast<void>(recognitionView->present(config));
     return recognitionView;
@@ -1002,24 +1084,34 @@ Session* ImageEditingWindow::Impl::ensureSession() {
     const auto owner = std::make_shared<QPointer<Session>>();
     actions.isCurrentSession = [this, owner] { return *owner && session == *owner; };
     actions.ensureContent = [this] { return ensureRecognitionView(); };
-    actions.applyOcrPresentation = [](auto) {};
-    actions.applyOcrBackground = [](auto) {};
+    actions.applyOcrPresentation = [this](auto presentation) {
+        canvas->setRecognitionBackground();
+        recognitionView->setOcrPresentation(std::move(presentation));
+    };
+    actions.applyOcrBackgroundImage = [this](auto, QImage image, QRectF bounds) {
+        canvas->setRecognitionBackground(std::move(image),
+                                         bounds.isValid() ? bounds : document.bounds());
+    };
+    actions.ocrBackgroundColor = [this] { return surface->palette().window().color(); };
     actions.applyFormattedText = [this](auto doc) {
         if (recognitionView && session && session->ownsContentAttachment())
             recognitionView->showFormattedText(std::move(doc));
     };
-    actions.clearOcrBackground = [] {};
+    actions.clearOcrBackground = [this] { canvas->setRecognitionBackground(); };
     actions.setRecognitionVisualState = [this](bool active) {
-        if (active)
-            stack->setCurrentWidget(ensureRecognitionView());
-        else
-            stack->setCurrentWidget(canvas);
+        recognitionVisible = active;
+        if (recognitionView) {
+            recognitionView->setVisible(active);
+            if (active)
+                recognitionView->setFocus(Qt::OtherFocusReason);
+        }
+        syncRecognitionGeometry();
+        syncRecognitionDisplay();
         placeToolbar();
     };
-    actions.setActiveMode = [](int) {};
     actions.setTextEditingState = [this](bool available, bool editing, bool undo, bool redo) {
         palette->setTextEditingState(available, editing, undo, redo);
-        palette->setOriginalImageToggleEnabled(false);
+        palette->setOriginalImageToggleEnabled(available);
     };
     actions.setTextTranslationState = [this](bool a, bool b, bool c, bool d, bool e, bool f,
                                              bool g) {
@@ -1072,9 +1164,17 @@ Session* ImageEditingWindow::Impl::ensureSession() {
                                                 const QString& selection, bool modelsLoading) {
         palette->setTextTranslationServices(models, selection, modelsLoading);
     };
-    actions.setShowOriginalImage = [this](bool) {
-        palette->setShowOriginalImage(false);
-        palette->setOriginalImageToggleEnabled(false);
+    actions.setShowOriginalImage = [this](bool show) {
+        palette->setShowOriginalImage(show);
+        syncRecognitionDisplay();
+    };
+    actions.renderTranslationImage = [this] {
+        if (!recognitionView)
+            return QImage{};
+        auto snapshot = recognitionView->imageSnapshot(
+            document.image(), document.bounds(), canvas->recognitionBackground(),
+            canvas->recognitionBackgroundRect(), ScreenshotResultStyle{}, true);
+        return snapshot ? renderScreenshotRecognitionImage(*snapshot) : QImage{};
     };
     actions.setConversionState = [this](bool active, bool busy, auto format) {
         palette->setImageConversionBusy(
@@ -1117,16 +1217,31 @@ Session* ImageEditingWindow::Impl::ensureSession() {
 void ImageEditingWindow::Impl::activate(Session::Mode mode, bool translate) {
     if (loading || cropBusy || document.image().isNull())
         return;
+    const QPointer<ImageEditingWindow> lifetime(&q);
+    cancelColorSampling();
+    if (!lifetime)
+        return;
     static_cast<void>(canvas->resetEditingStatePreservingTool());
+    if (!lifetime)
+        return;
+    canvas->setMode(ImageEditingCanvas::Mode::Pan);
     translateWhenReady = translate;
-    ensureSession()->activate(mode);
+    const QPointer<Session> current = ensureSession();
+    if (!lifetime || !current || current != session)
+        return;
+    current->setShowOriginalImage(false);
+    if (!lifetime || !current || current != session)
+        return;
+    current->activate(mode);
+    if (!lifetime || !current || current != session)
+        return;
     syncAvailability();
-    fit->setEnabled(false);
-    actual->setEnabled(false);
     palette->setCropToolsState(false, false);
     if (translate && translateWhenReady && session->hasTextResult()) {
         translateWhenReady = false;
         session->beginTextTranslation();
+        if (!lifetime || !current || current != session)
+            return;
     }
     const Tool tool = mode == Session::Mode::Text ? (translate ? Tool::TextTranslation : Tool::Ocr)
                       : mode == Session::Mode::Table ? Tool::Table
@@ -1152,6 +1267,43 @@ void ImageEditingWindow::Impl::bindRecognition() {
                      [this] { activate(Session::Mode::Markdown); });
     QObject::connect(palette, &ScreenshotToolPalette::htmlRequested, &q,
                      [this] { activate(Session::Mode::Html); });
+    QObject::connect(
+        palette, &ScreenshotToolPalette::showOriginalImageRequested, &q, [this](bool show) {
+            if (session && session->mode() == Session::Mode::Text && session->hasTextResult())
+                session->setShowOriginalImage(show);
+        });
+    QObject::connect(palette, &ScreenshotToolPalette::textEditRequested, &q, [this] {
+        const QPointer<ImageEditingWindow> lifetime(&q);
+        const auto current = session;
+        if (!current)
+            return;
+        current->setShowOriginalImage(false);
+        if (!lifetime || !current || current != session)
+            return;
+        const bool openEditor = !current->editing() || current->translating();
+        if (current->editing() || current->translating())
+            current->endTextEditing();
+        if (lifetime && current && current == session && openEditor)
+            current->beginTextEditing();
+        if (lifetime && current && current == session)
+            host->setActiveTool(Tool::Ocr);
+    });
+    QObject::connect(palette, &ScreenshotToolPalette::textTranslateRequested, &q, [this] {
+        const QPointer<ImageEditingWindow> lifetime(&q);
+        const auto current = session;
+        if (!current)
+            return;
+        current->setShowOriginalImage(false);
+        if (!lifetime || !current || current != session)
+            return;
+        if (current->translating()) {
+            current->endTextEditing();
+            if (lifetime && current && current == session)
+                host->setActiveTool(Tool::Ocr);
+        } else {
+            current->beginTextTranslation();
+        }
+    });
 #define SESSION_ACTION(signal, method)                                                             \
     QObject::connect(palette, &ScreenshotToolPalette::signal, &q, [this] {                         \
         if (session)                                                                               \
@@ -1165,8 +1317,6 @@ void ImageEditingWindow::Impl::bindRecognition() {
         if (session && session->openSpreadsheetFile() && lifetime)
             drawing(ImageEditingCanvas::Mode::Pan);
     });
-    SESSION_ACTION(textEditRequested, beginTextEditing);
-    SESSION_ACTION(textTranslateRequested, beginTextTranslation);
     SESSION_ACTION(textResetRequested, resetTextEditing);
     SESSION_ACTION(textSettingsRequested, openTranslationSettings);
     SESSION_ACTION(textTranslationServicesRequested, requestTextTranslationServices);
@@ -1186,30 +1336,31 @@ void ImageEditingWindow::Impl::bindRecognition() {
     palette->setOriginalImageToggleEnabled(false);
 }
 
-void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
+bool ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
     if (loading || cropBusy || exporter.busy() || closing || document.image().isNull())
-        return;
+        return false;
     if (!q.preparePendingEdits())
-        return;
+        return false;
     const QPointer<Session> recognition =
         operation != ExportOperation::Pin && session && session->active() ? session : nullptr;
-    const QByteArray checkpoint =
+    QByteArray checkpoint =
         recognition ? recognitionCheckpoint(recognition) : document.checkpoint();
     const QString contentKey = recognition ? recognition->activeContentKey() : QString{};
     const auto state = document.baseState();
     const bool recognitionExport = bool(recognition);
-    const auto finish = [this, recognition, checkpoint, contentKey, state,
-                         recognitionExport](bool success, QString error) {
+    const auto finish = [this, recognition, contentKey, state, recognitionExport](
+                            const QByteArray& savedCheckpoint, bool success, QString error) {
         if (closing)
             return;
         palette->setCloudUploadBusy(false);
         if (success) {
             if (recognitionExport) {
                 const auto entry = sessions.find(state);
-                if (recognition && entry != sessions.end() && entry->controller == recognition)
-                    entry->saved.insert(contentKey, checkpoint);
+                if (!savedCheckpoint.isEmpty() && recognition && entry != sessions.end() &&
+                    entry->controller == recognition)
+                    entry->saved.insert(contentKey, savedCheckpoint);
             } else
-                document.markExported(checkpoint);
+                document.markExported(savedCheckpoint);
             showNotice(Notice::Exported);
         } else if (!error.isEmpty())
             message(std::move(error));
@@ -1218,12 +1369,19 @@ void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
         emit q.exportFinished(success);
     };
     ImageEditingExportController::Content content;
+    const bool ocrOverlay =
+        recognition && recognition->mode() == Session::Mode::Text && !recognition->editing();
+    if (recognition && recognition->originalImageTranslationActive())
+        checkpoint.clear();
     if (recognition && operation == ExportOperation::Copy) {
         auto mime = recognition->recognitionClipboardMimeData();
         if (!mime) {
-            finish(false, ImageEditingWindow::tr("No recognition result is available to export"));
-            return;
+            finish({}, false,
+                   ImageEditingWindow::tr("No recognition result is available to export"));
+            return false;
         }
+        if (ocrOverlay && (!mime->hasText() || mime->text() != recognition->textDraft()))
+            checkpoint.clear();
         content = std::move(mime);
     } else if (recognition &&
                (operation == ExportOperation::Save || operation == ExportOperation::QuickSave)) {
@@ -1237,28 +1395,43 @@ void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
             else
 #endif
             {
-                finish(false,
+                finish({}, false,
                        ImageEditingWindow::tr("No recognition result is available to export"));
-                return;
+                return false;
             }
         }
     } else if (recognition && recognitionView) {
-        content = ScreenshotExportSource::fromImage(recognitionView->printViewportSnapshot());
+        QImage image;
+        if (showsRecognitionImage()) {
+            checkpoint.clear();
+            image = recognition->showOriginalImage()
+                        ? document.image()
+                        : recognitionView->printViewportSnapshot(
+                              document.image(), document.bounds(), canvas->recognitionBackground(),
+                              canvas->recognitionBackgroundRect());
+        } else {
+            image = recognitionView->printViewportSnapshot();
+        }
+        content = ScreenshotExportSource::fromImage(std::move(image));
     } else {
         QString error;
         auto source = document.exportSource(&error);
         if (!source.isValid()) {
-            finish(false, error);
-            return;
+            finish({}, false, error);
+            return false;
         }
         content = std::move(source);
     }
     const QPointer<ImageEditingWindow> lifetime(&q);
     showNotice(Notice::Exporting);
     if (!lifetime || closing)
-        return;
+        return false;
     palette->setCloudUploadBusy(operation == ExportOperation::Upload);
-    exporter.start(operation, std::move(content), surface->window(), floating, finish);
+    exporter.start(operation, std::move(content), surface->window(), floating,
+                   [finish, checkpoint](bool success, QString error) {
+                       finish(checkpoint, success, std::move(error));
+                   });
+    return true;
 }
 
 ImageEditingWindow::ImageEditingWindow(ImageEditingServices services, QObject* parent)

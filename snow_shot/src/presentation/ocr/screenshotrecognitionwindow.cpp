@@ -500,6 +500,8 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     m_stack->setSizeConstraint(QLayout::SetNoConstraint);
     m_stack->setStackingMode(QStackedLayout::StackOne);
     m_stack->addWidget(m_textLayer);
+    connect(m_stack, &QStackedLayout::currentChanged, this,
+            &ScreenshotRecognitionWindow::resultPageChanged);
     m_textLayer->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_textLayer->viewport()->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
@@ -1027,6 +1029,10 @@ void ScreenshotRecognitionWindow::setShowOriginalImage(bool show) {
     }
     refreshOriginalImagePreview();
     notifyTextSelectionChanged();
+}
+
+bool ScreenshotRecognitionWindow::showsOcrLayer() const {
+    return m_stack->currentWidget() == m_textLayer;
 }
 
 void ScreenshotRecognitionWindow::setOcrCopyDefaultsEnabled(bool enabled) {
@@ -2028,6 +2034,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
         const auto owner = m_sessionOwner;
         const auto token = m_attachmentToken;
         const auto callback = m_actions.handleCopy;
+        const bool copyHandledByHost = m_ocrPresentation && m_actions.copyOcrResult;
         const bool copied = copyVisibleContentToClipboard();
         if (!lifetime)
             return true;
@@ -2037,7 +2044,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
         if (m_latexDocument)
             return true;
 #endif
-        if (copied && m_conversionView == nullptr) {
+        if (copied && !copyHandledByHost && m_conversionView == nullptr) {
             callback();
         }
         return true;
@@ -2327,6 +2334,10 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
         return false;
     if (m_recognitionErrorPage)
         return false;
+    if (m_ocrPresentation && m_actions.copyOcrResult) {
+        const auto copy = m_actions.copyOcrResult;
+        return copy();
+    }
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     if (m_conversionView != nullptr) {
         return m_conversionView->copyToClipboard();

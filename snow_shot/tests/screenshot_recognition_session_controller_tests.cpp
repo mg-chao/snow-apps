@@ -79,6 +79,11 @@ void processFor(int durationMs) {
 void sharedContentAttachmentLifecycle() {
     using Session = ScreenshotRecognitionSessionController;
     using Mode = Session::Mode;
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const bool imageMode = settings.originalImageTranslationEnabled();
+    const auto restoreMode = qScopeGuard(
+        [&] { static_cast<void>(settings.setOriginalImageTranslationEnabled(imageMode)); });
+    require(settings.setOriginalImageTranslationEnabled(false), "select editable translation");
     auto window =
         std::make_unique<ScreenshotRecognitionWindow>(ScreenshotRecognitionWindowActions{});
     int acquisitions = 0;
@@ -130,7 +135,6 @@ void sharedContentAttachmentLifecycle() {
     first->beginTextTranslation();
     require(first->ownsContentAttachment() && acquisitions == 2,
             "cached controller activation rebinds without reacquiring the widget");
-    const snow_shot::storage::ScreenshotTranslationSettings settings;
     const bool previousCopy = settings.copyTranslationResultsAsImage();
     const auto restore = qScopeGuard(
         [&] { static_cast<void>(settings.setCopyTranslationResultsAsImage(previousCopy)); });

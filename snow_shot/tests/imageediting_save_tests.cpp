@@ -237,6 +237,7 @@ void clipboardPublicationMayDestroyEditor() {
     auto window = std::make_unique<ImageEditingWindow>();
     window->present(original);
     window->palette()->ocrRequested();
+    window->palette()->textEditRequested();
     require(window->recognition(), "recognition copy owns an editing session");
     window->recognition()->setTextDraft(QStringLiteral("Copy then close"));
     const QPointer<ImageEditingWindow> lifetime(window.get());
@@ -377,8 +378,8 @@ void cachedConversionsRemainAvailableAcrossModes() {
         require(window.palette()->activateToolShortcut(ScreenshotToolPalette::Tool::Ocr),
                 "select OCR through the toolbar command path");
         require(window.recognition()->mode() == RecognitionSession::Mode::Text &&
-                    window.recognition()->editing(),
-                "OCR replaces the conversion view with its cached text editor");
+                    window.recognition()->hasTextResult() && !window.recognition()->editing(),
+                "OCR replaces the conversion view with its cached image overlay");
         requireConversionState(window, true);
         clickCachedConversion(window, format, model, "after OCR");
     }
