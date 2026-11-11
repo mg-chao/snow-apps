@@ -47,6 +47,10 @@ screenRecordingObservedGeometry(const QRect& physicalClientRect, qreal physicalS
 [[nodiscard]] ScreenRecordingAreaFrameGeometry
 screenRecordingAreaFrameGeometry(const QRectF& logicalRegion, qreal physicalScale);
 
+// Position-independent backing-store size for a moving, presentation-only border.
+[[nodiscard]] ScreenRecordingAreaFrameGeometry
+screenRecordingFollowFrameGeometry(const QRectF& logicalRegion, qreal physicalScale);
+
 [[nodiscard]] ScreenRecordingAreaBorderGeometry
 screenRecordingAreaBorderGeometry(const QRectF& frameRect, const QRectF& selectionRect,
                                   qreal paddingWidth);

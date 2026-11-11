@@ -10,6 +10,8 @@ pub(crate) mod adapter;
 mod capture_failure;
 mod capture_policy;
 mod capture_queue;
+mod capture_viewport;
+pub use capture_viewport::CaptureViewport;
 #[cfg(any(windows, test))]
 mod gpu_startup;
 pub(crate) mod keyboard_hook;

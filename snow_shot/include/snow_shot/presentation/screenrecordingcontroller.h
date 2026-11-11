@@ -42,6 +42,9 @@ class ScreenRecordingController final : public QObject {
     [[nodiscard]] bool controlAutomation(const QString& action, const QJsonObject& payload,
                                          QString* error);
     void detachAutomation();
+#ifdef SNOW_SHOT_TEST_HOOKS
+    void setCaptureExclusionSetterForTests(std::function<bool(QWidget*, bool)> setter);
+#endif
 
   signals:
     void captureActivityChanged(bool active);

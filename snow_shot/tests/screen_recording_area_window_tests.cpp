@@ -30,6 +30,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPaintEvent>
 #include <QPushButton>
 #include <QScreen>
 #include <QTemporaryDir>
@@ -52,6 +53,9 @@
 #include <cstdlib>
 #include <atomic>
 #include <iostream>
+#ifdef SNOW_RECORDING_FOLLOW_BENCHMARK
+#include "screen_recording_follow_performance_benchmark.h"
+#endif
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
 #endif
@@ -821,6 +825,183 @@ void annotationsPersistAcrossStatesAndClearOnlyForANewRegion() {
     QCoreApplication::processEvents();
     require(!canvas->canvasHistoryState().canUndo,
             "opening a different recording region should clear the previous annotations once");
+}
+
+class FollowWindowEvents final : public QObject {
+  public:
+    int resizes = 0;
+    QRegion painted;
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Resize)
+            ++resizes;
+        if (event->type() == QEvent::Paint)
+            painted |= static_cast<QPaintEvent*>(event)->region();
+        return false;
+    }
+};
+
+void followPanningKeepsItsBackingSize() {
+    ScreenRecordingAreaWindow area;
+    const QRect selected = testRecordingRegion();
+    area.setRecordingRegion(selected);
+    area.setFollowCaptureActive(true);
+    area.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    area.show();
+    QCoreApplication::processEvents();
+    const QSize initial = area.size();
+    FollowWindowEvents events;
+    area.installEventFilter(&events);
+    for (int step = 1; step <= 80; ++step) {
+        const QRectF viewport = QRectF(selected).translated(step * 0.25, step * 0.125);
+        area.setCaptureViewport(viewport);
+        QCoreApplication::processEvents();
+        require(area.size() == initial && events.resizes == 0,
+                "fractional panning must not resize the recording border backing store");
+        require(area.captureViewport() == viewport && area.recordingRegion() == selected,
+                "stable border backing must retain the captured viewport and original selection");
+    }
+    area.setCaptureViewport(QRectF(selected.topLeft(), QSizeF(180.5, 120.25)));
+    QCoreApplication::processEvents();
+    require(area.size() != initial && events.resizes > 0,
+            "a changed viewport extent must still resize its border");
+}
+
+void followPanningRepaintsOnlyChangedBorderPixels() {
+    ScreenRecordingAreaWindow area;
+    const QRect selected = testRecordingRegion();
+    area.setRecordingRegion(selected);
+    area.setFollowCaptureActive(true);
+    area.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    area.show();
+    QCoreApplication::processEvents();
+    QImage previous = renderWidget(area);
+    QCoreApplication::processEvents();
+    FollowWindowEvents events;
+    for (int step = 1; step <= 24; ++step) {
+        events.painted = {};
+        area.installEventFilter(&events);
+        area.setCaptureViewport(QRectF(selected).translated(step * 0.25, step * 0.125));
+        QCoreApplication::processEvents();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::UpdateRequest);
+        QCoreApplication::processEvents();
+        area.removeEventFilter(&events);
+        const QImage current = renderWidget(area);
+        require(current.size() == previous.size(), "panning retains the render target extent");
+        for (int y = 0; y < current.height(); ++y) {
+            for (int x = 0; x < current.width(); ++x) {
+                if (current.pixel(x, y) != previous.pixel(x, y))
+                    require(events.painted.contains(QPoint(x, y)),
+                            "border damage must clear old pixels and cover every changed pixel");
+            }
+        }
+        if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
+            qint64 pixels = 0;
+            for (const QRect& rect : events.painted)
+                pixels += qint64(rect.width()) * rect.height();
+            require(!events.painted.contains(area.rect().center()) &&
+                        pixels < qint64(area.width()) * area.height() / 8,
+                    "follow motion must not repaint the transparent recording interior");
+        }
+        previous = current;
+    }
+}
+
+void followGeometryNotificationsPreserveViewport() {
+    ScreenRecordingAreaWindow area;
+    const QRect selected = testRecordingRegion();
+    area.setRecordingRegion(selected);
+    area.setFollowCaptureActive(true);
+    area.show();
+    for (QScreen* target : QGuiApplication::screens()) {
+#ifdef Q_OS_MACOS
+        const QRect bounds = target->geometry();
+        const qreal scale = 1.0;
+#else
+        const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(*target);
+        const qreal scale = target->devicePixelRatio();
+#endif
+        const QRectF viewport(QPointF(bounds.center()) - QPointF(40.25, 30.5), QSizeF(80.5, 60.75));
+        area.setCaptureViewport(viewport);
+        QCoreApplication::processEvents();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::UpdateRequest);
+        QCoreApplication::processEvents();
+        const QRect geometry = area.geometry();
+        const QRectF selection = area.selectionRect();
+        for (int repeat = 0; repeat < 3; ++repeat) {
+            QEvent update(QEvent::UpdateRequest);
+            QCoreApplication::sendEvent(&area, &update);
+            QCoreApplication::processEvents();
+            require(area.geometry() == geometry && area.selectionRect() == selection,
+                    "paint reconciliation must keep the committed viewport geometry stable");
+        }
+        area.setGeometry(geometry.translated(20, 10).adjusted(0, 0, 10, 10));
+        QCoreApplication::processEvents();
+        require(area.geometry() == geometry && area.selectionRect() == selection,
+                "unexpected native placement must restore the accepted viewport");
+        QEvent dpi(QEvent::DevicePixelRatioChange);
+        QCoreApplication::sendEvent(&area, &dpi);
+        QCoreApplication::processEvents();
+        require(area.captureViewport() == viewport && area.recordingRegion() == selected &&
+                    qAbs(area.selectionRect().width() * scale - viewport.width()) < 0.001,
+                "display and DPI reconciliation must retain capture geometry and selection");
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            POINT origin{};
+            require(ClientToScreen(reinterpret_cast<HWND>(area.winId()), &origin),
+                    "observe the follow window's committed native origin");
+            require(qAbs(origin.x + area.selectionRect().x() * scale - viewport.x()) < 0.001 &&
+                        qAbs(origin.y + area.selectionRect().y() * scale - viewport.y()) < 0.001,
+                    "native follow borders must match the accepted desktop coordinates");
+        }
+#endif
+    }
+}
+
+void followViewportPreservesSelectionAndCanvas() {
+    ScreenRecordingAreaWindow area;
+    const QRect selected = testRecordingRegion();
+    area.setRecordingRegion(selected);
+    area.show();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    drawRectangle(*area.canvas(), QPointF(20, 20), QPointF(70, 55));
+    QCoreApplication::processEvents();
+    const QRect canvasGeometry = area.canvas()->geometry();
+    const QImage annotations = renderWidget(*area.canvas());
+    int selectionChanges = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::recordingRegionChanged,
+                     [&] { ++selectionChanges; });
+    area.setFollowCaptureActive(true);
+    area.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    for (const QRectF viewport :
+         {QRectF(-100.5, 80.25, 150.5, 100.75), QRectF(250, 180, 320, 200), QRectF(20, 10, 8, 6)}) {
+        area.setCaptureViewport(viewport);
+        QCoreApplication::processEvents();
+        require(area.captureViewport() == viewport && area.recordingRegion() == selected &&
+                    area.canvas()->geometry() == canvasGeometry && selectionChanges == 0 &&
+                    area.canvas()->isHidden() && area.canvas()->canvasHistoryState().canUndo,
+                "live capture geometry does not normalize the crop or alter selection and canvas");
+        require(area.isVisible() && area.windowOpacity() == 1.0 &&
+                    area.testAttribute(Qt::WA_TransparentForMouseEvents) && !area.activateInput(),
+                "following keeps a visible border without intercepting input or focus");
+#ifdef Q_OS_MACOS
+        const qreal scale = 1.0;
+#else
+        const qreal scale = area.devicePixelRatioF();
+#endif
+        require(qAbs(area.selectionRect().width() * scale - viewport.width()) < 0.001 &&
+                    qAbs(area.selectionRect().height() * scale - viewport.height()) < 0.001,
+                "the painted selection retains fractional captured dimensions");
+        require(imageHasVisiblePixel(renderWidget(area)), "the live capture border is painted");
+    }
+    area.setCaptureViewport({});
+    require(area.captureViewport() == QRectF(20, 10, 8, 6),
+            "an unavailable viewport retains the previous border");
+    area.setFollowCaptureActive(false);
+    QCoreApplication::processEvents();
+    require(area.captureViewport() == QRectF(selected) && selectionChanges == 0 &&
+                area.canvas()->geometry() == canvasGeometry && !area.canvas()->isHidden() &&
+                renderWidget(*area.canvas()) == annotations,
+            "leaving follow restores the exact original annotation canvas");
 }
 
 void geometryEditingIsOneCapability() {
@@ -2294,6 +2475,13 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated recording area test storage");
+#ifdef SNOW_RECORDING_FOLLOW_BENCHMARK
+    if (application.arguments().contains(QStringLiteral("--follow-performance"))) {
+        const int result = runRecordingFollowPerformanceBenchmark();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return result;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--crosshair-only"))) {
         ScreenRecordingAreaWindow area;
         area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
@@ -2340,6 +2528,14 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--trim-only"))) {
         trimmingFreezesSizeAndMakesThePreviewDraggable();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--follow-viewport-only"))) {
+        followViewportPreservesSelectionAndCanvas();
+        followPanningKeepsItsBackingSize();
+        followPanningRepaintsOnlyChangedBorderPixels();
+        followGeometryNotificationsPreserveViewport();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -2408,6 +2604,10 @@ int main(int argc, char** argv) {
     drawingSurfaceFollowsEffectiveInputMode();
     wheelAndEscapeRespectDrawingOwnership();
     annotationsPersistAcrossStatesAndClearOnlyForANewRegion();
+    followViewportPreservesSelectionAndCanvas();
+    followPanningKeepsItsBackingSize();
+    followPanningRepaintsOnlyChangedBorderPixels();
+    followGeometryNotificationsPreserveViewport();
     quickSelectionFollowsTheDrawingSetting();
     geometryEditingIsOneCapability();
     childDragHandleOwnsCaptureAndPreservesAnnotations();

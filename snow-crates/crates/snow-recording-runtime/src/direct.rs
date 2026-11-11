@@ -525,6 +525,7 @@ pub struct DirectRecordingSession {
     runtime: Mutex<Option<RuntimeHandles>>,
     audio_control: AudioControlHandle,
     exclusion_generation: AtomicU64,
+    capture_viewport: crate::capture_viewport::CaptureViewportState,
 }
 
 impl DirectRecordingSession {
@@ -604,7 +605,12 @@ impl DirectRecordingSession {
             runtime: Mutex::new(None),
             audio_control,
             exclusion_generation: AtomicU64::new(0),
+            capture_viewport: Default::default(),
         })
+    }
+
+    pub fn capture_viewport(&self) -> Option<crate::CaptureViewport> {
+        self.capture_viewport.snapshot()
     }
 
     pub fn audio_control(&self) -> AudioControlHandle {
@@ -963,6 +969,7 @@ impl DirectRecordingSession {
         let stop_boundary = Arc::clone(&self.stop_boundary);
         let cancel_requested = Arc::clone(&self.cancel_requested);
         let control_clock = Arc::clone(&self.control_clock);
+        let capture_viewport = self.capture_viewport.clone();
         #[cfg(feature = "bench-synthetic-input")]
         let bench_partial = self.bench_partial;
         #[cfg(feature = "bench-synthetic-input")]
@@ -1149,6 +1156,7 @@ impl DirectRecordingSession {
                     }
                     let _ = ready_tx.send(());
                     run_direct_worker(DirectWorkerInputs {
+                        capture_viewport,
                         stop_boundary,
                         cancel_requested,
                         include_cursor,
@@ -1480,6 +1488,7 @@ fn direct_termination(
 }
 
 struct DirectWorkerInputs {
+    capture_viewport: crate::capture_viewport::CaptureViewportState,
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     cancel_requested: Arc<AtomicBool>,
     include_cursor: bool,
@@ -1508,6 +1517,7 @@ struct DirectWorkerInputs {
 fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport> {
     let mut webcam_capture = crate::webcam::CaptureLease::new(&inputs.config);
     let DirectWorkerInputs {
+        capture_viewport,
         stop_boundary,
         cancel_requested,
         include_cursor,
@@ -2020,6 +2030,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     pipeline_timings.synthetic_overlay_frames += 1;
                 }
             }
+            capture_viewport.publish(frame.metadata().capture_transform());
             overlay_was_active = active;
         }
     }

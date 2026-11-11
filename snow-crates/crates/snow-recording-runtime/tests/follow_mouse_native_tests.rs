@@ -230,11 +230,17 @@ fn config(path: &Path, initial: (i32, i32)) -> DirectRecordingConfig {
     }
 }
 
-fn drive(points: &[(i32, i32)]) {
-    thread::sleep(Duration::from_millis(500));
-    for point in &points[1..] {
+fn drive(
+    points: &[(i32, i32)],
+    viewport: impl Fn() -> Option<snow_recording_runtime::CaptureViewport>,
+) {
+    for (index, point) in points.iter().enumerate() {
         snow_capture::set_bench_follow_mouse_position(Some(*point));
-        thread::sleep(Duration::from_millis(1000));
+        thread::sleep(Duration::from_millis(if index == 0 { 500 } else { 1000 }));
+        let current = viewport().expect("accepted output must publish its capture viewport");
+        assert!(current.revision > 0);
+        assert!((current.source.x + current.source.width / 2.0 - f64::from(point.0)).abs() <= 1.0);
+        assert!((current.source.y + current.source.height / 2.0 - f64::from(point.1)).abs() <= 1.0);
     }
 }
 
@@ -418,7 +424,17 @@ fn native_follow_direct_and_deferred_decode_static_pans_and_monitor_handoff() ->
         snow_recording_export::scaled_output_dimensions(321, 181, None, None, ExportFormat::Mp4);
     let mut direct = DirectRecordingSession::create(direct_config)?;
     direct.start().context("native direct startup")?;
-    drive(&points);
+    drive(&points, || direct.capture_viewport());
+    direct.pause()?;
+    thread::sleep(Duration::from_millis(100));
+    let paused = direct.capture_viewport();
+    snow_capture::set_bench_follow_mouse_position(Some(initial));
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        direct.capture_viewport(),
+        paused,
+        "pause freezes the accepted viewport"
+    );
     let report = direct.stop()?;
     if points.len() > 2 {
         assert!(
@@ -439,7 +455,7 @@ fn native_follow_direct_and_deferred_decode_static_pans_and_monitor_handoff() ->
         },
     )?;
     deferred.start().context("native deferred startup")?;
-    drive(&points);
+    drive(&points, || deferred.capture_viewport());
     let source = deferred.stop()?;
     if std::env::var_os("SNOW_TEST_KEEP_FOLLOW").is_some() {
         let retained = directory.join("source-before-render.snowrec");

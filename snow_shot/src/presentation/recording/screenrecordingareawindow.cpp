@@ -6,6 +6,8 @@
 #include "snow_shot/presentation/screenshotstylebinding.h"
 
 #include <numbers>
+#include <cmath>
+#include <limits>
 
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -101,6 +103,17 @@ QRect nativeClientGeometry(const QWidget& window) {
 #endif
     return {};
 }
+
+QRegion borderPaintRegion(const QRectF& frame, const QRectF& selection, qreal padding) {
+    const auto border = snow_shot::presentation::recording::screenRecordingAreaBorderGeometry(
+        frame, selection, padding);
+    QRegion region;
+    for (const QRectF& strip : {border.top, border.bottom, border.left, border.right}) {
+        if (!strip.isEmpty())
+            region += strip.toAlignedRect();
+    }
+    return region;
+}
 } // namespace
 
 ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
@@ -167,7 +180,7 @@ void ScreenRecordingAreaWindow::setTrimming(bool enabled) {
         setMinimumSize(0, 0);
         setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
     }
-    m_canvas->setVisible(!enabled);
+    m_canvas->setVisible(!enabled && !m_followCaptureActive);
     if (!enabled)
         m_previewFrame = {};
     applyInputMode();
@@ -184,6 +197,98 @@ void ScreenRecordingAreaWindow::setPreviewFrame(const QImage& frame) {
 
 QRect ScreenRecordingAreaWindow::recordingRegion() const {
     return m_recordingRegion;
+}
+
+void ScreenRecordingAreaWindow::setFollowCaptureActive(bool active) {
+    if (m_followCaptureActive == active)
+        return;
+    cancelRegionInteraction();
+    cancelWebcamInteraction();
+    m_followCaptureActive = active;
+    m_captureViewport = active ? QRectF(m_recordingRegion) : QRectF();
+    m_canvas->setVisible(!active && !m_trimming);
+    if (active)
+        layoutCaptureViewport();
+    else
+        placeRecordingRegion(m_recordingRegion);
+    applyInputMode();
+}
+
+void ScreenRecordingAreaWindow::setCaptureViewport(const QRectF& viewport) {
+    if (!m_followCaptureActive || !viewport.isValid() || viewport.isEmpty())
+        return;
+    for (qreal value : {viewport.x(), viewport.y(), viewport.width(), viewport.height(),
+                        viewport.right(), viewport.bottom()}) {
+        if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<int>::max() / 2.0)
+            return;
+    }
+    if (m_captureViewport == viewport)
+        return;
+    m_captureViewport = viewport;
+    layoutCaptureViewport();
+}
+
+QRectF ScreenRecordingAreaWindow::captureViewport() const {
+    return m_followCaptureActive ? m_captureViewport : QRectF(m_recordingRegion);
+}
+
+void ScreenRecordingAreaWindow::layoutCaptureViewport() {
+    if (m_settingRegion || !m_captureViewport.isValid())
+        return;
+    SNOW_SHOT_RECORDING_PERF_COUNTER("area.follow_layouts", 1);
+    const QScopedValueRollback<bool> settingRegion(m_settingRegion, true);
+#ifdef Q_OS_MACOS
+    const QRectF logicalRegion = m_captureViewport;
+    const qreal scale = 1.0;
+#else
+    QScreen* target =
+        ScreenshotGeometryMapper::screenForPhysicalRect(m_captureViewport.toAlignedRect());
+    const qreal scale = target ? target->devicePixelRatio() : 1.0;
+    const QPointF physicalOrigin =
+        target ? ScreenshotGeometryMapper::physicalRectForScreen(*target).topLeft() : QPoint();
+    const QPointF logicalOrigin = target ? target->geometry().topLeft() : QPoint();
+    const QRectF logicalRegion(logicalOrigin +
+                                   (m_captureViewport.topLeft() - physicalOrigin) / scale,
+                               m_captureViewport.size() / scale);
+#endif
+    const auto geometry = snow_shot::presentation::recording::screenRecordingFollowFrameGeometry(
+        logicalRegion, scale);
+    m_captureLogicalRegion = logicalRegion;
+    m_captureScale = scale;
+    m_captureWindowGeometry = geometry.windowGeometry;
+    setGeometry(m_captureWindowGeometry);
+    synchronizeCaptureViewport();
+    // The hidden canvas keeps its original geometry and viewport throughout follow.
+}
+
+void ScreenRecordingAreaWindow::synchronizeCaptureViewport() {
+    if (!m_followCaptureActive || !m_captureLogicalRegion.isValid())
+        return;
+    // Native move/paint notifications only reconcile the committed origin. Reuse
+    // the mapping from the last viewport/DPI change instead of placing it again.
+    const qreal scale = m_captureScale;
+    QRectF selection;
+#ifdef Q_OS_WIN
+    const QRect client = nativeClientGeometry(*this);
+    if (isVisible() && client.isValid())
+        selection = QRectF((m_captureViewport.topLeft() - client.topLeft()) / scale,
+                           m_captureViewport.size() / scale);
+    else
+#endif
+        selection = m_captureLogicalRegion.translated(-QPointF(mapToGlobal(QPoint())));
+    const qreal inset = kFrameInset / scale;
+    const qreal padding = 1.0 / scale;
+    const QRectF frame = selection.adjusted(-inset, -inset, inset, inset);
+    if (m_selectionRect != selection || m_frameRect != frame || m_paddingWidth != padding) {
+        // Follow has no painted interior. Clear the old border as well as painting
+        // the new one; mode changes and backing-store resizes still repaint fully.
+        const QRegion damage = borderPaintRegion(m_frameRect, m_selectionRect, m_paddingWidth) |
+                               borderPaintRegion(frame, selection, padding);
+        m_selectionRect = selection;
+        m_frameRect = frame;
+        m_paddingWidth = padding;
+        update(damage);
+    }
 }
 
 bool ScreenRecordingAreaWindow::canRestoreRecordingRegion() const {
@@ -305,7 +410,7 @@ void ScreenRecordingAreaWindow::setDrawingBlocked(bool blocked) {
 }
 
 bool ScreenRecordingAreaWindow::drawingBlocked() const {
-    return m_drawingBlocked;
+    return m_drawingBlocked || m_followCaptureActive;
 }
 
 void ScreenRecordingAreaWindow::startCountdown(int seconds) {
@@ -660,14 +765,14 @@ void ScreenRecordingAreaWindow::setRegionCursor(Qt::Edges edges) {
 }
 
 bool ScreenRecordingAreaWindow::regionEditingEnabled() const {
-    return !m_windowBlocked &&
+    return !m_followCaptureActive && !m_windowBlocked &&
            (m_trimming ||
             (m_inputMode == InputMode::RegionEditing &&
              m_state == ScreenshotToolPalette::RecordingState::Idle && !m_drawingBlocked));
 }
 
 bool ScreenRecordingAreaWindow::drawingEnabled() const {
-    return m_inputMode == InputMode::Drawing && !m_drawingBlocked && !m_windowBlocked;
+    return m_inputMode == InputMode::Drawing && !drawingBlocked() && !m_windowBlocked;
 }
 
 Qt::Edges ScreenRecordingAreaWindow::resizeEdgesAt(const QPointF& position) const {
@@ -782,6 +887,10 @@ void ScreenRecordingAreaWindow::finishRegionInteraction() {
 }
 
 void ScreenRecordingAreaWindow::layoutSelection() {
+    if (m_followCaptureActive) {
+        layoutCaptureViewport();
+        return;
+    }
 #ifdef Q_OS_MACOS
     const qreal scale = 1.0;
 #else
@@ -829,6 +938,13 @@ void ScreenRecordingAreaWindow::scheduleGeometrySynchronization() {
 
 void ScreenRecordingAreaWindow::synchronizeWindowGeometry() {
     if (m_settingRegion || !m_recordingRegion.isValid()) {
+        return;
+    }
+    if (m_followCaptureActive) {
+        if (geometry() != m_captureWindowGeometry)
+            layoutCaptureViewport();
+        else
+            synchronizeCaptureViewport();
         return;
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -904,11 +1020,21 @@ bool ScreenRecordingAreaWindow::event(QEvent* event) {
         m_regionInputRouter.reset();
     }
     const bool handled = QWidget::event(event);
+    if (event->type() == QEvent::WinIdChange)
+        emit captureSurfaceChanged();
     // A translucent backing-store flush can round the native surface by one pixel
     // after the last resize event, without delivering another logical resize.
-    if (event->type() == QEvent::UpdateRequest || event->type() == QEvent::DevicePixelRatioChange ||
+    if (event->type() == QEvent::DevicePixelRatioChange ||
         event->type() == QEvent::ScreenChangeInternal) {
-        synchronizeWindowGeometry();
+        if (m_followCaptureActive)
+            layoutCaptureViewport();
+        else
+            synchronizeWindowGeometry();
+    } else if (event->type() == QEvent::UpdateRequest) {
+        // A pending native position notification already observes the post-flush
+        // geometry. Otherwise reconcile now without allocating another GUI event.
+        if (!m_followCaptureActive || !m_geometrySyncPending)
+            synchronizeWindowGeometry();
     }
     return handled;
 }
