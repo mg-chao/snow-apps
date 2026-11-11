@@ -810,6 +810,14 @@ const char* arrowheadOptionTooltipSource(bool start, SnowCanvasArrowhead arrowhe
 }
 } // namespace
 
+bool ScreenshotToolPaletteWheelPosition::isOver(const QWidget* widget) const {
+    if (widget == nullptr || !widget->isVisible() || widget->window() != &window)
+        return false;
+    const QPointF local = widget->mapFrom(&window, position);
+    return local.x() >= 0 && local.y() >= 0 && local.x() < widget->width() &&
+           local.y() < widget->height();
+}
+
 ScreenshotToolPaletteStyleControls::ScreenshotToolPaletteStyleControls(
     ScreenshotToolPaletteStyleControlCallbacks callbacks, const SnowCanvasStyleDefaults& defaults,
     std::function<QDateTime()> watermarkTemplateClock)
@@ -2598,33 +2606,24 @@ bool ScreenshotToolPaletteStyleControls::stepMagnifierFactor(int direction) {
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleMagnifierWheel(const QPoint& globalPosition,
-                                                              int direction) {
+bool ScreenshotToolPaletteStyleControls::handleMagnifierWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
     if (direction == 0)
         return false;
-    if (m_magnifierArrowRatioEditor != nullptr && m_magnifierArrowRatioEditor->isVisible() &&
-        m_magnifierArrowRatioEditor->isEnabled() &&
-        m_magnifierArrowRatioEditor->rect().contains(
-            m_magnifierArrowRatioEditor->mapFromGlobal(globalPosition))) {
+    if (position.isOver(m_magnifierArrowRatioEditor) && m_magnifierArrowRatioEditor->isEnabled()) {
         const int tenths = qRound(m_state.magnifierStyle.arrowRatio * 10.0);
         setMagnifierArrowRatio(std::clamp(tenths + (direction > 0 ? 1 : -1), 5, 30) / 10.0);
         return true;
     }
-    if (m_magnifierCornerRadiusEditor != nullptr && m_magnifierCornerRadiusEditor->isVisible() &&
-        m_magnifierCornerRadiusEditor->rect().contains(
-            m_magnifierCornerRadiusEditor->mapFromGlobal(globalPosition))) {
+    if (position.isOver(m_magnifierCornerRadiusEditor)) {
         setMagnifierCornerRadius(qRound(m_state.magnifierStyle.cornerRadii.topLeft) +
                                  (direction > 0 ? 1 : -1));
         return true;
     }
-    if (m_magnifierFactorEditor != nullptr && m_magnifierFactorEditor->isVisible() &&
-        m_magnifierFactorEditor->rect().contains(
-            m_magnifierFactorEditor->mapFromGlobal(globalPosition)))
+    if (position.isOver(m_magnifierFactorEditor))
         return stepMagnifierFactor(direction);
-    if (m_magnifierWidthEditor != nullptr && m_magnifierWidthEditor->rootWidget() != nullptr &&
-        m_magnifierWidthEditor->rootWidget()->isVisible() &&
-        m_magnifierWidthEditor->rootWidget()->rect().contains(
-            m_magnifierWidthEditor->rootWidget()->mapFromGlobal(globalPosition))) {
+    if (m_magnifierWidthEditor != nullptr &&
+        position.isOver(m_magnifierWidthEditor->rootWidget())) {
         setMagnifierStrokeWidth(m_state.magnifierStyle.strokeWidth + (direction > 0 ? 1.0 : -1.0));
         return true;
     }
@@ -5503,13 +5502,11 @@ void ScreenshotToolPaletteStyleControls::setBracketControlsActive(bool active) {
     m_state.bracketControlsActive = active;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleDistanceWheel(const QPoint& globalPosition,
-                                                             int direction) {
+bool ScreenshotToolPaletteStyleControls::handleDistanceWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
     if (direction == 0)
         return false;
-    if (m_distanceValueInput != nullptr && m_distanceValueInput->isVisible() &&
-        m_distanceValueInput->rect().contains(
-            m_distanceValueInput->mapFromGlobal(globalPosition))) {
+    if (position.isOver(m_distanceValueInput)) {
         if (m_distanceValueInput->isEnabled()) {
             if (direction > 0)
                 m_distanceValueInput->stepUp();
@@ -5518,10 +5515,7 @@ bool ScreenshotToolPaletteStyleControls::handleDistanceWheel(const QPoint& globa
         }
         return true;
     }
-    if (m_distanceScaleEditor != nullptr && m_distanceScaleEditor->isEnabled() &&
-        m_distanceScaleEditor->isVisible() &&
-        m_distanceScaleEditor->rect().contains(
-            m_distanceScaleEditor->mapFromGlobal(globalPosition))) {
+    if (position.isOver(m_distanceScaleEditor) && m_distanceScaleEditor->isEnabled()) {
         setDistanceEndpointScale(m_state.distanceStyle.endpointScale +
                                  (direction > 0 ? 0.1 : -0.1));
         return true;
@@ -5687,10 +5681,9 @@ bool ScreenshotToolPaletteStyleControls::stepTextFontSize(int direction) {
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleArrowRatioWheel(const QPoint& globalPosition,
-                                                               int direction) {
-    if (direction == 0 || m_arrowRatioEditor == nullptr || !m_arrowRatioEditor->isVisible() ||
-        !m_arrowRatioEditor->rect().contains(m_arrowRatioEditor->mapFromGlobal(globalPosition))) {
+bool ScreenshotToolPaletteStyleControls::handleArrowRatioWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
+    if (direction == 0 || !position.isOver(m_arrowRatioEditor)) {
         return false;
     }
     const int tenths = qRound(m_state.m_arrowStyle.arrowRatio * 10.0);
@@ -5698,11 +5691,9 @@ bool ScreenshotToolPaletteStyleControls::handleArrowRatioWheel(const QPoint& glo
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleCornerRadiusWheel(const QPoint& globalPosition,
-                                                                 int direction) {
-    if (direction == 0 || m_cornerRadiusEditor == nullptr || !m_cornerRadiusEditor->isVisible() ||
-        !m_cornerRadiusEditor->rect().contains(
-            m_cornerRadiusEditor->mapFromGlobal(globalPosition))) {
+bool ScreenshotToolPaletteStyleControls::handleCornerRadiusWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
+    if (direction == 0 || !position.isOver(m_cornerRadiusEditor)) {
         return false;
     }
 
@@ -5713,40 +5704,29 @@ bool ScreenshotToolPaletteStyleControls::handleCornerRadiusWheel(const QPoint& g
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleArrowOutlineWidthWheel(const QPoint& globalPosition,
-                                                                      int direction) {
-    const bool hasPicker = m_arrowOutlineEditor != nullptr &&
-                           m_arrowOutlineEditor->picker() != nullptr &&
-                           m_arrowOutlineEditor->picker()->isVisible() &&
-                           m_arrowOutlineEditor->picker()->rect().contains(
-                               m_arrowOutlineEditor->picker()->mapFromGlobal(globalPosition));
-    if (direction == 0 || !hasPicker) {
+bool ScreenshotToolPaletteStyleControls::handleArrowOutlineWidthWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
+    if (direction == 0 || m_arrowOutlineEditor == nullptr ||
+        !position.isOver(m_arrowOutlineEditor->picker())) {
         return false;
     }
     setArrowOutlineWidth(m_state.m_arrowStyle.arrowOutlineWidth + (direction > 0 ? 1.0 : -1.0));
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleTextStrokeWidthWheel(const QPoint& globalPosition,
-                                                                    int direction) {
-    const bool hasPicker = m_textStrokeEditor != nullptr &&
-                           m_textStrokeEditor->picker() != nullptr &&
-                           m_textStrokeEditor->picker()->isVisible() &&
-                           m_textStrokeEditor->picker()->rect().contains(
-                               m_textStrokeEditor->picker()->mapFromGlobal(globalPosition));
-    if (direction == 0 || !hasPicker) {
+bool ScreenshotToolPaletteStyleControls::handleTextStrokeWidthWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
+    if (direction == 0 || m_textStrokeEditor == nullptr ||
+        !position.isOver(m_textStrokeEditor->picker())) {
         return false;
     }
     setTextStrokeWidth(m_state.m_textStyle.textStyle().strokeWidth + (direction > 0 ? 1.0 : -1.0));
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleTextCornerRadiusWheel(const QPoint& globalPosition,
-                                                                     int direction) {
-    if (direction == 0 || m_textCornerRadiusEditor == nullptr ||
-        !m_textCornerRadiusEditor->isVisible() ||
-        !m_textCornerRadiusEditor->rect().contains(
-            m_textCornerRadiusEditor->mapFromGlobal(globalPosition))) {
+bool ScreenshotToolPaletteStyleControls::handleTextCornerRadiusWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
+    if (direction == 0 || !position.isOver(m_textCornerRadiusEditor)) {
         return false;
     }
 
@@ -5755,14 +5735,12 @@ bool ScreenshotToolPaletteStyleControls::handleTextCornerRadiusWheel(const QPoin
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleSequenceNumberWheel(const QPoint& globalPosition,
-                                                                   int direction) {
+bool ScreenshotToolPaletteStyleControls::handleSequenceNumberWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
     if (direction == 0) {
         return false;
     }
-    if (m_sequenceNumberEditor != nullptr && m_sequenceNumberEditor->isEnabled() &&
-        m_sequenceNumberEditor->rect().contains(
-            m_sequenceNumberEditor->mapFromGlobal(globalPosition))) {
+    if (position.isOver(m_sequenceNumberEditor) && m_sequenceNumberEditor->isEnabled()) {
         bool valid = false;
         const qint64 editedNumber = m_sequenceNumberEditor->text().toLongLong(&valid);
         const qint64 number =
@@ -5775,9 +5753,7 @@ bool ScreenshotToolPaletteStyleControls::handleSequenceNumberWheel(const QPoint&
         return true;
     }
     if (m_sequenceNumberFontEditor != nullptr &&
-        m_sequenceNumberFontEditor->sizeSummary() != nullptr &&
-        m_sequenceNumberFontEditor->sizeSummary()->rect().contains(
-            m_sequenceNumberFontEditor->sizeSummary()->mapFromGlobal(globalPosition))) {
+        position.isOver(m_sequenceNumberFontEditor->sizeSummary())) {
         setSequenceNumberFontSize(m_state.m_sequenceNumberStyle.fontSize +
                                   (direction > 0 ? 1.0 : -1.0));
         return true;
@@ -5785,39 +5761,28 @@ bool ScreenshotToolPaletteStyleControls::handleSequenceNumberWheel(const QPoint&
     return false;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleWatermarkWheel(const QPoint& globalPosition,
-                                                              int direction) {
+bool ScreenshotToolPaletteStyleControls::handleWatermarkWheel(
+    const ScreenshotToolPaletteWheelPosition& position, int direction) {
     if (direction == 0) {
         return false;
     }
-    if (m_watermarkAngleEditor != nullptr && m_watermarkAngleEditor->isVisible() &&
-        m_watermarkAngleEditor->rect().contains(
-            m_watermarkAngleEditor->mapFromGlobal(globalPosition))) {
+    if (position.isOver(m_watermarkAngleEditor)) {
         setWatermarkAngle(qBound(-90.0,
                                  static_cast<double>(qRound(m_state.m_watermarkConfig.angle)) +
                                      (direction > 0 ? 1.0 : -1.0),
                                  90.0));
         return true;
     }
-    if (m_watermarkGapEditor != nullptr && m_watermarkGapEditor->isVisible() &&
-        m_watermarkGapEditor->rect().contains(
-            m_watermarkGapEditor->mapFromGlobal(globalPosition))) {
+    if (position.isOver(m_watermarkGapEditor)) {
         setWatermarkGap(qBound(10.0,
                                static_cast<double>(qRound(m_state.m_watermarkConfig.gap)) +
                                    (direction > 0 ? 1.0 : -1.0),
                                200.0));
         return true;
     }
-    const bool overOpacityIcon = m_watermarkOpacityEditor.icon != nullptr &&
-                                 m_watermarkOpacityEditor.icon->isVisible() &&
-                                 m_watermarkOpacityEditor.icon->rect().contains(
-                                     m_watermarkOpacityEditor.icon->mapFromGlobal(globalPosition));
-    const bool overOpacitySlider =
-        m_watermarkOpacityEditor.slider != nullptr &&
-        m_watermarkOpacityEditor.slider->isVisible() &&
-        m_watermarkOpacityEditor.slider->rect().contains(
-            m_watermarkOpacityEditor.slider->mapFromGlobal(globalPosition));
-    if (m_watermarkOpacityEditor.slider != nullptr && (overOpacityIcon || overOpacitySlider)) {
+    if (m_watermarkOpacityEditor.slider != nullptr &&
+        (position.isOver(m_watermarkOpacityEditor.icon) ||
+         position.isOver(m_watermarkOpacityEditor.slider))) {
         const int current = qRound(m_watermarkOpacityEditor.slider->value());
         m_watermarkOpacityEditor.slider->setValue(
             std::clamp(current + (direction > 0 ? 5 : -5), 0, 100));

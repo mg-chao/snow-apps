@@ -296,8 +296,8 @@ void ScreenshotToolPaletteHost::clearActiveTool() {
     }
 }
 
-bool ScreenshotToolPaletteHost::handleToolbarWheel(QWheelEvent* event) {
-    return m_palette != nullptr && m_palette->handleToolbarWheel(event);
+bool ScreenshotToolPaletteHost::handleToolbarWheel(QWheelEvent* event, const QWidget* receiver) {
+    return m_palette != nullptr && m_palette->handleToolbarWheel(event, receiver);
 }
 
 void ScreenshotToolPaletteHost::cancelDrag() {
@@ -319,7 +319,7 @@ void ScreenshotToolPaletteHost::cancelDrag() {
 
 bool ScreenshotToolPaletteHost::eventFilter(QObject* watched, QEvent* event) {
     if (event != nullptr && event->type() == QEvent::Wheel &&
-        handleToolbarWheel(static_cast<QWheelEvent*>(event))) {
+        handleToolbarWheel(static_cast<QWheelEvent*>(event), qobject_cast<QWidget*>(watched))) {
         return true;
     }
 

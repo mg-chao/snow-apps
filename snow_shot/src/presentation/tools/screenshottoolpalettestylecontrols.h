@@ -75,6 +75,13 @@ using ScreenshotToolPaletteFontEditorConfig =
 using ScreenshotToolPaletteIconOptionEditorConfig =
     snow_shot::presentation::ScreenshotToolPaletteIconOptionEditorConfig;
 
+struct ScreenshotToolPaletteWheelPosition {
+    const QWidget& window;
+    QPointF position;
+
+    [[nodiscard]] bool isOver(const QWidget* widget) const;
+};
+
 struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void(const SnowCanvasShapeStyle& style, quint32 properties,
                        SnowCanvasShapeKind kind)>
@@ -276,19 +283,28 @@ class ScreenshotToolPaletteStyleControls final {
     void setDistanceControlsActive(bool active);
     void setAngleControlsActive(bool active);
     void setBracketControlsActive(bool active);
-    [[nodiscard]] bool handleDistanceWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleMagnifierWheel(const QPoint& globalPosition, int direction);
+    [[nodiscard]] bool handleDistanceWheel(const ScreenshotToolPaletteWheelPosition& position,
+                                           int direction);
+    [[nodiscard]] bool handleMagnifierWheel(const ScreenshotToolPaletteWheelPosition& position,
+                                            int direction);
     [[nodiscard]] bool stepMagnifierFactor(int direction);
     void setTextControlsActive(bool active);
     void clearTextStylePopupInteractions();
     [[nodiscard]] bool stepTextFontSize(int direction);
-    [[nodiscard]] bool handleArrowRatioWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleCornerRadiusWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleArrowOutlineWidthWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleTextStrokeWidthWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleTextCornerRadiusWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleSequenceNumberWheel(const QPoint& globalPosition, int direction);
-    [[nodiscard]] bool handleWatermarkWheel(const QPoint& globalPosition, int direction);
+    [[nodiscard]] bool handleArrowRatioWheel(const ScreenshotToolPaletteWheelPosition& position,
+                                             int direction);
+    [[nodiscard]] bool handleCornerRadiusWheel(const ScreenshotToolPaletteWheelPosition& position,
+                                               int direction);
+    [[nodiscard]] bool
+    handleArrowOutlineWidthWheel(const ScreenshotToolPaletteWheelPosition& position, int direction);
+    [[nodiscard]] bool
+    handleTextStrokeWidthWheel(const ScreenshotToolPaletteWheelPosition& position, int direction);
+    [[nodiscard]] bool
+    handleTextCornerRadiusWheel(const ScreenshotToolPaletteWheelPosition& position, int direction);
+    [[nodiscard]] bool handleSequenceNumberWheel(const ScreenshotToolPaletteWheelPosition& position,
+                                                 int direction);
+    [[nodiscard]] bool handleWatermarkWheel(const ScreenshotToolPaletteWheelPosition& position,
+                                            int direction);
     [[nodiscard]] bool stepWatermarkFontSize(int direction);
     [[nodiscard]] SnowCanvasShapeStyle rectangleStyle() const;
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;

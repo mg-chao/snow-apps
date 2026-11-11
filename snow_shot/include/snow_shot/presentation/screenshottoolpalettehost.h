@@ -55,7 +55,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     void setScrollingScreenshotMode(bool enabled);
     void setActiveTool(ScreenshotToolPalette::Tool tool);
     void clearActiveTool();
-    bool handleToolbarWheel(QWheelEvent* event);
+    bool handleToolbarWheel(QWheelEvent* event, const QWidget* receiver);
     void cancelDrag();
 
   signals:

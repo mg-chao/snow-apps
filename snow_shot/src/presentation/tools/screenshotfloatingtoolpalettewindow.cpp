@@ -566,7 +566,7 @@ bool ScreenshotFloatingToolPaletteWindow::eventFilter(QObject* watched, QEvent* 
     }
 
     if (event != nullptr && event->type() == QEvent::Wheel &&
-        handleToolbarWheel(static_cast<QWheelEvent*>(event))) {
+        handleToolbarWheel(static_cast<QWheelEvent*>(event), qobject_cast<QWidget*>(watched))) {
         return true;
     }
 
@@ -622,7 +622,7 @@ void ScreenshotFloatingToolPaletteWindow::paintEvent(QPaintEvent* event) {
 }
 
 void ScreenshotFloatingToolPaletteWindow::wheelEvent(QWheelEvent* event) {
-    if (handleToolbarWheel(event)) {
+    if (handleToolbarWheel(event, this)) {
         return;
     }
 
@@ -1134,8 +1134,9 @@ void ScreenshotFloatingToolPaletteWindow::finishPaletteDrag(bool emitFinished) {
     }
 }
 
-bool ScreenshotFloatingToolPaletteWindow::handleToolbarWheel(QWheelEvent* event) {
-    return m_paletteHost != nullptr && m_paletteHost->handleToolbarWheel(event);
+bool ScreenshotFloatingToolPaletteWindow::handleToolbarWheel(QWheelEvent* event,
+                                                             const QWidget* receiver) {
+    return m_paletteHost != nullptr && m_paletteHost->handleToolbarWheel(event, receiver);
 }
 
 void ScreenshotFloatingToolPaletteWindow::applyWindowAttributes() {

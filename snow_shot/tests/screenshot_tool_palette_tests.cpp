@@ -10587,18 +10587,19 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
                 opacitySlider->accessibleDescription() == QStringLiteral("55%"),
             "Spotlight opacity must commit a complete accessible configuration");
 
-    const QPoint local = opacitySlider->rect().center();
-    QWheelEvent wheel(QPointF(local), opacitySlider->mapToGlobal(local), QPoint(), QPoint(0, 120),
+    palette.show();
+    QCoreApplication::processEvents();
+    const QPointF local(opacitySlider->width() - 0.25, opacitySlider->height() / 2.0);
+    QWheelEvent wheel(local, opacitySlider->mapToGlobal(local), QPoint(), QPoint(0, 120),
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-    require(palette.handleToolbarWheel(&wheel) && wheel.isAccepted() &&
-                opacitySlider->value() == 60 && commits == 4,
+    QCoreApplication::sendEvent(opacitySlider, &wheel);
+    require(wheel.isAccepted() && opacitySlider->value() == 60 && commits == 4,
             "Spotlight opacity wheel input must commit five percentage point steps");
-    const QPoint outside(opacitySlider->width() + 20, local.y());
-    QWheelEvent outsideWheel(QPointF(outside), opacitySlider->mapToGlobal(outside), QPoint(),
-                             QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
-                             false);
-    require(!palette.handleToolbarWheel(&outsideWheel) && opacitySlider->value() == 60 &&
-                commits == 4,
+    const QPointF outside(local.x(), opacitySlider->height() + 20);
+    QWheelEvent outsideWheel(outside, opacitySlider->mapToGlobal(outside), QPoint(), QPoint(0, 120),
+                             Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    require(!palette.handleToolbarWheel(&outsideWheel, opacitySlider) &&
+                opacitySlider->value() == 60 && commits == 4,
             "Spotlight opacity wheel handling must reject points outside the slider");
     require(palette.stepSpotlightOpacity(-1) && opacitySlider->value() == 55 && commits == 5 &&
                 qFuzzyCompare(lastConfig.opacity + 1.0, 1.55),
@@ -11979,6 +11980,56 @@ void spotlightShapePreferencesRoundTripAndAcceptLegacySettings() {
     }
 }
 
+void shapeCornerRadiusWheelUsesTheReceiverPosition() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(Tool::Shape);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* radius =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotSelectionCornerRadiusButton"));
+    require(radius != nullptr && radius->isVisible(), "Shape must show the corner radius editor");
+
+    const auto initial = palette.rectangleStyle();
+    int edits = 0;
+    quint32 properties = 0;
+    observePaletteStyleEdit<SnowCanvasShapeEdit>(palette,
+                                                 [&](const SnowCanvasShapeStyle&, quint32 changed) {
+                                                     ++edits;
+                                                     properties = changed;
+                                                 });
+    const auto wheel = [](QWidget* receiver, const QPointF& local, const QPointF& global,
+                          int delta) {
+        QWheelEvent event(local, global, {}, QPoint(0, delta), Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(receiver, &event);
+        require(event.isAccepted(), "wheel over a shape style control must be consumed");
+    };
+    const QPointF edge(radius->width() - 0.25, radius->height() / 2.0);
+    wheel(radius, edge, radius->mapToGlobal(edge), 120);
+    require(edits == 1 && properties == SnowCanvasShapeStylePropertyCornerRadius &&
+                palette.rectangleStyle().cornerRadii.topLeft == initial.cornerRadii.topLeft + 1 &&
+                palette.rectangleStyle().strokeWidth == initial.strokeWidth,
+            "fractional wheel positions inside the radius editor must adjust only the radius");
+
+    auto* row = radius->parentWidget();
+    const QPointF radiusCenter = radius->rect().center();
+    wheel(row, radius->mapTo(row, radiusCenter), row->mapToGlobal(QPointF(0, 0)), -120);
+    require(edits == 2 && properties == SnowCanvasShapeStylePropertyCornerRadius &&
+                palette.rectangleStyle().cornerRadii == initial.cornerRadii &&
+                palette.rectangleStyle().strokeWidth == initial.strokeWidth,
+            "the receiver's local position must determine the editor when global mapping differs");
+
+    auto* width = styleEditorRoot(row, "outline-width");
+    require(width != nullptr && width->isVisible(), "Shape must show the stroke width editor");
+    const QPointF widthCenter = width->rect().center();
+    wheel(width, widthCenter, width->mapToGlobal(widthCenter), 120);
+    require(edits == 3 && properties == SnowCanvasShapeStylePropertyStrokeWidth &&
+                palette.rectangleStyle().strokeWidth == initial.strokeWidth + 1 &&
+                palette.rectangleStyle().cornerRadii == initial.cornerRadii,
+            "wheel over the stroke width editor must still adjust only stroke width");
+}
+
 void spotlightCornerRadiusEditorReusesShapeBehavior() {
     using Tool = ScreenshotToolPalette::Tool;
     ScreenshotToolPalette::Options options;
@@ -12024,15 +12075,16 @@ void spotlightCornerRadiusEditorReusesShapeBehavior() {
         require(edits == before && radius->valueText() == QStringLiteral("-") &&
                     radius->value() == 23,
                 "selected Spotlight radii must synchronize silently and display mixed state");
-        const QPoint local = radius->rect().center();
-        QWheelEvent wheel(QPointF(local), radius->mapToGlobal(local), QPoint(), QPoint(0, 120),
-                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        const QPointF local(radius->width() - 0.25, radius->height() / 2.0);
+        QWheelEvent wheel(local, radius->mapToGlobal(local), QPoint(), QPoint(0, 120), Qt::NoButton,
+                          Qt::NoModifier, Qt::NoScrollPhase, false);
         auto* selectedShape = qobject_cast<QAbstractButton*>(controlWithTooltip(
             palette,
             state.shapeStyle.shape == SnowCanvasRectangleShape::Diamond ? "Diamond" : "Rectangle"));
-        require(palette.handleToolbarWheel(&wheel) && edits == before + 1 &&
-                    radius->value() == 24 && radius->valueText() == QStringLiteral("24") &&
-                    selectedShape != nullptr && selectedShape->isChecked() &&
+        QCoreApplication::sendEvent(radius, &wheel);
+        require(wheel.isAccepted() && edits == before + 1 && radius->value() == 24 &&
+                    radius->valueText() == QStringLiteral("24") && selectedShape != nullptr &&
+                    selectedShape->isChecked() &&
                     lastStyle.cornerRadii == SnowCanvasCornerRadii{24, 24, 24, 24},
                 "Spotlight scrolling must adjust the radius one pixel and resolve mixed state");
         radius->click();
@@ -14360,10 +14412,11 @@ void arrowOutlineEditorMatchesTextStroke() {
             ++changes;
         });
     const auto wheel = [&](int delta) {
-        const QPoint local = picker->rect().center();
-        QWheelEvent event(QPointF(local), picker->mapToGlobal(local), QPoint(), QPoint(0, delta),
+        const QPointF local(picker->width() - 0.25, picker->height() / 2.0);
+        QWheelEvent event(local, picker->mapToGlobal(local), QPoint(), QPoint(0, delta),
                           Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-        require(palette.handleToolbarWheel(&event), "outline consumes hover wheel");
+        QCoreApplication::sendEvent(picker, &event);
+        require(event.isAccepted(), "outline consumes hover wheel");
     };
     wheel(120);
     require(emitted.arrowOutlineWidth == 1 && emitted.strokeWidth == initial.strokeWidth &&
@@ -14399,12 +14452,12 @@ void arrowOutlineEditorMatchesTextStroke() {
     require(language.setLanguage(QStringLiteral("zh_CN")),
             "outline translates to Simplified Chinese");
     QCoreApplication::processEvents();
-    require(widthPreset->toolTip() == QStringLiteral("箭头描边宽度 4px"),
+    require(widthPreset->toolTip() == QStringLiteral("箭头描边宽度 4 像素"),
             "open outline popup retranslates");
     require(language.setLanguage(QStringLiteral("zh_TW")),
             "outline translates to Traditional Chinese");
     QCoreApplication::processEvents();
-    require(widthPreset->toolTip() == QStringLiteral("箭頭描邊寬度 4px"),
+    require(widthPreset->toolTip() == QStringLiteral("箭頭描邊寬度 4 像素"),
             "outline uses Traditional Chinese");
     require(language.setLanguage(QStringLiteral("en_US")), "restore English for mixed values");
     picker->setPopupVisible(false);
@@ -21310,6 +21363,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--spotlight-shape-only"))) {
         screenshotProductStyleProfileIsComplete();
+        shapeCornerRadiusWheelUsesTheReceiverPosition();
         spotlightCornerRadiusEditorReusesShapeBehavior();
         spotlightShapeSelectorMatchesShapeAndRebindsEdits();
         spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
@@ -21492,6 +21546,7 @@ int main(int argc, char** argv) {
     shapeSelectorIsTheLeftmostStyleGroup();
     spotlightShapeSelectorMatchesShapeAndRebindsEdits();
     spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
+    shapeCornerRadiusWheelUsesTheReceiverPosition();
     spotlightCornerRadiusEditorReusesShapeBehavior();
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();

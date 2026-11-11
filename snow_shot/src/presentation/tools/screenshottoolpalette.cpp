@@ -4463,7 +4463,9 @@ void ScreenshotToolPalette::resetAngleWheelInput() {
     m_angleWheelSteps.reset();
 }
 
-bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
+bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event, const QWidget* receiver) {
+    if (receiver != nullptr && receiver->window() != window())
+        return false;
     if (event != nullptr && (event->phase() == Qt::ScrollBegin || event->phase() == Qt::ScrollEnd))
         m_angleWheelSteps.reset();
     const int deltaY = wheelVerticalDelta(event);
@@ -4471,10 +4473,14 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         return false;
     }
     const int direction = deltaY > 0 ? 1 : -1;
-    if (m_backgroundOpacityEditor && m_backgroundOpacityEditor->isEnabled() &&
-        m_backgroundOpacityEditor->isVisible() &&
-        m_backgroundOpacityEditor->rect().contains(
-            m_backgroundOpacityEditor->mapFromGlobal(event->globalPosition().toPoint()))) {
+    const QWidget* toolbarWindow = window();
+    // Qt has already mapped delivered events into their receiver's coordinate space.
+    // Stay within the window so fractional positions and mixed display scales are preserved.
+    const ScreenshotToolPaletteWheelPosition position{
+        *toolbarWindow, receiver != nullptr
+                            ? receiver->mapTo(toolbarWindow, event->position())
+                            : toolbarWindow->mapFromGlobal(event->globalPosition())};
+    if (position.isOver(m_backgroundOpacityEditor) && m_backgroundOpacityEditor->isEnabled()) {
         const int opacityDelta = direction * 10;
         const int percent = std::clamp(m_backgroundOpacityPercent + opacityDelta, 0, 100);
         if (percent != m_backgroundOpacityPercent) {
@@ -4484,10 +4490,7 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         event->accept();
         return true;
     }
-    if (m_layoutSpacingEditor && m_layoutSpacingEditor->isEnabled() &&
-        m_layoutSpacingEditor->isVisible() &&
-        m_layoutSpacingEditor->rect().contains(
-            m_layoutSpacingEditor->mapFromGlobal(event->globalPosition().toPoint()))) {
+    if (position.isOver(m_layoutSpacingEditor) && m_layoutSpacingEditor->isEnabled()) {
         auto options = m_layoutCompaction;
         options.spacing = std::clamp(options.spacing + direction * 5, 0,
                                      ScreenshotLayoutCompaction::maximumSpacing);
@@ -4499,12 +4502,8 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         event->accept();
         return true;
     }
-    if (m_scrollingAutoScrollIntervalEditor != nullptr &&
-        m_scrollingAutoScrollIntervalEditor->isEnabled() &&
-        m_scrollingAutoScrollIntervalEditor->isVisible() &&
-        m_scrollingAutoScrollIntervalEditor->rect().contains(
-            m_scrollingAutoScrollIntervalEditor->mapFromGlobal(
-                event->globalPosition().toPoint()))) {
+    if (position.isOver(m_scrollingAutoScrollIntervalEditor) &&
+        m_scrollingAutoScrollIntervalEditor->isEnabled()) {
         const int previous = m_scrollingAutoScrollIntervalMs;
         setScrollingAutoScrollIntervalMs(previous + direction * 10);
         if (previous != m_scrollingAutoScrollIntervalMs) {
@@ -4516,10 +4515,7 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
     // The delay editor lives on the export settings sub-toolbar, which is
     // available regardless of the active tool, so it is hit-tested before the
     // style/action toolbar visibility gate below.
-    if (m_recordDelayButton != nullptr && m_recordDelayButton->isEnabled() &&
-        m_recordDelayButton->isVisible() &&
-        m_recordDelayButton->rect().contains(
-            m_recordDelayButton->mapFromGlobal(event->globalPosition().toPoint()))) {
+    if (position.isOver(m_recordDelayButton) && m_recordDelayButton->isEnabled()) {
         if (stepRecordingStartDelay(direction)) {
             event->accept();
             return true;
@@ -4557,22 +4553,17 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
     }
     if (m_activeTool == Tool::Magnifier ||
         source == SnowCanvasStyleToolbarSource::SelectedMagnifier) {
-        if (!m_styleControls->handleMagnifierWheel(event->globalPosition().toPoint(), direction))
+        if (!m_styleControls->handleMagnifierWheel(position, direction))
             return false;
         event->accept();
         return true;
     }
     if (m_activeTool == Tool::Spotlight) {
-        if (m_styleControls->handleCornerRadiusWheel(event->globalPosition().toPoint(),
-                                                     direction)) {
+        if (m_styleControls->handleCornerRadiusWheel(position, direction)) {
             event->accept();
             return true;
         }
-        if (m_spotlightOpacitySlider == nullptr || !m_spotlightOpacitySlider->isEnabled()) {
-            return false;
-        }
-        if (!m_spotlightOpacitySlider->rect().contains(
-                m_spotlightOpacitySlider->mapFromGlobal(event->globalPosition().toPoint()))) {
+        if (!position.isOver(m_spotlightOpacitySlider) || !m_spotlightOpacitySlider->isEnabled()) {
             return false;
         }
         static_cast<void>(stepSpotlightOpacity(direction));
@@ -4597,17 +4588,15 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         return true;
     }
     if (m_watermarkStyleControlsWidget != nullptr && m_watermarkStyleControlsWidget->isVisible()) {
-        if (m_styleControls->handleWatermarkWheel(event->globalPosition().toPoint(), direction)) {
+        if (m_styleControls->handleWatermarkWheel(position, direction)) {
             event->accept();
             return true;
         }
         return false;
     }
     if (m_textStyleControlsWidget != nullptr && m_textStyleControlsWidget->isVisible()) {
-        if (m_styleControls->handleTextCornerRadiusWheel(event->globalPosition().toPoint(),
-                                                         direction) ||
-            m_styleControls->handleTextStrokeWidthWheel(event->globalPosition().toPoint(),
-                                                        direction) ||
+        if (m_styleControls->handleTextCornerRadiusWheel(position, direction) ||
+            m_styleControls->handleTextStrokeWidthWheel(position, direction) ||
             m_styleControls->stepTextFontSize(direction)) {
             event->accept();
             return true;
@@ -4616,24 +4605,22 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
     }
     if (m_sequenceNumberStyleControlsWidget != nullptr &&
         m_sequenceNumberStyleControlsWidget->isVisible()) {
-        if (m_styleControls->handleSequenceNumberWheel(event->globalPosition().toPoint(),
-                                                       direction)) {
+        if (m_styleControls->handleSequenceNumberWheel(position, direction)) {
             event->accept();
             return true;
         }
         return false;
     }
-    if (m_styleControls->handleDistanceWheel(event->globalPosition().toPoint(), direction)) {
+    if (m_styleControls->handleDistanceWheel(position, direction)) {
         event->accept();
         return true;
     }
-    if (m_styleControls->handleArrowOutlineWidthWheel(event->globalPosition().toPoint(),
-                                                      direction) ||
-        m_styleControls->handleArrowRatioWheel(event->globalPosition().toPoint(), direction)) {
+    if (m_styleControls->handleArrowOutlineWidthWheel(position, direction) ||
+        m_styleControls->handleArrowRatioWheel(position, direction)) {
         event->accept();
         return true;
     }
-    if (m_styleControls->handleCornerRadiusWheel(event->globalPosition().toPoint(), direction)) {
+    if (m_styleControls->handleCornerRadiusWheel(position, direction)) {
         event->accept();
         return true;
     }
@@ -4862,7 +4849,7 @@ bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
     }
 #endif
     if (event != nullptr && event->type() == QEvent::Wheel &&
-        handleToolbarWheel(static_cast<QWheelEvent*>(event))) {
+        handleToolbarWheel(static_cast<QWheelEvent*>(event), qobject_cast<QWidget*>(watched))) {
         return true;
     }
     return QWidget::eventFilter(watched, event);
@@ -5027,7 +5014,7 @@ void ScreenshotToolPalette::paintEvent(QPaintEvent* event) {
 }
 
 void ScreenshotToolPalette::wheelEvent(QWheelEvent* event) {
-    if (handleToolbarWheel(event)) {
+    if (handleToolbarWheel(event, this)) {
         return;
     }
     QWidget::wheelEvent(event);
