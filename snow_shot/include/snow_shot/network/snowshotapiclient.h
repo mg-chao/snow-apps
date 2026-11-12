@@ -210,6 +210,7 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] QString modelFingerprint(const QString& id) const;
 
   signals:
+    void proxyConfigurationChanged();
     void baseUrlChanged();
     void chatModelsChanged();
     void officialCallSettled();

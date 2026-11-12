@@ -2,6 +2,7 @@
 #define SNOW_SHOT_APP_ACCOUNTSESSIONSERVICE_H
 
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
@@ -125,6 +126,7 @@ class AccountSessionService final : public QObject {
     void dismissPreviousRegistration(const QString& requestId);
     void cancelPurchase();
     void dismissPurchase();
+    void setAccountPageVisible(bool visible);
     void refreshAccount();
     void loadTransactions(bool append = false);
     void clearError();
@@ -153,7 +155,12 @@ class AccountSessionService final : public QObject {
     void acceptPurchase(const QJsonObject& request, bool registration);
     void retainPreviousRegistration();
     [[nodiscard]] qsizetype previousRegistrationIndex(const QString& requestId) const;
+    [[nodiscard]] int purchasePollDelay() const;
+    void startPurchasePoll(int delay);
+    [[nodiscard]] int previousRegistrationPollDelay() const;
     void schedulePreviousRegistrationPoll();
+    void scheduleAccountRefresh();
+    void refreshAccountAfterChange();
     void pollPreviousRegistration();
     void queryPreviousRegistration(const QString& requestId, bool queryPlatform);
     void clearPurchase();
@@ -172,10 +179,12 @@ class AccountSessionService final : public QObject {
     std::unique_ptr<storage::AccountSecretStore> m_secrets;
     Options m_options;
     AccountPurchaseCoordinator m_purchase;
+    QElapsedTimer m_purchasePollElapsed;
     QJsonArray m_previousRegistrations;
     QSet<QString> m_previousRegistrationQueries;
     QSet<QString> m_previousManualRefreshes;
     QTimer m_previousRegistrationPoll;
+    QElapsedTimer m_previousRegistrationPollElapsed;
     qsizetype m_previousRegistrationCursor = 0;
     QTimer m_accountRefresh;
     QTimer m_registrationClaimRetry;
@@ -195,7 +204,10 @@ class AccountSessionService final : public QObject {
     quint64 m_generation = 0;
     bool m_busy = false;
     bool m_accountBusy = false;
+    bool m_accountPageVisible = false;
+    bool m_accountRefreshPending = false;
     bool m_transactionsBusy = false;
+    bool m_transactionsRefreshPending = false;
     bool m_refreshing = false;
     QList<std::function<void(bool)>> m_refreshWaiters;
 };
