@@ -494,10 +494,8 @@ void pinnedAppearanceSurvivesEditing() {
             }
         }
         record.resultStyle = encodeScreenshotResultStyle(style);
-        const qreal scale =
-            screenshotPinnedRenderScale(200, record.image.size(), record.contentCanvasRect);
-        const QSize pixels(qRound(record.contentCanvasRect.width() * scale),
-                           qRound(record.contentCanvasRect.height() * scale));
+        const auto pixels = record.image.size();
+        const qreal scale = pixels.width() / record.contentCanvasRect.width();
         const auto expectedStyle = ScreenshotResultCompositor::scaledStyle(style, scale);
         const auto content = runtime.renderToImage(record.contentCanvasRect, pixels,
                                                    {{record.image, record.contentCanvasRect}});
@@ -535,6 +533,7 @@ void pinnedRasterPreparationUsesExpandedGeometry() {
     PinnedWindowRecord record;
     record.image = QImage(80, 60, QImage::Format_ARGB32_Premultiplied);
     record.image.fill(QColor(20, 80, 160));
+    record.image.setPixelColor(5, 5, QColor(20, 80, 160, 128));
     record.canvasSourceRect = record.contentCanvasRect = QRectF(100, 200, 80, 60);
     record.initialWindowSize = QSize(80, 60);
     record.nativeGeometry = QRect(50, 70, 120, 90);
@@ -557,6 +556,8 @@ void pinnedRasterPreparationUsesExpandedGeometry() {
     record.nativeGeometry.setSize(QSize(16, 12));
     requirePixels(renderScreenshotPinnedImageRecord(record, preparation).image, full.image,
                   "thumbnail resolution never changes the expanded rendered result");
+    requirePixels(readImageEditingPinned(record, preparation).image, record.image,
+                  "editing a saved thumbnail uses source resolution and opacity");
     record.thumbnailMode = false;
     record.cropRect = QRectF(10.25, 11.5, 30.5, 20.25);
     record.scalePercent = 137;

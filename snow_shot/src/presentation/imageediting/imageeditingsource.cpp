@@ -89,7 +89,8 @@ ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& re
 ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
                                           const ScreenshotPinnedRenderPreparation& preparation) {
     const auto name = record.originalFileName;
-    auto rendered = renderScreenshotPinnedImageRecord(std::move(record), preparation);
+    auto rendered = renderScreenshotPinnedImageRecord(std::move(record), preparation, {}, {},
+                                                      ScreenshotPinnedRenderMode::SourceResolution);
     ImageEditingSource result;
     result.originalFileName = name;
     result.error = std::move(rendered.error);

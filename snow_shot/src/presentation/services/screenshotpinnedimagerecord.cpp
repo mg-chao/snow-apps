@@ -29,7 +29,8 @@ PreparedPinnedImage
 preparePinnedImageRecord(storage::PinnedWindowRecord record,
                          const ScreenshotPinnedRenderPreparation& preparation,
                          const ScreenshotClipboardContentReader::CancellationCheck& cancelled,
-                         const ScreenshotClipboardContentReader::AllocationCheck& allocate) {
+                         const ScreenshotClipboardContentReader::AllocationCheck& allocate,
+                         ScreenshotPinnedRenderMode mode) {
     PreparedPinnedImage prepared;
     auto& result = prepared.viewport;
     auto& snapshot = prepared.snapshot;
@@ -103,33 +104,39 @@ preparePinnedImageRecord(storage::PinnedWindowRecord record,
             screenshot_pinned_crop_geometry::sourceToCanvas(
                 record.image.size(), record.imageTransform, result.backgroundCanvasRect)
                 .mapRect(*crop);
-    const QSizeF baseline = screenshotPinnedScaleReferenceSize(
-        record.initialWindowSize, record.exactInitialWindowSize, record.quarterTurns, crop,
-        record.image.size(), record.canvasSourceRect, *style);
-    const QSize encodedSize = record.thumbnailMode && record.preThumbnailPlacement.isValid()
-                                  ? record.preThumbnailPlacement.windowSize
-                              : record.thumbnailMode && record.preThumbnailNativeGeometry.isValid()
-                                  ? record.preThumbnailNativeGeometry.size()
-                              : record.placement.isValid() ? record.placement.windowSize
-                                                           : record.nativeGeometry.size();
-    const bool hasGeometry = !baseline.isEmpty() && !encodedSize.isEmpty();
-    // Standalone callers may supply source-only legacy records without window state.
-    const double zoom = hasGeometry
-                            ? screenshotPinnedRestoredScalePercent(
-                                  baseline, encodedSize, record.scalePercent,
-                                  crop.has_value() || !record.exactInitialWindowSize.isEmpty())
-                            : 100.0;
-    const qreal scale = screenshotPinnedRenderScale(zoom, result.backgroundImage.size(),
-                                                    result.backgroundCanvasRect);
-    const double width = result.backgroundCanvasRect.width() * scale;
-    const double height = result.backgroundCanvasRect.height() * scale;
-    if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0 ||
-        width > std::numeric_limits<int>::max() || height > std::numeric_limits<int>::max())
+    result.contentPixelSize = result.backgroundImage.size();
+    qreal scale = result.contentPixelSize.width() / result.backgroundCanvasRect.width();
+    if (mode == ScreenshotPinnedRenderMode::WindowAppearance) {
+        const QSizeF baseline = screenshotPinnedScaleReferenceSize(
+            record.initialWindowSize, record.exactInitialWindowSize, record.quarterTurns, crop,
+            record.image.size(), record.canvasSourceRect, *style);
+        const QSize encodedSize =
+            record.thumbnailMode && record.preThumbnailPlacement.isValid()
+                ? record.preThumbnailPlacement.windowSize
+            : record.thumbnailMode && record.preThumbnailNativeGeometry.isValid()
+                ? record.preThumbnailNativeGeometry.size()
+            : record.placement.isValid() ? record.placement.windowSize
+                                         : record.nativeGeometry.size();
+        // Standalone callers may supply source-only legacy records without window state.
+        const double zoom = !baseline.isEmpty() && !encodedSize.isEmpty()
+                                ? screenshotPinnedRestoredScalePercent(
+                                      baseline, encodedSize, record.scalePercent,
+                                      crop.has_value() || !record.exactInitialWindowSize.isEmpty())
+                                : 100.0;
+        scale = screenshotPinnedRenderScale(zoom, result.backgroundImage.size(),
+                                            result.backgroundCanvasRect);
+        const double width = result.backgroundCanvasRect.width() * scale;
+        const double height = result.backgroundCanvasRect.height() * scale;
+        if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0 ||
+            width > std::numeric_limits<int>::max() || height > std::numeric_limits<int>::max())
+            return prepared;
+        result.contentPixelSize = {std::max(1, qRound(width)), std::max(1, qRound(height))};
+        result.outputOpacity =
+            qBound(record.hideToTopMode ? 25 : 1, record.opacityPercent, 100) / 100.0;
+    }
+    if (!std::isfinite(scale) || scale <= 0)
         return prepared;
-    result.contentPixelSize = {std::max(1, qRound(width)), std::max(1, qRound(height))};
     result.resultStyle = ScreenshotResultCompositor::scaledStyle(*style, scale);
-    result.outputOpacity =
-        qBound(record.hideToTopMode ? 25 : 1, record.opacityPercent, 100) / 100.0;
     if (!record.animationSource && !record.canvasSession.isEmpty()) {
         SnowCanvasRuntime validator;
         if (!validator.isValid() || !validator.restoreDocumentSession(record.canvasSession))
@@ -253,19 +260,20 @@ readScreenshotPinnedImageSnapshot(storage::PinnedWindowRecord record,
                                   const ScreenshotPinnedRenderPreparation& preparation,
                                   ScreenshotClipboardContentReader::CancellationCheck cancelled,
                                   ScreenshotClipboardContentReader::AllocationCheck allocate) {
-    auto prepared = preparePinnedImageRecord(std::move(record), preparation, cancelled, allocate);
+    auto prepared = preparePinnedImageRecord(std::move(record), preparation, cancelled, allocate,
+                                             ScreenshotPinnedRenderMode::WindowAppearance);
     if (prepared.snapshot.error.isEmpty())
         prepared.snapshot.source =
             ScreenshotExportSource::fromPinnedViewport(std::move(prepared.viewport));
     return std::move(prepared.snapshot);
 }
 
-ScreenshotExportImageResult
-renderScreenshotPinnedImageRecord(storage::PinnedWindowRecord record,
-                                  const ScreenshotPinnedRenderPreparation& preparation,
-                                  ScreenshotClipboardContentReader::CancellationCheck cancelled,
-                                  ScreenshotClipboardContentReader::AllocationCheck allocate) {
-    auto prepared = preparePinnedImageRecord(std::move(record), preparation, cancelled, allocate);
+ScreenshotExportImageResult renderScreenshotPinnedImageRecord(
+    storage::PinnedWindowRecord record, const ScreenshotPinnedRenderPreparation& preparation,
+    ScreenshotClipboardContentReader::CancellationCheck cancelled,
+    ScreenshotClipboardContentReader::AllocationCheck allocate, ScreenshotPinnedRenderMode mode) {
+    auto prepared =
+        preparePinnedImageRecord(std::move(record), preparation, cancelled, allocate, mode);
     if (!prepared.snapshot.error.isEmpty())
         return {{}, std::move(prepared.snapshot.error)};
     auto image = renderScreenshotPinnedViewport(prepared.viewport, cancelled);

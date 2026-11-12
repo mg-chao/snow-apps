@@ -1856,13 +1856,15 @@ class ApplicationController::Impl {
         }
     }
 
-    ScreenshotPinnedImageSnapshotRequest pinnedImageSnapshotRequest() {
-        return [this](const QString& id, auto complete) {
+    ScreenshotPinnedImageSnapshotRequest pinnedImageSnapshotRequest(
+        ScreenshotPinnedRenderMode mode = ScreenshotPinnedRenderMode::WindowAppearance) {
+        return [this, mode](const QString& id, auto complete) {
             if (auto* pin = groupManager.liveWindow(id)) {
                 pin->requestRenderedImageSnapshot(
                     [complete = std::move(complete)](ScreenshotPinnedImageSnapshot snapshot) {
                         complete(std::move(snapshot));
-                    });
+                    },
+                    mode);
             } else {
                 complete(std::nullopt);
             }
@@ -1897,7 +1899,8 @@ class ApplicationController::Impl {
     presentation::ImageSplitWindowCoordinator& ensureImageSplitWindowCoordinator() {
         if (!imageSplitWindowCoordinator) {
             presentation::ImageSplitWindowServices services;
-            services.requestPinnedSnapshot = pinnedImageSnapshotRequest();
+            services.requestPinnedSnapshot =
+                pinnedImageSnapshotRequest(ScreenshotPinnedRenderMode::SourceResolution);
             services.stitchToPdf = [this](presentation::ImageSplitSnapshot snapshot) {
                 return ensureImageStitchingWindowCoordinator().presentSplitImagesAsPdf(
                     std::move(snapshot));

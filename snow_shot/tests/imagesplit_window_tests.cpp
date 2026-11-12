@@ -395,7 +395,6 @@ void selectedFileQueriesCancelWithWindowLifecycle() {
 
 void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledText) {
     auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
-    const auto originalCount = repository.summaries().size();
     const auto setGeometry = [](snow_shot::storage::PinnedWindowRecord& record, QSize size) {
         record.nativeGeometry = QRect(QPoint(), size);
         record.canvasSourceRect = QRectF(record.nativeGeometry);
@@ -407,6 +406,7 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
     pixels.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     pixels.image = image({540, 270}, Qt::cyan);
     pixels.createdUtc = QDateTime::fromString(QStringLiteral("2026-10-14T00:00:00Z"), Qt::ISODate);
+    pixels.lastClosedUtc = QDateTime::currentDateTimeUtc();
     pixels.ignored = true;
     setGeometry(pixels, pixels.image.size());
     pixels.thumbnailMode = true;
@@ -449,6 +449,12 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
                 repository.setRecordsHidden({file.id}, true).success &&
                 repository.flush().success && QFile::remove(file.originalFilePath),
             "persist split inputs and remove the original file");
+    const auto savedCount = repository.summaries().size();
+    const auto savedPixels = repository.loadRecord(pixels.id);
+    const auto savedFile = repository.loadRecord(file.id);
+    require(savedPixels && savedPixels->ignored && savedPixels->scalePercent == 50 &&
+                savedPixels->opacityPercent == 55 && savedFile && savedFile->hidden,
+            "saved fixtures include a scaled translucent thumbnail and a hidden file pin");
     ScreenshotClipboardOriginalContent original;
     original.html = text.originalHtml;
     original.text = text.originalText;
@@ -461,12 +467,9 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
     require(!styledText || (legacyRendered && legacyRendered->image != rendered->image),
             "styled split fixture must differ from legacy text rendering");
     const auto preparation = captureScreenshotPinnedRenderPreparation();
-    const auto expectedPixels = renderScreenshotPinnedImageRecord(pixels, preparation);
-    const auto expectedText = renderScreenshotPinnedImageRecord(text, preparation);
-    require(expectedPixels.succeeded() && expectedText.succeeded() &&
-                expectedPixels.image.size() == QSize(270, 135) &&
-                expectedPixels.image.pixelColor(0, 0).alpha() < 255,
-            "saved thumbnail reference uses expansion zoom and opacity");
+    const auto expectedText = renderScreenshotPinnedImageRecord(
+        text, preparation, {}, {}, ScreenshotPinnedRenderMode::SourceResolution);
+    require(expectedText.succeeded(), "render the saved text pin at source resolution");
 
     ImageSplitWindowCoordinator coordinator;
     for (const auto& id : {pixels.id, file.id, text.id})
@@ -482,10 +485,10 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
                std::equal(expected.constBits(), expected.constBits() + expected.sizeInBytes(),
                           rgba.constBits());
     };
-    require(samePixels(windows[0]->document()->image(), expectedPixels.image) &&
+    require(samePixels(windows[0]->document()->image(), pixels.image) &&
                 samePixels(windows[1]->document()->image(), file.image) &&
                 samePixels(windows[2]->document()->image(), expectedText.image),
-            "saved image, file, and text pins split their shared rendered pixels");
+            "saved image, file, and text pins split at source resolution and opacity");
     require(windows[0]->imageName() == QStringLiteral("Screenshot_%1")
                                            .arg(pixels.createdUtc.toLocalTime().toString(
                                                QStringLiteral("yyyyMMdd-HHmmss"))) &&
@@ -497,10 +500,13 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
             "saved pin split edits remain independent");
     const auto retainedPixels = repository.loadRecord(pixels.id);
     const auto retainedFile = repository.loadRecord(file.id);
-    require(repository.summaries().size() == originalCount + 3 && retainedPixels && retainedFile &&
-                retainedPixels->ignored && retainedPixels->canvasSession == pixels.canvasSession &&
-                retainedFile->hidden,
-            "splitting preserves saved pins, their canvas data, and their lifecycle state");
+    require(repository.summaries().size() == savedCount && retainedPixels && retainedFile,
+            "splitting retains the saved pins");
+    require(retainedPixels->scalePercent == savedPixels->scalePercent &&
+                retainedPixels->opacityPercent == savedPixels->opacityPercent &&
+                retainedPixels->canvasSession == savedPixels->canvasSession &&
+                retainedPixels->ignored && retainedFile->hidden,
+            "splitting preserves the saved pins' display settings, canvas data and lifecycle");
     coordinator.presentPinnedRecord(QStringLiteral("missing-split-pin"));
     auto* missing = coordinator.windows().last();
     waitUntil([&] { return !missing->loading(); }, "missing saved pin load completes");
