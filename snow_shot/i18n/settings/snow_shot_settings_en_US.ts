@@ -272,6 +272,10 @@
             <translation>Username</translation>
         </message>
         <message>
+            <source>View account benefits</source>
+            <translation>View account benefits</translation>
+        </message>
+        <message>
             <source>View your balance in the Mini Program with the WeChat account used to pay.</source>
             <translation>View your balance in the Mini Program with the WeChat account used to pay.</translation>
         </message>

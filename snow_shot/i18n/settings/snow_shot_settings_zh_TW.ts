@@ -272,6 +272,10 @@
             <translation>使用者名稱</translation>
         </message>
         <message>
+            <source>View account benefits</source>
+            <translation>查看帳號權益</translation>
+        </message>
+        <message>
             <source>View your balance in the Mini Program with the WeChat account used to pay.</source>
             <translation>請使用付款時的微信帳號，在小程式中查看餘額。</translation>
         </message>

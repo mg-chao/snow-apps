@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
+#include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "antd_icons.h"
 #include "icon_renderer.h"
@@ -21,6 +22,7 @@
 #include "widgets/tag.h"
 
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -30,6 +32,7 @@
 #include <QRegularExpression>
 #include <QResizeEvent>
 #include <QTimer>
+#include <QUrl>
 #include <QtMath>
 #include <QVBoxLayout>
 
@@ -307,10 +310,33 @@ AccountPageWidget::AccountPageWidget(AccountSessionService* service, QWidget* pa
     m_submit->setButtonStyle(AdButton::ButtonStyle::Solid);
     m_submit->setAccentRole(AdButton::AccentRole::Primary);
     auth->addWidget(m_submit);
+    const auto benefitsLink = [](QWidget* parent, const QString& objectName) {
+        auto* button = new AdButton(parent);
+        button->setObjectName(objectName);
+        button->setButtonStyle(AdButton::ButtonStyle::Link);
+        button->setIconRef(adqt::icons::antd::outlined::Export());
+        button->setIconPosition(AdButton::IconPosition::Trailing);
+        connect(button, &AdButton::clicked, button, [] {
+            const auto locale =
+                snow_shot::presentation::LanguageManager::instance().currentLocale();
+            const auto path = locale.language() == QLocale::Chinese
+                                  ? QStringLiteral("/zh/pricing.html")
+                                  : QStringLiteral("/pricing.html");
+            QDesktopServices::openUrl(
+                QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL)).resolved(QUrl(path)));
+        });
+        return button;
+    };
+    m_authActions = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_authActions->setSpacing(8);
+    m_authActions->setAlignment(Qt::AlignHCenter);
     m_switch = new AdButton(authContent);
     m_switch->setObjectName(QStringLiteral("accountSwitchForm"));
     m_switch->setButtonStyle(AdButton::ButtonStyle::Link);
-    auth->addWidget(m_switch);
+    m_authBenefits = benefitsLink(authContent, QStringLiteral("accountAuthBenefits"));
+    m_authActions->addWidget(m_switch, 0, Qt::AlignHCenter);
+    m_authActions->addWidget(m_authBenefits, 0, Qt::AlignHCenter);
+    auth->addLayout(m_authActions);
     auto* authRow = new QHBoxLayout;
     authRow->addWidget(authContent);
     authSection->addLayout(authRow);
@@ -330,9 +356,17 @@ AccountPageWidget::AccountPageWidget(AccountSessionService* service, QWidget* pa
     m_signOut->setButtonStyle(AdButton::ButtonStyle::Text);
     m_signOut->setIconRef(adqt::icons::antd::outlined::Logout());
     identityText->addWidget(m_accountName);
-    m_cumulativeRecharge = copyLabel(m_profile);
+    m_rechargeLayout = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_rechargeLayout->setSpacing(8);
+    m_rechargeLayout->setAlignment(Qt::AlignLeft);
+    m_cumulativeRecharge = copyLabel(identity);
     m_cumulativeRecharge->setObjectName(QStringLiteral("accountCumulativeRecharge"));
-    identityText->addWidget(m_cumulativeRecharge);
+    m_cumulativeRecharge->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    m_rechargeLayout->addWidget(m_cumulativeRecharge);
+    m_profileBenefits = benefitsLink(identity, QStringLiteral("accountProfileBenefits"));
+    m_profileBenefits->setContentPaddingEnabled(false);
+    m_rechargeLayout->addWidget(m_profileBenefits, 0, Qt::AlignLeft);
+    identityText->addLayout(m_rechargeLayout);
     m_identityLayout->addWidget(identity, 1);
     m_identityLayout->addWidget(m_signOut, 0, Qt::AlignLeft);
     profile->addLayout(m_identityLayout);
@@ -647,6 +681,9 @@ void AccountPageWidget::retranslateUi() {
     m_submit->setText(m_registration ? tr("Register and continue") : tr("Sign in"));
     m_switch->setText(m_registration ? tr("Already have an account? Sign in")
                                      : tr("Create an account"));
+    const QString benefits = tr("View account benefits");
+    m_authBenefits->setText(benefits);
+    m_profileBenefits->setText(benefits);
     m_credit->parentWidget()->setToolTip(tr("Available credits"));
     m_topUp->setText(tr("Purchase credits"));
     m_signOut->setText(tr("Sign out"));
@@ -698,6 +735,7 @@ void AccountPageWidget::updateState() {
     m_submit->setEnabled(m_service && !busy && (!m_registration || m_agreement->isChecked()));
     m_submit->setBusy(busy);
     m_switch->setEnabled(!busy && (!m_service || !m_service->purchase().pending()));
+    m_authBenefits->setVisible(!m_registration);
     m_username->setEnabled(!busy);
     m_password->setEnabled(!busy);
     m_confirmation->setEnabled(!busy);
@@ -1054,6 +1092,16 @@ void AccountPageWidget::updateCompactGeometry() {
     m_debt->setMinimumHeight(std::max(0, m_debt->heightForWidth(pageContentWidth)));
     const bool compact = contentWidth < metric.fontSize * 38;
     m_identityLayout->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    const int identityWidth =
+        compact ? contentWidth
+                : contentWidth - m_signOut->sizeHint().width() - m_identityLayout->spacing();
+    const int rechargeWidth =
+        m_cumulativeRecharge->fontMetrics().horizontalAdvance(m_cumulativeRecharge->text()) +
+        m_rechargeLayout->spacing() + m_profileBenefits->sizeHint().width();
+    const bool stackRecharge = rechargeWidth > identityWidth;
+    m_rechargeLayout->setDirection(stackRecharge ? QBoxLayout::TopToBottom
+                                                 : QBoxLayout::LeftToRight);
+    m_cumulativeRecharge->setWordWrap(stackRecharge);
     m_balanceLayout->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     m_transactionHeader->setVisible(contentWidth >= metric.fontSize * 42 &&
                                     !m_renderedTransactions.isEmpty());
@@ -1073,6 +1121,11 @@ void AccountPageWidget::updateCompactGeometry() {
     if (!m_codeData.isEmpty())
         imageFromData(m_code, m_codeData, QSize(codeSize - 16, codeSize - 16));
     const int authWidth = std::max(112, authCard->width() - 2 * cardPadding);
+    const int actionsWidth = m_switch->sizeHint().width() + m_authActions->spacing() +
+                             m_authBenefits->sizeHint().width();
+    m_authActions->setDirection(!m_registration && actionsWidth > authWidth
+                                    ? QBoxLayout::TopToBottom
+                                    : QBoxLayout::LeftToRight);
     const int captchaWidth =
         std::clamp(authWidth - m_captchaRefresh->sizeHint().width() - 12, 64, 160);
     // The viewport owns its geometry; asynchronous images and fractional DPR

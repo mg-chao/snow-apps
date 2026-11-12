@@ -337,12 +337,13 @@ void projectLinksAreExplicitAccessibleAndRecoverable() {
                 qAbs(group->width() - group4->width()) <= 1,
             "both QQ groups share the second project link row equally");
     snapshot(page, QStringLiteral("about-actions"));
+    const QUrl websiteUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL));
     const QString project = QStringLiteral(SNOW_SHOT_TEST_PROJECT_URL);
     const std::array<std::pair<const char*, QUrl>, 8> links{{
-        {"aboutWebsite", QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
+        {"aboutWebsite", websiteUrl},
         {"aboutSourceCode", QUrl(project)},
         {"aboutFeedback", QUrl(project + QStringLiteral("/issues"))},
-        {"aboutReleaseNotes", QUrl(project + QStringLiteral("/releases"))},
+        {"aboutReleaseNotes", websiteUrl.resolved(QUrl(QStringLiteral("/changelog.html")))},
         {"aboutQqGroup3", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_3_URL))},
         {"aboutQqGroup4", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_4_URL))},
         {"aboutPrivacyPolicy", QUrl(snow_shot::app::distribution::privacyPolicyUrl())},

@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/components/accountpagewidget.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/languagemanager.h"
 #include "widgets/scroll_area.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -20,6 +21,7 @@
 
 #include <QApplication>
 #include <QBuffer>
+#include <QDesktopServices>
 #include <QDir>
 #include <QPainter>
 #include <QFile>
@@ -40,6 +42,7 @@
 #include <QTranslator>
 #include <QTextDocument>
 #include <QScrollBar>
+#include <QUrl>
 
 #include <cstdlib>
 #include <functional>
@@ -49,6 +52,18 @@
 using snow_shot::app::AccountSessionService;
 namespace settings = snow_shot::presentation::settings;
 namespace {
+class BenefitsUrlReceiver final : public QObject {
+    Q_OBJECT
+
+  public:
+    QUrl openedUrl;
+
+  public Q_SLOTS:
+    void open(const QUrl& url) {
+        openedUrl = url;
+    }
+};
+
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -1966,6 +1981,80 @@ void emptyAccountTransactionsMatchScreenshotHistory() {
             "loaded transactions replace the complete empty state and release its space");
 }
 
+void accountBenefitsLinksFollowUiLanguage() {
+    using adqt::widgets::AdButton;
+    auto& languages = snow_shot::presentation::LanguageManager::instance();
+    require(languages.setLanguage(QStringLiteral("en_US")), "select English for account layout");
+    Api api;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, options());
+    AccountPageWidget page(&service);
+    page.resize(560, 600);
+    page.show();
+    QApplication::processEvents();
+
+    auto* registration = page.findChild<AdButton*>(QStringLiteral("accountSwitchForm"));
+    auto* authLink = page.findChild<AdButton*>(QStringLiteral("accountAuthBenefits"));
+    auto* profileLink = page.findChild<AdButton*>(QStringLiteral("accountProfileBenefits"));
+    const auto* cumulative = page.findChild<QLabel*>(QStringLiteral("accountCumulativeRecharge"));
+    require(registration && authLink && profileLink && cumulative,
+            "account page exposes both benefits links and the total top-ups label");
+    require(authLink->isVisible() && !profileLink->isVisible() &&
+                registration->geometry().right() < authLink->geometry().left() &&
+                registration->geometry().center().y() == authLink->geometry().center().y(),
+            "sign-in view shows the benefits link beside the registration link");
+    page.resize(265, 600);
+    QApplication::processEvents();
+    const int centerOffset =
+        registration->geometry().center().x() - authLink->geometry().center().x();
+    require(registration->geometry().bottom() < authLink->geometry().top() &&
+                qAbs(centerOffset) <= 1,
+            "narrow sign-in view stacks and centers the two links");
+    page.resize(560, 600);
+
+    BenefitsUrlReceiver receiver;
+    QDesktopServices::setUrlHandler(QStringLiteral("https"), &receiver, "open");
+    struct LocalizedLink {
+        const char* locale;
+        const char16_t* label;
+        const char16_t* path;
+    };
+    const LocalizedLink variants[] = {
+        {"en_US", u"View account benefits", u"/pricing.html"},
+        {"zh_CN", u"查看账号权益", u"/zh/pricing.html"},
+        {"zh_TW", u"查看帳號權益", u"/zh/pricing.html"},
+    };
+    for (auto* link : {authLink, profileLink}) {
+        if (link == profileLink) {
+            service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+            await([&] { return !service.account().isEmpty(); });
+            require(languages.setLanguage(QStringLiteral("en_US")), "select English for overview");
+            QApplication::processEvents();
+            const int gap = profileLink->geometry().left() - cumulative->geometry().right() - 1;
+            require(profileLink->isVisible() && !authLink->isVisible() && gap >= 0 && gap <= 12 &&
+                        cumulative->geometry().center().y() == profileLink->geometry().center().y(),
+                    "signed-in benefits link sits next to the total top-ups");
+            page.resize(265, 600);
+            QApplication::processEvents();
+            require(cumulative->geometry().bottom() < profileLink->geometry().top(),
+                    "narrow overview stacks the link below the total top-ups");
+            page.resize(560, 600);
+        }
+        for (const auto& variant : variants) {
+            require(languages.setLanguage(QString::fromLatin1(variant.locale)),
+                    "switch account benefits link language");
+            QApplication::processEvents();
+            require(link->text() == QStringView(variant.label),
+                    "visible account benefits link updates its label");
+            receiver.openedUrl = QUrl();
+            link->click();
+            require(receiver.openedUrl.path() == QStringView(variant.path),
+                    "account benefits link opens the localized website path");
+        }
+    }
+    QDesktopServices::unsetUrlHandler(QStringLiteral("https"));
+}
+
 void languageChangeRetranslatesCachedErrors() {
     Api api;
     SnowShotApiClient client(api.origin());
@@ -2628,6 +2717,9 @@ int main(int argc, char** argv) {
     accountServerValidationStaysWithFields();
     accountNetworkFailuresUseMessages();
     secureStore();
+    accountBenefitsLinksFollowUiLanguage();
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;
 }
+
+#include "account_tests.moc"

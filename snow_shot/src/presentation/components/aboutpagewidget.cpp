@@ -307,6 +307,11 @@ class AboutResourceButton final : public AdButton {
     qreal m_contentDpr = 0;
 };
 
+QUrl aboutChangelogUrl() {
+    return QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL))
+        .resolved(QUrl(QStringLiteral("/changelog.html")));
+}
+
 QUrl aboutProjectUrl(const QString& suffix = {}) {
     QUrl url(QStringLiteral(SNOW_SHOT_PROJECT_URL));
     QString path = url.path();
@@ -658,7 +663,7 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     });
     connect(m_ui->copyFeedbackTimer, &QTimer::timeout, this, &AboutPageWidget::retranslateUi);
     connect(m_ui->releaseNotes, &AdButton::clicked, this,
-            [this]() { openProjectLink(aboutProjectUrl(QStringLiteral("/releases"))); });
+            [this]() { openProjectLink(aboutChangelogUrl()); });
     connect(m_ui->resources[0], &QAbstractButton::clicked, this,
             [this]() { openProjectLink(QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL))); });
     connect(m_ui->resources[1], &QAbstractButton::clicked, this,
@@ -870,7 +875,7 @@ void AboutPageWidget::retranslateUi() {
                                                                      : outlined::Copy());
     m_ui->releaseNotes->setText(tr("Changelog"));
     m_ui->releaseNotes->setAccessibleName(tr("Changelog"));
-    m_ui->releaseNotes->setToolTip(aboutProjectUrl(QStringLiteral("/releases")).toDisplayString());
+    m_ui->releaseNotes->setToolTip(aboutChangelogUrl().toDisplayString());
     m_ui->resources[0]->setCopy(tr("Official website"),
                                 tr("Discover more features and ways to use it"),
                                 QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL)));

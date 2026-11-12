@@ -73,11 +73,15 @@ class AccountPageWidget final : public QWidget {
     QLabel* m_agreementText = nullptr;
     adqt::widgets::AdButton* m_submit = nullptr;
     adqt::widgets::AdButton* m_switch = nullptr;
+    QBoxLayout* m_authActions = nullptr;
+    adqt::widgets::AdButton* m_authBenefits = nullptr;
     QWidget* m_profile = nullptr;
     QBoxLayout* m_identityLayout = nullptr;
+    QBoxLayout* m_rechargeLayout = nullptr;
     QBoxLayout* m_balanceLayout = nullptr;
     QLabel* m_accountName = nullptr;
     QLabel* m_cumulativeRecharge = nullptr;
+    adqt::widgets::AdButton* m_profileBenefits = nullptr;
     QLabel* m_creditIcon = nullptr;
     QLabel* m_credit = nullptr;
     adqt::widgets::AdButton* m_topUp = nullptr;
