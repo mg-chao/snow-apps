@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "antd_icons.h"
 #include "icon_renderer.h"
+#include "snowimageqtcodec.h"
 #include "widgets/alert.h"
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
@@ -176,8 +177,21 @@ class AccountTransactionRow final : public QWidget {
 void imageFromData(QLabel* label, const QString& data, const QSize& bounds) {
     const auto comma = data.indexOf(u',');
     QPixmap pixmap;
-    if (data.startsWith(QStringLiteral("data:image/")) && comma > 0 && data.size() < 4000000)
-        pixmap.loadFromData(QByteArray::fromBase64(data.mid(comma + 1).toLatin1()));
+    if (data.startsWith(QStringLiteral("data:image/")) && comma > 0 && data.size() < 4000000) {
+        const auto encoded = QByteArray::fromBase64(data.mid(comma + 1).toLatin1());
+        if (data.startsWith(u"data:image/jpeg;base64,")) {
+            constexpr auto format = snow::image::Format::jpeg;
+            constexpr int maxCodeDimension = 1280;
+            const auto size = snow_shot::image_codec::inspectSize(encoded, format);
+            if (!size.isEmpty() && size.width() <= maxCodeDimension &&
+                size.height() <= maxCodeDimension) {
+                pixmap =
+                    QPixmap::fromImage(snow_shot::image_codec::decodeFirstFrame(encoded, format));
+            }
+        } else {
+            pixmap.loadFromData(encoded);
+        }
+    }
     if (!pixmap.isNull()) {
         const qreal ratio = label->devicePixelRatioF();
         const QSize pixels(std::max(1, qFloor(bounds.width() * ratio)),

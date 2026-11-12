@@ -103,6 +103,7 @@ class Api {
     int expirySeconds = 600;
     QString codeData;
     QString captchaData;
+    bool acceptsJpeg = false;
 
     Api() {
         QImage code(192, 192, QImage::Format_RGB32);
@@ -157,7 +158,7 @@ class Api {
                     const QByteArray path = first.value(1);
                     const bool post = first.value(0) == "POST";
                     const auto body = QJsonDocument::fromJson(bytes->mid(headerEnd + 4)).object();
-                    const auto headers = bytes->left(headerEnd).toLower();
+                    const auto headers = bytes->left(headerEnd + 2).toLower();
                     QJsonObject data;
                     int responseStatus = 200;
                     if (path == "/api/v2/registration/captcha") {
@@ -166,6 +167,7 @@ class Api {
                                 {QStringLiteral("image_data_url"), captchaData}};
                     } else if (path == "/api/v2/registration/requests" && post) {
                         ++registrations;
+                        acceptsJpeg = headers.contains("\r\nx-snowshot-accept-jpeg: 1\r\n");
                         registrationBody = bytes->mid(headerEnd + 4);
                         username = body.value(QStringLiteral("username")).toString();
                         data = purchase();
@@ -186,6 +188,7 @@ class Api {
                         data.insert(QStringLiteral("mini_program_code_data_url"), QJsonValue());
                     } else if (path == "/api/v2/purchases/requests" && post) {
                         requestId = QStringLiteral("purchase%1").arg(++purchases);
+                        acceptsJpeg = headers.contains("\r\nx-snowshot-accept-jpeg: 1\r\n");
                         data = purchase();
                     } else if (path.startsWith("/api/v2/purchases/requests/") &&
                                path.endsWith("/cancel") && post) {
@@ -833,6 +836,7 @@ void paymentActionsStayInOneRowAndDetailsAreCentered() {
     service.registerAccount(QStringLiteral("TestUser"), QStringLiteral("long-password"),
                             QStringLiteral("long-password"), QStringLiteral("abcd"));
     await([&] { return !service.purchase().request().isEmpty(); });
+    require(api.acceptsJpeg, "registration advertises JPEG support");
     auto* paid = page.findChild<AdButton*>(QStringLiteral("accountRefreshPayment"));
     require(paid->buttonStyle() == AdButton::ButtonStyle::Solid &&
                 paid->accentRole() == AdButton::AccentRole::Primary,
@@ -859,6 +863,7 @@ void paymentActionsStayInOneRowAndDetailsAreCentered() {
                     payment->rect().contains(signIn->geometry()),
                 "both payment actions fit inside the payment content");
         auto* code = page.findChild<QLabel*>(QStringLiteral("accountMiniProgramCode"));
+        require(!code->pixmap().isNull(), "the PNG registration code is displayed");
         require(qAbs(code->geometry().center().x() - payment->rect().center().x()) <= 1,
                 "the Mini Program code is horizontally centered in the payment content");
         for (auto* label : payment->findChildren<QLabel*>()) {
@@ -887,6 +892,37 @@ void paymentActionsStayInOneRowAndDetailsAreCentered() {
     require(page.findChild<QLineEdit*>(QStringLiteral("accountUsername"))->isVisibleTo(&page) &&
                 !service.purchase().request().isEmpty(),
             "the regular sign-in action opens the existing-account form during payment");
+}
+
+void jpegTopUpCodeIsDisplayed() {
+    Api api;
+    // 16x16 grayscale JPEG with black pixels on the left and white on the right.
+    api.codeData = QStringLiteral(
+        "data:image/jpeg;base64,"
+        "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA"
+        "QEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/"
+        "wAALCAAQABABAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAC//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AP/"
+        "P8ABz/AA//2Q==");
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, options());
+    AccountPageWidget page(&service);
+    page.resize(640, 640);
+    page.show();
+    service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+    await([&] { return !service.account().isEmpty(); });
+    service.beginTopUp();
+    await([&] { return !service.purchase().request().isEmpty(); });
+    require(api.acceptsJpeg, "top-up advertises JPEG support");
+    auto* code = page.findChild<QLabel*>(QStringLiteral("accountMiniProgramCode"));
+    for (const int width : {640, 260}) {
+        page.resize(width, 640);
+        QApplication::processEvents();
+        const auto pixels = code->pixmap().toImage();
+        require(code->isVisibleTo(&page) && !pixels.isNull() &&
+                    pixels.pixelColor(0, 0) == Qt::black &&
+                    pixels.pixelColor(pixels.width() - 1, 0) == Qt::white,
+                "the JPEG top-up code is displayed after layout");
+    }
 }
 
 void automaticPaymentPollingDoesNotShowButtonLoading() {
@@ -2385,6 +2421,7 @@ int main(int argc, char** argv) {
         previousRegistrationHistoryClearsWhenOriginChanges();
         automaticPaymentPollingDoesNotShowButtonLoading();
         paymentActionsStayInOneRowAndDetailsAreCentered();
+        jpegTopUpCodeIsDisplayed();
         uncertainPollingBacksOffAndManualRefreshRecovers();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -2416,6 +2453,7 @@ int main(int argc, char** argv) {
     explicitIdentityChoiceSuppressesAutomaticClaim();
     automaticPaymentPollingDoesNotShowButtonLoading();
     paymentActionsStayInOneRowAndDetailsAreCentered();
+    jpegTopUpCodeIsDisplayed();
     uncertainPollingBacksOffAndManualRefreshRecovers();
     registrationProofSurvivesRestartAndDoesNotOverrideStoredSession();
     tokenRefreshPreservesQueuedOfficialCalls();
