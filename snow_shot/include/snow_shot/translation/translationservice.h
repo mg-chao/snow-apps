@@ -159,7 +159,7 @@ class TranslationJob final : public QObject {
     SnowShotTranslationResult m_result;
     State m_state = State::Idle;
     quint64 m_generation = 0;
-    bool m_rateLimited = false;
+    bool m_dispatchBlocked = false;
     bool m_fixedPreferences = false;
     bool m_languageDetectionAttempted = false;
 };

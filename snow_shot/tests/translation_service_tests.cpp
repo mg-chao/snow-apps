@@ -295,6 +295,50 @@ void builtInConcurrencyUsesEightRequests(const QString& directory) {
             "built-in translation completes after replenishing capacity");
 }
 
+void accountRejectionStopsTheBatchAndKeepsItsError(const QString& directory) {
+    for (const bool billing : {false, true}) {
+        Server server;
+        SnowShotApiClient client(server.url());
+        ConfigurationStore settings(directory + (billing ? QStringLiteral("/credits-error.json")
+                                                         : QStringLiteral("/login-error.json")),
+                                    true, true, 60000);
+        auto& service = TranslationService::forClient(client, settings, QLocale::English);
+        service.refreshModels();
+        waitUntil([&] { return !service.loadingModels(); }, "load built-in models");
+        auto preferences = service.preferences();
+        preferences.modelId = QStringLiteral("general");
+        preferences.sourceLanguage = QStringLiteral("en");
+        preferences.targetLanguage = QStringLiteral("zh-Hans");
+        QStringList texts;
+        for (int index = 0; index < 10; ++index)
+            texts.append(QString::number(index));
+        QObject owner;
+        auto* job = service.createJob(texts, preferences, &owner);
+        job->start();
+        waitUntil([&] { return server.streams.size() >= 2; }, "start the first translation units");
+        const QByteArray code = billing ? "insufficient_credits" : "account_required";
+        server.send(0,
+                    "event: error\ndata: {\"status\":" + QByteArray::number(billing ? 402 : 401) +
+                        ",\"error\":{\"code\":\"" + code + "\"}}\n\n");
+        waitUntil([&] { return job->result().code == QString::fromLatin1(code); },
+                  "nested streaming error preserves its account code");
+        const auto started = server.streams.size();
+        server.delta(1, QStringLiteral("partial output"));
+        for (int index = 1; index < started; ++index)
+            server.fail(index);
+        waitUntil([&] { return !job->busy(); }, "in-flight translation units finish");
+        require(server.streams.size() == started && started <= 8 &&
+                    job->state() == TranslationJob::State::Failed &&
+                    job->result().code == QString::fromLatin1(code) &&
+                    job->result().httpStatus == (billing ? 402 : 401) &&
+                    job->units().at(1).text == QStringLiteral("partial output") &&
+                    job->errorText().contains(
+                        billing ? QStringLiteral("Purchase credits in Account")
+                                : QStringLiteral("Sign in to your Snow Shot account")),
+                "account rejection stops unsent units and remains visible after later failures");
+    }
+}
+
 void aiModelSelectionMigratesOnlyAfterDiscovery(const QString& directory) {
     for (const QString& legacy :
          {QStringLiteral("qwen3.8-flash"), QStringLiteral("qwen-mt-flash")}) {
@@ -1536,6 +1580,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--notification-lifetime-only")))
         return 0;
     builtInConcurrencyUsesEightRequests(directory.path());
+    accountRejectionStopsTheBatchAndKeepsItsError(directory.path());
     temporaryRateLimitsRetryWithoutLosingResults();
     builtInQueueIsSharedAndCancellationRemovesWaitingRequests();
     rateLimitCooldownIsSharedAndCancelable();

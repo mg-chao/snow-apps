@@ -317,7 +317,7 @@ void TranslationJob::start() {
 void TranslationJob::retry() {
     cancel();
     m_result = {};
-    m_rateLimited = false;
+    m_dispatchBlocked = false;
     if (m_service == nullptr || m_client == nullptr) {
         fail(tr("Translation service is unavailable"));
         return;
@@ -407,10 +407,13 @@ void TranslationJob::pump() {
     if (m_state != State::Streaming || m_client == nullptr)
         return;
     const auto generation = m_generation;
+    const bool builtIn = m_preferences.modelId != freeTranslationId &&
+                         !m_client->isCustomModel(m_preferences.modelId) &&
+                         !m_client->isTextTranslation(m_preferences.modelId);
     for (int group = 0;
          group < m_unitGroups.size() &&
          m_requests.size() < (m_client->isTextTranslation(m_preferences.modelId) ? 16 : 8) &&
-         !m_rateLimited;
+         !m_dispatchBlocked;
          ++group) {
         const auto indices = m_unitGroups[group];
         const auto& unit = m_units[indices.first()];
@@ -440,18 +443,24 @@ void TranslationJob::pump() {
                         return;
                 }
             },
-            [this, generation, group, indices](SnowShotTranslationResult result) {
+            [this, generation, group, indices, builtIn](SnowShotTranslationResult result) {
                 if (generation != m_generation || !m_requests.remove(group))
                     return;
                 if (result.succeeded() && m_units[indices.first()].text.trimmed().isEmpty())
                     result.error = tr("The model returned no content");
                 for (const int index : indices)
                     m_units[index].state = result.succeeded() ? State::Completed : State::Failed;
-                if (!result.succeeded())
+                const bool accountFailure =
+                    builtIn &&
+                    (result.httpStatus == 401 || result.httpStatus == 402 ||
+                     result.code == u"account_required" || result.code == u"invalid_session" ||
+                     result.code == u"insufficient_credits" ||
+                     result.code == u"outstanding_balance");
+                if (!result.succeeded() && !m_dispatchBlocked)
                     m_result = result;
-                if (result.httpStatus == 429) {
-                    m_rateLimited = true;
-                    // A terminal limit must also retire requests in the shared built-in
+                if (!m_dispatchBlocked && (result.httpStatus == 429 || accountFailure)) {
+                    m_dispatchBlocked = true;
+                    // A terminal rejection also retires requests in the shared built-in
                     // queue. Already dispatched chat streams can finish without losing
                     // their partial output or incurring a duplicate provider call.
                     const auto requests = m_requests;
