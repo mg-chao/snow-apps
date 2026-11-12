@@ -212,6 +212,8 @@ void AccountSessionService::send(const QByteArray& method, const QString& path,
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Content-Type", "application/json");
     request.setRawHeader("X-Request-ID", requestId.toUtf8());
+    if (path == u"/registration/requests" || path == u"/purchases/requests")
+        request.setRawHeader("X-SnowShot-Accept-Jpeg", "1");
     if (authenticated && !m_accessToken.isEmpty())
         request.setRawHeader("Authorization", "Bearer " + m_accessToken.toUtf8());
     if (!proof.isEmpty())
