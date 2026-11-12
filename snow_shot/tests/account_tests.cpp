@@ -82,6 +82,10 @@ class Api {
     int cancellations = 0;
     int captchas = 0;
     int logins = 0;
+    int accountReads = 0;
+    int transactionReads = 0;
+    int connections = 0;
+    bool keepAlive = false;
     bool manualQuery = false;
     bool proofSeen = false;
     bool officialAuthSeen = false;
@@ -95,11 +99,15 @@ class Api {
     QList<std::function<void()>> heldPurchasePolls;
     bool holdRegistrationReplies = false;
     QList<std::function<void()>> heldRegistrationReplies;
+    bool holdTransactionReplies = false;
+    QList<std::function<void()>> heldTransactionReplies;
     QString requestId = QStringLiteral("request1");
     QByteArray registrationBody;
     QString balance = QStringLiteral("9900000000");
     QString debt = QStringLiteral("0");
     QString cumulativeRecharge = QStringLiteral("188000000000");
+    QString usageTransactionId = QStringLiteral("usage1");
+    QString expiresAt;
     int expirySeconds = 600;
     QString codeData;
     QString captchaData;
@@ -140,6 +148,7 @@ class Api {
         require(server.listen(QHostAddress::LocalHost), "fake account API listens");
         QObject::connect(&server, &QTcpServer::newConnection, &server, [this] {
             while (auto* socket = server.nextPendingConnection()) {
+                ++connections;
                 auto bytes = std::make_shared<QByteArray>();
                 QObject::connect(socket, &QIODevice::readyRead, socket, [this, socket, bytes] {
                     bytes->append(socket->readAll());
@@ -153,12 +162,15 @@ class Api {
                     if (bytes->size() < headerEnd + 4 + length ||
                         socket->property("handled").toBool())
                         return;
-                    socket->setProperty("handled", true);
+                    if (!keepAlive)
+                        socket->setProperty("handled", true);
                     const auto first = bytes->left(bytes->indexOf("\r\n")).split(' ');
                     const QByteArray path = first.value(1);
                     const bool post = first.value(0) == "POST";
-                    const auto body = QJsonDocument::fromJson(bytes->mid(headerEnd + 4)).object();
+                    const auto requestBody = bytes->mid(headerEnd + 4, length);
+                    const auto body = QJsonDocument::fromJson(requestBody).object();
                     const auto headers = bytes->left(headerEnd + 2).toLower();
+                    bytes->remove(0, headerEnd + 4 + length);
                     QJsonObject data;
                     int responseStatus = 200;
                     if (path == "/api/v2/registration/captcha") {
@@ -168,7 +180,7 @@ class Api {
                     } else if (path == "/api/v2/registration/requests" && post) {
                         ++registrations;
                         acceptsJpeg = headers.contains("\r\nx-snowshot-accept-jpeg: 1\r\n");
-                        registrationBody = bytes->mid(headerEnd + 4);
+                        registrationBody = requestBody;
                         username = body.value(QStringLiteral("username")).toString();
                         data = purchase();
                         data.insert(QStringLiteral("registration_proof"),
@@ -212,6 +224,7 @@ class Api {
                         ++refreshes;
                         data = session();
                     } else if (path == "/api/v2/account") {
+                        ++accountReads;
                         officialAuthSeen = headers.contains("authorization: bearer desktop-access");
                         data = {
                             {QStringLiteral("username"), username},
@@ -222,6 +235,7 @@ class Api {
                             {QStringLiteral("cumulative_recharge_nano_yuan"), cumulativeRecharge},
                             {QStringLiteral("payments_available"), true}};
                     } else if (path.startsWith("/api/v2/account/transactions")) {
+                        ++transactionReads;
                         data = {{QStringLiteral("items"),
                                  QJsonArray{QJsonObject{
                                      {QStringLiteral("id"), QStringLiteral("refund1")},
@@ -235,7 +249,7 @@ class Api {
                                 {QStringLiteral("next_cursor"), QJsonValue()}};
                         auto items = data.value(QStringLiteral("items")).toArray();
                         items.append(QJsonObject{
-                            {QStringLiteral("id"), QStringLiteral("usage1")},
+                            {QStringLiteral("id"), usageTransactionId},
                             {QStringLiteral("type"), QStringLiteral("usage")},
                             {QStringLiteral("status"), QStringLiteral("completed")},
                             {QStringLiteral("amount_nano_yuan"), QStringLiteral("-12500000")},
@@ -266,20 +280,26 @@ class Api {
                                         {QStringLiteral("data"), data}})
                             .toJson();
                     const auto respond = [socket = QPointer<QTcpSocket>(socket), response,
-                                          responseStatus] {
+                                          responseStatus, keepAlive = keepAlive] {
                         if (!socket)
                             return;
-                        socket->write("HTTP/1.1 " + QByteArray::number(responseStatus) +
-                                      " OK\r\nContent-Type: "
-                                      "application/json\r\nConnection: close\r\nContent-Length: " +
-                                      QByteArray::number(response.size()) + "\r\n\r\n" + response);
-                        socket->disconnectFromHost();
+                        const QByteArray connection = keepAlive ? "keep-alive" : "close";
+                        socket->write(
+                            "HTTP/1.1 " + QByteArray::number(responseStatus) +
+                            " OK\r\nContent-Type: application/json\r\nConnection: " + connection +
+                            "\r\nContent-Length: " + QByteArray::number(response.size()) +
+                            "\r\n\r\n" + response);
+                        if (!keepAlive)
+                            socket->disconnectFromHost();
                     };
                     if (holdRegistrationReplies && path == "/api/v2/registration/requests" && post)
                         heldRegistrationReplies.append(respond);
                     else if (holdPurchasePolls && path.startsWith("/api/v2/purchases/requests/") &&
                              !path.endsWith("/cancel"))
                         heldPurchasePolls.append(respond);
+                    else if (holdTransactionReplies &&
+                             path.startsWith("/api/v2/account/transactions"))
+                        heldTransactionReplies.append(respond);
                     else
                         respond();
                 });
@@ -306,7 +326,9 @@ class Api {
              orderId.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(orderId)},
             {QStringLiteral("order_state"), orderState},
             {QStringLiteral("expires_at"),
-             QDateTime::currentDateTimeUtc().addSecs(expirySeconds).toString(Qt::ISODate)},
+             expiresAt.isEmpty()
+                 ? QDateTime::currentDateTimeUtc().addSecs(expirySeconds).toString(Qt::ISODate)
+                 : expiresAt},
             {QStringLiteral("server_time"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
             {QStringLiteral("mini_program_code_data_url"), codeData}};
     }
@@ -1400,6 +1422,44 @@ void registrationProofSurvivesRestartAndDoesNotOverrideStoredSession() {
 #endif
 }
 
+void unchangedPollRetriesFailedRegistrationWrite() {
+#ifdef Q_OS_WIN
+    Api api;
+    api.expiresAt = api.purchase().value(QStringLiteral("expires_at")).toString();
+    QTemporaryDir directory;
+    require(directory.isValid(), "create isolated account secret storage");
+    auto config = options();
+    config.persistSecrets = true;
+    config.secretDirectory = directory.filePath(QStringLiteral("secrets"));
+    config.profileIdentity = directory.path();
+    config.pollIntervalMs = 10000;
+    QFile blockedDirectory(config.secretDirectory);
+    require(blockedDirectory.open(QIODevice::WriteOnly), "block the initial account secret write");
+    blockedDirectory.close();
+
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    service.registerAccount(QStringLiteral("TestUser"), QStringLiteral("long-password"),
+                            QStringLiteral("long-password"), QStringLiteral("abcd"));
+    await([&] { return service.purchase().pending(); });
+    require(!service.storageNotice().isEmpty(), "initial registration proof could not be saved");
+    const auto request = service.purchase().request();
+
+    require(blockedDirectory.remove(), "restore access to the account secrets directory");
+    service.refreshPurchase();
+    await([&] { return !service.purchase().polling(); });
+    require(service.purchase().request() == request, "poll response leaves the purchase unchanged");
+    const QString identity =
+        QCoreApplication::applicationName() + u'|' + config.profileIdentity + u'|' + api.origin();
+    const snow_shot::storage::AccountSecretStore secrets(identity, config.secretDirectory);
+    const auto saved = QJsonDocument::fromJson(secrets.read()).object();
+    require(saved.value(QStringLiteral("registration_proof")).toString() ==
+                    QStringLiteral("private-proof") &&
+                service.storageNotice().isEmpty(),
+            "an unchanged poll saves the registration proof once storage is available");
+#endif
+}
+
 void tokenRefreshPreservesQueuedOfficialCalls() {
     translation_tests::Server server;
     server.streamRejection = [](int index) {
@@ -1469,6 +1529,104 @@ void accountRequestsFollowProxyConfiguration() {
     require(officialNetwork && officialNetwork != network,
             "official calls own their manager independently of the child account service");
     client.cancel(token);
+}
+
+void accountRefreshFollowsPageVisibilityAndReusesConnection() {
+    Api api;
+    api.keepAlive = true;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, options());
+    AccountPageWidget page(&service);
+    service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+    await([&] { return !service.account().isEmpty(); });
+    require(api.connections == 1 && api.accountReads == 1 && api.transactionReads == 0,
+            "login and its summary reuse a socket and skip hidden history");
+
+    page.show();
+    await([&] { return !service.transactions().isEmpty() && api.accountReads == 2; });
+    api.holdTransactionReplies = true;
+    service.loadTransactions();
+    await([&] { return api.heldTransactionReplies.size() == 1; });
+
+    api.balance = QStringLiteral("10800000000");
+    api.usageTransactionId = QStringLiteral("usage2");
+    for (int index = 0; index < 5; ++index)
+        emit client.officialCallSettled();
+    await([&] {
+        return service.account().value(QStringLiteral("available_credit_nano_yuan")) == api.balance;
+    });
+    require(api.accountReads == 3 && api.transactionReads == 2,
+            "a burst of settlements fetches one balance while history is still in flight");
+    api.holdTransactionReplies = false;
+    api.heldTransactionReplies.takeFirst()();
+    await([&] { return page.findChild<QWidget*>(QStringLiteral("accountTransaction-usage2")); });
+    require(api.accountReads == 3 && api.transactionReads == 3,
+            "the burst queues one history refresh with the new usage charge");
+
+    page.hide();
+    emit client.officialCallSettled();
+    QElapsedTimer elapsed;
+    elapsed.start();
+    await([&] { return elapsed.elapsed() >= 350; });
+    require(api.accountReads == 3 && api.transactionReads == 3,
+            "a hidden account page sends neither a balance nor a history request after settlement");
+
+    page.show();
+    await([&] { return api.accountReads == 4 && api.transactionReads == 4; });
+}
+
+void backgroundPurchasePollSlowsAndForegroundResumes() {
+    Api api;
+    auto config = options();
+    config.pollIntervalMs = 250;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    AccountPageWidget page(&service);
+    service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+    await([&] { return !service.account().isEmpty(); });
+    service.beginTopUp();
+    await([&] { return !service.purchase().request().isEmpty(); });
+    require(service.purchase().nextPollDelayMs() == 1000,
+            "background checkout uses the longer poll interval");
+    QThread::msleep(300);
+
+    page.show();
+    require(service.purchase().nextPollDelayMs() == 0,
+            "showing the account page makes an overdue foreground poll immediately due");
+    page.hide();
+    page.show();
+    require(service.purchase().nextPollDelayMs() == 0,
+            "a second visibility change preserves elapsed checkout polling time");
+    await([&] { return api.polls != 0; });
+}
+
+void previousRegistrationPollSurvivesVisibilityChanges() {
+    Api api;
+    api.orderId = QStringLiteral("original-order");
+    api.orderState = QStringLiteral("payment_pending");
+    auto config = options();
+    config.pollIntervalMs = 200;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    service.registerAccount(QStringLiteral("TestUser"), QStringLiteral("long-password"),
+                            QStringLiteral("long-password"), QStringLiteral("abcd"));
+    await([&] { return service.purchase().pending(); });
+    api.state = QStringLiteral("expired");
+    service.refreshPurchase();
+    await([&] { return !service.purchase().pending(); });
+    service.dismissPurchase();
+    require(service.previousRegistrations().size() == 1, "retain the unsettled previous order");
+
+    api.orderState = QStringLiteral("refunded");
+    await([&] {
+        service.setAccountPageVisible(false);
+        service.setAccountPageVisible(true);
+        return service.previousRegistrations()
+                   .at(0)
+                   .toObject()
+                   .value(QStringLiteral("order_state"))
+                   .toString() == QStringLiteral("refunded");
+    });
 }
 
 void accountUiAndCredits() {
@@ -2456,8 +2614,12 @@ int main(int argc, char** argv) {
     jpegTopUpCodeIsDisplayed();
     uncertainPollingBacksOffAndManualRefreshRecovers();
     registrationProofSurvivesRestartAndDoesNotOverrideStoredSession();
+    unchangedPollRetriesFailedRegistrationWrite();
     tokenRefreshPreservesQueuedOfficialCalls();
     accountRequestsFollowProxyConfiguration();
+    accountRefreshFollowsPageVisibilityAndReusesConnection();
+    backgroundPurchasePollSlowsAndForegroundResumes();
+    previousRegistrationPollSurvivesVisibilityChanges();
     accountUiAndCredits();
     accountTransactionsRemainReadableWhenResized();
     emptyAccountTransactionsMatchScreenshotHistory();

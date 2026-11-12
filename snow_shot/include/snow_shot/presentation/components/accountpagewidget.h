@@ -28,8 +28,11 @@ class AccountPageWidget final : public QWidget {
   public:
     explicit AccountPageWidget(snow_shot::app::AccountSessionService* service,
                                QWidget* parent = nullptr);
+    ~AccountPageWidget() override;
 
   protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void changeEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 

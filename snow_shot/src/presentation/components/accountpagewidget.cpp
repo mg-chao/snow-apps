@@ -536,8 +536,6 @@ AccountPageWidget::AccountPageWidget(AccountSessionService* service, QWidget* pa
             m_service->refreshAccount();
             m_service->loadTransactions();
         });
-        m_service->refreshAccount();
-        m_service->loadTransactions();
     }
     connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, this,
             [this] { applyTheme(); });
@@ -548,6 +546,23 @@ AccountPageWidget::AccountPageWidget(AccountSessionService* service, QWidget* pa
     retranslateUi();
     applyTheme();
     updateState();
+}
+
+AccountPageWidget::~AccountPageWidget() {
+    if (m_service && isVisible())
+        m_service->setAccountPageVisible(false);
+}
+
+void AccountPageWidget::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (m_service)
+        m_service->setAccountPageVisible(true);
+}
+
+void AccountPageWidget::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (m_service)
+        m_service->setAccountPageVisible(false);
 }
 
 void AccountPageWidget::showRegistration(bool value) {

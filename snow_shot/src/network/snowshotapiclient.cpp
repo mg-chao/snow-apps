@@ -689,6 +689,7 @@ void SnowShotApiClient::setProxyConfiguration(const QString& mode, const QString
     m_proxyAddress = address;
     if (auto* manager = findChild<QNetworkAccessManager*>(QString(), Qt::FindDirectChildrenOnly))
         configureNetworkProxy(*manager);
+    emit proxyConfigurationChanged();
 }
 
 void SnowShotApiClient::configureNetworkProxy(QNetworkAccessManager& manager) const {
