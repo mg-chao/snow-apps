@@ -1704,6 +1704,65 @@ void renderingCopyAndPersistence() {
             "the persistence byte budget retains the newest usable result instead of losing all");
 }
 
+void conversionSessionSwitchesVisionModels() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    const auto settings = snow_shot::storage::ScreenshotImageConversionSettings();
+    const QString previous = settings.visionModel();
+    const auto restore = qScopeGuard([&] { settings.setVisionModel(previous); });
+    const QString firstModel = QStringLiteral("vision-a");
+    const QString secondModel = QStringLiteral("vision-b");
+    require(settings.setVisionModel(firstModel), "save the initial conversion model");
+
+    ConversionServer server;
+    server.hold = true;
+    SnowShotApiClient api(server.url());
+    ScreenshotRecognitionModelState modelState;
+    auto modelMode = Mode::Text;
+    ScreenshotRecognitionSessionActions actions;
+    actions.setRecognitionModelState = [&](int mode, const ScreenshotRecognitionModelState& state) {
+        modelMode = static_cast<Mode>(mode);
+        modelState = state;
+    };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &api, actions);
+    session.setTarget({QStringLiteral("conversion-models"), sampleImage(), QRectF(0, 0, 240, 120)});
+    session.activate(Mode::Markdown);
+    require(modelMode == Mode::Markdown && modelState.loading && modelState.selection == firstModel,
+            "the Markdown toolbar reports the saved model while loading the catalog");
+    until([&] { return server.requests.size() == 1; });
+    require(!modelState.loading && modelState.models.size() == 3 && server.modelRequests == 1 &&
+                server.requests.first().value(QStringLiteral("model")) == firstModel,
+            "the toolbar and conversion share one catalog request");
+
+    server.hold = false;
+    session.setRecognitionModel(secondModel);
+    until([&] { return session.recognitionResultsSnapshot().visibleConversion.has_value(); });
+    const auto markdown = session.recognitionResultsSnapshot();
+    require(settings.visionModel() == secondModel && modelState.selection == secondModel &&
+                server.requests.size() == 2 &&
+                server.requests.last().value(QStringLiteral("model")) == secondModel &&
+                markdown.conversions.size() == 1 &&
+                markdown.conversions.first().model == secondModel,
+            "selecting a new Markdown model replaces the pending request and saves its result");
+
+    server.source = QStringLiteral("<p>HTML</p>");
+    session.activate(Mode::Html);
+    until([&] { return session.recognitionResultsSnapshot().visibleConversion.has_value(); });
+    require(modelMode == Mode::Html && modelState.selection == secondModel &&
+                server.requests.size() == 3 &&
+                server.requests.last().value(QStringLiteral("model")) == secondModel,
+            "HTML starts with the same saved model");
+    session.setRecognitionModel(firstModel);
+    until([&] { return session.recognitionResultsSnapshot().visibleConversion.has_value(); });
+    require(settings.visionModel() == firstModel && modelState.selection == firstModel &&
+                server.requests.size() == 4 &&
+                server.requests.last().value(QStringLiteral("model")) == firstModel,
+            "selecting a model in HTML reruns the active format");
+    session.setRecognitionModel(secondModel);
+    require(session.recognitionResultsSnapshot().visibleConversion.has_value() &&
+                modelState.selection == secondModel && server.requests.size() == 4,
+            "switching back reuses the result for that format and model");
+}
+
 void conversionSessionRoutesSourceAndClearsOldViews() {
     ConversionServer server;
     SnowShotApiClient api(server.url());
@@ -2232,6 +2291,7 @@ void runRecognitionNotificationLifetimeTests() {
 
 void runImageConversionTests() {
     runImageConversionNetworkTests();
+    conversionSessionSwitchesVisionModels();
     conversionClipboardPreservesFormats();
     conversionSessionRoutesSourceAndClearsOldViews();
     recognitionFileSnapshotTracksPartialConversionAndQrValues();

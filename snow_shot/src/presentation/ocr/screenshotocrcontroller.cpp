@@ -285,12 +285,13 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
             },
             [this](int mode, const ScreenshotRecognitionModelState& state) {
                 if (auto* toolbar = m_context.overlayCoordinator.toolbar()) {
-                    toolbar->setRecognitionModelState(
-                        mode == static_cast<int>(
-                                    ScreenshotRecognitionSessionController::Mode::Table)
-                            ? ScreenshotToolPalette::Tool::Table
-                            : ScreenshotToolPalette::Tool::Latex,
-                        state);
+                    using Mode = ScreenshotRecognitionSessionController::Mode;
+                    using Tool = ScreenshotToolPalette::Tool;
+                    const auto tool = mode == int(Mode::Table)   ? Tool::Table
+                                      : mode == int(Mode::Latex) ? Tool::Latex
+                                      : mode == int(Mode::Html)  ? Tool::Html
+                                                                 : Tool::Markdown;
+                    toolbar->setRecognitionModelState(tool, state);
                 }
             },
             [this]() -> QImage {

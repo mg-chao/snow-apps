@@ -1621,9 +1621,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool ocrVisible = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
     const bool targetLanguageVisible = m_activeTool == Tool::TextTranslation;
     const bool tableVisible = m_activeTool == Tool::Table;
-    const bool modelVisible = tableVisible || m_activeTool == Tool::Latex;
     const bool qrVisible = m_activeTool == Tool::Qr || m_activeTool == Tool::Latex;
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
+    const bool modelVisible = tableVisible || m_activeTool == Tool::Latex || conversionVisible;
     const bool originalVisible = ocrVisible || tableVisible || qrVisible || conversionVisible;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
     const bool moveVisible = m_activeTool == Tool::Move && m_moveOptionsToolbarVisible;
@@ -9631,6 +9631,8 @@ void ScreenshotToolPalette::createImageConversionActionFamily() {
     if (m_selectActionLayout == nullptr || m_conversionSettingsButton != nullptr) {
         return;
     }
+    createRecognitionModelSelect();
+    m_recognitionModelSpacer = addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
     m_conversionSettingsButton = createScreenshotToolPaletteStyleActionButton(
         m_selectActionPanel, QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Settings"),
         outlined_icons::Setting(), actionButtonMetrics(m_physicalScale));
@@ -9666,6 +9668,34 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
     m_tableResetButton =
         add("Reset", outlined_icons::Reload(), QStringLiteral("screenshotTableResetButton"));
     m_recognitionModelSpacer = addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
+    createRecognitionModelSelect();
+    m_tableActionSpacers.push_back(
+        addStyleToolbarSpacing(m_selectActionLayout, STYLE_GROUP_SPACING * 2));
+    m_openSpreadsheetFileSeparator = createStyleToolbarSeparator(m_selectActionPanel);
+    m_openSpreadsheetFileSeparator->setObjectName(
+        QStringLiteral("screenshotOpenSpreadsheetFileSeparator"));
+    m_selectActionLayout->addWidget(m_openSpreadsheetFileSeparator);
+    m_tableActionSpacers.push_back(
+        addStyleToolbarSpacing(m_selectActionLayout, STYLE_GROUP_SPACING * 2));
+    m_openSpreadsheetFileButton =
+        add("Open spreadsheet file", custom_outlined_icons::OpenSpreadsheetFile(),
+            QStringLiteral("screenshotOpenSpreadsheetFileButton"));
+    connect(m_openSpreadsheetFileButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::openSpreadsheetFileRequested);
+    connect(m_tableMergeButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::tableMergeRequested);
+    connect(m_tableSplitButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::tableSplitRequested);
+    connect(m_tableResetButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::tableResetRequested);
+    setTableEditingState(m_tableEditingAvailable, m_tableCanUndo, m_tableCanRedo, m_tableCanMerge,
+                         m_tableCanSplit, m_tableCanReset);
+}
+#endif
+
+void ScreenshotToolPalette::createRecognitionModelSelect() {
+    if (m_recognitionModelSelect != nullptr)
+        return;
     ScreenshotToolPaletteSelectEditorConfig modelConfig;
     modelConfig.objectName = QStringLiteral("screenshotRecognitionModelSelect");
     modelConfig.accessibleName =
@@ -9681,82 +9711,69 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
             .select;
     m_recognitionModelSelect->setSearchFilterFields({QStringLiteral("label")});
     m_selectActionLayout->addWidget(m_recognitionModelSelect);
-    m_tableActionSpacers.push_back(
-        addStyleToolbarSpacing(m_selectActionLayout, STYLE_GROUP_SPACING * 2));
-    m_openSpreadsheetFileSeparator = createStyleToolbarSeparator(m_selectActionPanel);
-    m_openSpreadsheetFileSeparator->setObjectName(
-        QStringLiteral("screenshotOpenSpreadsheetFileSeparator"));
-    m_selectActionLayout->addWidget(m_openSpreadsheetFileSeparator);
-    m_tableActionSpacers.push_back(
-        addStyleToolbarSpacing(m_selectActionLayout, STYLE_GROUP_SPACING * 2));
-    m_openSpreadsheetFileButton =
-        add("Open spreadsheet file", custom_outlined_icons::OpenSpreadsheetFile(),
-            QStringLiteral("screenshotOpenSpreadsheetFileButton"));
-    connect(m_openSpreadsheetFileButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::openSpreadsheetFileRequested);
     connect(m_recognitionModelSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
             [this](const QVariant& value) {
-                if (m_replayingMaterializedState ||
-                    (m_activeTool != Tool::Table && m_activeTool != Tool::Latex)) {
+                if (m_replayingMaterializedState || !m_activeTool) {
                     return;
                 }
+                auto* state = recognitionModelStateForTool(*m_activeTool);
                 const QString selection = value.toString();
-                if (selection.isEmpty()) {
+                if (state == nullptr || selection.isEmpty() || state->selection == selection) {
                     return;
                 }
-                auto& state = m_activeTool == Tool::Table ? m_tableRecognitionModelState
-                                                          : m_latexRecognitionModelState;
-                if (state.selection == selection) {
-                    return;
-                }
-                state.selection = selection;
+                state->selection = selection;
                 refreshRecognitionModelSelect();
                 emit recognitionModelChanged(selection);
             });
-    connect(m_tableMergeButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::tableMergeRequested);
-    connect(m_tableSplitButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::tableSplitRequested);
-    connect(m_tableResetButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::tableResetRequested);
-    setTableEditingState(m_tableEditingAvailable, m_tableCanUndo, m_tableCanRedo, m_tableCanMerge,
-                         m_tableCanSplit, m_tableCanReset);
 }
-#endif
+
+ScreenshotRecognitionModelState* ScreenshotToolPalette::recognitionModelStateForTool(Tool tool) {
+    switch (tool) {
+    case Tool::Table:
+        return &m_tableRecognitionModelState;
+    case Tool::Latex:
+        return &m_latexRecognitionModelState;
+    case Tool::Markdown:
+    case Tool::Html:
+        return &m_conversionModelState;
+    default:
+        return nullptr;
+    }
+}
 
 void ScreenshotToolPalette::setRecognitionModelState(Tool tool,
                                                      const ScreenshotRecognitionModelState& state) {
-    if (tool != Tool::Table && tool != Tool::Latex) {
+    auto* stored = recognitionModelStateForTool(tool);
+    if (stored == nullptr) {
         return;
     }
-    auto& stored =
-        tool == Tool::Table ? m_tableRecognitionModelState : m_latexRecognitionModelState;
     auto normalized = state;
-    if (normalized.selection.isEmpty()) {
+    if (normalized.selection.isEmpty() && stored != &m_conversionModelState) {
         normalized.selection = screenshotDedicatedRecognitionModelId();
     }
-    if (stored == normalized)
+    if (*stored == normalized)
         return;
-    stored = std::move(normalized);
-    if (m_activeTool == tool) {
+    *stored = std::move(normalized);
+    if (m_activeTool && recognitionModelStateForTool(*m_activeTool) == stored) {
         refreshRecognitionModelSelect();
     }
 }
 
 void ScreenshotToolPalette::refreshRecognitionModelSelect() {
     using adqt::widgets::AdSelect;
-    if (m_recognitionModelSelect == nullptr ||
-        (m_activeTool != Tool::Table && m_activeTool != Tool::Latex)) {
+    const auto* modelState = m_activeTool ? recognitionModelStateForTool(*m_activeTool) : nullptr;
+    if (m_recognitionModelSelect == nullptr || modelState == nullptr) {
         return;
     }
-    const auto& state =
-        m_activeTool == Tool::Table ? m_tableRecognitionModelState : m_latexRecognitionModelState;
-    QVector<AdSelect::Option> options{
-        {screenshotDedicatedRecognitionModelId(),
-         m_activeTool == Tool::Table ? tr("Table-specific model") : tr("LaTeX-specific model"),
-         false, tr("Dedicated model")},
-    };
+    const auto& state = *modelState;
+    QVector<AdSelect::Option> options;
     options.reserve(state.models.size() + 1);
+    if (modelState != &m_conversionModelState) {
+        options.push_back(
+            {screenshotDedicatedRecognitionModelId(),
+             m_activeTool == Tool::Table ? tr("Table-specific model") : tr("LaTeX-specific model"),
+             false, tr("Dedicated model")});
+    }
     QSet<QString> modelIds{screenshotDedicatedRecognitionModelId(),
                            screenshotDefaultVisionRecognitionModelId()};
     modelIds.reserve(state.models.size() + 2);
@@ -9790,12 +9807,12 @@ void ScreenshotToolPalette::refreshRecognitionModelSelect() {
         });
     const bool unavailable = selected == options.cend();
     QString selectedLabel;
-    if (unavailable) {
+    if (!selection.isEmpty() && unavailable) {
         selectedLabel = selection == screenshotDefaultVisionRecognitionModelId()
                             ? tr("Snow Shot visual understanding")
                             : tr("Selected model (%1)").arg(selection);
         options.push_back({selection, selectedLabel, true, tr("Vision model")});
-    } else {
+    } else if (!unavailable) {
         selectedLabel = selected->label;
     }
     const QSignalBlocker blocker(m_recognitionModelSelect);
@@ -9810,16 +9827,18 @@ void ScreenshotToolPalette::refreshRecognitionModelSelect() {
     // Disabled options cannot be selected by AdSelect's item selection model. Keep the chosen
     // identity in the recognition state and show its label while leaving usable choices enabled.
     const QVariant selectedValue = unavailable ? QVariant{} : QVariant(selection);
-    m_recognitionModelSelect->setPlaceholder(unavailable ? selectedLabel : tr("Recognition model"));
+    const QString placeholder = tr("Recognition model");
+    m_recognitionModelSelect->setPlaceholder(unavailable && !selectedLabel.isEmpty() ? selectedLabel
+                                                                                     : placeholder);
     if (m_recognitionModelSelect->currentValue() != selectedValue) {
         m_recognitionModelSelect->setCurrentValue(selectedValue);
     }
     m_recognitionModelSelect->setLoading(state.loading);
     m_recognitionModelSelect->setStatus(state.error.isEmpty() ? AdSelect::Status::None
                                                               : AdSelect::Status::Warning);
-    const QString description = state.error.isEmpty()
-                                    ? selectedLabel
-                                    : QStringLiteral("%1\n%2").arg(selectedLabel, state.error);
+    const QString label = selectedLabel.isEmpty() ? placeholder : selectedLabel;
+    const QString description =
+        state.error.isEmpty() ? label : QStringLiteral("%1\n%2").arg(label, state.error);
     m_recognitionModelSelect->setToolTip(description);
     m_recognitionModelSelect->setAccessibleDescription(description);
 }

@@ -51,7 +51,7 @@ class ScreenshotOverlayEventSink {
         return false;
     }
     virtual void handleUnhandledLeftDoubleClick() {}
-    virtual void handleUnhandledMiddleClick() {}
+    virtual void handleUnhandledMiddleClick(ScreenshotOverlayWindow*, const QPointF&) {}
     [[nodiscard]] virtual bool handleOverlayWheel(ScreenshotOverlayWindow* overlay,
                                                   const QWheelEvent& event) = 0;
     [[nodiscard]] virtual bool shouldBlockUnhandledOverlayKeyInput() const = 0;

@@ -1182,8 +1182,11 @@ Session* ImageEditingWindow::Impl::ensureSession() {
             active && busy && format == SnowShotImageConversionFormat::Html);
     };
     actions.setRecognitionModelState = [this](int mode, const auto& state) {
-        palette->setRecognitionModelState(
-            mode == int(Session::Mode::Table) ? Tool::Table : Tool::Latex, state);
+        const auto tool = mode == int(Session::Mode::Table)   ? Tool::Table
+                          : mode == int(Session::Mode::Latex) ? Tool::Latex
+                          : mode == int(Session::Mode::Html)  ? Tool::Html
+                                                              : Tool::Markdown;
+        palette->setRecognitionModelState(tool, state);
     };
     session = new Session(providers.recognition, providers.qrRecognition,
                           providers.tableRecognition, std::move(actions), &q);

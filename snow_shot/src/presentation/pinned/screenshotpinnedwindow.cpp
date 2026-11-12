@@ -5918,12 +5918,13 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
             [this](int mode, const ScreenshotRecognitionModelState& state) {
                 if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
                     if (auto* palette = m_editController->toolbarWindow()->palette()) {
-                        palette->setRecognitionModelState(
-                            mode == static_cast<int>(
-                                        ScreenshotRecognitionSessionController::Mode::Table)
-                                ? ScreenshotToolPalette::Tool::Table
-                                : ScreenshotToolPalette::Tool::Latex,
-                            state);
+                        using Mode = ScreenshotRecognitionSessionController::Mode;
+                        using Tool = ScreenshotToolPalette::Tool;
+                        const auto tool = mode == int(Mode::Table)   ? Tool::Table
+                                          : mode == int(Mode::Latex) ? Tool::Latex
+                                          : mode == int(Mode::Html)  ? Tool::Html
+                                                                     : Tool::Markdown;
+                        palette->setRecognitionModelState(tool, state);
                     }
                 }
             },

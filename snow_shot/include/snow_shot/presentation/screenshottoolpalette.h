@@ -706,6 +706,8 @@ class ScreenshotToolPalette final : public QWidget,
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     void createTableRecognitionActionFamily();
 #endif
+    void createRecognitionModelSelect();
+    [[nodiscard]] ScreenshotRecognitionModelState* recognitionModelStateForTool(Tool tool);
     void refreshRecognitionModelSelect();
     void refreshTextTranslationServiceSelect();
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
@@ -1031,6 +1033,7 @@ class ScreenshotToolPalette final : public QWidget,
     QSpacerItem* m_recognitionModelSpacer = nullptr;
     ScreenshotRecognitionModelState m_tableRecognitionModelState;
     ScreenshotRecognitionModelState m_latexRecognitionModelState;
+    ScreenshotRecognitionModelState m_conversionModelState;
     adqt::widgets::AdSelect* m_textFormattingSelect = nullptr;
     adqt::widgets::AdSelect* m_textPunctuationSelect = nullptr;
     adqt::widgets::AdSelect* m_textTargetLanguageSelect = nullptr;

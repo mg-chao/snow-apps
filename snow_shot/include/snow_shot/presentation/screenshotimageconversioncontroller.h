@@ -24,6 +24,7 @@ class ScreenshotImageConversionController final : public QObject {
     void deactivate();
     void invalidate();
     void retry();
+    void selectVisionModel(const QString& model);
     void openSettings(QWidget* owner);
     void seed(const QString& key, const QVector<ScreenshotImageConversionEntry>& entries);
     [[nodiscard]] QVector<ScreenshotImageConversionEntry> entries(const QString& key) const;
