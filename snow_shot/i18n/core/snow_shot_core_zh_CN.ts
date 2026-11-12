@@ -768,6 +768,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>账号存在欠款，付费调用已暂停。免费额度仍可使用</translation>
         </message>
         <message>
+            <source>Sign in to your Snow Shot account to use Expert Model</source>
+            <translation>请登录 Snow Shot 账号以使用专家模型</translation>
+        </message>
+        <message>
             <source>Table recognition failed</source>
             <translation>表格识别失败</translation>
         </message>
@@ -854,6 +858,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
         <message>
             <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</source>
             <translation>余额已被其他进行中的调用预留，请等待这些调用结束后重试</translation>
+        </message>
+        <message>
+            <source>Your credits cannot cover this Expert Model request. Purchase credits from Account to continue</source>
+            <translation>点数不足，无法使用专家模型完成此请求。请前往账户页面购买点数后继续</translation>
         </message>
     </context>
     <context>

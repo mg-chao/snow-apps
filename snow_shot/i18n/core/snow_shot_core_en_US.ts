@@ -768,6 +768,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available</translation>
         </message>
         <message>
+            <source>Sign in to your Snow Shot account to use Expert Model</source>
+            <translation>Sign in to your Snow Shot account to use Expert Model</translation>
+        </message>
+        <message>
             <source>Table recognition failed</source>
             <translation>Table recognition failed</translation>
         </message>
@@ -854,6 +858,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
         <message>
             <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</source>
             <translation>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</translation>
+        </message>
+        <message>
+            <source>Your credits cannot cover this Expert Model request. Purchase credits from Account to continue</source>
+            <translation>Your credits cannot cover this Expert Model request. Purchase credits from Account to continue</translation>
         </message>
     </context>
     <context>

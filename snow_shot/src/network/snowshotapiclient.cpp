@@ -692,7 +692,14 @@ QByteArray SnowShotApiClient::encodeWebp(const QImage& image) {
 }
 
 QString SnowShotApiClient::formatFailure(int httpStatus, const QString& failureCode,
-                                         const QString& description) {
+                                         const QString& description, QStringView model) {
+    if (snowShotExpertModelId(model)) {
+        if (failureCode == QStringLiteral("account_required"))
+            return tr("Sign in to your Snow Shot account to use Expert Model");
+        if (failureCode == QStringLiteral("insufficient_credits"))
+            return tr("Your credits cannot cover this Expert Model request. "
+                      "Purchase credits from Account to continue");
+    }
     if (failureCode == u"insufficient_credits")
         return tr("Your available free allowance and credits cannot cover this request. "
                   "Purchase credits from Account to continue");
@@ -982,7 +989,9 @@ void SnowShotApiClient::appendLocalModels(QVector<SnowShotChatModel>& models) co
 }
 
 QString SnowShotApiClient::fallbackModel(bool vision) const {
-    const auto eligible = [vision](const auto& model) { return !vision || model.supportsVision; };
+    const auto eligible = [vision](const auto& model) {
+        return !snowShotExpertModelId(model.id) && (!vision || model.supportsVision);
+    };
     for (const auto& model : m_cachedChatModels) {
         if (eligible(model) && model.translationMode == QStringLiteral("default")) {
             return model.id;
@@ -998,7 +1007,7 @@ QString SnowShotApiClient::fallbackModel(bool vision) const {
 
 QString SnowShotApiClient::builtInVisionModel() const {
     for (const auto& model : m_cachedChatModels)
-        if (model.supportsVision)
+        if (model.supportsVision && !snowShotExpertModelId(model.id))
             return model.id;
     return {};
 }
@@ -1948,7 +1957,8 @@ void SnowShotApiClient::completeChatStream(RequestToken token) {
             return;
         result.error = formatFailure(result.httpStatus, result.code,
                                      problemDetail(problem).isEmpty() ? reply->errorString()
-                                                                      : problemDetail(problem));
+                                                                      : problemDetail(problem),
+                                     current->model);
     } else if (current->streamFailed) {
         result.error = tr("Invalid translation stream response");
     } else if (!current->streamDone) {
