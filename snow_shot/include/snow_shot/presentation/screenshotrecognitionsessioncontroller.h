@@ -503,13 +503,16 @@ class ScreenshotRecognitionSessionController final : public QObject {
     quint64 m_translationGeneration = 0;
 #endif
     mutable QString m_workflowError;
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     SnowShotApiClient::RequestToken m_recognitionModelsToken = 0;
     quint64 m_recognitionModelsGeneration = 0;
     QString m_recognitionModelsError;
+    bool m_recognitionModelsLoading = false;
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     // Bound to a usable cached result or request, never to a pending catalog selection.
     QString m_recognitionEffectiveModel;
-    bool m_recognitionModelsLoading = false;
     bool m_recognitionAwaitingModel = false;
     bool m_savingRecognitionModel = false;
 #endif

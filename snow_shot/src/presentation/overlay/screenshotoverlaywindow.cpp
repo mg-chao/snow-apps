@@ -114,7 +114,9 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
         connect(m_canvas, &SnowCanvasWidget::unhandledLeftDoubleClick, this,
                 [this]() { m_eventSink.handleUnhandledLeftDoubleClick(); });
         connect(m_canvas, &SnowCanvasWidget::unhandledMiddleClick, this,
-                [this]() { m_eventSink.handleUnhandledMiddleClick(); });
+                [this](const QPointF& position) {
+                    m_eventSink.handleUnhandledMiddleClick(this, m_canvas->mapTo(this, position));
+                });
     }
 
     initializeScreenshotSurface();

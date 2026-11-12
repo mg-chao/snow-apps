@@ -43,7 +43,8 @@ class ScreenshotOverlayEventAdapter final : public ScreenshotOverlayEventSink {
                             const QPointF& localPosition) override;
     bool handleRegionDoubleClick(ScreenshotOverlayWindow*, const QPointF&) override;
     void handleUnhandledLeftDoubleClick() override;
-    void handleUnhandledMiddleClick() override;
+    void handleUnhandledMiddleClick(ScreenshotOverlayWindow* overlay,
+                                    const QPointF& localPosition) override;
     [[nodiscard]] bool handleOverlayWheel(ScreenshotOverlayWindow* overlay,
                                           const QWheelEvent& event) override;
     [[nodiscard]] bool shouldBlockUnhandledOverlayKeyInput() const override;

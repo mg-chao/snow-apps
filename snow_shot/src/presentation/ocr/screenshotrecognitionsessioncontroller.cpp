@@ -356,6 +356,9 @@ void ScreenshotRecognitionSessionController::setProviders(
             const bool awaitingModels = m_active &&
                                         (m_mode == Mode::Table || m_mode == Mode::Latex) &&
                                         m_recognitionAwaitingModel;
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION
             m_recognitionModelsToken = 0;
             m_recognitionModelsLoading = false;
             ++m_recognitionModelsGeneration;
@@ -373,12 +376,21 @@ void ScreenshotRecognitionSessionController::setProviders(
                                                   : tr("LaTeX recognition failed")))
                     return;
 #endif
+            if (conversionModeActive())
+                updateRecognitionModels();
         });
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION
         connect(tableRecognition, &SnowShotApiClient::chatModelsChanged, this, [this] {
+            if (!m_recognitionModelsError.isEmpty() && m_tableRecognition &&
+                m_tableRecognition->hasBuiltInModels(
+                    snow_shot::presentation::LanguageManager::instance().currentLocale().name()))
+                m_recognitionModelsError.clear();
             if (migrateRecognitionModelPreferences())
                 updateRecognitionModels();
         });
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
         connect(tableRecognition, &SnowShotApiClient::baseUrlChanged, this, [this] {
             const bool affected =
                 m_active && (m_mode == Mode::Table || m_mode == Mode::Latex) &&
@@ -969,7 +981,8 @@ bool ScreenshotRecognitionSessionController::recognitionEntryValid(
 bool ScreenshotRecognitionSessionController::updateRecognitionModels() const {
     if (m_destroying)
         return true;
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     if (!m_actions.setRecognitionModelState)
         return true;
     ScreenshotRecognitionModelState state;
@@ -977,6 +990,15 @@ bool ScreenshotRecognitionSessionController::updateRecognitionModels() const {
     state.error = m_recognitionModelsError;
     if (m_tableRecognition)
         state.models = m_tableRecognition->cachedChatModels();
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
+    if (conversionModeActive()) {
+        state.selection = m_conversion->activeModel();
+        if (state.selection.isEmpty())
+            state.selection = snow_shot::storage::ScreenshotImageConversionSettings().visionModel();
+        return notifyUiCallback(m_actions.setRecognitionModelState, static_cast<int>(m_mode),
+                                state);
+    }
+#endif
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     state.selection = m_tableModelSelection;
     state.effectiveModel =
@@ -1044,9 +1066,9 @@ bool ScreenshotRecognitionSessionController::migrateRecognitionModelPreferences(
 }
 
 void ScreenshotRecognitionSessionController::loadRecognitionModels(bool refresh) {
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (!m_active || (m_mode != Mode::Table && m_mode != Mode::Latex) || !m_tableRecognition ||
-        m_recognitionModelsToken) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION
+    if (!m_active || !m_tableRecognition || m_recognitionModelsToken) {
         if (!updateRecognitionModels())
             return;
         return;
@@ -1076,9 +1098,11 @@ void ScreenshotRecognitionSessionController::loadRecognitionModels(bool refresh)
             }
             if (!updateRecognitionModels())
                 return;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
             if ((m_mode == Mode::Table || m_mode == Mode::Latex) && m_recognitionAwaitingModel)
                 if (!notify(&ScreenshotRecognitionSessionController::activateModelResult))
                     return;
+#endif
             if (!updateBusyState())
                 return;
         },
@@ -1154,6 +1178,12 @@ void ScreenshotRecognitionSessionController::failModelRecognition(const QString&
 }
 
 void ScreenshotRecognitionSessionController::setRecognitionModel(const QString& selection) {
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
+    if (conversionModeActive()) {
+        m_conversion->selectVisionModel(selection);
+        return;
+    }
+#endif
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     const QPointer<ScreenshotRecognitionSessionController> lifetime(this);
     if (!m_active || (m_mode != Mode::Table && m_mode != Mode::Latex) || selection.isEmpty() ||
@@ -1544,6 +1574,9 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         if (!notify(&ScreenshotRecognitionSessionController::setPendingTextRecognitionRendering,
                     false))
             return;
+        if (m_actions.setRecognitionModelState &&
+            !notify(&ScreenshotRecognitionSessionController::loadRecognitionModels, false))
+            return;
         m_conversion->activate(m_target.key, m_target.image,
                                mode == Mode::Markdown ? SnowShotImageConversionFormat::Markdown
                                                       : SnowShotImageConversionFormat::Html);
@@ -1568,7 +1601,8 @@ void ScreenshotRecognitionSessionController::deactivate() {
         return;
     cancelModelRecognition(Mode::Table);
     cancelModelRecognition(Mode::Latex);
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     if (m_tableRecognition && m_recognitionModelsToken)
         m_tableRecognition->cancel(m_recognitionModelsToken);
     m_recognitionModelsToken = 0;
@@ -1858,6 +1892,8 @@ void ScreenshotRecognitionSessionController::openImageConversionSettings() {
 bool ScreenshotRecognitionSessionController::updateConversionState() const {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     if (!notify(&ScreenshotRecognitionSessionController::workflowStateChanged))
+        return false;
+    if (conversionModeActive() && m_conversion->active() && !updateRecognitionModels())
         return false;
     if (conversionModeActive() && m_conversion->active() && content() != nullptr) {
         content()->showImageConversion(m_conversion->format(), m_conversion->source(),

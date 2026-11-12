@@ -112,9 +112,10 @@ void ScreenshotOverlayEventAdapter::handleUnhandledLeftDoubleClick() {
     }
 }
 
-void ScreenshotOverlayEventAdapter::handleUnhandledMiddleClick() {
+void ScreenshotOverlayEventAdapter::handleUnhandledMiddleClick(ScreenshotOverlayWindow* overlay,
+                                                               const QPointF& localPosition) {
     if (m_inputHandler != nullptr) {
-        m_inputHandler->handleUnhandledMiddleClick();
+        m_inputHandler->handleUnhandledMiddleClick(overlay, localPosition);
     }
 }
 

@@ -326,6 +326,25 @@ void ScreenshotImageConversionController::retry() {
     }
 }
 
+void ScreenshotImageConversionController::selectVisionModel(const QString& model) {
+    if (!m_active || model == m_requestModel || !m_api)
+        return;
+    const auto& models = m_api->cachedChatModels();
+    if (std::none_of(models.cbegin(), models.cend(), [&model](const auto& candidate) {
+            return candidate.supportsVision && candidate.id == model;
+        }))
+        return;
+    const QPointer<ScreenshotImageConversionController> lifetime(this);
+    const quint64 generation = m_generation;
+    const bool saved = Settings().setVisionModel(model);
+    if (!lifetime || generation != m_generation)
+        return;
+    if (saved)
+        start(false);
+    else
+        notifyChanged();
+}
+
 void ScreenshotImageConversionController::fail(const QString& message) {
     m_previewTimer.stop();
     m_error = message;

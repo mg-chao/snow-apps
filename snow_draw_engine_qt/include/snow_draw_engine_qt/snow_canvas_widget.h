@@ -240,7 +240,7 @@ class SnowCanvasWidget : public QWidget {
     void freeDrawMoveBatchProcessed(quint32 inputCount, quint32 dispatchedCount);
     void eraserMoveFrameProcessed();
     void unhandledLeftDoubleClick();
-    void unhandledMiddleClick();
+    void unhandledMiddleClick(const QPointF& position);
     void showDirtyRectsChanged();
 
   protected:

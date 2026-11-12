@@ -1395,23 +1395,32 @@ bool ScreenshotOverlayInputHandler::confirmSelection(
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
-    executeConfiguredCompletionAction(snow_shot::storage::ScreenshotSettings().doubleClickAction());
+    executeConfiguredCompletionAction(snow_shot::storage::ScreenshotSettings().doubleClickAction(),
+                                      std::nullopt);
 }
 
-void ScreenshotOverlayInputHandler::handleUnhandledMiddleClick() {
+void ScreenshotOverlayInputHandler::handleUnhandledMiddleClick(ScreenshotOverlayWindow* overlay,
+                                                               const QPointF& localPosition) {
     executeConfiguredCompletionAction(
-        snow_shot::storage::ScreenshotSettings().middleMouseButtonAction());
+        snow_shot::storage::ScreenshotSettings().middleMouseButtonAction(),
+        virtualPositionForOverlay(overlay, localPosition));
 }
 
-void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QString& action) {
+void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(
+    const QString& action, std::optional<QPointF> middleClickPosition) {
     // Unhandled completion gestures share capture-state eligibility across all tools.
     // Region construction retains ownership until its final release is consumed.
     if (effectDragActive() || m_externalDragActive || customRegionInputActive() ||
         m_consumeRegionRelease)
         return;
-    if (!(m_context.interaction.movingSelection() || m_context.interaction.editing() ||
-          m_context.interaction.scrollingCapture()) ||
-        !m_context.selection.hasPixelSelection()) {
+    const bool smartPreview = middleClickPosition && m_context.interaction.intelligentSelecting();
+    if (smartPreview) {
+        if (!canPrepareSelectionForToolbarShortcut() ||
+            !m_context.actions.localShortcutInputAllowed())
+            return;
+    } else if (!(m_context.interaction.movingSelection() || m_context.interaction.editing() ||
+                 m_context.interaction.scrollingCapture()) ||
+               !m_context.selection.hasPixelSelection()) {
         return;
     }
 
@@ -1433,7 +1442,24 @@ void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QStr
     } else {
         return;
     }
-    static_cast<void>(m_context.actions.activateScreenshotShortcut(actionId));
+    const auto activate = [&] { return m_context.actions.activateScreenshotShortcut(actionId); };
+    if (!smartPreview || actionId == QStringLiteral("cancel_screenshot")) {
+        static_cast<void>(activate());
+        return;
+    }
+
+    // The selector can still be resolving the window under the release point.
+    const auto preview =
+        ScreenshotHalfOpenRect::fromRectF(m_context.selection.normalizedSelection());
+    if (!preview.contains(*middleClickPosition))
+        return;
+
+    const QString toolbarActionId = actionId == QStringLiteral("text_recognition_copy")
+                                        ? QStringLiteral("text_recognition")
+                                        : actionId;
+    if (m_context.actions.canActivateScreenshotShortcut(toolbarActionId)) {
+        static_cast<void>(activateToolbarShortcutForSelection(activate));
+    }
 }
 
 void ScreenshotOverlayInputHandler::updateGuideLines(ScreenshotOverlayWindow* overlay,

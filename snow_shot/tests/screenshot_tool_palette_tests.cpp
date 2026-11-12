@@ -7859,6 +7859,8 @@ void recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates() {
 }
 
 void imageConversionToolsExposeRecognitionActions() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using adqt::widgets::AdSelect;
     require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
             "recognition group fixture starts with the remembered barcode entry");
     ScreenshotToolPalette::Options options;
@@ -7927,12 +7929,26 @@ void imageConversionToolsExposeRecognitionActions() {
     int markdownRequests = 0;
     int htmlRequests = 0;
     int settingsRequests = 0;
+    QStringList modelChanges;
     QObject::connect(&palette, &ScreenshotToolPalette::markdownRequested, &palette,
                      [&]() { ++markdownRequests; });
     QObject::connect(&palette, &ScreenshotToolPalette::htmlRequested, &palette,
                      [&]() { ++htmlRequests; });
     QObject::connect(&palette, &ScreenshotToolPalette::imageConversionSettingsRequested, &palette,
                      [&]() { ++settingsRequests; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recognitionModelChanged, &palette,
+                     [&](const QString& model) { modelChanges.append(model); });
+    const QString builtIn = QStringLiteral("vision-a");
+    const QString custom = QStringLiteral("custom:vision");
+    ScreenshotRecognitionModelState conversionState;
+    conversionState.selection = builtIn;
+    conversionState.models = {
+        {builtIn, QStringLiteral("Built-in vision model"), false, QStringLiteral("default"), true},
+        {custom, QStringLiteral("Custom vision model"), false, QStringLiteral("default"), true},
+        {QStringLiteral("text"), QStringLiteral("Text model"), false, QStringLiteral("default"),
+         false},
+    };
+    palette.setRecognitionModelState(Tool::Markdown, conversionState);
     palette.setQrEnabled(false);
     palette.setTableEnabled(false);
     require(group->isEnabled() && markdown->isEnabled() && html->isEnabled() &&
@@ -7956,6 +7972,14 @@ void imageConversionToolsExposeRecognitionActions() {
     auto* settings = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotImageConversionSettingsButton"));
     require(settings && !settings->isHidden(), "conversion activation exposes Settings");
+    auto* modelSelect =
+        palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect"));
+    require(modelSelect && !modelSelect->isHidden() && modelSelect->searchEnabled() &&
+                modelSelect->options().size() == 2 &&
+                modelSelect->currentValue().toString() == builtIn && modelChanges.isEmpty(),
+            "Markdown offers searchable built-in and custom vision models");
+    modelSelect->setCurrentValue(custom);
+    require(modelChanges == QStringList{custom}, "Markdown routes the selected vision model");
     for (auto* button : palette.actionPanel()->findChildren<adqt::widgets::AdButton*>()) {
         require(button == settings ||
                     button->objectName() == QStringLiteral("screenshotShowOriginalImageButton") ||
@@ -7975,6 +7999,11 @@ void imageConversionToolsExposeRecognitionActions() {
                 group->accessibleName() == QStringLiteral("Convert to HTML") &&
                 adqt::icons::describeIcon(group->iconRef()).key.name == QStringLiteral("html"),
             "HTML switches format and retains the conversion sub-toolbar");
+    require(!modelSelect->isHidden() && modelSelect->currentValue().toString() == custom &&
+                modelChanges == QStringList{custom},
+            "HTML shares the conversion model without emitting a new selection on activation");
+    modelSelect->setCurrentValue(builtIn);
+    require(modelChanges == QStringList{custom, builtIn}, "HTML routes the selected vision model");
     palette.setLatexState(true, false);
     reopenConversionOptions();
     auto* latex = popoverButtonWithTooltip(popover, "LaTeX formula recognition");
@@ -7991,6 +8020,12 @@ void imageConversionToolsExposeRecognitionActions() {
     auto* original = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotShowOriginalImageButton"));
     require(original && !original->isHidden(), "LaTeX retains QR's original image toggle");
+    auto* latexModelSelect =
+        palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect"));
+    require(latexModelSelect && latexModelSelect->options().size() == 1 &&
+                latexModelSelect->options().first().value ==
+                    screenshotDedicatedRecognitionModelId(),
+            "LaTeX keeps its own dedicated model when leaving image conversion");
     palette.setLatexState(true, true);
     require(group->busy(), "LaTeX progress reaches the group button");
     palette.setLatexState(true, false);
@@ -7999,6 +8034,10 @@ void imageConversionToolsExposeRecognitionActions() {
     settings = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotImageConversionSettingsButton"));
     require(settings != nullptr, "returning to HTML recreates conversion settings");
+    modelSelect = palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect"));
+    require(modelSelect && modelSelect->currentValue().toString() == builtIn &&
+                modelChanges == QStringList{custom, builtIn},
+            "returning to HTML restores the selected model without replaying the signal");
     const QString snapshots = qEnvironmentVariable("SNOW_SHOT_CONVERSION_SNAPSHOTS");
     if (!snapshots.isEmpty()) {
         require(QDir().mkpath(snapshots), "create conversion toolbar snapshot directory");

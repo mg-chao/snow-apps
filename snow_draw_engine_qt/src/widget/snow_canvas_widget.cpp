@@ -3870,7 +3870,7 @@ void SnowCanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
     }
     if (middleClick && !handled) {
         event->accept();
-        emit unhandledMiddleClick();
+        emit unhandledMiddleClick(event->position());
         return;
     }
     if (handled) {
