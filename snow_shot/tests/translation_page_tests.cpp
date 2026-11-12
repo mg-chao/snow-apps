@@ -20,6 +20,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
+#include "snow_shot/translation/fasttranslation.h"
 #include "snow_shot/translation/translationlanguages.h"
 #include "widgets/button.h"
 #include "widgets/input_text_edit.h"
@@ -424,6 +425,37 @@ void sharedServiceSelectors() {
     require(
         snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(previousPreferences),
         "restore shared preferences");
+}
+
+void screenshotSettingsPreserveFastTranslationDuringDiscovery() {
+    Server server;
+    server.fastAvailable = true;
+    server.holdFastCatalog = true;
+    SnowShotApiClient client(server.url());
+    QTemporaryDir directory;
+    require(directory.isValid(), "create isolated screenshot translation preferences");
+    snow_shot::storage::ConfigurationStore configuration(
+        directory.filePath(QStringLiteral("settings.json")), true, true);
+    auto& service = snow_shot::translation::TranslationService::forClient(client, configuration,
+                                                                          QLocale::English);
+    auto preferences = service.preferences();
+    preferences.modelId = snow_shot::translation::fastTranslationId;
+    preferences.targetLanguage = QStringLiteral("en");
+    require(service.savePreferences(preferences), "save Fast Translation before opening settings");
+
+    QWidget owner;
+    auto* modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(
+        service, &owner, &owner, {});
+    waitUntil([&] { return server.fastCatalogRequests == 1; }, "hold Fast Translation discovery");
+    child<AdSelect>(*modal->contentWidget(), "screenshotTranslationTargetLanguage")
+        ->setCurrentValue(QStringLiteral("ja"));
+    modal->acceptButton()->click();
+    flushEvents();
+    require(service.preferences().targetLanguage == QStringLiteral("ja") &&
+                service.preferences().modelId == snow_shot::translation::fastTranslationId &&
+                configuration.value(QStringLiteral("screenshot_translation/model")) ==
+                    snow_shot::translation::fastTranslationId,
+            "saving a language edit preserves the persisted Fast Translation model");
 }
 
 class SettingsGeometryObserver final : public QObject {
@@ -1465,6 +1497,7 @@ int main(int argc, char** argv) {
     if (app.arguments().contains(QStringLiteral("--screenshot-settings"))) {
         screenshotSettingsGeometry();
         sharedServiceSelectors();
+        screenshotSettingsPreserveFastTranslationDuringDiscovery();
         additionalLanguageSelectors();
         screenshotSettingsProviderLifetime();
         storage.shutdown();
@@ -1483,6 +1516,7 @@ int main(int argc, char** argv) {
     {
         screenshotSettingsGeometry();
         sharedServiceSelectors();
+        screenshotSettingsPreserveFastTranslationDuringDiscovery();
         additionalLanguageSelectors();
         screenshotSettingsProviderLifetime();
         selectedTextHandoff();

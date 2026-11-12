@@ -1,5 +1,7 @@
 #include "translation_test_support.h"
 #include "snow_shot/translation/translationservice.h"
+#include "snow_shot/translation/fasttranslation.h"
+#include "snow_shot/translation/freetranslation.h"
 #include "snow_shot/translation/translationlanguagedetector.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/translation/translationlanguages.h"
@@ -12,6 +14,164 @@ using namespace snow_shot::translation;
 using snow_shot::storage::ConfigurationStore;
 
 namespace {
+void fastTranslationDiscoveryRecoversFromFailure() {
+    Server server;
+    server.fastAvailable = true;
+    server.holdFastCatalog = true;
+    server.rejectFastCatalog = true;
+    SnowShotApiClient client(server.url());
+    QTemporaryDir directory;
+    require(directory.isValid(), "create temporary translation configuration directory");
+    ConfigurationStore settings(directory.filePath(QStringLiteral("settings.json")), true, true);
+    auto& service = TranslationService::forClient(client, settings, QLocale::c());
+    auto preferences = service.preferences();
+    preferences.modelId = fastTranslationId;
+    preferences.sourceLanguage = QStringLiteral("en");
+    preferences.targetLanguage = QStringLiteral("fr");
+    require(service.savePreferences(preferences), "save Fast Translation before discovery");
+
+    service.refreshModels();
+    waitUntil(
+        [&] {
+            return server.fastCatalogRequests == 1 && client.hasBuiltInModels(QLocale::c().name());
+        },
+        "load chat models while Fast Translation discovery is held");
+    require(service.loadingModels(), "the catalog stays loading until Fast discovery finishes");
+
+    QObject owner;
+    auto* job = service.createJob({QStringLiteral("one")}, &owner);
+    job->start();
+    require(job->state() == TranslationJob::State::WaitingForModels,
+            "a Fast Translation job joins the existing probe");
+    server.respondFastCatalog();
+    waitUntil(
+        [&] { return !service.loadingModels() && job->state() == TranslationJob::State::Failed; },
+        "a failed probe settles the catalog and waiting job");
+    require(server.fastCatalogRequests == 1, "the failed probe is not replayed automatically");
+
+    server.rejectFastCatalog = false;
+    job->retry();
+    waitUntil([&] { return server.fastCatalogRequests == 2; }, "job retry re-probes availability");
+    require(service.loadingModels(), "job-triggered discovery marks the catalog as loading");
+    server.respondFastCatalog();
+    waitUntil([&] { return server.fastRequests.size() == 1; }, "retry starts the translation");
+    require(!service.loadingModels() &&
+                translationModelIndex(service.models(), fastTranslationId) >= 0,
+            "successful discovery publishes the service and settles the catalog");
+    server.finishFast(0, {QStringLiteral("un")});
+    waitUntil([&] { return job->state() == TranslationJob::State::Completed; },
+              "translation completes after the service recovers");
+}
+
+void fastTranslationBatchesAndRetriesInOrder() {
+    Server server;
+    server.fastAvailable = true;
+    SnowShotApiClient client(server.url());
+    client.setAccountAccessToken("account-session");
+    QTemporaryDir directory;
+    require(directory.isValid(), "create temporary translation configuration directory");
+    ConfigurationStore settings(directory.filePath(QStringLiteral("settings.json")), true, true);
+    auto& service = TranslationService::forClient(client, settings, QLocale::c());
+    service.refreshModels();
+    waitUntil([&] { return translationModelIndex(service.models(), fastTranslationId) >= 0; },
+              "advertised Fast Translation appears in the shared catalog");
+    require(service.preferences().modelId == freeTranslationId,
+            "free translation stays the default");
+
+    auto preferences = service.preferences();
+    preferences.modelId = fastTranslationId;
+    preferences.sourceLanguage = QStringLiteral("en");
+    preferences.targetLanguage = QStringLiteral("zh-Hans");
+    require(service.savePreferences(preferences), "persist Fast Translation selection");
+
+    const QString firstPart(3000, u'a');
+    const QString secondPart(3000, u'b');
+    const QString longText = firstPart + QStringLiteral("\n\n") + secondPart;
+    QObject owner;
+    auto* job = service.createJob(
+        {QStringLiteral("one"), QStringLiteral("two"), QStringLiteral("one"), longText}, &owner);
+    job->start();
+    waitUntil([&] { return server.fastRequests.size() == 1; }, "send a single first batch");
+    const auto& first = server.fastRequests.first();
+    require(first.body.value(QStringLiteral("content")).toArray() ==
+                    QJsonArray{QStringLiteral("one"), QStringLiteral("two"), firstPart} &&
+                first.body.value(QStringLiteral("type")).toInt() == 1 &&
+                first.body.value(QStringLiteral("to")).toString() == QStringLiteral("zh-CHS") &&
+                first.headers.toLower().contains("authorization: bearer account-session") &&
+                first.headers.toLower().contains("x-request-id:"),
+            "batch distinct inputs, split at a paragraph, and attach the account and request IDs");
+
+    server.finishFast(0, {QStringLiteral("first"), QStringLiteral("second"), QStringLiteral("A")});
+    waitUntil([&] { return server.fastRequests.size() == 2; }, "send the remaining long input");
+    const auto second = server.fastRequests.at(1).body;
+    require(second.value(QStringLiteral("content")).toArray() == QJsonArray{secondPart},
+            "send the second paragraph on its own");
+    require(job->units().at(0).text == QStringLiteral("first") &&
+                job->units().at(1).text == QStringLiteral("second") &&
+                job->units().at(2).text == QStringLiteral("first"),
+            "publish completed results to their original positions");
+    server.failFast(1);
+    waitUntil([&] { return job->state() == TranslationJob::State::Failed; },
+              "report batch failure");
+    require(server.fastRequests.size() == 2 &&
+                job->result().code == QStringLiteral("provider_failure"),
+            "an upstream failure is surfaced without an automatic replay");
+
+    job->retry();
+    waitUntil([&] { return server.fastRequests.size() == 3; }, "retry the failed batch");
+    require(server.fastRequests.at(2).body == second, "retry only the unresolved chunk");
+    server.finishFast(2, {QStringLiteral("B")});
+    waitUntil([&] { return job->state() == TranslationJob::State::Completed; }, "complete the job");
+    require(job->units().last().text == QStringLiteral("A\n\nB"),
+            "reassemble the long translation with its original separator");
+
+    Server oldServer;
+    require(client.setBaseUrl(oldServer.url()), "switch to a server without Fast Translation");
+    auto* unavailable = service.createJob({QStringLiteral("one")}, &owner);
+    unavailable->start();
+    waitUntil([&] { return unavailable->state() == TranslationJob::State::Failed; },
+              "saved Fast Translation reports an unsupported server");
+    require(service.preferences().modelId == fastTranslationId && oldServer.streams.isEmpty(),
+            "keep the saved preference without routing to a different translator");
+    unavailable->retry();
+    require(unavailable->state() == TranslationJob::State::Failed &&
+                oldServer.fastCatalogRequests == 1,
+            "a confirmed unsupported server remains cached on job retry");
+}
+
+void fastTranslationHardSplitAndCancellation() {
+    Server server;
+    server.fastAvailable = true;
+    SnowShotApiClient client(server.url());
+    QTemporaryDir directory;
+    require(directory.isValid(), "create temporary translation configuration directory");
+    ConfigurationStore settings(directory.filePath(QStringLiteral("settings.json")), true, true);
+    auto& service = TranslationService::forClient(client, settings, QLocale::c());
+    auto preferences = service.preferences();
+    preferences.modelId = fastTranslationId;
+    preferences.sourceLanguage = QStringLiteral("en");
+    preferences.targetLanguage = QStringLiteral("fr");
+    const QString prefix(4999, u'x');
+    const QString tail = QString::fromUcs4(U"\U0001F600y");
+    QObject owner;
+    auto* job = service.createJob({prefix + tail}, preferences, &owner);
+    job->start();
+    waitUntil([&] { return server.fastRequests.size() == 1; }, "send the first hard-split chunk");
+    require(server.fastRequests.at(0).body.value(QStringLiteral("content")).toArray() ==
+                QJsonArray{prefix},
+            "hard split leaves the surrogate pair together");
+    server.finishFast(0, {QStringLiteral("prefix")});
+    waitUntil([&] { return server.fastRequests.size() == 2; },
+              "send the chunk with the intact pair");
+    require(server.fastRequests.at(1).body.value(QStringLiteral("content")).toArray() ==
+                QJsonArray{tail},
+            "second chunk starts with the intact supplementary character");
+    job->cancel();
+    waitUntil([&] { return !server.fastRequests.at(1).socket; }, "cancel the in-flight batch");
+    require(job->state() == TranslationJob::State::Cancelled && job->units().first().text.isEmpty(),
+            "cancelled job keeps the incomplete unit unpublished");
+}
+
 QByteArray rateLimitResponse(const QByteArray& code = "rate_limited",
                              const QByteArray& retryAfter = "1") {
     const QByteArray body = "{\"code\":\"" + code +
@@ -1581,6 +1741,9 @@ int main(int argc, char** argv) {
         return 0;
     builtInConcurrencyUsesEightRequests(directory.path());
     accountRejectionStopsTheBatchAndKeepsItsError(directory.path());
+    fastTranslationDiscoveryRecoversFromFailure();
+    fastTranslationBatchesAndRetriesInOrder();
+    fastTranslationHardSplitAndCancellation();
     temporaryRateLimitsRetryWithoutLosingResults();
     builtInQueueIsSharedAndCancellationRemovesWaitingRequests();
     rateLimitCooldownIsSharedAndCancelable();

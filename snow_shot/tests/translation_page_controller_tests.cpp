@@ -1,4 +1,5 @@
 #include "translation_test_support.h"
+#include "snow_shot/translation/fasttranslation.h"
 
 #include "snow_shot/presentation/translationlanguages.h"
 #include "snow_shot/presentation/translationpagecontroller.h"
@@ -313,6 +314,32 @@ void independentConsumers(const QString& directory) {
             "consumer results never mix");
 }
 
+void fastTranslationPageRetriesOnlyTheFailedBatch(const QString& directory) {
+    Server server;
+    server.fastAvailable = true;
+    ConfigurationStore settings(directory + QStringLiteral("/fast-translation-page.json"), true,
+                                true);
+    SnowShotApiClient client(server.url());
+    TranslationPageController controller(client, settings, QLocale::English, nullptr, 0);
+    controller.activate();
+    require(controller.setPreferences(QStringLiteral("en"), QStringLiteral("fr"),
+                                      snow_shot::translation::fastTranslationId),
+            "select Fast Translation in the page");
+    controller.setSourceText(QString(3000, u'a') + u'\n' + QString(3000, u'b'));
+    waitUntil([&] { return server.fastRequests.size() == 1; }, "page starts the first batch");
+    server.finishFast(0, {QStringLiteral("first")});
+    waitUntil([&] { return server.fastRequests.size() == 2; }, "page starts the next batch");
+    const auto failed = server.fastRequests.at(1).body;
+    server.failFast(1);
+    waitUntil([&] { return !controller.errorText().isEmpty(); }, "page shows the failed batch");
+    controller.retry();
+    waitUntil([&] { return server.fastRequests.size() == 3; }, "page retries the failed batch");
+    require(server.fastRequests.last().body == failed, "page retains the first translated chunk");
+    server.finishFast(2, {QStringLiteral("second")});
+    waitUntil([&] { return controller.resultText() == QStringLiteral("first\nsecond"); },
+              "page displays the reassembled output after retry");
+}
+
 void customModelEditStopsPendingDraft(const QString& directory) {
     Server server;
     server.streamPath = QByteArrayLiteral("/v1/chat/completions");
@@ -369,5 +396,6 @@ int main(int argc, char** argv) {
     persistenceAndFailedWrites(directory.path());
     independentConsumers(directory.path());
     customModelEditStopsPendingDraft(directory.path());
+    fastTranslationPageRetriesOnlyTheFailedBatch(directory.path());
     return 0;
 }

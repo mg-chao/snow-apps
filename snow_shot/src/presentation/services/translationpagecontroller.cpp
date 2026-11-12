@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/translationpagecontroller.h"
+#include "snow_shot/translation/fasttranslation.h"
 
 #include <algorithm>
 #include <utility>
@@ -131,6 +132,19 @@ void TranslationPageController::startTranslation() {
 void TranslationPageController::retry() {
     if (!m_active || m_service == nullptr)
         return;
+    const auto job = m_job;
+    if (job && job->preferences().modelId == translation::fastTranslationId &&
+        preferences().modelId == translation::fastTranslationId &&
+        job->state() != translation::TranslationJob::State::Completed) {
+        m_retryRequired = false;
+        if (std::none_of(models().cbegin(), models().cend(), [](const auto& model) {
+                return model.id == translation::fastTranslationId;
+            }))
+            m_service->refreshModels(true);
+        if (job && job == m_job)
+            job->retry();
+        return;
+    }
     invalidateTranslation();
     m_retryRequired = false;
     if (std::none_of(m_service->models().cbegin(), m_service->models().cend(),

@@ -11,6 +11,7 @@
 #include "boundednetworkresponse.h"
 #include "texttranslationprotocol.h"
 #include "freetranslationprotocol.h"
+#include "snow_shot/translation/fasttranslation.h"
 #include "snow_shot/translation/freetranslation.h"
 #include <QUuid>
 
@@ -504,6 +505,7 @@ struct SnowShotApiClient::Request {
         LatexVisionExtract,
         TableVisionExtract,
         ChatModels,
+        TranslationTypes,
         Translation,
         ImageConversion
     };
@@ -523,6 +525,8 @@ struct SnowShotApiClient::Request {
             return QStringLiteral("table_vision_extract");
         case Kind::ChatModels:
             return QStringLiteral("chat_models");
+        case Kind::TranslationTypes:
+            return QStringLiteral("translation_types");
         case Kind::Translation:
             return QStringLiteral("translation");
         case Kind::ImageConversion:
@@ -671,6 +675,8 @@ void SnowShotApiClient::setAccountAccessToken(const QByteArray& accessToken,
         if (!guard)
             return;
     }
+    if (!sameAccountRefresh)
+        emit accountIdentityChanged();
 }
 
 bool SnowShotApiClient::usesSystemProxy() const {
@@ -1266,6 +1272,144 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
             }
             finishChatModels(token, std::move(result));
         });
+    return token;
+}
+
+SnowShotApiClient::RequestToken SnowShotApiClient::fetchFastTranslationAvailability(
+    QObject* receiver, std::function<void(std::optional<bool>)> completion) {
+    if (!completion)
+        return 0;
+    const auto available = std::make_shared<bool>(false);
+    return requestTranslationJson(
+        QStringLiteral("/api/v2/translation/types"), {}, receiver,
+        [available](const QJsonValue& data) {
+            if (!data.isArray())
+                return false;
+            const auto types = data.toArray();
+            *available = std::any_of(types.cbegin(), types.cend(), [](const QJsonValue& option) {
+                return option.toObject().value(QStringLiteral("type")).toInt(-1) ==
+                       snow_shot::translation::fastTranslationType;
+            });
+            return true;
+        },
+        [available, completion = std::move(completion)](SnowShotTranslationResult result) {
+            if (result.succeeded())
+                completion(*available);
+            else if (result.httpStatus == 404)
+                completion(false);
+            else
+                completion(std::nullopt);
+        });
+}
+
+SnowShotApiClient::RequestToken
+SnowShotApiClient::translateFastBatch(const QStringList& texts, const QString& source,
+                                      const QString& target, QObject* receiver,
+                                      BatchTranslationCompletion completion) {
+    if (texts.isEmpty() || !completion)
+        return 0;
+    const auto from = snow_shot::translation::fastTranslationLanguage(source);
+    const auto to = snow_shot::translation::fastTranslationLanguage(target);
+    const QJsonObject body{{QStringLiteral("type"), snow_shot::translation::fastTranslationType},
+                           {QStringLiteral("content"), QJsonArray::fromStringList(texts)},
+                           {QStringLiteral("from"), from},
+                           {QStringLiteral("to"), to},
+                           {QStringLiteral("domain"), QStringLiteral("general")}};
+    const auto output = std::make_shared<QStringList>();
+    return requestTranslationJson(
+        QStringLiteral("/api/v2/translation/translate"),
+        QJsonDocument(body).toJson(QJsonDocument::Compact), receiver,
+        [texts, from, to, output](const QJsonValue& data) {
+            const auto batch = data.toObject();
+            const auto results = batch.value(QStringLiteral("results")).toArray();
+            if (results.size() != texts.size() || batch.value(QStringLiteral("from")) != from ||
+                batch.value(QStringLiteral("to")) != to)
+                return false;
+            QStringList parsed;
+            parsed.reserve(results.size());
+            for (qsizetype index = 0; index < results.size(); ++index) {
+                const auto text = results.at(index).toObject().value(QStringLiteral("content"));
+                if (!text.isString() ||
+                    (text.toString().trimmed().isEmpty() && !texts.at(index).trimmed().isEmpty()))
+                    return false;
+                parsed.append(text.toString());
+            }
+            *output = std::move(parsed);
+            return true;
+        },
+        [output, completion = std::move(completion)](SnowShotTranslationResult result) {
+            completion(std::move(result), std::move(*output));
+        });
+}
+
+SnowShotApiClient::RequestToken SnowShotApiClient::requestTranslationJson(
+    const QString& path, const QByteArray& body, QObject* receiver,
+    std::function<bool(const QJsonValue&)> decode, TranslationCompletion completion) {
+    if (m_baseUrl.isEmpty() || receiver == nullptr)
+        return 0;
+    const bool discovery = body.isEmpty();
+    const auto token = ++m_nextToken;
+    auto* state =
+        new Request(discovery ? Request::Kind::TranslationTypes : Request::Kind::Translation);
+    if (!discovery)
+        state->accountAccessToken = m_accountAccessToken;
+    state->endpoint = m_baseUrl + path;
+    state->receiver = receiver;
+    state->translationCompletion = std::move(completion);
+    state->receiverDestroyed =
+        connect(receiver, &QObject::destroyed, this, [this, token] { cancel(token); });
+    m_requests.insert(token, state);
+
+    QNetworkRequest request{QUrl(state->endpoint)};
+    QHttp1Configuration http1;
+    http1.setNumberOfConnectionsPerHost(8);
+    request.setHttp1Configuration(http1);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::SameOriginRedirectPolicy);
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("X-Request-ID", state->operation.toUtf8());
+    if (!state->accountAccessToken.isEmpty())
+        request.setRawHeader("Authorization", "Bearer " + state->accountAccessToken);
+    if (!discovery)
+        request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    const int timeoutMs = discovery ? kRequestTimeoutMs : kTranslationTimeoutMs;
+    request.setTransferTimeout(timeoutMs);
+    state->transport.start();
+    auto* manager = networkAccessManager();
+    auto* reply = discovery ? manager->get(request) : manager->post(request, body);
+    state->retainReply(reply);
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, kMaximumResponseBytes);
+    auto* timeout = new QTimer(this);
+    timeout->setSingleShot(true);
+    state->timeout = timeout;
+    connect(timeout, &QTimer::timeout, this, [this, token] {
+        SnowShotTranslationResult result;
+        result.error = tr("Translation request timed out");
+        finishTranslation(token, std::move(result));
+    });
+    timeout->start(timeoutMs);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, token, reply, response, decode = std::move(decode)] {
+                if (!m_requests.contains(token))
+                    return;
+                SnowShotTranslationResult result;
+                result.httpStatus =
+                    reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                if (response->tooLarge()) {
+                    result.error = tr("Translation service response is too large");
+                } else {
+                    const auto root = QJsonDocument::fromJson(response->body()).object();
+                    const auto problem = problemPayload(root);
+                    result.code = problem.value(QStringLiteral("code")).toString();
+                    if (reply->error() != QNetworkReply::NoError || result.httpStatus != 200) {
+                        result.error =
+                            httpFailureMessage(*reply, result.httpStatus, result.code, problem);
+                    } else if (!decode(root.value(QStringLiteral("data")))) {
+                        result.error = tr("Invalid translation service response");
+                    }
+                }
+                finishTranslation(token, std::move(result));
+            });
     return token;
 }
 
@@ -2167,8 +2311,9 @@ void SnowShotApiClient::finishTranslation(RequestToken token, SnowShotTranslatio
         QTimer::singleShot(0, this, &SnowShotApiClient::pumpCustomChatStreams);
     // An SSE error can arrive before HTTP completion. Release its connection before
     // the consumer starts another request in the newly available queue slot.
-    const bool accountCall = !request->custom && !request->freeTranslation &&
-                             !request->textTranslation && !request->accountAccessToken.isEmpty() &&
+    const bool accountCall = request->kind != Request::Kind::TranslationTypes && !request->custom &&
+                             !request->freeTranslation && !request->textTranslation &&
+                             !request->accountAccessToken.isEmpty() &&
                              request->accountAccessToken == m_accountAccessToken &&
                              request->endpoint.startsWith(m_baseUrl + u'/');
     cleanupRequest(request);

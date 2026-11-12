@@ -52,7 +52,7 @@ class TranslationService final : public QObject {
         return m_preferences;
     }
     bool loadingModels() const {
-        return m_modelsToken != 0;
+        return m_modelsToken != 0 || m_fastCatalogToken != 0;
     }
     QString errorText() const;
     static QString modelConfigurationChangedText();
@@ -77,6 +77,7 @@ class TranslationService final : public QObject {
     std::optional<bool> writePreferences(const QMap<QString, QJsonValue>& values,
                                          ChangeReason reason);
     void syncPreferences(ChangeReason reason);
+    bool refreshFastCatalog(bool force);
     void publishModels(bool resolveSelection);
     QPointer<SnowShotApiClient> m_client;
     QPointer<storage::ConfigurationStore> m_settings;
@@ -86,6 +87,10 @@ class TranslationService final : public QObject {
     TranslationPreferences m_preferences;
     TranslationLanguageDetector m_languageDetector;
     SnowShotApiClient::RequestToken m_modelsToken = 0;
+    SnowShotApiClient::RequestToken m_fastCatalogToken = 0;
+    bool m_fastCatalogAttempted = false;
+    bool m_fastCatalogConfirmed = false;
+    bool m_fastAvailable = false;
     QString m_catalogError;
     bool m_catalogAttempted = false;
     bool m_storageError = false;
@@ -143,6 +148,8 @@ class TranslationJob final : public QObject {
     TranslationJob(TranslationService& service, const QStringList& texts, QObject* owner);
     void prepare();
     void pump();
+    void prepareFastChunks();
+    void pumpFast();
     void publishState();
     void fail(const QString& error);
     void invalidateModel(const QString& id);
@@ -151,6 +158,15 @@ class TranslationJob final : public QObject {
     QVector<Unit> m_units;
     // Unit positions remain public; only exact duplicate input shares a provider request.
     QVector<QVector<int>> m_unitGroups;
+    struct FastChunk {
+        QString source;
+        QString separator;
+        QString translated;
+        qsizetype group;
+    };
+    QVector<FastChunk> m_fastChunks;
+    QVector<qsizetype> m_fastGroupOffsets;
+    qsizetype m_fastNextChunk = 0;
     TranslationPreferences m_preferences;
     std::optional<DetectedTranslationLanguage> m_detectedLanguage;
     QString m_effectiveTargetLanguage;

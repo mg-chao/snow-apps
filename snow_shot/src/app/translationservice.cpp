@@ -1,4 +1,5 @@
 #include "snow_shot/translation/translationservice.h"
+#include "snow_shot/translation/fasttranslation.h"
 #include "snow_shot/translation/freetranslation.h"
 
 #include "snow_shot/translation/translationlanguages.h"
@@ -22,6 +23,40 @@ const QString textKey = QStringLiteral("api_configuration/text_translation");
 const QString proxyKey = QStringLiteral("network/proxy");
 const QString httpProxyKey = QStringLiteral("network/http_proxy");
 const QString serverKey = QStringLiteral("api_configuration/server_url");
+
+qsizetype fastTranslationCut(const QString& text, qsizetype start) {
+    auto end = std::min(text.size(), start + fastTranslationMaximumLength);
+    if (end == text.size())
+        return end;
+
+    // Prefer nearby breaks while keeping most of the request available for translation context.
+    const auto minimum = start + fastTranslationMaximumLength / 2;
+    qsizetype paragraph = 0;
+    qsizetype sentence = 0;
+    qsizetype space = 0;
+    for (auto index = end; index > minimum; --index) {
+        const auto previous = text.at(index - 1);
+        if (previous == u'\n') {
+            paragraph = index;
+            break;
+        }
+        if (sentence == 0 &&
+            (previous == u'\u3002' || previous == u'\uff01' || previous == u'\uff1f' ||
+             ((previous == u'.' || previous == u'!' || previous == u'?') &&
+              text.at(index).isSpace())))
+            sentence = index;
+        if (space == 0 && text.at(index).isSpace())
+            space = index;
+    }
+    if (paragraph || sentence || space) {
+        end = paragraph ? paragraph : sentence ? sentence : space;
+        while (end > minimum && text.at(end - 1).isSpace())
+            --end;
+    }
+    if (text.at(end - 1).isHighSurrogate() && text.at(end).isLowSurrogate())
+        --end;
+    return end;
+}
 } // namespace
 
 TranslationService& TranslationService::forClient(SnowShotApiClient& client,
@@ -81,12 +116,22 @@ TranslationService::TranslationService(SnowShotApiClient& client,
             });
     connect(&client, &SnowShotApiClient::baseUrlChanged, this, [this] {
         m_client->cancel(std::exchange(m_modelsToken, 0));
-        refreshModels(true);
+        m_client->cancel(std::exchange(m_fastCatalogToken, 0));
+        m_fastAvailable = false;
+        m_fastCatalogAttempted = false;
+        m_fastCatalogConfirmed = false;
+        const QPointer<TranslationService> guard(this);
+        emit modelInvalidated(fastTranslationId);
+        if (guard)
+            refreshModels(true);
     });
+    connect(&client, &SnowShotApiClient::accountIdentityChanged, this,
+            [this] { emit modelInvalidated(fastTranslationId); });
     connect(&client, &SnowShotApiClient::chatModelsChanged, this,
-            [this] { publishModels(!loadingModels()); });
+            [this] { publishModels(m_modelsToken == 0); });
     connect(&client, &QObject::destroyed, this, [this] {
         m_modelsToken = 0;
+        m_fastCatalogToken = 0;
         emit unavailable();
     });
     syncPreferences(ChangeReason::Catalog);
@@ -94,8 +139,10 @@ TranslationService::TranslationService(SnowShotApiClient& client,
 }
 
 TranslationService::~TranslationService() {
-    if (m_client != nullptr)
+    if (m_client != nullptr) {
         m_client->cancel(m_modelsToken);
+        m_client->cancel(m_fastCatalogToken);
+    }
 }
 
 void TranslationService::syncPreferences(ChangeReason reason) {
@@ -157,9 +204,13 @@ void TranslationService::publishModels(bool resolveSelection) {
     if (m_client == nullptr)
         return;
     m_models = m_client->cachedChatModels();
-    m_models.removeIf([](const auto& model) { return model.id == freeTranslationId; });
-    m_models.prepend({freeTranslationId, tr("Free translation"), false,
-                      QStringLiteral("free-translation"), false});
+    m_models.removeIf([](const auto& model) {
+        return model.id == freeTranslationId || model.id == fastTranslationId;
+    });
+    m_models.prepend({freeTranslationId, tr("Free translation"), false, freeTranslationId, false});
+    if (m_fastAvailable)
+        m_models.insert(
+            1, {fastTranslationId, tr("Fast Translation"), false, fastTranslationId, false});
     // Select renders a header for each contiguous group. Keep custom and server general
     // models together while preserving their order within each translation category.
     std::stable_partition(m_models.begin(), m_models.end(), [](const auto& model) {
@@ -197,22 +248,42 @@ void TranslationService::publishModels(bool resolveSelection) {
 }
 
 void TranslationService::refreshModels(bool force) {
-    if (m_client == nullptr || loadingModels())
+    if (m_client == nullptr)
         return;
-    m_catalogAttempted = true;
-    m_catalogError.clear();
-    m_modelsToken = m_client->ensureChatModels(
-        m_locale.name(), this,
-        [this](SnowShotChatModelsResult result) {
-            m_modelsToken = 0;
-            m_catalogError = result.error;
-            publishModels(result.succeeded());
-        },
-        force ? SnowShotApiClient::ChatModelsCachePolicy::Refresh
-              : SnowShotApiClient::ChatModelsCachePolicy::UseCached);
-    if (m_modelsToken == 0)
-        m_catalogError = tr("No translation services are available");
-    emit catalogChanged();
+    const bool refreshChat = m_modelsToken == 0;
+    if (refreshChat) {
+        m_catalogAttempted = true;
+        m_catalogError.clear();
+        m_modelsToken = m_client->ensureChatModels(
+            m_locale.name(), this,
+            [this](SnowShotChatModelsResult result) {
+                m_modelsToken = 0;
+                m_catalogError = result.error;
+                publishModels(result.succeeded());
+            },
+            force ? SnowShotApiClient::ChatModelsCachePolicy::Refresh
+                  : SnowShotApiClient::ChatModelsCachePolicy::UseCached);
+        if (m_modelsToken == 0)
+            m_catalogError = tr("No translation services are available");
+    }
+    const bool refreshFast = refreshFastCatalog(force);
+    if (refreshChat || refreshFast)
+        publishModels(false);
+}
+
+bool TranslationService::refreshFastCatalog(bool force) {
+    if (!m_client || m_fastCatalogToken != 0 || (m_fastCatalogConfirmed && !force))
+        return false;
+    m_fastCatalogAttempted = true;
+    m_fastCatalogToken =
+        m_client->fetchFastTranslationAvailability(this, [this](std::optional<bool> available) {
+            m_fastCatalogToken = 0;
+            m_fastCatalogConfirmed = available.has_value();
+            if (available.has_value())
+                m_fastAvailable = *available;
+            publishModels(false);
+        });
+    return m_fastCatalogToken != 0;
 }
 
 void TranslationService::setLocale(const QLocale& locale) {
@@ -235,6 +306,9 @@ void TranslationService::setLocale(const QLocale& locale) {
 QString TranslationService::errorText() const {
     if (m_storageError)
         return tr("Unable to save translation preferences. Your previous selections were restored");
+    if (m_preferences.modelId == fastTranslationId && m_fastCatalogAttempted &&
+        m_fastCatalogToken == 0 && !m_fastAvailable)
+        return tr("Translation service is unavailable");
     if (!m_models.isEmpty() || loadingModels() || !m_catalogAttempted)
         return {};
     return m_catalogError.isEmpty()
@@ -326,6 +400,11 @@ void TranslationJob::retry() {
                          m_state == State::Invalidated;
     if (!m_fixedPreferences)
         m_preferences = m_service->preferences();
+    if (changed) {
+        m_fastChunks.clear();
+        m_fastGroupOffsets.clear();
+        m_fastNextChunk = 0;
+    }
     bool hasPendingUnits = false;
     for (auto& unit : m_units) {
         if (changed) {
@@ -354,6 +433,12 @@ void TranslationJob::retry() {
     m_state = State::WaitingForModels;
     const auto generation = m_generation;
     const QPointer<TranslationJob> guard(this);
+    if (hasPendingUnits && m_preferences.modelId == fastTranslationId &&
+        m_service->refreshFastCatalog(false)) {
+        emit m_service->catalogChanged();
+        if (!guard || generation != m_generation || m_state != State::WaitingForModels)
+            return;
+    }
     emit stateChanged();
     if (!guard || generation != m_generation || m_state != State::WaitingForModels)
         return;
@@ -369,13 +454,26 @@ void TranslationJob::prepare() {
         publishState();
         return;
     }
+    if (m_preferences.modelId == fastTranslationId) {
+        if (m_service->m_fastCatalogToken != 0)
+            return;
+        if (!m_service->m_fastAvailable) {
+            fail(tr("Translation service is unavailable"));
+            return;
+        }
+        m_state = State::Streaming;
+        if (m_fastGroupOffsets.isEmpty())
+            prepareFastChunks();
+        pumpFast();
+        return;
+    }
     const auto& models = m_service->models();
     m_preferences.modelId = snowShotResolvedBuiltInModelId(models, m_preferences.modelId);
     const auto it = std::find_if(models.cbegin(), models.cend(), [this](const auto& model) {
         return model.id == m_preferences.modelId;
     });
     if (it == models.cend()) {
-        if (m_service->loadingModels())
+        if (m_service->m_modelsToken != 0)
             return;
         if (!m_service->m_catalogAttempted) {
             m_service->refreshModels();
@@ -497,6 +595,102 @@ void TranslationJob::pump() {
         publishState();
 }
 
+void TranslationJob::prepareFastChunks() {
+    m_fastGroupOffsets.reserve(m_unitGroups.size() + 1);
+    for (qsizetype group = 0; group < m_unitGroups.size(); ++group) {
+        m_fastGroupOffsets.append(m_fastChunks.size());
+        const auto& unit = m_units.at(m_unitGroups.at(group).first());
+        if (unit.state == State::Completed)
+            continue;
+        const auto& text = unit.sourceText;
+        for (qsizetype start = 0; start < text.size();) {
+            const auto end = fastTranslationCut(text, start);
+            auto next = end;
+            while (next < text.size() && text.at(next).isSpace())
+                ++next;
+            m_fastChunks.append(
+                {text.mid(start, end - start), text.mid(end, next - end), {}, group});
+            start = next;
+        }
+    }
+    m_fastGroupOffsets.append(m_fastChunks.size());
+}
+
+void TranslationJob::pumpFast() {
+    if (!m_requests.isEmpty())
+        return;
+    if (m_fastNextChunk == m_fastChunks.size()) {
+        m_state = State::Completed;
+        publishState();
+        return;
+    }
+
+    const auto start = m_fastNextChunk;
+    QStringList texts;
+    qsizetype length = 0;
+    for (auto index = start;
+         index < m_fastChunks.size() && texts.size() < fastTranslationMaximumItems; ++index) {
+        const auto& chunk = m_fastChunks.at(index);
+        length += chunk.source.size();
+        if (length > fastTranslationMaximumLength)
+            break;
+        texts.append(chunk.source);
+        for (const int unit : m_unitGroups.at(chunk.group))
+            m_units[unit].state = State::Streaming;
+    }
+
+    const auto generation = m_generation;
+    const auto token = m_client->translateFastBatch(
+        texts, m_preferences.sourceLanguage, m_effectiveTargetLanguage, this,
+        [this, generation, start](SnowShotTranslationResult result,
+                                  const QStringList& translations) {
+            if (generation != m_generation || !m_requests.remove(0))
+                return;
+            if (!result.succeeded()) {
+                m_result = std::move(result);
+                fail(m_result.error);
+                return;
+            }
+
+            for (qsizetype index = 0; index < translations.size(); ++index)
+                m_fastChunks[start + index].translated = translations.at(index);
+            m_fastNextChunk += translations.size();
+            const auto firstGroup = m_fastChunks.at(start).group;
+            const auto lastGroup = m_fastChunks.at(m_fastNextChunk - 1).group;
+            QList<int> completed;
+            for (auto group = firstGroup; group <= lastGroup; ++group) {
+                const auto first = m_fastGroupOffsets.at(group);
+                const auto end = m_fastGroupOffsets.at(group + 1);
+                if (first == end || end > m_fastNextChunk)
+                    continue;
+                QString text;
+                for (auto index = first; index < end; ++index) {
+                    const auto& chunk = m_fastChunks.at(index);
+                    text += chunk.translated + chunk.separator;
+                }
+                for (const int unit : m_unitGroups.at(group)) {
+                    m_units[unit].text = text;
+                    m_units[unit].state = State::Completed;
+                    completed.append(unit);
+                }
+            }
+
+            const QPointer<TranslationJob> guard(this);
+            for (const int unit : completed) {
+                emit unitChanged(unit);
+                if (!guard || generation != m_generation || m_state != State::Streaming)
+                    return;
+            }
+            pumpFast();
+        });
+    if (token == 0) {
+        fail(tr("Translation request could not be prepared"));
+        return;
+    }
+    m_requests.insert(0, token);
+    publishState();
+}
+
 void TranslationJob::publishState() {
     const auto generation = m_generation;
     const auto state = m_state;
@@ -529,6 +723,9 @@ void TranslationJob::invalidateModel(const QString& id) {
         unit.text.clear();
         unit.state = State::Idle;
     }
+    m_fastChunks.clear();
+    m_fastGroupOffsets.clear();
+    m_fastNextChunk = 0;
     m_state = State::Invalidated;
     m_result.error = TranslationService::modelConfigurationChangedText();
     publishState();

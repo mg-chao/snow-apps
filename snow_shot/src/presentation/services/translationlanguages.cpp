@@ -1,4 +1,5 @@
 #include "snow_shot/translation/translationlanguages.h"
+#include "snow_shot/translation/fasttranslation.h"
 #include "snow_shot/translation/freetranslation.h"
 
 #include <QCoreApplication>
@@ -49,6 +50,8 @@ int translationModelIndex(const QVector<SnowShotChatModel>& models, const QStrin
             general = index;
         }
     }
+    if (preferredId == fastTranslationId)
+        return -1;
     return freeIndex >= 0 ? freeIndex : general >= 0 ? general : first;
 }
 } // namespace snow_shot::translation
