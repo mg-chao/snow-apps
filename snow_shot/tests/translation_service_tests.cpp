@@ -295,6 +295,68 @@ void builtInConcurrencyUsesEightRequests(const QString& directory) {
             "built-in translation completes after replenishing capacity");
 }
 
+void accountRejectionStopsTheBatchAndKeepsItsError(const QString& directory) {
+    struct Scenario {
+        bool billing;
+        bool expert;
+        QStringView message;
+    };
+    const Scenario scenarios[] = {
+        {false, false, u"Sign in to your Snow Shot account to use this service"},
+        {true, false,
+         u"Your available credits cannot cover this request. Purchase credits in Account"},
+        {true, true,
+         u"Your credits cannot cover this Expert Model request. "
+         u"Purchase credits from Account to continue"},
+    };
+    for (const auto& [billing, expert, message] : scenarios) {
+        Server server;
+        const auto model = expert ? QStringLiteral("expert-model") : QStringLiteral("general");
+        if (expert)
+            server.models.append(
+                QJsonObject{{QStringLiteral("model"), model},
+                            {QStringLiteral("name"), QStringLiteral("Expert Model")}});
+        const QByteArray code = billing ? "insufficient_credits" : "account_required";
+        SnowShotApiClient client(server.url());
+        ConfigurationStore settings(
+            directory + QStringLiteral("/%1-%2.json").arg(model, QString::fromLatin1(code)), true,
+            true, 60000);
+        auto& service = TranslationService::forClient(client, settings, QLocale::English);
+        service.refreshModels();
+        waitUntil([&] { return !service.loadingModels(); }, "load built-in models");
+        auto preferences = service.preferences();
+        preferences.modelId = model;
+        preferences.sourceLanguage = QStringLiteral("en");
+        preferences.targetLanguage = QStringLiteral("zh-Hans");
+        QStringList texts;
+        for (int index = 0; index < 10; ++index)
+            texts.append(QString::number(index));
+        QObject owner;
+        auto* job = service.createJob(texts, preferences, &owner);
+        job->start();
+        waitUntil([&] { return server.streams.size() >= 2; }, "start the first translation units");
+        require(server.streams.first().body.value(QStringLiteral("model")) == model,
+                "account rejection fixture uses the selected model");
+        server.send(0,
+                    "event: error\ndata: {\"status\":" + QByteArray::number(billing ? 402 : 401) +
+                        ",\"error\":{\"code\":\"" + code + "\"}}\n\n");
+        waitUntil([&] { return job->result().code == QString::fromLatin1(code); },
+                  "nested streaming error preserves its account code");
+        const auto started = server.streams.size();
+        server.delta(1, QStringLiteral("partial output"));
+        for (int index = 1; index < started; ++index)
+            server.fail(index);
+        waitUntil([&] { return !job->busy(); }, "in-flight translation units finish");
+        require(server.streams.size() == started && started <= 8 &&
+                    job->state() == TranslationJob::State::Failed &&
+                    job->result().code == QString::fromLatin1(code) &&
+                    job->result().httpStatus == (billing ? 402 : 401) &&
+                    job->units().at(1).text == QStringLiteral("partial output") &&
+                    job->errorText().contains(message),
+                "account rejection stops unsent units and remains visible after later failures");
+    }
+}
+
 void aiModelSelectionMigratesOnlyAfterDiscovery(const QString& directory) {
     for (const QString& legacy :
          {QStringLiteral("qwen3.8-flash"), QStringLiteral("qwen-mt-flash")}) {
@@ -378,7 +440,7 @@ void expertSelectionPersistsAndReportsWalletErrors(const QString& directory) {
     server.streamRejection = [](int index) {
         const QByteArray status = index == 0 ? "401 Unauthorized" : "402 Payment Required";
         const QByteArray code = index == 0 ? "account_required" : "insufficient_credits";
-        const QByteArray body = "{\"code\":\"" + code + "\"}";
+        const QByteArray body = "{\"error\":{\"code\":\"" + code + "\"}}";
         return "HTTP/1.1 " + status +
                "\r\nContent-Type: application/problem+json\r\nContent-Length: " +
                QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
@@ -1607,6 +1669,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--notification-lifetime-only")))
         return 0;
     builtInConcurrencyUsesEightRequests(directory.path());
+    accountRejectionStopsTheBatchAndKeepsItsError(directory.path());
     temporaryRateLimitsRetryWithoutLosingResults();
     builtInQueueIsSharedAndCancellationRemovesWaitingRequests();
     rateLimitCooldownIsSharedAndCancelable();

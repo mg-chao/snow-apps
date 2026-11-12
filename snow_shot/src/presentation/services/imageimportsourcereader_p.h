@@ -21,11 +21,11 @@ readImageImportFile(const QString& path,
                     ScreenshotClipboardContentReader::CancellationCheck cancelled,
                     ScreenshotClipboardContentReader::AllocationCheck allocate);
 
-[[nodiscard]] ImageImportSource
-readImageImportPinnedRecord(const QString& recordId,
-                            ScreenshotClipboardContentReader::CancellationCheck cancelled,
-                            ScreenshotClipboardContentReader::AllocationCheck allocate,
-                            const ScreenshotPinnedRenderPreparation& preparation);
+[[nodiscard]] ImageImportSource readImageImportPinnedRecord(
+    const QString& recordId, ScreenshotClipboardContentReader::CancellationCheck cancelled,
+    ScreenshotClipboardContentReader::AllocationCheck allocate,
+    const ScreenshotPinnedRenderPreparation& preparation,
+    ScreenshotPinnedRenderMode mode = ScreenshotPinnedRenderMode::WindowAppearance);
 
 [[nodiscard]] QImage
 readImageImportClipboard(ScreenshotClipboardContentSnapshot snapshot,

@@ -8,6 +8,8 @@
 #include <functional>
 #include <optional>
 
+enum class ScreenshotPinnedRenderMode { WindowAppearance, SourceResolution };
+
 // Owned image-export state captured on the GUI thread; rendering never reads a live pin.
 struct ScreenshotPinnedImageSnapshot final {
     ScreenshotExportSource source;

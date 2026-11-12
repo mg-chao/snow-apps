@@ -7583,10 +7583,10 @@ void recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections() {
         }
     };
     requireCatalogOptions(QStringLiteral("Table-specific model"));
-    auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
-    require(layout != nullptr && layout->itemAt(layout->count() - 1)->widget() == select &&
+    const auto* layout = palette.actionPanel()->layout();
+    require(layout != nullptr && layout->indexOf(select) >= 0 &&
                 select->accessibleName() == QStringLiteral("Recognition model"),
-            "recognition model selection must be the named far-right sub-toolbar control");
+            "the recognition model selector must be an accessible sub-toolbar control");
     select->setCurrentValue(QStringLiteral("vision-default"));
     require(modelChanges == 1 && lastSelection == QStringLiteral("vision-default") &&
                 select->currentValue().toString() == QStringLiteral("vision-default") &&

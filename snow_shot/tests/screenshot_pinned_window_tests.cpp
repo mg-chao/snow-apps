@@ -1418,13 +1418,17 @@ void waitForUi(int milliseconds) {
     }
 }
 
-ScreenshotPinnedImageSnapshot pinnedRenderedSnapshot(ScreenshotPinnedWindow& window) {
+ScreenshotPinnedImageSnapshot pinnedRenderedSnapshot(
+    ScreenshotPinnedWindow& window,
+    ScreenshotPinnedRenderMode mode = ScreenshotPinnedRenderMode::WindowAppearance) {
     ScreenshotPinnedImageSnapshot snapshot;
     bool complete = false;
-    window.requestRenderedImageSnapshot([&](ScreenshotPinnedImageSnapshot value) {
-        snapshot = std::move(value);
-        complete = true;
-    });
+    window.requestRenderedImageSnapshot(
+        [&](ScreenshotPinnedImageSnapshot value) {
+            snapshot = std::move(value);
+            complete = true;
+        },
+        mode);
     QElapsedTimer deadline;
     deadline.start();
     while (!complete && deadline.elapsed() < 10000)
@@ -1436,7 +1440,8 @@ ScreenshotPinnedImageSnapshot pinnedRenderedSnapshot(ScreenshotPinnedWindow& win
 
 snow_shot::presentation::ImageEditingSource
 pinnedRenderedEditingSource(ScreenshotPinnedWindow& window) {
-    const auto snapshot = pinnedRenderedSnapshot(window);
+    const auto snapshot =
+        pinnedRenderedSnapshot(window, ScreenshotPinnedRenderMode::SourceResolution);
     auto artifact = std::make_shared<ScreenshotExportArtifact>(snapshot.source);
     snow_shot::presentation::ImageEditingSource source;
     bool complete = false;
@@ -24200,6 +24205,7 @@ void pinnedImageSplittingSnapshots() {
         "split fixture contains an annotation");
     Access::transformReplacement(window);
     Access::setFractionalScale(window, 50);
+    Access::setGeneralOpacity(window, 60);
     require(Access::selectFirstAnnotation(window), "split fixture selects an existing annotation");
     require(!Access::selectedAnnotationIds(window).isEmpty(),
             "split source starts with an active annotation selection");
@@ -24273,13 +24279,14 @@ void pinnedImageSplittingSnapshots() {
     loading.start();
     while (editor->document()->image().isNull() && loading.elapsed() < 10000)
         waitForUi(1);
-    require(editor->document()->image() == source.image &&
+    require(editor->document()->image() == source.image && source.image.size() == QSize(80, 120) &&
+                source.image.pixelColor(0, 0).alpha() == 255 &&
                 editor->document()->bounds() == source.canvasRect &&
                 !editor->document()->runtime().hasDocumentContent() && window.isVisible(),
             "pinned editor imports rendered pixels into an independent empty annotation document");
     editors.shutdown();
     split->trigger();
-    require(requests == 1 && snapshot.source.isValid() && snapshot.outputSize == QSize(40, 60) &&
+    require(requests == 1 && snapshot.source.isValid() && snapshot.outputSize == QSize(80, 120) &&
                 snapshot.originalFileName == QStringLiteral("section.reference.png") &&
                 snapshot.createdUtc == window.sourceCreatedUtc(),
             "splitting dispatches the current processed source with original naming metadata");
@@ -24288,6 +24295,7 @@ void pinnedImageSplittingSnapshots() {
                 Access::drawingHistory(window) == history &&
                 Access::originalImage(window) == original &&
                 window.currentNativeGeometry() == geometry &&
+                after.opacityPercent == before.opacityPercent &&
                 after.imageTransform == before.imageTransform &&
                 after.quarterTurns == before.quarterTurns,
             "splitting commits editing while preserving source pixels, transforms, content and "
@@ -24298,8 +24306,9 @@ void pinnedImageSplittingSnapshots() {
     for (int y = 0; y < processed.height(); ++y)
         for (int x = 0; x < processed.width(); ++x)
             magenta |= processed.pixelColor(x, y) == QColor(Qt::magenta);
-    require(magenta && processed.size() == QSize(40, 60),
-            "owned split snapshot includes rotated and flipped annotations at the chosen zoom");
+    require(magenta && processed.size() == QSize(80, 120) &&
+                processed.pixelColor(0, 0).alpha() == 255,
+            "split snapshot includes transformed annotations at source resolution and opacity");
     ScreenshotPinnedWindow unavailable;
     materializePinnedMenuTree(unavailable);
     auto* unavailableSplit =
@@ -28231,6 +28240,7 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--splitting-snapshot-only"))) {
             pinnedImageSplittingSnapshots();
+            live_pinned_tests::splittingAndEditingRetainTheirLiveSource();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--stitching-snapshot-only"))) {

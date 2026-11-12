@@ -764,12 +764,16 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>No translation services are available</translation>
         </message>
         <message>
-            <source>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available</source>
-            <translation>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available</translation>
+            <source>Paid calls are paused because your account has an outstanding balance. Settle the balance in Account to continue</source>
+            <translation>Paid calls are paused because your account has an outstanding balance. Settle the balance in Account to continue</translation>
         </message>
         <message>
             <source>Sign in to your Snow Shot account to use Expert Model</source>
             <translation>Sign in to your Snow Shot account to use Expert Model</translation>
+        </message>
+        <message>
+            <source>Sign in to your Snow Shot account to use this service</source>
+            <translation>Sign in to your Snow Shot account to use this service</translation>
         </message>
         <message>
             <source>Table recognition failed</source>
@@ -820,12 +824,20 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>The model service changed. Retry to load its models</translation>
         </message>
         <message>
+            <source>The service has reached its usage limit. Try again later</source>
+            <translation>The service has reached its usage limit. Try again later</translation>
+        </message>
+        <message>
             <source>The text is too large to translate</source>
             <translation>The text is too large to translate</translation>
         </message>
         <message>
             <source>The translation response is too large</source>
             <translation>The translation response is too large</translation>
+        </message>
+        <message>
+            <source>This request requires payment. Check your balance in Account</source>
+            <translation>This request requires payment. Check your balance in Account</translation>
         </message>
         <message>
             <source>This service does not support the selected language combination</source>
@@ -852,8 +864,12 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Translation stream ended unexpectedly</translation>
         </message>
         <message>
-            <source>Your available free allowance and credits cannot cover this request. Purchase credits from Account to continue</source>
-            <translation>Your available free allowance and credits cannot cover this request. Purchase credits from Account to continue</translation>
+            <source>Your Snow Shot session is no longer valid. Sign in again</source>
+            <translation>Your Snow Shot session is no longer valid. Sign in again</translation>
+        </message>
+        <message>
+            <source>Your available credits cannot cover this request. Purchase credits in Account</source>
+            <translation>Your available credits cannot cover this request. Purchase credits in Account</translation>
         </message>
         <message>
             <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</source>
@@ -862,6 +878,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
         <message>
             <source>Your credits cannot cover this Expert Model request. Purchase credits from Account to continue</source>
             <translation>Your credits cannot cover this Expert Model request. Purchase credits from Account to continue</translation>
+        </message>
+        <message>
+            <source>Your daily free allowance is exhausted. Try again after it resets</source>
+            <translation>Your daily free allowance is exhausted. Try again after it resets</translation>
         </message>
     </context>
     <context>

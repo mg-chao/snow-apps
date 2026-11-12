@@ -26,11 +26,10 @@ QImage readImageImportFile(const QString& path,
                 : QImage();
 }
 
-ImageImportSource
-readImageImportPinnedRecord(const QString& recordId,
-                            ScreenshotClipboardContentReader::CancellationCheck cancelled,
-                            ScreenshotClipboardContentReader::AllocationCheck allocate,
-                            const ScreenshotPinnedRenderPreparation& preparation) {
+ImageImportSource readImageImportPinnedRecord(
+    const QString& recordId, ScreenshotClipboardContentReader::CancellationCheck cancelled,
+    ScreenshotClipboardContentReader::AllocationCheck allocate,
+    const ScreenshotPinnedRenderPreparation& preparation, ScreenshotPinnedRenderMode mode) {
     ImageImportSource result;
     if (cancelled && cancelled())
         return result;
@@ -49,8 +48,8 @@ readImageImportPinnedRecord(const QString& recordId,
         return result;
     result.originalFileName = record->originalFileName;
     result.createdUtc = record->createdUtc;
-    auto rendered =
-        renderScreenshotPinnedImageRecord(std::move(*record), preparation, cancelled, reserve);
+    auto rendered = renderScreenshotPinnedImageRecord(std::move(*record), preparation, cancelled,
+                                                      reserve, mode);
     result.image = std::move(rendered.image);
     result.error = std::move(rendered.error);
     return result;

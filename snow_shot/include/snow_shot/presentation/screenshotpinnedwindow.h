@@ -270,7 +270,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceSnapshot() const;
-    void requestRenderedImageSnapshot(std::function<void(ScreenshotPinnedImageSnapshot)> ready);
+    void requestRenderedImageSnapshot(
+        std::function<void(ScreenshotPinnedImageSnapshot)> ready,
+        ScreenshotPinnedRenderMode mode = ScreenshotPinnedRenderMode::WindowAppearance);
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
     void checkpointStorage();
     [[nodiscard]] ScreenshotPinnedImageSnapshot stitchingSnapshot();
@@ -439,9 +441,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     void installLiveFrame(QImage original);
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
     liveViewportArtifact(bool applyWindowOpacity = true);
-    [[nodiscard]] ScreenshotExportSource liveExportSource(bool applyWindowOpacity = true);
+    enum class ViewportExportMode { Complete, RecognitionBackground, SourceResolution };
+    [[nodiscard]] ScreenshotExportSource liveExportSource(ViewportExportMode mode, QSize& size);
     void requestLiveSnapshot(std::function<void(QImage, QString)> completion,
-                             bool applyWindowOpacity = true);
+                             ViewportExportMode mode);
     void convertLiveToImage();
     void splitLiveImage();
     void editLiveImage();
@@ -456,7 +459,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     void applyRuntimeBorderColor();
     void updateShowMainInterfaceAction();
     void retranslateUi();
-    [[nodiscard]] ScreenshotPinnedImageSnapshot processedImageSnapshot(bool finishEditing);
     void refreshContextMenu();
     void configureAnimationPlayback(int speedPercent = 100, bool playing = true);
     void updateAnimationSuspension();
@@ -555,7 +557,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] static bool batchSavePending();
     void uploadToCloud();
     void cancelCloudUpload();
-    enum class ViewportExportMode { Complete, RecognitionBackground };
     [[nodiscard]] ScreenshotPinnedImageSnapshot
     renderedImageSnapshot(ViewportExportMode mode = ViewportExportMode::Complete);
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>

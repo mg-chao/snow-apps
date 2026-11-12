@@ -2184,12 +2184,9 @@ void runImageEditingTests() {
     auto rotated = readImageEditingPinned(pinRecord, renderPreparation);
     const auto transformed = ScreenshotResultCompositor::normalizeImage(snowCanvasTransformImage(
         original.image, pinRecord.imageTransform, Qt::SmoothTransformation));
-    const qreal pinScale =
-        screenshotPinnedRenderScale(200, transformed.size(), pinRecord.contentCanvasRect);
-    const QSize pinPixels(qRound(pinRecord.contentCanvasRect.width() * pinScale),
-                          qRound(pinRecord.contentCanvasRect.height() * pinScale));
     ScreenshotPinnedViewportExportSource expectedPin{
-        pinRecord.canvasSession, transformed, pinRecord.contentCanvasRect, pinPixels, {}, {}};
+        pinRecord.canvasSession, transformed, pinRecord.contentCanvasRect,
+        transformed.size(),      {},          {}};
     require(rotated.image == renderScreenshotPinnedViewport(expectedPin) &&
                 rotated.canvasSession.isEmpty() && rotated.flattened,
             "pinned transform and annotations bake into the shared rendering output");

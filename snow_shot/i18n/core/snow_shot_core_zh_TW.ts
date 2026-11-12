@@ -764,12 +764,16 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>沒有可用的翻譯服務</translation>
         </message>
         <message>
-            <source>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available</source>
-            <translation>帳號存在欠款，付費呼叫已暫停。免費額度仍可使用</translation>
+            <source>Paid calls are paused because your account has an outstanding balance. Settle the balance in Account to continue</source>
+            <translation>帳號有欠款，付費呼叫已暫停。請前往「帳號」結清欠款後繼續</translation>
         </message>
         <message>
             <source>Sign in to your Snow Shot account to use Expert Model</source>
             <translation>請登入 Snow Shot 帳號以使用專家模型</translation>
+        </message>
+        <message>
+            <source>Sign in to your Snow Shot account to use this service</source>
+            <translation>請登入 Snow Shot 帳號後使用此服務</translation>
         </message>
         <message>
             <source>Table recognition failed</source>
@@ -820,12 +824,20 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>模型服務已變更。請重試以載入其模型</translation>
         </message>
         <message>
+            <source>The service has reached its usage limit. Try again later</source>
+            <translation>服務已達用量上限，請稍後重試</translation>
+        </message>
+        <message>
             <source>The text is too large to translate</source>
             <translation>文字過長，無法翻譯</translation>
         </message>
         <message>
             <source>The translation response is too large</source>
             <translation>翻譯回應過大</translation>
+        </message>
+        <message>
+            <source>This request requires payment. Check your balance in Account</source>
+            <translation>此請求需要付費，請前往「帳號」查看餘額</translation>
         </message>
         <message>
             <source>This service does not support the selected language combination</source>
@@ -852,8 +864,12 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>翻譯串流意外結束</translation>
         </message>
         <message>
-            <source>Your available free allowance and credits cannot cover this request. Purchase credits from Account to continue</source>
-            <translation>可用免費額度和帳號餘額不足以支付本次請求。請前往「帳號」儲值後繼續</translation>
+            <source>Your Snow Shot session is no longer valid. Sign in again</source>
+            <translation>Snow Shot 登入已失效，請重新登入</translation>
+        </message>
+        <message>
+            <source>Your available credits cannot cover this request. Purchase credits in Account</source>
+            <translation>可用餘額不足以支付本次請求，請前往「帳號」儲值</translation>
         </message>
         <message>
             <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</source>
@@ -862,6 +878,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
         <message>
             <source>Your credits cannot cover this Expert Model request. Purchase credits from Account to continue</source>
             <translation>點數不足，無法使用專家模型完成此請求。請前往帳號頁面購買點數後繼續</translation>
+        </message>
+        <message>
+            <source>Your daily free allowance is exhausted. Try again after it resets</source>
+            <translation>今日免費額度已用盡，請在額度重設後重試</translation>
         </message>
     </context>
     <context>

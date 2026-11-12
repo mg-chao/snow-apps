@@ -91,6 +91,7 @@ namespace snow_shot::presentation {
 [[nodiscard]] ScreenshotExportImageResult renderScreenshotPinnedImageRecord(
     storage::PinnedWindowRecord record, const ScreenshotPinnedRenderPreparation& preparation,
     ScreenshotClipboardContentReader::CancellationCheck cancelled = {},
-    ScreenshotClipboardContentReader::AllocationCheck allocate = {});
+    ScreenshotClipboardContentReader::AllocationCheck allocate = {},
+    ScreenshotPinnedRenderMode mode = ScreenshotPinnedRenderMode::WindowAppearance);
 
 } // namespace snow_shot::presentation

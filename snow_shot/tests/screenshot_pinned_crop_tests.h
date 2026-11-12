@@ -355,12 +355,18 @@ void staticWindow() {
             "Apply Crop follows Process image");
     const auto saved = exportImage(window, Access::cropSave(window));
     require(saved.size() == QSize(60, 40), "saving uses the cropped image at the chosen zoom");
-    for (const auto& snapshot : {window.splittingSnapshot(), window.stitchingSnapshot()}) {
-        const auto output =
-            exportImage(window, std::make_shared<ScreenshotExportArtifact>(snapshot.source));
-        require(snapshot.outputSize == QSize(60, 40) && output == saved,
-                "splitting and stitching use the same visible source region");
-    }
+    const auto stitch = window.stitchingSnapshot();
+    require(stitch.outputSize == QSize(60, 40) &&
+                exportImage(window, std::make_shared<ScreenshotExportArtifact>(stitch.source)) ==
+                    saved,
+            "stitching uses the cropped image at the chosen zoom");
+    const auto split = window.splittingSnapshot();
+    const auto splitPixels =
+        exportImage(window, std::make_shared<ScreenshotExportArtifact>(split.source));
+    require(split.outputSize == QSize(30, 20) &&
+                splitPixels == ScreenshotResultCompositor::normalizeImage(
+                                   original.copy(QRect(10, 10, 30, 20))),
+            "splitting uses the cropped image at source resolution");
     const auto viewport = exportImage(window, Access::viewportExport(window));
     require(viewport == saved, "clipboard and saving share crop pixels and zoom resolution");
     QImage filter;
@@ -381,7 +387,7 @@ void staticWindow() {
                 qAbs(actual.green() - expected.green()) <= 2,
             "color sampler maps screen coordinates through the cropped camera");
     const auto editor = pinnedRenderedEditingSource(window);
-    require(editor.image == saved && editor.canvasRect == QRectF(0, 0, 60, 40) &&
+    require(editor.image == splitPixels && editor.canvasRect == QRectF(0, 0, 30, 20) &&
                 editor.canvasSession.isEmpty(),
             "editor receives the shared rendered crop as a fresh zero-origin raster");
     LiveAccess::scale(window, 10);
@@ -548,8 +554,12 @@ void inlineAnnotations() {
     require(Access::drawingHistory(window) == history,
             "applying crop preserves editable annotation history");
     const auto editor = pinnedRenderedEditingSource(window);
+    const auto split = window.splittingSnapshot();
     require(!canvas->hasActiveTextEditing() && editor.canvasSession.isEmpty() &&
-                editor.image == exportImage(window, Access::cropSave(window)),
+                Access::drawingRuntime(window).hasDocumentContent() &&
+                editor.image.size() == Access::originalImage(window).size() &&
+                editor.image ==
+                    exportImage(window, std::make_shared<ScreenshotExportArtifact>(split.source)),
             "shared snapshot commits pending inline text and bakes it into the rendered image");
     window.hide();
 }
