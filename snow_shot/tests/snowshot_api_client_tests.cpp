@@ -213,6 +213,73 @@ void jsonResponsesAreBoundedDuringTransfer() {
     }
 }
 
+void officialHttpErrorsDescribeTheFailure() {
+    enum class Kind { Table, Latex, Translation };
+    const struct {
+        Kind kind;
+        int status;
+        QByteArray body;
+        QString code;
+        QString expected;
+    } cases[]{
+        {Kind::Table, 401, R"({"code":"account_required","detail":"Unauthorized"})",
+         QStringLiteral("account_required"), QStringLiteral("Sign in to your Snow Shot account")},
+        {Kind::Latex, 401, R"({"code":"invalid_session"})", QStringLiteral("invalid_session"),
+         QStringLiteral("session is no longer valid")},
+        {Kind::Translation, 402, R"({"error":{"code":"insufficient_credits"}})",
+         QStringLiteral("insufficient_credits"), QStringLiteral("Purchase credits in Account")},
+        {Kind::Latex, 402, R"({"code":"outstanding_balance"})",
+         QStringLiteral("outstanding_balance"), QStringLiteral("outstanding balance")},
+        {Kind::Table, 429, R"({"code":"funds_temporarily_reserved"})",
+         QStringLiteral("funds_temporarily_reserved"), QStringLiteral("reserved by other calls")},
+        {Kind::Translation, 429, R"({"code":"allowance_exhausted"})",
+         QStringLiteral("allowance_exhausted"),
+         QStringLiteral("daily free allowance is exhausted")},
+        {Kind::Translation, 503, R"({"code":"operator_budget_exhausted"})",
+         QStringLiteral("operator_budget_exhausted"),
+         QStringLiteral("service has reached its usage limit")},
+        {Kind::Translation, 401, {}, {}, QStringLiteral("Sign in to your Snow Shot account")},
+        {Kind::Latex, 402, {}, {}, QStringLiteral("This request requires payment")},
+        {Kind::Table, 422, R"({"code":"future_error","title":"Image cannot be processed"})",
+         QStringLiteral("future_error"), QStringLiteral("Image cannot be processed")},
+    };
+    for (const auto& scenario : cases) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "problem response fixture listens");
+        SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        QImage source(8, 8, QImage::Format_RGBA8888);
+        source.fill(Qt::white);
+        bool finished = false;
+        const auto completion = [&](auto result) {
+            require(!result.succeeded() && result.httpStatus == scenario.status &&
+                        result.code == scenario.code && result.error.contains(scenario.expected),
+                    "HTTP error preserves its code and provides the correct user-facing cause");
+            finished = true;
+        };
+        SnowShotApiClient::RequestToken token = 0;
+        switch (scenario.kind) {
+        case Kind::Table:
+            token = client.extractTable(source, &client, completion);
+            break;
+        case Kind::Latex:
+            token = client.extractLatex(source, &client, completion);
+            break;
+        case Kind::Translation:
+            token = client.streamTranslation(
+                {QStringLiteral("ai-model"), {}, {}, QStringLiteral("hello")}, &client,
+                [](const QString&) {}, completion);
+            break;
+        }
+        require(token != 0, "start request for HTTP problem fixture");
+        waitForHttpRequest(server, "HTTP/1.1 " + QByteArray::number(scenario.status) +
+                                       " Error\r\nContent-Type: application/problem+json\r\n"
+                                       "Content-Length: " +
+                                       QByteArray::number(scenario.body.size()) +
+                                       "\r\nConnection: close\r\n\r\n" + scenario.body);
+        translation_tests::waitUntil([&] { return finished; }, "HTTP error reaches the consumer");
+    }
+}
+
 void boundedResponsesMeasureDecodedBodiesAndFollowRedirects() {
     for (const bool oversized : {false, true}) {
         QTcpServer server;
@@ -3198,6 +3265,7 @@ int main(int argc, char** argv) {
             "transport failures without a code should remain concise");
     customServerDefaultsAndValidation();
     jsonResponsesAreBoundedDuringTransfer();
+    officialHttpErrorsDescribeTheFailure();
     boundedResponsesMeasureDecodedBodiesAndFollowRedirects();
     requestsKeepTheirOriginalServer();
     oldCatalogCannotReplaceNewServerModels();

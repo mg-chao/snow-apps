@@ -389,15 +389,43 @@ QString normalizedBaseUrl(QString value) {
     return value;
 }
 
-QString problemDetail(const QJsonObject& object) {
-    if (object.value(QStringLiteral("error")).isObject()) {
-        return problemDetail(object.value(QStringLiteral("error")).toObject());
+QJsonObject problemPayload(const QJsonObject& object) {
+    const auto error = object.value(QStringLiteral("error"));
+    return error.isObject() ? error.toObject() : object;
+}
+
+QString problemDetail(const QJsonObject& problem) {
+    for (const auto key :
+         {QLatin1StringView("detail"), QLatin1StringView("message"), QLatin1StringView("title")}) {
+        const auto detail = problem.value(key).toString().trimmed();
+        if (!detail.isEmpty())
+            return detail;
     }
-    const QString detail = object.value(QStringLiteral("detail")).toString().trimmed();
-    if (!detail.isEmpty()) {
-        return detail;
+    return {};
+}
+
+QString formatRequestFailure(int httpStatus, const QString& failureCode,
+                             const QString& description) {
+    const QString conciseDescription = description.simplified();
+    const QString code =
+        httpStatus > 0 && httpStatus != 200 ? QString::number(httpStatus) : failureCode.trimmed();
+    if (code.isEmpty())
+        return conciseDescription;
+    if (conciseDescription.isEmpty())
+        return code;
+    return QStringLiteral("%1: %2").arg(code, conciseDescription);
+}
+
+QString httpFailureMessage(const QNetworkReply& reply, int status, const QString& code,
+                           const QJsonObject& problem, bool snowShot = true) {
+    QString detail = problemDetail(problem);
+    if (detail.isEmpty() && !(snowShot && code.isEmpty() && (status == 401 || status == 402))) {
+        detail = status >= 400
+                     ? reply.attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString()
+                     : reply.errorString();
     }
-    return object.value(QStringLiteral("message")).toString().trimmed();
+    return snowShot ? SnowShotApiClient::formatFailure(status, code, detail)
+                    : formatRequestFailure(status, code, detail);
 }
 
 QString translationSystemPrompt(const SnowShotTranslationRequest& request) {
@@ -693,25 +721,26 @@ QByteArray SnowShotApiClient::encodeWebp(const QImage& image) {
 
 QString SnowShotApiClient::formatFailure(int httpStatus, const QString& failureCode,
                                          const QString& description) {
+    if (failureCode == u"account_required" ||
+        (httpStatus == 401 && description.isEmpty() && failureCode.isEmpty()))
+        return tr("Sign in to your Snow Shot account to use this service");
+    if (failureCode == u"invalid_session")
+        return tr("Your Snow Shot session is no longer valid. Sign in again");
     if (failureCode == u"insufficient_credits")
-        return tr("Your available free allowance and credits cannot cover this request. "
-                  "Purchase credits from Account to continue");
+        return tr("Your available credits cannot cover this request. Purchase credits in Account");
+    if (httpStatus == 402 && description.isEmpty() && failureCode.isEmpty())
+        return tr("This request requires payment. Check your balance in Account");
     if (failureCode == u"outstanding_balance")
         return tr("Paid calls are paused because your account has an outstanding balance. "
-                  "Your free allowance remains available");
+                  "Settle the balance in Account to continue");
     if (failureCode == u"funds_temporarily_reserved")
         return tr("Your credits are reserved by other calls that are still running. "
                   "Wait for them to finish and try again");
-    const QString conciseDescription = description.simplified();
-    const QString code =
-        httpStatus > 0 && httpStatus != 200 ? QString::number(httpStatus) : failureCode.trimmed();
-    if (code.isEmpty()) {
-        return conciseDescription;
-    }
-    if (conciseDescription.isEmpty()) {
-        return code;
-    }
-    return QStringLiteral("%1: %2").arg(code, conciseDescription);
+    if (failureCode == u"allowance_exhausted")
+        return tr("Your daily free allowance is exhausted. Try again after it resets");
+    if (failureCode == u"operator_budget_exhausted")
+        return tr("The service has reached its usage limit. Try again later");
+    return formatRequestFailure(httpStatus, failureCode, description);
 }
 
 struct SnowShotApiClient::ImageExtractionResult {
@@ -863,19 +892,15 @@ void SnowShotApiClient::startImageUpload(RequestToken token, const QByteArray& w
             QJsonParseError parseError{};
             const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
             const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
-            result.code = root.value(QStringLiteral("code")).toVariant().toString();
-            if (reply->error() != QNetworkReply::NoError) {
+            const QJsonObject problem = problemPayload(root);
+            result.code = problem.value(QStringLiteral("code")).toVariant().toString();
+            if (reply->error() != QNetworkReply::NoError || result.httpStatus >= 400) {
                 if (reply->error() == QNetworkReply::OperationCanceledError) {
                     result.error = latex ? tr("LaTeX recognition request timed out")
                                          : tr("Table recognition request timed out");
                 } else {
-                    QString description = problemDetail(root);
-                    if (description.isEmpty() && result.httpStatus > 0)
-                        description =
-                            reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
-                    if (description.isEmpty())
-                        description = reply->errorString();
-                    result.error = formatFailure(result.httpStatus, result.code, description);
+                    result.error =
+                        httpFailureMessage(*reply, result.httpStatus, result.code, problem);
                 }
             } else if (!document.isObject()) {
                 result.error = latex ? tr("Invalid LaTeX recognition response")
@@ -888,7 +913,7 @@ void SnowShotApiClient::startImageUpload(RequestToken token, const QByteArray& w
                     result.error = latex ? tr("LaTeX recognition returned no formula")
                                          : tr("Table recognition returned no table");
             } else {
-                result.error = problemDetail(root);
+                result.error = problemDetail(problem);
                 if (result.error.isEmpty())
                     result.error =
                         latex ? tr("LaTeX recognition failed") : tr("Table recognition failed");
@@ -1175,13 +1200,12 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
             const QJsonDocument document =
                 response->tooLarge() ? QJsonDocument{} : QJsonDocument::fromJson(body, &parseError);
             const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
-            result.code = root.value(QStringLiteral("code")).toVariant().toString();
+            const QJsonObject problem = problemPayload(root);
+            result.code = problem.value(QStringLiteral("code")).toVariant().toString();
             if (response->tooLarge()) {
                 result.error = tr("Translation service response is too large");
-            } else if (reply->error() != QNetworkReply::NoError) {
-                result.error = formatFailure(result.httpStatus, result.code,
-                                             problemDetail(root).isEmpty() ? reply->errorString()
-                                                                           : problemDetail(root));
+            } else if (reply->error() != QNetworkReply::NoError || result.httpStatus >= 400) {
+                result.error = httpFailureMessage(*reply, result.httpStatus, result.code, problem);
             } else if (!document.isObject() || !root.value(QStringLiteral("data")).isArray()) {
                 result.error = tr("Invalid translation service response");
             } else {
@@ -1835,14 +1859,18 @@ void SnowShotApiClient::drainChatStream(RequestToken token) {
              !object.value(QStringLiteral("error")).isNull())) {
             current->streamFailed = true;
             SnowShotTranslationResult result;
-            result.error = problemDetail(object);
+            const auto problem = problemPayload(object);
+            result.code = problem.value(QStringLiteral("code")).toVariant().toString();
+            result.httpStatus = problem.value(QStringLiteral("status"))
+                                    .toInt(object.value(QStringLiteral("status")).toInt());
+            result.error = problemDetail(problem);
+            if (!current->custom && !current->freeTranslation)
+                result.error = formatFailure(result.httpStatus, result.code, result.error);
             if (result.error.isEmpty()) {
                 result.error = current->absoluteDeadline ? tr("Image recognition failed")
                                : current->imageResponse  ? tr("Image conversion failed")
                                                          : tr("Translation failed");
             }
-            result.code = object.value(QStringLiteral("code")).toVariant().toString();
-            result.httpStatus = object.value(QStringLiteral("status")).toInt();
             finishTranslation(token, std::move(result));
             return;
         }
@@ -1939,16 +1967,14 @@ void SnowShotApiClient::completeChatStream(RequestToken token) {
     auto* reply = current->reply.data();
     SnowShotTranslationResult result;
     result.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    if (reply->error() != QNetworkReply::NoError) {
-        QJsonObject problem = QJsonDocument::fromJson(current->streamBuffer).object();
-        if (problem.value(QStringLiteral("error")).isObject())
-            problem = problem.value(QStringLiteral("error")).toObject();
+    if (reply->error() != QNetworkReply::NoError || result.httpStatus >= 400) {
+        const auto problem =
+            problemPayload(QJsonDocument::fromJson(current->streamBuffer).object());
         result.code = problem.value(QStringLiteral("code")).toVariant().toString();
         if (retryBuiltInTranslation(token, problem))
             return;
-        result.error = formatFailure(result.httpStatus, result.code,
-                                     problemDetail(problem).isEmpty() ? reply->errorString()
-                                                                      : problemDetail(problem));
+        result.error = httpFailureMessage(*reply, result.httpStatus, result.code, problem,
+                                          !current->custom && !current->freeTranslation);
     } else if (current->streamFailed) {
         result.error = tr("Invalid translation stream response");
     } else if (!current->streamDone) {
