@@ -417,14 +417,15 @@ QString formatRequestFailure(int httpStatus, const QString& failureCode,
 }
 
 QString httpFailureMessage(const QNetworkReply& reply, int status, const QString& code,
-                           const QJsonObject& problem, bool snowShot = true) {
+                           const QJsonObject& problem, bool snowShot = true,
+                           QStringView model = {}) {
     QString detail = problemDetail(problem);
     if (detail.isEmpty() && !(snowShot && code.isEmpty() && (status == 401 || status == 402))) {
         detail = status >= 400
                      ? reply.attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString()
                      : reply.errorString();
     }
-    return snowShot ? SnowShotApiClient::formatFailure(status, code, detail)
+    return snowShot ? SnowShotApiClient::formatFailure(status, code, detail, model)
                     : formatRequestFailure(status, code, detail);
 }
 
@@ -720,7 +721,14 @@ QByteArray SnowShotApiClient::encodeWebp(const QImage& image) {
 }
 
 QString SnowShotApiClient::formatFailure(int httpStatus, const QString& failureCode,
-                                         const QString& description) {
+                                         const QString& description, QStringView model) {
+    if (snowShotExpertModelId(model)) {
+        if (failureCode == u"account_required")
+            return tr("Sign in to your Snow Shot account to use Expert Model");
+        if (failureCode == u"insufficient_credits")
+            return tr("Your credits cannot cover this Expert Model request. "
+                      "Purchase credits from Account to continue");
+    }
     if (failureCode == u"account_required" ||
         (httpStatus == 401 && description.isEmpty() && failureCode.isEmpty()))
         return tr("Sign in to your Snow Shot account to use this service");
@@ -1007,7 +1015,9 @@ void SnowShotApiClient::appendLocalModels(QVector<SnowShotChatModel>& models) co
 }
 
 QString SnowShotApiClient::fallbackModel(bool vision) const {
-    const auto eligible = [vision](const auto& model) { return !vision || model.supportsVision; };
+    const auto eligible = [vision](const auto& model) {
+        return !snowShotExpertModelId(model.id) && (!vision || model.supportsVision);
+    };
     for (const auto& model : m_cachedChatModels) {
         if (eligible(model) && model.translationMode == QStringLiteral("default")) {
             return model.id;
@@ -1023,7 +1033,7 @@ QString SnowShotApiClient::fallbackModel(bool vision) const {
 
 QString SnowShotApiClient::builtInVisionModel() const {
     for (const auto& model : m_cachedChatModels)
-        if (model.supportsVision)
+        if (model.supportsVision && !snowShotExpertModelId(model.id))
             return model.id;
     return {};
 }
@@ -1865,7 +1875,8 @@ void SnowShotApiClient::drainChatStream(RequestToken token) {
                                     .toInt(object.value(QStringLiteral("status")).toInt());
             result.error = problemDetail(problem);
             if (!current->custom && !current->freeTranslation)
-                result.error = formatFailure(result.httpStatus, result.code, result.error);
+                result.error =
+                    formatFailure(result.httpStatus, result.code, result.error, current->model);
             if (result.error.isEmpty()) {
                 result.error = current->absoluteDeadline ? tr("Image recognition failed")
                                : current->imageResponse  ? tr("Image conversion failed")
@@ -1973,8 +1984,9 @@ void SnowShotApiClient::completeChatStream(RequestToken token) {
         result.code = problem.value(QStringLiteral("code")).toVariant().toString();
         if (retryBuiltInTranslation(token, problem))
             return;
-        result.error = httpFailureMessage(*reply, result.httpStatus, result.code, problem,
-                                          !current->custom && !current->freeTranslation);
+        result.error =
+            httpFailureMessage(*reply, result.httpStatus, result.code, problem,
+                               !current->custom && !current->freeTranslation, current->model);
     } else if (current->streamFailed) {
         result.error = tr("Invalid translation stream response");
     } else if (!current->streamDone) {

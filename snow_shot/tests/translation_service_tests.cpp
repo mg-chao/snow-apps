@@ -296,17 +296,36 @@ void builtInConcurrencyUsesEightRequests(const QString& directory) {
 }
 
 void accountRejectionStopsTheBatchAndKeepsItsError(const QString& directory) {
-    for (const bool billing : {false, true}) {
+    struct Scenario {
+        bool billing;
+        bool expert;
+        QStringView message;
+    };
+    const Scenario scenarios[] = {
+        {false, false, u"Sign in to your Snow Shot account to use this service"},
+        {true, false,
+         u"Your available credits cannot cover this request. Purchase credits in Account"},
+        {true, true,
+         u"Your credits cannot cover this Expert Model request. "
+         u"Purchase credits from Account to continue"},
+    };
+    for (const auto& [billing, expert, message] : scenarios) {
         Server server;
+        const auto model = expert ? QStringLiteral("expert-model") : QStringLiteral("general");
+        if (expert)
+            server.models.append(
+                QJsonObject{{QStringLiteral("model"), model},
+                            {QStringLiteral("name"), QStringLiteral("Expert Model")}});
+        const QByteArray code = billing ? "insufficient_credits" : "account_required";
         SnowShotApiClient client(server.url());
-        ConfigurationStore settings(directory + (billing ? QStringLiteral("/credits-error.json")
-                                                         : QStringLiteral("/login-error.json")),
-                                    true, true, 60000);
+        ConfigurationStore settings(
+            directory + QStringLiteral("/%1-%2.json").arg(model, QString::fromLatin1(code)), true,
+            true, 60000);
         auto& service = TranslationService::forClient(client, settings, QLocale::English);
         service.refreshModels();
         waitUntil([&] { return !service.loadingModels(); }, "load built-in models");
         auto preferences = service.preferences();
-        preferences.modelId = QStringLiteral("general");
+        preferences.modelId = model;
         preferences.sourceLanguage = QStringLiteral("en");
         preferences.targetLanguage = QStringLiteral("zh-Hans");
         QStringList texts;
@@ -316,7 +335,8 @@ void accountRejectionStopsTheBatchAndKeepsItsError(const QString& directory) {
         auto* job = service.createJob(texts, preferences, &owner);
         job->start();
         waitUntil([&] { return server.streams.size() >= 2; }, "start the first translation units");
-        const QByteArray code = billing ? "insufficient_credits" : "account_required";
+        require(server.streams.first().body.value(QStringLiteral("model")) == model,
+                "account rejection fixture uses the selected model");
         server.send(0,
                     "event: error\ndata: {\"status\":" + QByteArray::number(billing ? 402 : 401) +
                         ",\"error\":{\"code\":\"" + code + "\"}}\n\n");
@@ -332,9 +352,7 @@ void accountRejectionStopsTheBatchAndKeepsItsError(const QString& directory) {
                     job->result().code == QString::fromLatin1(code) &&
                     job->result().httpStatus == (billing ? 402 : 401) &&
                     job->units().at(1).text == QStringLiteral("partial output") &&
-                    job->errorText().contains(
-                        billing ? QStringLiteral("Purchase credits in Account")
-                                : QStringLiteral("Sign in to your Snow Shot account")),
+                    job->errorText().contains(message),
                 "account rejection stops unsent units and remains visible after later failures");
     }
 }
@@ -374,11 +392,14 @@ void aiModelSelectionMigratesOnlyAfterDiscovery(const QString& directory) {
         server.rejectModels = false;
         server.models[0] =
             QJsonObject{{QStringLiteral("model"), QStringLiteral("ai-model")},
-                        {QStringLiteral("name"), QStringLiteral("AI Model")},
+                        {QStringLiteral("name"), QStringLiteral("Fast Model")},
                         {QStringLiteral("translation_mode"), QStringLiteral("default")},
                         {QStringLiteral("supports_vision"), true}};
+        server.models.append(QJsonObject{{QStringLiteral("model"), QStringLiteral("expert-model")},
+                                         {QStringLiteral("name"), QStringLiteral("Expert Model")},
+                                         {QStringLiteral("supports_vision"), true}});
         service.refreshModels(true);
-        waitUntil([&] { return !service.loadingModels(); }, "discover AI Model");
+        waitUntil([&] { return !service.loadingModels(); }, "discover Fast and Expert Models");
         require(service.preferences().modelId == QStringLiteral("ai-model") &&
                     translationModelIndex(service.models(), legacy) == 0 &&
                     service.models().first().supportsVision,
@@ -397,12 +418,80 @@ void aiModelSelectionMigratesOnlyAfterDiscovery(const QString& directory) {
                         .toObject()
                         .value(QStringLiteral("content"))
                         .isString(),
-                "restored legacy preferences use ordinary text messages through AI Model");
+                "restored legacy preferences use ordinary text messages through Fast Model");
         job->cancel();
         require(snowShotResolvedBuiltInModelId(service.models(),
                                                QStringLiteral("custom:qwen-mt-flash")) ==
                     QStringLiteral("custom:qwen-mt-flash"),
                 "custom identities are never migrated");
+    }
+}
+
+void expertSelectionPersistsAndReportsWalletErrors(const QString& directory) {
+    Server server;
+    const auto fast = QStringLiteral("ai-model");
+    const auto expert = QStringLiteral("expert-model");
+    server.models = QJsonArray{QJsonObject{{QStringLiteral("model"), expert},
+                                           {QStringLiteral("name"), QStringLiteral("Expert Model")},
+                                           {QStringLiteral("supports_vision"), true}},
+                               QJsonObject{{QStringLiteral("model"), fast},
+                                           {QStringLiteral("name"), QStringLiteral("Fast Model")},
+                                           {QStringLiteral("supports_vision"), true}}};
+    server.streamRejection = [](int index) {
+        const QByteArray status = index == 0 ? "401 Unauthorized" : "402 Payment Required";
+        const QByteArray code = index == 0 ? "account_required" : "insufficient_credits";
+        const QByteArray body = "{\"error\":{\"code\":\"" + code + "\"}}";
+        return "HTTP/1.1 " + status +
+               "\r\nContent-Type: application/problem+json\r\nContent-Length: " +
+               QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+    };
+    SnowShotApiClient client(server.url());
+    ConfigurationStore settings(directory + QStringLiteral("/expert-model.json"), true, true,
+                                60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"), fast),
+            "store the existing Fast selection");
+    auto& service = TranslationService::forClient(client, settings, QLocale::English);
+    service.refreshModels();
+    waitUntil([&] { return !service.loadingModels(); }, "load the Fast and Expert catalog");
+    const int expertIndex = translationModelIndex(service.models(), expert);
+    require(service.preferences().modelId == fast && client.builtInVisionModel() == fast &&
+                client.fallbackModel(true) == fast && expertIndex >= 0 &&
+                service.models().at(expertIndex).name == QStringLiteral("Expert Model"),
+            "Fast stays selected and Expert keeps its catalog name");
+    auto preferences = service.preferences();
+    preferences.modelId = expert;
+    require(service.savePreferences(preferences), "save the opt-in Expert selection");
+    service.refreshModels(true);
+    waitUntil([&] { return !service.loadingModels(); }, "refresh the Expert selection");
+    require(service.preferences().modelId == expert &&
+                settings.value(QStringLiteral("screenshot_translation/model")) == expert,
+            "explicit Expert selection survives catalog refresh");
+
+    QObject receiver;
+    for (int index = 0; index < 2; ++index) {
+        if (index == 1)
+            client.setAccountAccessToken("account-session");
+        std::optional<SnowShotTranslationResult> result;
+        require(client.streamTranslation(
+                    {service.preferences().modelId, QStringLiteral("en"), QStringLiteral("zh-Hans"),
+                     QStringLiteral("hello")},
+                    &receiver, [](const QString&) {},
+                    [&](auto value) { result = std::move(value); }) != 0,
+                "dispatch an Expert translation");
+        waitUntil([&] { return result.has_value(); }, "receive the Expert account error");
+        require(server.streams.at(index).body.value(QStringLiteral("model")) == expert &&
+                    server.streams.at(index).headers.contains(
+                        "Authorization: Bearer account-session") == (index == 1),
+                "Expert uses the selected model and current account authorization");
+        if (index == 0)
+            require(result->httpStatus == 401 && result->code == u"account_required" &&
+                        result->error == u"Sign in to your Snow Shot account to use Expert Model",
+                    "Expert requests show a sign-in message");
+        else
+            require(result->httpStatus == 402 && result->code == u"insufficient_credits" &&
+                        result->error == u"Your credits cannot cover this Expert Model request. "
+                                         u"Purchase credits from Account to continue",
+                    "Expert requests show a wallet-only balance message");
     }
 }
 
@@ -1588,6 +1677,7 @@ int main(int argc, char** argv) {
     retryHintsRespectDatesBodyMetadataAndTheDeadline();
     partialTranslationsDoNotReplayAndRetainTheFailureReason();
     aiModelSelectionMigratesOnlyAfterDiscovery(directory.path());
+    expertSelectionPersistsAndReportsWalletErrors(directory.path());
     discoverySharesRequestsAndCancellation(directory.path());
     additionalLanguagesPersistAndTranslate(directory.path());
     secondaryTargetsPersistAndReachEveryUnit(directory.path());

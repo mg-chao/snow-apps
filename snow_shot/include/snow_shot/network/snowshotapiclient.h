@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QStringView>
 #include <QVector>
 
 #include <functional>
@@ -47,6 +48,10 @@ struct SnowShotLatexResult {
         return !latex.trimmed().isEmpty() && error.isEmpty();
     }
 };
+
+[[nodiscard]] inline bool snowShotExpertModelId(QStringView id) {
+    return id == QStringLiteral("expert-model");
+}
 
 struct SnowShotChatModel {
     QString id;
@@ -219,7 +224,7 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] static QImage prepareImage(const QImage& image);
     [[nodiscard]] static QByteArray encodeWebp(const QImage& image);
     [[nodiscard]] static QString formatFailure(int httpStatus, const QString& failureCode,
-                                               const QString& description);
+                                               const QString& description, QStringView model = {});
 
   private:
     friend class SnowShotApiClientTestAccess;
