@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 #include <QStringView>
 #include <QVector>
 
@@ -24,6 +25,7 @@
 
 class QNetworkAccessManager;
 class QJsonObject;
+class QJsonValue;
 class QTimer;
 class SnowShotApiClient;
 
@@ -148,6 +150,7 @@ class SnowShotApiClient final : public QObject {
     using ChatModelsCompletion = std::function<void(SnowShotChatModelsResult)>;
     using TranslationDelta = std::function<void(const QString&)>;
     using TranslationCompletion = std::function<void(SnowShotTranslationResult)>;
+    using BatchTranslationCompletion = std::function<void(SnowShotTranslationResult, QStringList)>;
 
     enum class ChatModelsCachePolicy { UseCached, Refresh };
 
@@ -195,6 +198,12 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] RequestToken
     ensureChatModels(const QString& locale, QObject* receiver, ChatModelsCompletion completion,
                      ChatModelsCachePolicy cachePolicy = ChatModelsCachePolicy::UseCached);
+    [[nodiscard]] RequestToken
+    fetchFastTranslationAvailability(QObject* receiver,
+                                     std::function<void(std::optional<bool>)> completion);
+    [[nodiscard]] RequestToken translateFastBatch(const QStringList& texts, const QString& source,
+                                                  const QString& target, QObject* receiver,
+                                                  BatchTranslationCompletion completion);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,
                                                  QObject* receiver, TranslationDelta delta,
                                                  TranslationCompletion completion);
@@ -219,6 +228,7 @@ class SnowShotApiClient final : public QObject {
     void baseUrlChanged();
     void chatModelsChanged();
     void officialCallSettled();
+    void accountIdentityChanged();
     void customModelInvalidated(const QString& id, bool translation, bool vision);
 
   public:
@@ -246,6 +256,10 @@ class SnowShotApiClient final : public QObject {
     void finish(RequestToken token, SnowShotTableResult result);
     void finishChatModels(RequestToken token, SnowShotChatModelsResult result);
     void finishTranslation(RequestToken token, SnowShotTranslationResult result);
+    RequestToken requestTranslationJson(const QString& path, const QByteArray& body,
+                                        QObject* receiver,
+                                        std::function<bool(const QJsonValue&)> decode,
+                                        TranslationCompletion completion);
     bool finishExpiredImageRequest(RequestToken token);
     void submitChatStream(RequestToken token, QByteArray body);
     void pumpCustomChatStreams();

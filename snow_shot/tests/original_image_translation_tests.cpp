@@ -232,13 +232,17 @@ class TranslationServer final : public QObject {
             return;
         }
         socket->setProperty("handled", true);
-        if (input.startsWith("GET ")) {
-            ++modelRequests;
-            if (holdModels) {
-                return;
+        const bool typesRequest = input.startsWith("GET /api/v2/translation/types ");
+        if (typesRequest || input.startsWith("GET /api/v2/chat/models ")) {
+            if (!typesRequest) {
+                ++modelRequests;
+                if (holdModels)
+                    return;
             }
+            const bool rejected = !typesRequest && rejectModels;
             const QByteArray body =
-                rejectModels
+                typesRequest ? QByteArrayLiteral("{\"code\":0,\"data\":[{\"type\":0}]}")
+                : rejected
                     ? QByteArrayLiteral("{\"detail\":\"unavailable\"}")
                     : QByteArrayLiteral(
                           "{\"code\":0,\"data\":[{\"model\":\"model-a\",\"name\":\"Model A\","
@@ -246,7 +250,7 @@ class TranslationServer final : public QObject {
                           "{\"model\":\"qwen\",\"name\":\"Qwen\",\"supports_vision\":false,"
                           "\"translation_mode\":\"qwen-mt\"}]}");
             const QByteArray status =
-                rejectModels ? QByteArrayLiteral("503 Unavailable") : QByteArrayLiteral("200 OK");
+                rejected ? QByteArrayLiteral("503 Unavailable") : QByteArrayLiteral("200 OK");
             socket->write(
                 QByteArrayLiteral("HTTP/1.1 ") + status +
                 QByteArrayLiteral("\r\nContent-Type: application/json\r\nContent-Length: ") +

@@ -19,6 +19,7 @@
 #include <QEvent>
 #include <QScopedValueRollback>
 #include <memory>
+#include <optional>
 #include <QVBoxLayout>
 
 namespace snow_shot::presentation {
@@ -41,7 +42,7 @@ struct TranslationSettingsDraft {
     bool targetEdited = false;
     bool secondaryTargetEdited = false;
     bool confidenceThresholdEdited = false;
-    bool modelEdited = false;
+    std::optional<QString> model;
 };
 QString text(const char* source) {
     return QCoreApplication::translate("ScreenshotTranslationSettingsDialog", source);
@@ -196,10 +197,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     const auto sync = [=, &service] {
         const QScopedValueRollback guard(draft->applying, true);
         const auto options = translationServiceOptions(service.models());
-        QString selected =
-            draft->modelEdited ? models->currentValue().toString() : service.preferences().modelId;
-        if (selected.isEmpty())
-            selected = service.preferences().modelId;
+        const QString selected = draft->model.value_or(service.preferences().modelId);
         const int index = translation::translationModelIndex(service.models(), selected);
         modelsField.field->synchronize([&] {
             models->setOptions(options);
@@ -246,9 +244,9 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         if (!draft->applying)
             draft->confidenceThresholdEdited = true;
     });
-    QObject::connect(models, &AdSelect::currentValueChanged, modal, [draft] {
+    QObject::connect(models, &AdSelect::currentValueChanged, modal, [draft](const QVariant& value) {
         if (!draft->applying)
-            draft->modelEdited = true;
+            draft->model = value.toString();
     });
     body->retranslate = [retranslate, sync] {
         retranslate();
@@ -277,10 +275,13 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         }
         if (!models->isEnabled())
             return;
-        if (!liveService->savePreferences(
-                {source->currentValue().toString(), target->currentValue().toString(),
-                 models->currentValue().toString(), secondaryTarget->currentValue().toString(),
-                 static_cast<int>(confidenceThreshold->value())}))
+        QString modelId = models->currentValue().toString();
+        if (modelId.isEmpty())
+            modelId = draft->model.value_or(liveService->preferences().modelId);
+        if (!liveService->savePreferences({source->currentValue().toString(),
+                                           target->currentValue().toString(), modelId,
+                                           secondaryTarget->currentValue().toString(),
+                                           static_cast<int>(confidenceThreshold->value())}))
             return;
         const storage::ScreenshotTranslationSettings settings;
         const bool changed = settings.originalImageTranslationEnabled() != image->isChecked();

@@ -104,6 +104,42 @@ class Server final : public QObject {
         send(index, QByteArrayLiteral("event: error\ndata: {\"message\":\"test failure\"}\n\n"));
     }
 
+    void finishFast(int index, const QStringList& translations) {
+        QJsonArray results;
+        for (const auto& translation : translations)
+            results.append(QJsonObject{{QStringLiteral("content"), translation}});
+        const auto& call = fastRequests.at(index);
+        const QJsonObject data{{QStringLiteral("results"), results},
+                               {QStringLiteral("from"), call.body.value(QStringLiteral("from"))},
+                               {QStringLiteral("to"), call.body.value(QStringLiteral("to"))}};
+        respondJson(call.socket, "200 OK", {{QStringLiteral("data"), data}});
+    }
+    void failFast(int index) {
+        respondJson(fastRequests.at(index).socket, "502 Bad Gateway",
+                    {{QStringLiteral("code"), QStringLiteral("provider_failure")}});
+    }
+    void respondFastCatalog() {
+        QJsonArray types{QJsonObject{{QStringLiteral("type"), 0}}};
+        if (fastAvailable)
+            types.append(QJsonObject{{QStringLiteral("type"), 1}});
+        for (const auto& socket : pendingFastCatalog) {
+            if (!socket || socket->state() != QAbstractSocket::ConnectedState)
+                continue;
+            if (rejectFastCatalog)
+                respondJson(socket, "503 Service Unavailable", {});
+            else if (fastAvailable)
+                respondJson(socket, "200 OK", {{QStringLiteral("data"), types}});
+            else
+                respondJson(socket, "404 Not Found", {});
+        }
+        pendingFastCatalog.clear();
+    }
+
+    bool fastAvailable = false;
+    bool holdFastCatalog = false;
+    bool rejectFastCatalog = false;
+    int fastCatalogRequests = 0;
+    QVector<Stream> fastRequests;
     QByteArray streamPath = QByteArrayLiteral("/api/v1/chat/completions");
     int modelRequests = 0;
     bool holdModels = false;
@@ -123,6 +159,17 @@ class Server final : public QObject {
                                   {QStringLiteral("translation_mode"), QStringLiteral("qwen-mt")}}};
 
   private:
+    QVector<QPointer<QTcpSocket>> pendingFastCatalog;
+
+    static void respondJson(QTcpSocket* socket, const QByteArray& status, const QJsonObject& json) {
+        require(socket != nullptr, "JSON request remains connected");
+        const auto body = QJsonDocument(json).toJson(QJsonDocument::Compact);
+        socket->write("HTTP/1.1 " + status +
+                      "\r\nContent-Type: application/json\r\nContent-Length: " +
+                      QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        socket->disconnectFromHost();
+    }
+
     void read(QTcpSocket* socket) {
         if (socket->property("handled").toBool()) {
             return;
@@ -149,6 +196,14 @@ class Server final : public QObject {
             if (!holdModels) {
                 respondModels();
             }
+        } else if (bytes.startsWith("GET /api/v2/translation/types ")) {
+            ++fastCatalogRequests;
+            pendingFastCatalog.append(socket);
+            if (!holdFastCatalog)
+                respondFastCatalog();
+        } else if (bytes.startsWith("POST /api/v2/translation/translate ")) {
+            fastRequests.append(
+                {socket, QJsonDocument::fromJson(bytes.mid(end + 4)).object(), bytes.left(end)});
         } else {
             require(
                 bytes.startsWith(QByteArrayLiteral("POST ") + streamPath + QByteArrayLiteral(" ")),

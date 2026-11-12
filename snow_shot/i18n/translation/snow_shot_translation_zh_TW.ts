@@ -260,6 +260,10 @@
     <context>
         <name>snow_shot::translation::TranslationService</name>
         <message>
+            <source>Fast Translation</source>
+            <translation>快速翻譯</translation>
+        </message>
+        <message>
             <source>Free translation</source>
             <translation>免費翻譯</translation>
         </message>
@@ -270,6 +274,10 @@
         <message>
             <source>No translation services are available</source>
             <translation>沒有可用的翻譯服務</translation>
+        </message>
+        <message>
+            <source>Translation service is unavailable</source>
+            <translation>翻譯服務無法使用</translation>
         </message>
         <message>
             <source>Unable to load translation services: %1</source>
