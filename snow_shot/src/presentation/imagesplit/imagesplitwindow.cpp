@@ -967,7 +967,8 @@ void ImageSplitWindow::loadPinnedRecord(const QString& recordId, quint64 token) 
                         "The image is too large or there is not enough memory to load it";
                 return loaded->reservation != nullptr;
             };
-            auto source = readImageImportPinnedRecord(recordId, cancelled, allocate, preparation);
+            auto source = readImageImportPinnedRecord(recordId, cancelled, allocate, preparation,
+                                                      ScreenshotPinnedRenderMode::SourceResolution);
             loaded->originalFileName = std::move(source.originalFileName);
             loaded->createdUtc = source.createdUtc;
             if (loaded->errorSource)

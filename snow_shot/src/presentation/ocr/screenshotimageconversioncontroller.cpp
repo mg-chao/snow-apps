@@ -385,8 +385,9 @@ void ScreenshotImageConversionController::startWithModels(
         return model.supportsVision && model.id == saved;
     });
     if (selected == models.cend()) {
-        selected = std::find_if(models.cbegin(), models.cend(),
-                                [](const auto& model) { return model.supportsVision; });
+        selected = std::find_if(models.cbegin(), models.cend(), [](const auto& model) {
+            return model.supportsVision && !snowShotExpertModelId(model.id);
+        });
     }
     if (selected == models.cend()) {
         fail(tr("No vision models are available"));
@@ -509,35 +510,38 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
         retry->setText(tr("Retry"));
     };
     retranslate();
-    const auto apply = [modal, select, alert](const QVector<SnowShotChatModel>& models) {
+    const auto syncAccept = [modal, select] {
+        if (auto* button = modal->acceptButton())
+            button->setEnabled(select->isEnabled() && select->currentValue().isValid());
+    };
+    connect(select, &AdSelect::currentValueChanged, modal, syncAccept);
+    const auto apply = [select, alert, syncAccept](const QVector<SnowShotChatModel>& models) {
         const QString selected =
             snowShotResolvedBuiltInModelId(models, select->currentValue().toString().isEmpty()
                                                        ? Settings().visionModel()
                                                        : select->currentValue().toString());
         QVector<AdSelect::Option> options;
+        QString fallback;
         for (const auto& model : models) {
             if (model.supportsVision) {
                 options.push_back({model.id, model.name});
+                if (fallback.isEmpty() && !snowShotExpertModelId(model.id))
+                    fallback = model.id;
             }
         }
         select->setOptions(options);
         const bool available = !options.isEmpty();
         select->setEnabled(available);
         select->setLoading(false);
-        if (available) {
-            const bool found =
-                std::any_of(options.cbegin(), options.cend(), [&selected](const auto& item) {
-                    return item.value.toString() == selected;
-                });
-            select->setCurrentValue(found ? selected : options.first().value);
-        } else {
-            select->setCurrentValue(QVariant());
-        }
+        const bool found =
+            std::any_of(options.cbegin(), options.cend(), [&selected](const auto& item) {
+                return item.value.toString() == selected;
+            });
+        const QString model = found ? selected : fallback;
+        select->setCurrentValue(model.isEmpty() ? QVariant{} : QVariant(model));
         alert->setText(tr("No vision models are available"));
         alert->setVisible(!available);
-        if (modal->acceptButton() != nullptr) {
-            modal->acceptButton()->setEnabled(available);
-        }
+        syncAccept();
     };
     const QPointer<AdModal> guard(modal);
     const auto load = [this, guard, select, alert, retry, apply](bool refreshModels) {
@@ -550,14 +554,10 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
             m_api->cancel(m_settingsToken);
         }
         m_settingsToken = 0;
-        const bool available = m_api != nullptr && !m_api->fallbackModel(true).isEmpty();
-        select->setEnabled(available);
-        select->setLoading(!available);
+        apply(m_api ? m_api->cachedChatModels() : QVector<SnowShotChatModel>{});
+        select->setLoading(!select->isEnabled());
         retry->setBusy(true);
         alert->hide();
-        if (guard->acceptButton() != nullptr) {
-            guard->acceptButton()->setEnabled(available);
-        }
         const auto failure = [select, alert, retry]() {
             select->setLoading(false);
             retry->setBusy(false);
@@ -641,10 +641,9 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
         modal->deleteLater();
     });
     // Establish the initial content before the modal measures and shows its window.
-    if (m_api != nullptr) {
+    if (m_api != nullptr && m_api->hasBuiltInModels(currentLocale())) {
         apply(m_api->cachedChatModels());
-    }
-    if (m_api == nullptr || !m_api->hasBuiltInModels(currentLocale())) {
+    } else {
         load(false);
     }
     if (!lifetime || !guard)
@@ -652,7 +651,5 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
     modal->open();
     if (!lifetime || !guard)
         return;
-    if (modal->acceptButton() != nullptr) {
-        modal->acceptButton()->setEnabled(select->isEnabled());
-    }
+    syncAccept();
 }

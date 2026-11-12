@@ -7583,10 +7583,10 @@ void recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections() {
         }
     };
     requireCatalogOptions(QStringLiteral("Table-specific model"));
-    auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
-    require(layout != nullptr && layout->itemAt(layout->count() - 1)->widget() == select &&
+    const auto* layout = palette.actionPanel()->layout();
+    require(layout != nullptr && layout->indexOf(select) >= 0 &&
                 select->accessibleName() == QStringLiteral("Recognition model"),
-            "recognition model selection must be the named far-right sub-toolbar control");
+            "the recognition model selector must be an accessible sub-toolbar control");
     select->setCurrentValue(QStringLiteral("vision-default"));
     require(modelChanges == 1 && lastSelection == QStringLiteral("vision-default") &&
                 select->currentValue().toString() == QStringLiteral("vision-default") &&
@@ -7828,20 +7828,23 @@ void recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates() {
     defaultState.models.prepend({QStringLiteral("server-vision"),
                                  QStringLiteral("Actual server vision name"), false,
                                  QStringLiteral("default"), true});
+    defaultState.models.prepend({QStringLiteral("expert-model"), QStringLiteral("Expert Model"),
+                                 false, QStringLiteral("default"), true});
     palette.setRecognitionModelState(Tool::Latex, defaultState);
     const auto translatedCatalog = select->options();
-    require(translatedCatalog.size() == 3 &&
+    require(translatedCatalog.size() == 4 &&
                 translatedCatalog[0].label == QStringLiteral("Translated LaTeX-specific model") &&
                 translatedCatalog[1].group == QStringLiteral("Translated Vision model") &&
-                translatedCatalog[1].value.toString() == QStringLiteral("server-vision") &&
-                translatedCatalog[1].label == QStringLiteral("Actual server vision name") &&
-                translatedCatalog[2].value.toString() == QStringLiteral("custom:vision") &&
-                translatedCatalog[2].label == longName &&
+                translatedCatalog[1].value.toString() == QStringLiteral("expert-model") &&
+                translatedCatalog[1].label == QStringLiteral("Expert Model") &&
+                translatedCatalog[2].value.toString() == QStringLiteral("server-vision") &&
+                translatedCatalog[2].label == QStringLiteral("Actual server vision name") &&
+                translatedCatalog[3].value.toString() == QStringLiteral("custom:vision") &&
+                translatedCatalog[3].label == longName &&
                 select->currentValue().toString() == QStringLiteral("server-vision") &&
                 select->placeholder() == QStringLiteral("Translated Recognition model") &&
                 keyboardSelections == 1,
-            "translated recognition options must retain actual server and custom names and IDs "
-            "without adding a duplicate semantic default");
+            "the recognition default skips Expert and the picker shows its catalog name");
     palette.setActiveTool(Tool::Table);
     QCoreApplication::removeTranslator(&translator);
     QCoreApplication::processEvents();

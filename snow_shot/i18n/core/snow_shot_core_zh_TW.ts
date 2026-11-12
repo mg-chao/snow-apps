@@ -768,6 +768,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>帳號有欠款，付費呼叫已暫停。請前往「帳號」結清欠款後繼續</translation>
         </message>
         <message>
+            <source>Sign in to your Snow Shot account to use Expert Model</source>
+            <translation>請登入 Snow Shot 帳號以使用專家模型</translation>
+        </message>
+        <message>
             <source>Sign in to your Snow Shot account to use this service</source>
             <translation>請登入 Snow Shot 帳號後使用此服務</translation>
         </message>
@@ -870,6 +874,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
         <message>
             <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again</source>
             <translation>餘額已被其他進行中的呼叫預留，請等待這些呼叫結束後重試</translation>
+        </message>
+        <message>
+            <source>Your credits cannot cover this Expert Model request. Purchase credits from Account to continue</source>
+            <translation>點數不足，無法使用專家模型完成此請求。請前往帳號頁面購買點數後繼續</translation>
         </message>
         <message>
             <source>Your daily free allowance is exhausted. Try again after it resets</source>

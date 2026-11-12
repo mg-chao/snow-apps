@@ -308,10 +308,17 @@ void pinnedExportsShareRenderedPixels() {
         for (const auto& artifact :
              {Access::fileSave(window),
               std::make_shared<ScreenshotExportArtifact>(window.stitchingSnapshot().source),
-              std::make_shared<ScreenshotExportArtifact>(window.splittingSnapshot().source),
               std::make_shared<ScreenshotExportArtifact>(shared.source)})
             requirePinnedExportPixels(pinnedExportSnapshotPixels(artifact, window), expected,
-                                      "save, stitch, split and asynchronous snapshot match copy");
+                                      "save, stitch and asynchronous snapshot match copy");
+
+        const auto split = window.splittingSnapshot();
+        const auto splitPixels = pinnedExportSnapshotPixels(
+            std::make_shared<ScreenshotExportArtifact>(split.source), window);
+        require(split.outputSize == (cropped ? QSize(40, 60) : QSize(80, 120)) &&
+                    splitPixels.size() == split.outputSize &&
+                    splitPixels.pixelColor(0, 0).alpha() == 255,
+                "splitting renders the transformed visible image at source resolution and opacity");
 
         const auto comparePersisted = [&] {
             const auto record = window.persistenceSnapshot();
@@ -335,6 +342,12 @@ void pinnedExportsShareRenderedPixels() {
                 pinnedExportSnapshotPixels(
                     std::make_shared<ScreenshotExportArtifact>(restored.source), window),
                 expected, "persisted rendering matches the live pin clipboard raster exactly");
+            const auto source = snow_shot::presentation::renderScreenshotPinnedImageRecord(
+                record, captureScreenshotPinnedRenderPreparation(&window), {}, {},
+                ScreenshotPinnedRenderMode::SourceResolution);
+            require(source.succeeded(), "render the saved pin for an image tool");
+            requirePinnedExportPixels(source.image, splitPixels,
+                                      "saved and open pin imports use identical pixels");
         };
         comparePersisted();
 
@@ -342,14 +355,18 @@ void pinnedExportsShareRenderedPixels() {
         const auto thumbnailGeometry = window.currentNativeGeometry();
         for (const auto& artifact :
              {Access::viewportExport(window), Access::fileSave(window),
-              std::make_shared<ScreenshotExportArtifact>(window.stitchingSnapshot().source),
-              std::make_shared<ScreenshotExportArtifact>(window.splittingSnapshot().source)})
+              std::make_shared<ScreenshotExportArtifact>(window.stitchingSnapshot().source)})
             requirePinnedExportPixels(pinnedExportSnapshotPixels(artifact, window), expected,
                                       "thumbnail display resolution never changes export pixels");
         require(window.persistenceSnapshot().thumbnailMode &&
                     window.currentNativeGeometry() == thumbnailGeometry,
                 "exporting an expanded-resolution thumbnail leaves its display state intact");
         comparePersisted();
+        requirePinnedExportPixels(
+            pinnedExportSnapshotPixels(
+                std::make_shared<ScreenshotExportArtifact>(window.splittingSnapshot().source),
+                window),
+            splitPixels, "thumbnail display resolution never changes split pixels");
 
         snow_shot::presentation::ImageEditingWindow editor;
         bool loaded = false;
@@ -492,10 +509,15 @@ void pinnedRecognitionExportsIncludePersistentAnnotations() {
                      "active recognition retains ordinary annotations and applies opacity once");
     for (const auto& artifact :
          {Access::fileSave(window),
-          std::make_shared<ScreenshotExportArtifact>(window.stitchingSnapshot().source),
-          std::make_shared<ScreenshotExportArtifact>(window.splittingSnapshot().source)})
+          std::make_shared<ScreenshotExportArtifact>(window.stitchingSnapshot().source)})
         requirePinnedExportPixels(pinnedExportSnapshotPixels(artifact, window), expected,
-                                  "all image routes include recognition and persistent drawings");
+                                  "save and stitch include recognition and persistent drawings");
+    const auto split = window.splittingSnapshot();
+    const auto splitPixels = pinnedExportSnapshotPixels(
+        std::make_shared<ScreenshotExportArtifact>(split.source), window);
+    require(splitPixels.size() == QSize(320, 180) &&
+                splitPixels.pixelColor(16, 16) == QColor(Qt::magenta),
+            "splitting keeps annotations over recognition at source resolution and opacity");
     require(session->activateCachedTextTranslation(),
             "activate the cached translated presentation");
     const auto translated = pinnedExportSnapshotPixels(Access::viewportExport(window), window);

@@ -6,6 +6,8 @@
 #include "snow_shot/translation/translationlanguages.h"
 #include "widgets/select.h"
 
+#include <QCoreApplication>
+
 namespace snow_shot::presentation {
 inline QVector<adqt::widgets::AdSelect::Option>
 translationServiceOptions(const QVector<SnowShotChatModel>& models) {

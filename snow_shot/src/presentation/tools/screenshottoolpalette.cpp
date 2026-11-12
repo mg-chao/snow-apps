@@ -9769,7 +9769,8 @@ void ScreenshotToolPalette::refreshRecognitionModelSelect() {
             continue;
         }
         modelIds.insert(model.id);
-        if (builtInDefault.isEmpty() && !model.id.startsWith(QStringLiteral("custom:"))) {
+        if (builtInDefault.isEmpty() && !snowShotExpertModelId(model.id) &&
+            !model.id.startsWith(QStringLiteral("custom:"))) {
             builtInDefault = model.id;
         }
         options.push_back(

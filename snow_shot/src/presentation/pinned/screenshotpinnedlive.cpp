@@ -373,21 +373,26 @@ void ScreenshotPinnedWindow::installLiveFrame(QImage original) {
     }
 }
 
-ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindowOpacity) {
+ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(ViewportExportMode mode,
+                                                                QSize& size) {
     if (!liveFrameAvailable())
         return {};
     const QRect content = authoritativeContentNativeGeometry();
     const bool logical = snow_shot::presentation::kPinnedGeometryUnits ==
                          snow_shot::storage::PinnedGeometryUnits::LogicalPixels;
     const qreal backingScale = logical ? devicePixelRatioF() : 1.0;
-    const QSize output(std::max(1, qRound(content.width() * backingScale)),
-                       std::max(1, qRound(content.height() * backingScale)));
+    const QSize windowOutput(std::max(1, qRound(content.width() * backingScale)),
+                             std::max(1, qRound(content.height() * backingScale)));
     const QTransform transform = m_imageTransform;
     const QRectF visible = liveSourceViewport();
-    const qreal opacity = applyWindowOpacity ? m_opacityPercent / 100.0 : 1.0;
+    const qreal opacity = mode == ViewportExportMode::Complete ? m_opacityPercent / 100.0 : 1.0;
+    const bool sourceResolution = mode == ViewportExportMode::SourceResolution;
+    // Native captures can change size between the last published frame and the request.
+    // Let the deferred renderer size and reserve the output from the captured frame.
+    size = sourceResolution ? QSize() : windowOutput;
     const auto placement = screenshotClipboardSelectionPlacement(content, content.size(), screen());
     ScreenshotClipboardAppearance appearance;
-    appearance.rasterSize = output;
+    appearance.rasterSize = size;
     appearance.checkerboardEnabled = m_checkerboardEnabled.value_or(false);
     appearance.showBorder = m_showBorder;
     appearance.showShadow = m_showShadow;
@@ -425,8 +430,8 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
                 captured->subscribers.push_back({receiver, std::move(callback)});
             return true;
         },
-        [output, transform, opacity, visible](QImage frame,
-                                              const ScreenshotExportCancellation& cancellation) {
+        [windowOutput, sourceResolution, transform, opacity,
+         visible](QImage frame, const ScreenshotExportCancellation& cancellation) {
             if (frame.isNull() || cancellation.isCancellationRequested())
                 return QImage{};
             if (visible != QRectF(0, 0, 1, 1)) {
@@ -462,6 +467,7 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
                 snowCanvasTransformImage(frame, transform, Qt::SmoothTransformation);
             if (transformed.isNull() || cancellation.isCancellationRequested())
                 return QImage{};
+            const QSize output = sourceResolution ? transformed.size() : windowOutput;
             if (transformed.size() == output && transformed.devicePixelRatio() == 1 &&
                 opacity == 1 && transformed.format() == QImage::Format_ARGB32_Premultiplied) {
                 auto owner = std::make_unique<QImage>(transformed);
@@ -491,7 +497,8 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
             }
             return result;
         },
-        [output](QSize frame) {
+        [windowOutput, sourceResolution](QSize frame) {
+            const QSize output = sourceResolution ? frame : windowOutput;
             return qint64(frame.width()) * frame.height() * 16 +
                    qint64(output.width()) * output.height() * 8 + 8 * 1024 * 1024;
         },
@@ -500,14 +507,13 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
 
 std::shared_ptr<ScreenshotExportArtifact>
 ScreenshotPinnedWindow::liveViewportArtifact(bool applyWindowOpacity) {
-    auto source = liveExportSource(applyWindowOpacity);
-    return source.isValid() ? std::make_shared<ScreenshotExportArtifact>(std::move(source))
-                            : nullptr;
+    return viewportArtifact(applyWindowOpacity ? ViewportExportMode::Complete
+                                               : ViewportExportMode::RecognitionBackground);
 }
 
 void ScreenshotPinnedWindow::requestLiveSnapshot(std::function<void(QImage, QString)> completion,
-                                                 bool applyWindowOpacity) {
-    auto artifact = liveViewportArtifact(applyWindowOpacity);
+                                                 ViewportExportMode mode) {
+    auto artifact = viewportArtifact(mode);
     if (!artifact) {
         completion({}, tr("The current window content cannot be captured"));
         return;
@@ -551,7 +557,7 @@ void ScreenshotPinnedWindow::convertLiveToImage() {
                 adqt::widgets::AdMessageService::error(std::move(request), this);
             }
         },
-        false);
+        ViewportExportMode::RecognitionBackground);
 }
 
 void ScreenshotPinnedWindow::finishLiveConversion(QImage image) {
@@ -630,16 +636,18 @@ void ScreenshotPinnedWindow::splitLiveImage() {
 void ScreenshotPinnedWindow::editLiveImage() {
     if (!liveFrameAvailable())
         return;
-    requestLiveSnapshot([this](QImage image, const QString& error) {
-        if (image.isNull() || !error.isEmpty() || m_closing)
-            return;
-        snow_shot::presentation::ImageEditingSource source;
-        source.image = std::move(image);
-        source.pixelSize = source.image.size();
-        source.canvasRect = QRectF(QPointF(), QSizeF(source.pixelSize));
-        source.flattened = true;
-        emit imageEditingSnapshotRequested(source);
-    });
+    requestLiveSnapshot(
+        [this](QImage image, const QString& error) {
+            if (image.isNull() || !error.isEmpty() || m_closing)
+                return;
+            snow_shot::presentation::ImageEditingSource source;
+            source.image = std::move(image);
+            source.pixelSize = source.image.size();
+            source.canvasRect = QRectF(QPointF(), QSizeF(source.pixelSize));
+            source.flattened = true;
+            emit imageEditingSnapshotRequested(source);
+        },
+        ViewportExportMode::SourceResolution);
 }
 
 void ScreenshotPinnedWindow::stopLiveSource() {
