@@ -172,9 +172,16 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.native_returned");
     if (nativeResult == nullptr) {
-        const QString captureError = nativeCaptureError("Screenshot capture failed");
-        static_cast<void>(snow_capture_desktop_session_reset_to_prepared(m_session));
-        captureResult.errorMessage = captureError;
+        captureResult.errorMessage = nativeCaptureError("Screenshot capture failed");
+        std::unique_ptr<SnowCaptureDesktopSession, decltype(&snow_capture_desktop_session_destroy)>
+            retiredSession(nullptr, snow_capture_desktop_session_destroy);
+        if (snow_capture_desktop_session_reset_to_prepared(m_session) == 0) {
+            qWarning("Failed to reset desktop capture session: %s",
+                     qPrintable(nativeCaptureError("Unknown reset error")));
+            // A worker can retain its initialization error until the session is recreated.
+            retiredSession.reset(std::exchange(m_session, nullptr));
+        }
+        // Post the failure before teardown can block on the monitor workers.
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
@@ -318,7 +325,13 @@ bool ScreenshotCaptureWorker::prepareSessionIfNeeded() {
     if (sessionPrepared()) {
         return true;
     }
-    return snow_capture_desktop_session_prepare(m_session) != 0;
+    if (snow_capture_desktop_session_prepare(m_session) != 0) {
+        return true;
+    }
+    qWarning("Failed to prepare desktop capture session: %s",
+             qPrintable(nativeCaptureError("Unknown preparation error")));
+    snow_capture_desktop_session_destroy(std::exchange(m_session, nullptr));
+    return false;
 }
 
 void ScreenshotCaptureWorker::postPrepared(
