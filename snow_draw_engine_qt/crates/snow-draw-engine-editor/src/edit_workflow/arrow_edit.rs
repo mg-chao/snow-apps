@@ -163,7 +163,7 @@ impl Editor {
                 }
             }
             ArrowEditMode::Endpoint(edge) => {
-                let mut drag_target = self.snap_linear_arrow_control_point(drag_target, modifiers);
+                let mut target = self.snap_linear_arrow_control_point(drag_target, modifiers);
                 if modifiers.shift
                     && !state.original_arrow.is_elbow()
                     && !state.original_arrow.is_angle()
@@ -174,7 +174,7 @@ impl Editor {
                         ArrowEndpointEdge::End => points.len().saturating_sub(2),
                     };
                     if let Some(reference) = points.get(reference_index).copied() {
-                        drag_target = lock_linear_point_to_discrete_angle(reference, drag_target);
+                        target = lock_linear_point_to_discrete_angle(reference, target);
                     }
                 }
                 if state.original_arrow.is_angle() {
@@ -184,7 +184,7 @@ impl Editor {
                         arrow: snow_draw_engine_document::angle_with_moved_point(
                             &state.original_arrow,
                             index,
-                            drag_target,
+                            target,
                             modifiers.shift,
                         )
                         .unwrap_or_else(|| state.preview_arrow.clone()),
@@ -194,22 +194,39 @@ impl Editor {
                     };
                 }
                 let bindables = self.bindable_elements(document, &[]);
-                let context = self.arrow_engine_context(modifiers);
+                let mut context = self.arrow_engine_context(modifiers);
+                let threshold = self.line_confirm_threshold();
+                let mut snapped_to_line = false;
+                if state.original_arrow.is_line() && !modifiers.shift {
+                    let opposite = match edge {
+                        ArrowEndpointEdge::Start => state.original_arrow.end(),
+                        ArrowEndpointEdge::End => state.original_arrow.start(),
+                    };
+                    if (state.original_arrow.points.len() == 2
+                        || point_distance(target, opposite) > threshold)
+                        && let Some(endpoint) =
+                            self.nearby_line_endpoint(document, drag_target, Some(state.arrow_id))
+                        && endpoint != opposite
+                    {
+                        target = endpoint;
+                        context.is_binding_enabled = false;
+                        snapped_to_line = true;
+                    }
+                }
                 let result = compute_arrow_endpoint_drag(
                     state.arrow_id,
                     &state.original_arrow,
                     edge,
-                    drag_target,
+                    target,
                     &bindables,
                     context,
                     arrow_endpoint_drag_options(modifiers, finalize),
                 );
-                let arrow = snap_linear_arrow_loop_endpoint(
-                    &result.arrow,
-                    edge,
-                    LINE_CONFIRM_THRESHOLD_PX / self.camera().zoom.max(0.0001),
-                );
-                let mut arrow = arrow;
+                let mut arrow = if snapped_to_line {
+                    result.arrow
+                } else {
+                    snap_linear_arrow_loop_endpoint(&result.arrow, edge, threshold)
+                };
                 if finalize {
                     let preview_binding = match edge {
                         ArrowEndpointEdge::Start => state.preview_arrow.start_binding.as_ref(),

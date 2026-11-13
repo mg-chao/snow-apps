@@ -68,6 +68,15 @@ impl Editor {
                     id,
                     ElementKind::Distance | ElementKind::Angle | ElementKind::Bracket,
                 ) => PrimaryPointerIntent::BeginArrowElementInteraction { id },
+                CanvasHit::EligibleElement(_, ElementKind::Line)
+                    if self.state.active_tool == ActiveTool::Line
+                        && !modifiers.alt
+                        && self
+                            .nearby_line_endpoint(document, canvas_point, None)
+                            .is_some() =>
+                {
+                    PrimaryPointerIntent::EmptyCanvas
+                }
                 CanvasHit::EligibleElement(id, ElementKind::Line) => {
                     PrimaryPointerIntent::BeginArrowElementInteraction { id }
                 }
