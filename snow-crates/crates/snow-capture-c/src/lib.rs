@@ -12,7 +12,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 use std::sync::{Arc, mpsc};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use snow_capture::color_effect::{ColorCorrection, PendingScreenColorTransform};
 use snow_capture::cursor_snapshot::ScreenshotCursorSnapshot;
@@ -817,6 +817,13 @@ fn with_capture_autoreleasepool<T>(work: impl FnOnce() -> T) -> T {
     work()
 }
 
+fn capture_stage_error(stage: &str, started: Instant, error: impl std::fmt::Display) -> String {
+    format!(
+        "{stage} failed after {} ms: {error}",
+        started.elapsed().as_millis()
+    )
+}
+
 impl MonitorWorker {
     fn start(
         system: CaptureSystem,
@@ -830,9 +837,12 @@ impl MonitorWorker {
             .spawn(move || {
                 snow_core::qos::apply_current_thread();
                 let mut session = with_capture_autoreleasepool(|| {
+                    let started = Instant::now();
                     system
                         .open_session(CaptureTarget::Monitor(worker_entry.id), options)
-                        .map_err(|err| err.to_string())
+                        .map_err(|error| {
+                            capture_stage_error("monitor session initialization", started, error)
+                        })
                 });
 
                 while let Ok(command) = rx.recv() {
@@ -843,16 +853,20 @@ impl MonitorWorker {
                     // temporary objects after each request, including error paths.
                     with_capture_autoreleasepool(|| match command {
                         WorkerCommand::Prepare(reply) => {
+                            let started = Instant::now();
                             let result = match session.as_mut() {
                                 Ok(capture_session) => capture_session
                                     .prewarm_environment()
                                     .map(|_| ())
-                                    .map_err(|err| err.to_string()),
+                                    .map_err(|error| {
+                                        capture_stage_error("monitor preparation", started, error)
+                                    }),
                                 Err(error) => Err(error.clone()),
                             };
                             let _ = reply.send(result);
                         }
                         WorkerCommand::Capture(reply, correction, include_cursor, cancellation) => {
+                            let started = Instant::now();
                             let result = match session.as_mut() {
                                 Ok(session) => {
                                     let captured = match correction {
@@ -874,7 +888,11 @@ impl MonitorWorker {
                                             "capture access remained active after one-shot monitor capture"
                                                 .to_owned(),
                                         ),
-                                        Err(error) => Err(error.to_string()),
+                                        Err(error) => Err(capture_stage_error(
+                                            "monitor frame acquisition",
+                                            started,
+                                            error,
+                                        )),
                                     }
                                 }
                                 Err(error) => Err(error.clone()),
@@ -1071,11 +1089,14 @@ fn reconcile_workers(
 }
 
 fn rebuild_workers(session: &mut SnowCaptureDesktopSessionImpl) -> Result<(), String> {
+    let started = Instant::now();
     session
         .system
         .refresh_display_configuration()
-        .map_err(|err| err.to_string())?;
-    let entries = build_monitor_entries(&session.system)?;
+        .map_err(|error| capture_stage_error("display configuration refresh", started, error))?;
+    let started = Instant::now();
+    let entries = build_monitor_entries(&session.system)
+        .map_err(|error| capture_stage_error("display enumeration", started, error))?;
     reconcile_workers(session, entries)
 }
 

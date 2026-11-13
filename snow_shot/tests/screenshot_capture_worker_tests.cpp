@@ -52,6 +52,9 @@ int captured = 0;
 int leases = 0;
 bool failCreation = false;
 bool failCapture = false;
+bool failPreparation = false;
+bool failReset = false;
+thread_local const char* lastError = "injected native capture failure";
 bool invalidLayout = false;
 uint8_t preparedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 uint8_t refreshedBackend = SNOW_CAPTURE_BACKEND_AUTO;
@@ -65,6 +68,9 @@ bool failCursorComposition = false;
 bool blockCapture = false;
 QSemaphore captureEntered;
 QSemaphore resumeCapture;
+bool blockSessionDestroy = false;
+QSemaphore sessionDestroyEntered;
+QSemaphore resumeSessionDestroy;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -268,6 +274,63 @@ void modeChangeAfterCaptureFailurePreservesRetainedFrame() {
             "replacing a session invalidated an already delivered image");
 }
 
+void failedPreparationRebuildsSessionForCapture() {
+    ScreenshotCaptureWorker worker;
+    const int before = created;
+    failPreparation = true;
+    worker.prepare(1, {});
+    failPreparation = false;
+    require(capture(worker).succeeded && created == before + 2,
+            "capture must replace the session after failed preparation");
+}
+
+void failedResetRebuildsSessionForNextCapture() {
+    ScreenshotCaptureWorker worker;
+    require(capture(worker).succeeded, "initial capture failed");
+    const int before = created;
+    const int beforeCapture = captured;
+    failCapture = true;
+    failReset = true;
+    const auto failed = capture(worker);
+    failCapture = false;
+    failReset = false;
+    require(!failed.succeeded &&
+                failed.errorMessage == QStringLiteral("injected native capture failure") &&
+                created == before && captured == beforeCapture + 1,
+            "failed capture must report its original error and finish the request");
+    require(capture(worker).succeeded && created == before + 1,
+            "next capture must replace the session that failed to reset");
+    require(capture(worker).succeeded && created == before + 1,
+            "a recovered session must be reusable");
+}
+
+void failedCaptureIsReportedBeforeSessionTeardownCompletes() {
+    ScreenshotCaptureCoordinator coordinator;
+    ScreenshotCaptureResult result;
+    QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &coordinator,
+                     [&](const ScreenshotCaptureResult& value) { result = value; });
+
+    ScreenshotCaptureRequest request;
+    request.requestId = 92;
+    request.purpose = ScreenshotCapturePurpose::Recapture;
+    failCapture = true;
+    failReset = true;
+    blockSessionDestroy = true;
+    coordinator.captureAsync(request);
+    require(sessionDestroyEntered.tryAcquire(1, 3000), "session did not reach teardown");
+    QCoreApplication::sendPostedEvents(&coordinator);
+    resumeSessionDestroy.release();
+    coordinator.shutdown();
+    blockSessionDestroy = false;
+    failReset = false;
+    failCapture = false;
+
+    require(result.requestId == request.requestId && result.purpose == request.purpose &&
+                !result.succeeded &&
+                result.errorMessage == QStringLiteral("injected native capture failure"),
+            "the original capture failure must reach the coordinator while teardown is blocked");
+}
+
 #if defined(Q_OS_WIN) || defined(_WIN32)
 void captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose purpose, bool cancel) {
     setMode("dxgi");
@@ -419,12 +482,20 @@ snow_capture_desktop_session_create(const SnowCaptureDesktopSessionConfig* confi
 }
 
 void snow_capture_desktop_session_destroy(SnowCaptureDesktopSession* session) {
+    if (blockSessionDestroy) {
+        sessionDestroyEntered.release();
+        resumeSessionDestroy.acquire();
+    }
     ++destroyed;
     delete session;
 }
 
 uint8_t snow_capture_desktop_session_prepare(SnowCaptureDesktopSession* session) {
     preparedBackend = session->config.capture_backend;
+    if (failPreparation) {
+        lastError = "injected native preparation failure";
+        return 0;
+    }
     session->prepared = true;
     return 1;
 }
@@ -442,6 +513,10 @@ uint8_t snow_capture_desktop_session_refresh_layout(SnowCaptureDesktopSession* s
 }
 
 uint8_t snow_capture_desktop_session_reset_to_prepared(SnowCaptureDesktopSession* session) {
+    if (failReset) {
+        lastError = "injected native reset failure";
+        return 0;
+    }
     session->prepared = true;
     return 1;
 }
@@ -452,6 +527,7 @@ snow_capture_desktop_session_capture(SnowCaptureDesktopSession* session,
     capturedFlags = request->flags;
     capturedWindowIds = session->excludedWindowIds;
     ++captured;
+    lastError = "injected native capture failure";
     if (blockCapture) {
         captureEntered.release();
         resumeCapture.acquire();
@@ -555,7 +631,7 @@ void snow_capture_screenshot_result_destroy(SnowCaptureScreenshotResult* result)
 }
 
 const char* snow_capture_last_error_message() {
-    return "injected native capture failure";
+    return lastError;
 }
 
 SnowCaptureCancellationToken* snow_capture_cancellation_token_create() {
@@ -585,6 +661,9 @@ int main(int argc, char** argv) {
     preparationAndLayoutRefreshUseCurrentMode();
     failedReplacementDoesNotCaptureWithOldBackend();
     modeChangeAfterCaptureFailurePreservesRetainedFrame();
+    failedPreparationRebuildsSessionForCapture();
+    failedResetRebuildsSessionForNextCapture();
+    failedCaptureIsReportedBeforeSessionTeardownCompletes();
 #if defined(Q_OS_WIN) || defined(_WIN32)
     captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Initial, false);
     captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Initial, true);
