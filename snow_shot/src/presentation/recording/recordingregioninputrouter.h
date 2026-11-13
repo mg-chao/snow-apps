@@ -4,6 +4,7 @@
 #include <QPoint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -13,7 +14,7 @@ struct RecordingRegionMouseApi {
     decltype(&UnhookWindowsHookEx) removeHook = UnhookWindowsHookEx;
     decltype(&CallNextHookEx) nextHook = CallNextHookEx;
     std::function<bool()> supported;
-    decltype(&GetCursorPos) cursorPosition = GetCursorPos;
+    decltype(&GetPhysicalCursorPos) cursorPosition = GetPhysicalCursorPos;
 };
 #endif
 
@@ -21,12 +22,17 @@ struct RecordingRegionMouseApi {
 // Handlers run on the constructing thread and are retired with the router.
 class RecordingRegionInputRouter final {
   public:
+    enum class Events { All, Movement };
     using Handler = std::function<void(const QPoint&)>;
-    explicit RecordingRegionInputRouter(Handler changed);
+    explicit RecordingRegionInputRouter(Handler changed, Events events = Events::All);
 #ifdef Q_OS_WIN
-    RecordingRegionInputRouter(Handler changed, RecordingRegionMouseApi api);
+    RecordingRegionInputRouter(Handler changed, RecordingRegionMouseApi api,
+                               Events events = Events::All);
 #endif
     ~RecordingRegionInputRouter();
+
+    // Physical desktop pixels on Windows, desktop points on macOS.
+    [[nodiscard]] static std::optional<QPoint> cursorPosition();
 
   private:
     class Impl;

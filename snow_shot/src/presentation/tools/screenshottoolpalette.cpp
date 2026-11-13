@@ -2830,7 +2830,7 @@ void ScreenshotToolPalette::refreshRecordingFollowMouseOptions() {
                    m_recordingFollowMouseSmoothMovement);
     updateCheckbox(
         m_recordFollowMouseReduceJitterCheckbox, tr("Reduce jitter"),
-        tr("Start moving the recording area when the cursor enters the outer quarter of its width "
+        tr("Start moving the recording area when the cursor enters the outer twelfth of its width "
            "or height."),
         m_recordingFollowMouseReduceJitter);
     if (auto* content = m_recordFollowMousePopover->contentWidget()) {

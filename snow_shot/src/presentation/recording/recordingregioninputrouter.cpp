@@ -15,10 +15,10 @@
 class RecordingRegionInputRouter::Impl final {
   public:
 #ifdef Q_OS_WIN
-    Impl(Handler changed, RecordingRegionMouseApi api)
-        : changed(std::move(changed)), api(std::move(api)) {
+    Impl(Handler changed, RecordingRegionMouseApi api, Events events)
+        : changed(std::move(changed)), api(std::move(api)), events(events) {
 #else
-    explicit Impl(Handler changed) : changed(std::move(changed)) {
+    Impl(Handler changed, Events events) : changed(std::move(changed)) {
 #endif
 #ifdef Q_OS_WIN
         if (!(this->api.supported ? this->api.supported()
@@ -45,11 +45,13 @@ class RecordingRegionInputRouter::Impl final {
 #elif defined(Q_OS_MACOS)
         if (QGuiApplication::platformName() != QStringLiteral("cocoa"))
             return;
-        constexpr NSEventMask mask = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged |
-                                     NSEventMaskRightMouseDragged | NSEventMaskOtherMouseDragged |
-                                     NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown |
-                                     NSEventMaskOtherMouseDown | NSEventMaskLeftMouseUp |
-                                     NSEventMaskRightMouseUp | NSEventMaskOtherMouseUp;
+        constexpr NSEventMask movement = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged |
+                                         NSEventMaskRightMouseDragged |
+                                         NSEventMaskOtherMouseDragged;
+        constexpr NSEventMask buttons = NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown |
+                                        NSEventMaskOtherMouseDown | NSEventMaskLeftMouseUp |
+                                        NSEventMaskRightMouseUp | NSEventMaskOtherMouseUp;
+        const NSEventMask mask = events == Events::Movement ? movement : movement | buttons;
         localMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:mask
                                                              handler:^NSEvent*(NSEvent* event) {
                                                                this->changed(QCursor::pos());
@@ -59,6 +61,8 @@ class RecordingRegionInputRouter::Impl final {
                                                                handler:^(NSEvent*) {
                                                                  this->changed(QCursor::pos());
                                                                }];
+#else
+    Q_UNUSED(events);
 #endif
     }
 
@@ -107,7 +111,8 @@ class RecordingRegionInputRouter::Impl final {
     }
 
     static LRESULT CALLBACK mouseCallback(int code, WPARAM message, LPARAM data) {
-        if (code == HC_ACTION && current)
+        if (code == HC_ACTION && current &&
+            (current->events == Events::All || message == WM_MOUSEMOVE))
             current->observe(reinterpret_cast<const MSLLHOOKSTRUCT*>(data)->pt);
         // No QWidget access, native style changes, or synchronous UI calls here.
         return current ? current->api.nextHook(nullptr, code, message, data)
@@ -116,6 +121,7 @@ class RecordingRegionInputRouter::Impl final {
 
     static thread_local Impl* current;
     RecordingRegionMouseApi api;
+    Events events;
     QObject delivery;
     QThread thread;
     QObject* worker = nullptr;
@@ -133,14 +139,28 @@ thread_local RecordingRegionInputRouter::Impl* RecordingRegionInputRouter::Impl:
 #endif
 
 #ifdef Q_OS_WIN
-RecordingRegionInputRouter::RecordingRegionInputRouter(Handler changed)
-    : RecordingRegionInputRouter(std::move(changed), RecordingRegionMouseApi{}) {}
+RecordingRegionInputRouter::RecordingRegionInputRouter(Handler changed, Events events)
+    : RecordingRegionInputRouter(std::move(changed), RecordingRegionMouseApi{}, events) {}
 
-RecordingRegionInputRouter::RecordingRegionInputRouter(Handler changed, RecordingRegionMouseApi api)
-    : m_impl(std::make_unique<Impl>(std::move(changed), std::move(api))) {}
+RecordingRegionInputRouter::RecordingRegionInputRouter(Handler changed, RecordingRegionMouseApi api,
+                                                       Events events)
+    : m_impl(std::make_unique<Impl>(std::move(changed), std::move(api), events)) {}
 #else
-RecordingRegionInputRouter::RecordingRegionInputRouter(Handler changed)
-    : m_impl(std::make_unique<Impl>(std::move(changed))) {}
+RecordingRegionInputRouter::RecordingRegionInputRouter(Handler changed, Events events)
+    : m_impl(std::make_unique<Impl>(std::move(changed), events)) {}
 #endif
 
 RecordingRegionInputRouter::~RecordingRegionInputRouter() = default;
+
+std::optional<QPoint> RecordingRegionInputRouter::cursorPosition() {
+#ifdef Q_OS_WIN
+    POINT point{};
+    if (QGuiApplication::platformName() == QStringLiteral("windows") &&
+        GetPhysicalCursorPos(&point))
+        return QPoint(point.x, point.y);
+#elif defined(Q_OS_MACOS)
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa"))
+        return QCursor::pos();
+#endif
+    return std::nullopt;
+}

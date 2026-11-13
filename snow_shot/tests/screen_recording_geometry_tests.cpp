@@ -117,6 +117,116 @@ void followFramePansWithoutResizingOrClipping() {
             "an invalid viewport must not produce a follow window");
 }
 
+void followGuideFitsThePaintedBorderInsideTheDisplay() {
+    using recording::ScreenRecordingFollowGuideMotion;
+    const QRectF bounds(-1200, -200, 600, 400);
+    const auto normal =
+        ScreenRecordingFollowGuideMotion({320, 240}, bounds, {-900, 0}, false, false).viewport();
+    require(normal == QRectF(-1060, -120, 320, 240),
+            "the guide centers on the cursor in native desktop coordinates");
+
+    ScreenRecordingFollowGuideMotion motion({320, 240}, bounds, {-1200, -200}, false, false);
+    const auto topLeft = motion.viewport();
+    motion.track({50, 500});
+    const auto bottomRight = motion.viewport();
+    require(topLeft == QRectF(-1197, -197, 320, 240) && bottomRight == QRectF(-923, -43, 320, 240),
+            "the guide clamps both axes for cursors at or beyond the display edges");
+
+    const auto oversized =
+        ScreenRecordingFollowGuideMotion({1600, 900}, bounds, {-1200, 500}, false, false)
+            .viewport();
+    require(qAbs(oversized.width() - 594.0) < 0.0001 &&
+                qAbs(oversized.width() / oversized.height() - 1600.0 / 900.0) < 0.0001,
+            "an oversized guide shrinks uniformly after reserving space for the border");
+    for (const auto& guide : {topLeft, bottomRight, oversized}) {
+        for (const qreal scale : {1.0, 1.25, 1.5, 2.0}) {
+            const auto frame = recording::screenRecordingFollowFrameGeometry(
+                QRectF(guide.topLeft() / scale, guide.size() / scale), scale);
+            const auto desktopFrame = frame.frameRect.translated(frame.windowGeometry.topLeft());
+            const QRectF mappedFrame(desktopFrame.topLeft() * scale, desktopFrame.size() * scale);
+            require(bounds.adjusted(-0.0001, -0.0001, 0.0001, 0.0001).contains(mappedFrame),
+                    "the painted guide stays inside the display at every tested DPI");
+        }
+    }
+}
+
+void followGuideRespectsMotionOptions() {
+    using recording::ScreenRecordingFollowGuideMotion;
+    using namespace std::chrono_literals;
+    const QSizeF size(120, 84);
+    const QRectF bounds(-200, -400, 1400, 1800);
+    const QPointF center(210, 202);
+    const QRectF initial(150, 160, 120, 84);
+
+    ScreenRecordingFollowGuideMotion immediate(size, bounds, center, false, false);
+    immediate.track(center + QPointF(1, 1));
+    require(immediate.viewport() == initial.translated(1, 1) && !immediate.isMoving(),
+            "with both options off the guide follows small movements immediately");
+
+    ScreenRecordingFollowGuideMotion smooth(size, bounds, center, true, false);
+    smooth.track(center + QPointF(10, 8));
+    require(smooth.viewport() == initial && smooth.isMoving(),
+            "smoothing alone accepts small movements and schedules easing");
+    smooth.advance(50ms);
+    require(smooth.viewport() == initial.translated(5, 4), "the guide eases halfway in 50 ms");
+
+    for (const QPointF& delta :
+         {QPointF(50, 0), QPointF(-50, 0), QPointF(0, 35), QPointF(0, -35)}) {
+        ScreenRecordingFollowGuideMotion jitter(size, bounds, center, false, true);
+        jitter.track(center + delta * 0.99);
+        require(jitter.viewport() == initial, "the guide holds inside the central five-sixths");
+        jitter.track(center + delta);
+        require(jitter.viewport() == initial.translated(delta) && !jitter.isMoving(),
+                "entering any outer twelfth recenters the guide with smoothing off");
+    }
+
+    ScreenRecordingFollowGuideMotion clamped(size, bounds, {bounds.left(), center.y()}, false,
+                                             true);
+    const QRectF edge = clamped.viewport();
+    clamped.track({bounds.left(), center.y() + 10});
+    require(clamped.viewport() == edge, "a clamped edge does not trigger recentering");
+
+    ScreenRecordingFollowGuideMotion combined(size, bounds, center, true, true);
+    combined.track(center + QPointF(49, 0));
+    require(!combined.isMoving(), "smoothing leaves the dead zone in effect");
+    combined.track(center + QPointF(50, 0));
+    combined.advance(50ms);
+    require(combined.viewport() == initial.translated(25, 0), "crossing the margin starts easing");
+    combined.track(center + QPointF(84, 0));
+    combined.advance(100ms);
+    require(combined.viewport() == initial.translated(43.75, 0),
+            "the jitter threshold follows the destination while the guide eases");
+    combined.track(center + QPointF(100, 0));
+    combined.advance(50ms);
+    require(combined.viewport() == initial.translated(71.875, 0),
+            "crossing the destination margin retargets the guide during easing");
+    combined.advance(1s);
+    require(combined.viewport() == initial.translated(100, 0) && !combined.isMoving(),
+            "easing settles without any further pointer movement");
+}
+
+void smoothFollowGuideCatchesLargeJumpsImmediately() {
+    using recording::ScreenRecordingFollowGuideMotion;
+    using namespace std::chrono_literals;
+    const QRectF bounds(-400, -300, 1400, 1000);
+    for (bool reduceJitter : {false, true}) {
+        ScreenRecordingFollowGuideMotion guide({100, 80}, bounds, {200, 200}, true, reduceJitter);
+        guide.track({750, -200});
+        require(guide.viewport() == QRectF(651, -200, 100, 80),
+                "the guide catches a diagonal jump before the first animation tick");
+        guide.track({760, -200});
+        require(guide.viewport() == QRectF(661, -200, 100, 80),
+                "the guide catches a jump inside the destination's dead zone");
+        guide.advance(50ms);
+        require(guide.viewport() == QRectF(reduceJitter ? 680.5 : 685.5, -220, 100, 80),
+                "the guide still eases toward the cursor after catching up");
+
+        guide.track({-400, 699});
+        require(guide.viewport() == QRectF(-397, 617, 100, 80) && !guide.isMoving(),
+                "the guide catches a reversal and keeps its border inside the display");
+    }
+}
+
 void physicalSelectionMapsToItsLogicalSubregion() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "geometry test requires a primary screen");
@@ -484,6 +594,9 @@ int main(int argc, char** argv) {
     QGuiApplication application(argc, argv);
     minimumRegionsAndCrossingEdges();
     followFramePansWithoutResizingOrClipping();
+    followGuideFitsThePaintedBorderInsideTheDisplay();
+    followGuideRespectsMotionOptions();
+    smoothFollowGuideCatchesLargeJumpsImmediately();
     observedNativeGeometryFollowsDisplaysWithoutRescalingPhysicalCoordinates();
     physicalSelectionMapsToItsLogicalSubregion();
     recordingFrameStaysOutsideTheSelection(1.0);

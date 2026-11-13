@@ -58,7 +58,6 @@ RecordingTrimSession::RecordingTrimSession(ScreenRecordingAreaWindow* area,
     m_panel = new RecordingTrimToolbar;
     m_toolbar->palette()->setRecordingTrimPanel(m_panel, true);
     m_panel->commitControlScale(adqt::widgets::controlScaleContextFor(m_toolbar->palette()));
-    m_area->setTrimming(true);
     m_panel->replayRequested = [this] { seek(static_cast<int>(m_first), true); };
     m_panel->playbackToggleRequested = [this] { togglePlayback(); };
     m_panel->seekRequested = [this](int frame) { seek(frame, false); };
@@ -101,6 +100,7 @@ void RecordingTrimSession::open(const QString& sourcePath, const QString& output
                                 const SnowRecordingClipOptions& options, bool deferred,
                                 bool saveWhenReady,
                                 snow_shot::storage::ScreenshotWindowNames windowNames) {
+    m_area->setTrimming(true);
     m_mediaActivity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     m_sourcePath = sourcePath;
     m_outputPath = outputPath;

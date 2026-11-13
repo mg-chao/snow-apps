@@ -1415,8 +1415,8 @@
             <translation>起始箭头 空心三角形</translation>
         </message>
         <message>
-            <source>Start moving the recording area when the cursor enters the outer quarter of its width or height.</source>
-            <translation>鼠标指针进入距边缘四分之一宽度或高度的范围时，开始移动录制区域。</translation>
+            <source>Start moving the recording area when the cursor enters the outer twelfth of its width or height.</source>
+            <translation>鼠标指针进入距边缘十二分之一宽度或高度的范围时，开始移动录制区域。</translation>
         </message>
         <message>
             <source>Start recording</source>

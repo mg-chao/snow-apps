@@ -8962,7 +8962,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
     target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE
         adqt_icon_core ant_design_icons_qt ant_design_qt snow_draw_engine_qt_canvas
-        snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts snow_shot_settings Qt6::Widgets snow_recording_effects_c snow_capture_c)
+        snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts snow_shot_settings
+        Qt6::Widgets Qt6::GuiPrivate snow_recording_effects_c snow_capture_c)
     if(APPLE)
         target_sources(snow-shot-screen-recording-controller-tests PRIVATE
             src/platform/macos/windowcaptureexclusion.mm
@@ -9031,6 +9032,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-follow-mouse-tests
         COMMAND snow-shot-screen-recording-controller-tests --follow-mouse-only -platform offscreen)
     set_tests_properties(snow-shot-recording-follow-mouse-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-follow-display-handoff-tests
+        COMMAND snow-shot-screen-recording-controller-tests --follow-display-handoff-only
+            -platform offscreen:configfile=recording_toolbar_screens.json)
+    set_tests_properties(snow-shot-recording-follow-display-handoff-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     if(WIN32)
         add_test(NAME snow-shot-recording-follow-area-native-tests
             COMMAND snow-shot-screen-recording-controller-tests --follow-area-native-only -platform windows)

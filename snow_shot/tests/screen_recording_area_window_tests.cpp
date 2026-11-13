@@ -134,6 +134,7 @@ struct RegionMouseInput {
     bool failInstall = false;
     bool native = false;
     bool initialPositionOnly = false;
+    bool sendButton = false;
     QPoint initialPosition{-80, 120};
 
     static HHOOK WINAPI install(int kind, HOOKPROC callback, HINSTANCE, DWORD) {
@@ -164,6 +165,13 @@ struct RegionMouseInput {
                 input.pt = point;
                 require(callback(HC_ACTION, WM_MOUSEMOVE, reinterpret_cast<LPARAM>(&input)) == 17,
                         "observing movement must never consume system input");
+            }
+            if (instance->sendButton) {
+                MSLLHOOKSTRUCT button{};
+                button.pt = {100, 120};
+                require(callback(HC_ACTION, WM_LBUTTONDOWN, reinterpret_cast<LPARAM>(&button)) ==
+                            17,
+                        "the movement observer must forward button events");
             }
             instance->observed.release();
         });
@@ -225,6 +233,7 @@ void regionObservationNeverWaitsForTheGui() {
     }
     for (const bool retireBeforeDelivery : {false, true}) {
         RegionMouseInput input;
+        input.sendButton = true;
         int deliveries = 0;
         auto router = std::make_unique<RecordingRegionInputRouter>(
             [&](const QPoint& point) {
@@ -234,12 +243,12 @@ void regionObservationNeverWaitsForTheGui() {
                         "coalesced routing must retain the newest signed desktop coordinates");
                 ++deliveries;
             },
-            input.api());
+            input.api(), RecordingRegionInputRouter::Events::Movement);
         // Deliberately do not pump the GUI: this represents lazy settings creation
         // or any other synchronous UI work while the recording region is editable.
         require(input.observed.tryAcquire(1, 1000),
                 "all mouse input must be forwarded even while the GUI is blocked");
-        require(input.installingThread != guiThread && input.forwarded == 4 && deliveries == 0,
+        require(input.installingThread != guiThread && input.forwarded == 5 && deliveries == 0,
                 "system input observation must be isolated from widget updates");
         if (retireBeforeDelivery)
             router.reset();

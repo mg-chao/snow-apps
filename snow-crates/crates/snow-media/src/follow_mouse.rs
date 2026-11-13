@@ -40,7 +40,7 @@ impl Axis {
 
     fn enters_margin(&self, cursor: f64) -> bool {
         // The destination remains the reference while the viewport catches up.
-        let margin = self.extent * 0.25;
+        let margin = self.extent / 12.0;
         (self.target > self.min_origin && cursor <= self.target + margin)
             || (self.target < self.max_origin && cursor >= self.target + self.extent - margin)
     }
@@ -51,6 +51,19 @@ impl Axis {
         if (self.target - self.position).abs() <= settle_distance {
             self.position = self.target;
         }
+    }
+
+    fn keep_cursor_in_view(&mut self, cursor: f64, space: DesktopSpace) {
+        // Leave room at the exclusive far edge, including after pixel rounding.
+        let edge_inset = match space {
+            DesktopSpace::Points => (self.extent * 0.5).min(1.0),
+            DesktopSpace::PhysicalPixels => 1.0,
+        };
+        let min_position = cursor - (self.extent - edge_inset).max(0.0);
+        self.position = self
+            .position
+            .clamp(min_position, cursor)
+            .clamp(self.min_origin, self.max_origin);
     }
 
     fn origin(&self, space: DesktopSpace) -> f64 {
@@ -113,17 +126,21 @@ impl FollowMouseMotion {
         }
         if !self.options.smooth_movement {
             self.apply_target();
-        } else if self.is_moving()
-            && let Some(previous) = previous
-        {
-            let elapsed = now.saturating_duration_since(previous).as_secs_f64();
-            let fraction = 1.0 - (-elapsed / HALF_LIFE_SECONDS).exp2();
-            let settle_distance = match self.space {
-                DesktopSpace::Points => 0.25,
-                DesktopSpace::PhysicalPixels => 0.5,
-            };
-            self.x.ease(fraction, settle_distance);
-            self.y.ease(fraction, settle_distance);
+        } else {
+            if self.is_moving()
+                && let Some(previous) = previous
+            {
+                let elapsed = now.saturating_duration_since(previous).as_secs_f64();
+                let fraction = 1.0 - (-elapsed / HALF_LIFE_SECONDS).exp2();
+                let settle_distance = match self.space {
+                    DesktopSpace::Points => 0.25,
+                    DesktopSpace::PhysicalPixels => 0.5,
+                };
+                self.x.ease(fraction, settle_distance);
+                self.y.ease(fraction, settle_distance);
+            }
+            self.x.keep_cursor_in_view(cursor.0, self.space);
+            self.y.keep_cursor_in_view(cursor.1, self.space);
         }
         self.viewport()
     }
@@ -198,21 +215,31 @@ mod tests {
     }
 
     #[test]
-    fn jitter_reduction_uses_each_axis_quarter_and_recenters_on_crossing() {
+    fn jitter_reduction_recenters_at_each_outer_twelfth() {
         let now = Instant::now();
+        let space = DesktopSpace::Points;
+        let initial = rect(space, 150.0, 160.0, 120.0, 84.0);
+        let bounds = rect(space, -200.0, -400.0, 1400.0, 1800.0);
         for (inside, boundary) in [
-            ((175.1, 201.0), (175.0, 201.0)),
-            ((224.9, 201.0), (225.0, 201.0)),
-            ((201.0, 180.1), (201.0, 180.0)),
-            ((201.0, 219.9), (201.0, 220.0)),
+            ((160.1, 201.0), (160.0, 201.0)),
+            ((259.9, 201.0), (260.0, 201.0)),
+            ((211.0, 167.1), (211.0, 167.0)),
+            ((211.0, 236.9), (211.0, 237.0)),
         ] {
-            let mut follow = motion(false, true, now);
-            let initial = follow.viewport();
+            let mut follow = FollowMouseMotion::new(
+                initial,
+                bounds,
+                FollowMouseOptions {
+                    smooth_movement: false,
+                    reduce_jitter: true,
+                },
+                now,
+            );
             assert_eq!(follow.advance(inside, now), initial);
             let changed = follow.advance(boundary, now);
             assert_eq!(
                 (changed.x, changed.y),
-                (boundary.0 - 50.0, boundary.1 - 40.0)
+                (boundary.0 - 60.0, boundary.1 - 42.0)
             );
             assert_eq!(follow.advance(boundary, now), changed);
         }
@@ -225,8 +252,8 @@ mod tests {
         let initial = follow.center((-195.0, 200.0), now);
         assert_eq!(initial.x, -200.0);
         assert_eq!(follow.advance((-195.0, 212.0), now), initial);
-        let changed = follow.advance((-195.0, 220.0), now);
-        assert_eq!((changed.x, changed.y), (-200.0, 180.0));
+        let changed = follow.advance((-195.0, 234.0), now);
+        assert_eq!((changed.x, changed.y), (-200.0, 194.0));
     }
 
     #[test]
@@ -237,21 +264,53 @@ mod tests {
             let initial = follow.viewport();
             for frame in 1..=fps {
                 let t = f64::from(frame) / f64::from(fps);
-                let crop = follow.advance((1000.0, 200.0), now + Duration::from_secs_f64(t));
+                let crop = follow.advance((240.0, 200.0), now + Duration::from_secs_f64(t));
                 if frame == 1 {
-                    assert!(initial.x < crop.x && crop.right() < 1000.0);
+                    assert!(initial.x < crop.x && crop.x < 190.0);
                 }
                 if t == 0.2 {
-                    assert!((crop.x - 900.0).abs() < 1e-6);
+                    assert!((crop.x - 187.5).abs() < 1e-6);
                 }
             }
-            assert_eq!(follow.viewport().x, 950.0);
+            assert_eq!(follow.viewport().x, 190.0);
             assert_eq!(
                 follow
-                    .advance((1000.0, 200.0), now + Duration::from_secs(2))
+                    .advance((240.0, 200.0), now + Duration::from_secs(2))
                     .x,
-                950.0
+                190.0
             );
+        }
+    }
+
+    #[test]
+    fn smooth_follow_catches_large_jumps_on_the_first_sample() {
+        let now = Instant::now();
+        for space in [DesktopSpace::Points, DesktopSpace::PhysicalPixels] {
+            for reduce_jitter in [false, true] {
+                let initial = rect(space, 150.0, 160.0, 100.0, 80.0);
+                let bounds = rect(space, -400.0, -300.0, 1400.0, 1000.0);
+                let mut follow = FollowMouseMotion::new(
+                    initial,
+                    bounds,
+                    FollowMouseOptions {
+                        smooth_movement: true,
+                        reduce_jitter,
+                    },
+                    now,
+                );
+                let jumped = follow.advance((750.0, -200.0), now + Duration::from_millis(16));
+                assert_eq!(jumped, rect(space, 651.0, -200.0, 100.0, 80.0));
+                // This sample leaves the current crop while staying inside the target's dead zone.
+                let caught = follow.advance((760.0, -200.0), now + Duration::from_millis(16));
+                assert_eq!(caught, rect(space, 661.0, -200.0, 100.0, 80.0));
+                let eased = follow.advance((760.0, -200.0), now + Duration::from_millis(66));
+                assert!(eased.x > caught.x && eased.x < 700.0);
+                assert!(eased.y < jumped.y && eased.y > -240.0);
+
+                let reversed = follow.advance((-400.0, 699.0), now + Duration::from_millis(82));
+                assert_eq!(reversed, rect(space, -400.0, 620.0, 100.0, 80.0));
+                assert!(!follow.is_moving());
+            }
         }
     }
 
@@ -260,21 +319,18 @@ mod tests {
         let now = Instant::now();
         let half_life = Duration::from_millis(50);
         let mut follow = motion(true, true, now);
-        assert_eq!(follow.advance((224.0, 200.0), now).x, 150.0);
-        assert_eq!(follow.advance((225.0, 200.0), now + half_life).x, 162.5);
+        assert_eq!(follow.advance((241.0, 200.0), now).x, 150.0);
+        assert_eq!(follow.advance((242.0, 200.0), now + half_life).x, 171.0);
         // The pointer is already in the moving viewport's right margin but is
-        // still inside the destination's central half.
+        // still inside the destination's central five-sixths.
+        assert_eq!(follow.advance((263.0, 200.0), now + 2 * half_life).x, 181.5);
         assert_eq!(
-            follow.advance((240.0, 200.0), now + 2 * half_life).x,
-            168.75
+            follow.advance((284.0, 200.0), now + 3 * half_life).x,
+            207.75
         );
         assert_eq!(
-            follow.advance((250.0, 200.0), now + 3 * half_life).x,
-            184.375
-        );
-        assert_eq!(
-            follow.advance((250.0, 200.0), now + 12 * half_life).x,
-            200.0
+            follow.advance((284.0, 200.0), now + 12 * half_life).x,
+            234.0
         );
     }
 
@@ -286,12 +342,12 @@ mod tests {
         assert_eq!(frozen.x, 175.0);
         follow.restart_clock();
         let resumed_at = now + Duration::from_secs(3);
-        assert_eq!(follow.advance((350.0, 200.0), resumed_at), frozen);
+        assert_eq!(follow.advance((265.0, 200.0), resumed_at), frozen);
         assert_eq!(
             follow
-                .advance((350.0, 200.0), resumed_at + Duration::from_millis(50))
+                .advance((265.0, 200.0), resumed_at + Duration::from_millis(50))
                 .x,
-            237.5
+            195.0
         );
     }
 }
