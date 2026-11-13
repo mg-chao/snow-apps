@@ -110,10 +110,6 @@ impl Editor {
         MINIMUM_ARROW_SIZE_PX / self.camera().zoom.max(0.0001)
     }
 
-    fn line_confirm_threshold(&self) -> f64 {
-        LINE_CONFIRM_THRESHOLD_PX / self.camera().zoom.max(0.0001)
-    }
-
     pub(crate) fn begin_arrow_creation(
         &mut self,
         document: &DocumentModel,
@@ -376,13 +372,13 @@ impl Editor {
         self.snap_creation_point(document, current, modifiers)
     }
 
-    fn arrow_creation_preview(
+    fn arrow_creation_position(
         &self,
         document: &DocumentModel,
         committed_points: &[Point<f64>],
         current: Point<f64>,
         modifiers: Modifiers,
-    ) -> (Point<f64>, Option<BoundArrowPreview>, Vec<SnapGuide>) {
+    ) -> (Point<f64>, Vec<SnapGuide>) {
         let (mut snapped_current, guides) =
             self.snap_arrow_creation_point(document, current, modifiers);
         if modifiers.shift
@@ -392,14 +388,30 @@ impl Editor {
         {
             snapped_current = lock_linear_point_to_discrete_angle(origin, snapped_current);
         }
-        if self.state.active_tool == ActiveTool::Line
-            && committed_points.len() >= 2
-            && committed_points.first().is_some_and(|first| {
-                point_distance(*first, snapped_current) <= self.line_confirm_threshold()
-            })
-        {
-            snapped_current = committed_points[0];
+        if self.state.active_tool == ActiveTool::Line {
+            if committed_points.len() >= 2
+                && point_distance(committed_points[0], snapped_current)
+                    <= self.line_confirm_threshold()
+            {
+                snapped_current = committed_points[0];
+            } else if !modifiers.shift
+                && let Some(endpoint) = self.nearby_line_endpoint(document, current, None)
+            {
+                return (endpoint, Vec::new());
+            }
         }
+        (snapped_current, guides)
+    }
+
+    fn arrow_creation_preview(
+        &self,
+        document: &DocumentModel,
+        committed_points: &[Point<f64>],
+        current: Point<f64>,
+        modifiers: Modifiers,
+    ) -> (Point<f64>, Option<BoundArrowPreview>, Vec<SnapGuide>) {
+        let (snapped_current, guides) =
+            self.arrow_creation_position(document, committed_points, current, modifiers);
         let mut points = committed_points.to_vec();
         let should_append = points.last().is_none_or(|last| {
             point_distance(*last, snapped_current) >= self.line_confirm_threshold()
@@ -468,13 +480,21 @@ impl Editor {
             (ArrowEndpointEdge::Start, points.first().copied()?),
             (ArrowEndpointEdge::End, points.last().copied()?),
         ] {
+            let mut context = arrow_context;
+            // Keep a snapped endpoint at the join if a bindable shape is also nearby.
+            if preview_arrow.is_line()
+                && context.is_binding_enabled
+                && self.nearby_line_endpoint(document, pointer, None) == Some(pointer)
+            {
+                context.is_binding_enabled = false;
+            }
             let result = compute_arrow_endpoint_drag(
                 arrow_id,
                 &preview_arrow,
                 edge,
                 pointer,
                 &bindables,
-                arrow_context,
+                context,
                 arrow_endpoint_drag_options(modifiers, finalize),
             );
             preview_arrow = result.arrow;
@@ -773,8 +793,16 @@ impl Editor {
         }
 
         let current_canvas = view_to_canvas(event.position, &self.camera(), self.surface_size());
-        let (snapped_current, _) =
-            self.snap_arrow_creation_point(document, current_canvas, event.modifiers);
+        let (snapped_current, _) = if self.state.active_tool == ActiveTool::Line {
+            self.arrow_creation_position(
+                document,
+                &state.committed_points,
+                current_canvas,
+                event.modifiers,
+            )
+        } else {
+            self.snap_arrow_creation_point(document, current_canvas, event.modifiers)
+        };
         let Some(last_committed) = state.committed_points.last().copied() else {
             return Ok(InteractionOutput::default());
         };

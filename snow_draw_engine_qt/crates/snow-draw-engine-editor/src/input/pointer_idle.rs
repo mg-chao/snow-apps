@@ -374,8 +374,14 @@ impl Editor {
                 })
             }
             ToolEmptyCanvasAction::CreateArrow => {
-                let start_canvas_position =
-                    self.snap_creation_start_position(canvas_point, event.modifiers);
+                let endpoint = if self.state.active_tool == ActiveTool::Line {
+                    self.nearby_line_endpoint(document, canvas_point, None)
+                } else {
+                    None
+                };
+                let start_canvas_position = endpoint.unwrap_or_else(|| {
+                    self.snap_creation_start_position(canvas_point, event.modifiers)
+                });
                 self.begin_arrow_creation(
                     document,
                     event.pointer_id,

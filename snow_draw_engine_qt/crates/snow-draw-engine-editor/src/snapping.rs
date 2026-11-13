@@ -5,6 +5,9 @@ use snow_draw_engine_document::{ElementData, bracket_snap_points};
 #[cfg(test)]
 #[path = "snapping/bracket_snap_tests.rs"]
 mod bracket_snap_tests;
+#[cfg(test)]
+#[path = "snapping/line_endpoint_tests.rs"]
+mod line_endpoint_tests;
 
 /// Actual binding-target geometry, independent of compound selection/layout bounds.
 pub(crate) struct BindableElementOverride {
@@ -96,6 +99,42 @@ impl Editor {
         } else {
             point
         }
+    }
+
+    pub(crate) fn line_confirm_threshold(&self) -> f64 {
+        LINE_CONFIRM_THRESHOLD_PX / self.camera().zoom.max(0.0001)
+    }
+
+    pub(crate) fn nearby_line_endpoint(
+        &self,
+        document: &DocumentModel,
+        point: Point<f64>,
+        excluded_line: Option<ElementId>,
+    ) -> Option<Point<f64>> {
+        let diameter = (2.0 * LINE_CONFIRM_THRESHOLD_PX) as u32;
+        let candidates = document.visible_element_ids(snow_draw_engine_core::ViewportQuery {
+            camera: Camera {
+                center: point,
+                zoom: self.camera().zoom.max(0.0001),
+            },
+            surface: SurfaceSize {
+                width: diameter,
+                height: diameter,
+            },
+        });
+        let threshold = self.line_confirm_threshold();
+        candidates
+            .into_iter()
+            // Favor the topmost line when endpoints are equally close.
+            .rev()
+            .filter(|id| Some(*id) != excluded_line)
+            .filter_map(|id| document.arrow(id).ok())
+            .filter(|line| line.is_line() && !snow_draw_engine_document::arrow_is_degenerate(line))
+            .flat_map(|line| [line.start(), line.end()])
+            .map(|endpoint| (endpoint, point_distance(point, endpoint)))
+            .filter(|(_, distance)| *distance <= threshold)
+            .min_by(|(_, left), (_, right)| left.total_cmp(right))
+            .map(|(endpoint, _)| endpoint)
     }
 
     pub(crate) fn arrow_engine_context(&self, modifiers: Modifiers) -> EngineContext {
