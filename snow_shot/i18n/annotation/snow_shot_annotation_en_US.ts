@@ -1415,8 +1415,8 @@
             <translation>Start arrowhead triangle outline</translation>
         </message>
         <message>
-            <source>Start moving the recording area when the cursor enters the outer quarter of its width or height.</source>
-            <translation>Start moving the recording area when the cursor enters the outer quarter of its width or height.</translation>
+            <source>Start moving the recording area when the cursor enters the outer twelfth of its width or height.</source>
+            <translation>Start moving the recording area when the cursor enters the outer twelfth of its width or height.</translation>
         </message>
         <message>
             <source>Start recording</source>

@@ -78,6 +78,8 @@
 #include <QScreen>
 #include <QPointer>
 #include <QScopeGuard>
+#include <qpa/qplatformscreen.h>
+#include <qpa/qwindowsysteminterface.h>
 #include <QTimer>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -8129,6 +8131,8 @@ void recordingFollowMouseTests() {
     {
         ScreenRecordingController controller(testEffectsSource);
         const QRect selected(40, 40, 320, 240);
+        QPoint cursor(350, 260);
+        controller.setFollowPointerReaderForTests([&] { return cursor; });
         controller.open(selected);
         auto* area = recordingAreaWindow();
         FollowAreaVisibilityObserver visibilityObserver(*area);
@@ -8373,34 +8377,45 @@ void recordingFollowMouseTests() {
         require(lastCreatedSession && area->captureViewport() == QRectF(selected) &&
                     canvas->isHidden(),
                 "follow waits at the original selection before the first captured viewport");
-        lastCreatedSession->viewport = {1, -120.5, 80.25, 180.5, 110.75};
-        const QRectF firstViewport(-120.5, 80.25, 180.5, 110.75);
-        wait([&] { return area->captureViewport() == firstViewport; },
-             "follow displays the accepted fractional desktop viewport");
+        lastCreatedSession->viewport = {1, 50.5, 80.25, 180.5, 110.75};
+        const QRectF initialGuide(190, 140, 320, 240);
+        wait([&] { return area->captureViewport() == initialGuide; },
+             "the first accepted viewport establishes the display for the guide");
+        cursor = {483, 359};
+        area->followPointerMoved(cursor);
+        require(area->captureViewport() == initialGuide,
+                "the session's jitter setting holds the guide inside the central five-sixths");
+        cursor = {420, 360};
+        area->followPointerMoved(cursor);
+        const QRectF movedGuide(260, 240, 320, 240);
+        require(area->captureViewport() == movedGuide,
+                "mouse movement pans the guide without a new capture snapshot");
         require(area->recordingRegion() == selected && toolbar->geometry() == toolbarBeforeFollow &&
                     canvas->geometry() == canvasBeforeFollow &&
                     canvas->canvasHistoryState().canUndo &&
                     area->testAttribute(Qt::WA_TransparentForMouseEvents) && !area->activateInput(),
                 "viewport movement preserves selection, annotations, toolbar position and input");
         tools->recordingPauseRequested();
-        lastCreatedSession->viewport = {2, 500.25, -40.5, 320.0, 240.0};
+        cursor = {480, 460};
+        area->followPointerMoved(cursor);
         QElapsedTimer pausedWait;
         pausedWait.start();
         while (pausedWait.elapsed() < 50)
             QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        require(area->captureViewport() == firstViewport,
-                "paused follow retains its last displayed capture even if a late snapshot arrives");
+        require(area->captureViewport() == movedGuide,
+                "paused follow retains its last displayed guide despite pointer movement");
         require(area->isVisible() && area->windowOpacity() == 1.0 && !preview->active &&
                     tools->recordingSession().state() ==
                         ScreenshotToolPalette::RecordingState::Paused,
                 "pausing keeps an active follow session's area visible");
         tools->recordingResumeRequested();
-        const QRectF resumedViewport(500.25, -40.5, 320.0, 240.0);
-        wait([&] { return area->captureViewport() == resumedViewport; },
-             "resuming follows the next accepted viewport");
+        const QRectF resumedGuide(320, 340, 320, 240);
+        require(area->captureViewport() == resumedGuide,
+                "resuming samples the cursor across the jitter threshold with the same revision");
         tools->recordingStopRequested();
-        require(area->isVisible() && area->captureViewport() == resumedViewport,
-                "finalization retains the visible last captured viewport");
+        area->followPointerMoved({520, 400});
+        require(area->isVisible() && area->captureViewport() == resumedGuide,
+                "finalization retains the visible guide despite pointer movement");
         wait([&] { return !controller.isRecording() && !tools->recordingBusy(); },
              "stop the follow session and complete finalization");
         require(area->captureViewport() == QRectF(selected) &&
@@ -8430,8 +8445,15 @@ void recordingFollowMouseTests() {
         require(area->captureViewport() == QRectF(selected),
                 "a new session cannot inherit the previous viewport");
         lastCreatedSession->viewport = {1, 160.0, 100.0, 200.0, 150.0};
-        wait([&] { return area->captureViewport() == QRectF(160, 100, 200, 150); },
+        wait([&] { return area->captureViewport() == resumedGuide; },
              "a new session accepts a restarted viewport revision");
+        cursor += QPoint(2, 3);
+        area->followPointerMoved(cursor);
+        require(area->captureViewport() == resumedGuide.translated(2, 3),
+                "with both options off even a small pointer event moves the guide immediately");
+        cursor += QPoint(30, 25);
+        wait([&] { return area->captureViewport() == resumedGuide.translated(32, 28); },
+             "the timer follows the cursor without mouse events or capture revisions");
         require(settings.setFollowMouse(false), "save next recording preference while active");
         tools->recordingFollowMouseSmoothMovementChanged(true);
         require(!settings.followMouseSmoothMovement(), "active controls cannot edit smoothing");
@@ -8558,6 +8580,257 @@ void recordingFollowMouseTests() {
             "restore follow fixture defaults");
 }
 
+void recordingSmoothFollowGuide() {
+    using snow_shot::storage::RecordingSettings;
+    const RecordingSettings settings;
+    require(settings.setFollowMouse(true) && settings.setFollowMouseSmoothMovement(true) &&
+                settings.setFollowMouseReduceJitter(false) && settings.setStartDelaySeconds(0) &&
+                settings.setWebcamEnabled(false) && settings.setAutoHideToolbar(false),
+            "prepare follow recording with smoothing only");
+    QPoint cursor(350, 260);
+    ScreenRecordingController controller(testEffectsSource);
+    controller.setFollowPointerReaderForTests([&] { return cursor; });
+    controller.open({40, 40, 320, 240});
+    auto* area = recordingAreaWindow();
+    auto* tools = palette();
+    controller.startRecording();
+    waitForRecording(controller);
+    lastCreatedSession->viewport = {1, 50.5, 80.25, 180.5, 110.75};
+    controller.pollCaptureViewportForTests();
+    const QRectF initial(190, 140, 320, 240);
+    require(area->captureViewport() == initial, "the initial guide centers on the cursor");
+
+    cursor += QPoint(24, 20);
+    area->followPointerMoved(cursor);
+    require(area->captureViewport() == initial, "smoothing defers a small pointer movement");
+    tools->recordingPauseRequested();
+    QThread::msleep(100);
+    QCoreApplication::processEvents();
+    require(area->captureViewport() == initial, "pending easing stays frozen while paused");
+
+    tools->recordingResumeRequested();
+    require(area->captureViewport() == initial, "smoothing resumes from the frozen guide");
+    const QRectF target = initial.translated(24, 20);
+    QElapsedTimer deadline;
+    deadline.start();
+    while (area->captureViewport() != target && deadline.elapsed() < 3000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(area->captureViewport() == target,
+            "the timer settles the guide without more pointer events or capture revisions");
+
+    cursor = QPoint(100, 100);
+    area->followPointerMoved(cursor);
+    require(area->captureViewport().topLeft() == cursor,
+            "the guide catches a cursor jump before the next timer tick or capture revision");
+    tools->recordingCloseRequested();
+    waitForIdle(controller);
+}
+
+void recordingFollowGuideResyncsAfterMovementSettles() {
+    using namespace std::chrono_literals;
+    using snow_shot::storage::RecordingSettings;
+    const RecordingSettings settings;
+    require(settings.setFollowMouse(true) && settings.setFollowMouseSmoothMovement(false) &&
+                settings.setFollowMouseReduceJitter(true) && settings.setStartDelaySeconds(0) &&
+                settings.setFrameRate(30) && settings.setWebcamEnabled(false) &&
+                settings.setAutoHideToolbar(false),
+            "prepare follow recording with jitter reduction at 30 fps");
+    const QRectF capture(190, 140, 320, 240);
+    QPoint cursor = capture.center().toPoint();
+    auto now = std::chrono::steady_clock::time_point{};
+    ScreenRecordingController controller(testEffectsSource);
+    controller.setFollowPointerReaderForTests([&] { return cursor; });
+    controller.setFollowClockForTests([&] { return now; });
+    controller.open({40, 40, 320, 240});
+    auto* area = recordingAreaWindow();
+    controller.startRecording();
+    waitForRecording(controller);
+    lastCreatedSession->viewport = {1, capture.x(), capture.y(), capture.width(), capture.height()};
+    controller.pollCaptureViewportForTests();
+    require(area->captureViewport() == capture, "initialize the guide on the accepted crop");
+
+    // Capture misses the short excursion into the margin and keeps its previous crop.
+    cursor = {485, 260};
+    area->followPointerMoved(cursor);
+    const QRectF movedGuide = capture.translated(135, 0);
+    require(area->captureViewport() == movedGuide, "the guide reacts to the excursion immediately");
+    now += 1ms;
+    cursor = {460, 260};
+    area->followPointerMoved(cursor);
+    now += 149ms;
+    controller.pollCaptureViewportForTests();
+    require(area->captureViewport() == movedGuide, "the guide holds before the idle delay");
+    now += 1ms;
+    controller.pollCaptureViewportForTests();
+    require(area->captureViewport() == capture,
+            "a settled pointer reconciles the guide against an unchanged capture revision");
+
+    cursor = {480, 260};
+    area->followPointerMoved(cursor);
+    require(area->captureViewport() == capture, "correction also restores the capture dead zone");
+    now += 150ms;
+    controller.pollCaptureViewportForTests();
+    const QRectF laterCapture = capture.translated(270, 0);
+    lastCreatedSession->viewport = {2, laterCapture.x(), laterCapture.y(), laterCapture.width(),
+                                    laterCapture.height()};
+    controller.pollCaptureViewportForTests();
+    now += 149ms;
+    controller.pollCaptureViewportForTests();
+    require(area->captureViewport() == capture, "a new crop revision restarts the idle delay");
+    now += 1ms;
+    controller.pollCaptureViewportForTests();
+    require(area->captureViewport() == laterCapture,
+            "a later accepted revision can reconcile without another mouse event");
+    now += 16ms;
+    controller.pollCaptureViewportForTests();
+    require(area->captureViewport() == laterCapture,
+            "a duplicate pointer sample cannot undo a correction near the crop margin");
+    palette()->recordingCloseRequested();
+    waitForIdle(controller);
+}
+
+void recordingFollowDisplayHandoff() {
+    using snow_shot::storage::RecordingSettings;
+    const RecordingSettings settings;
+    require(settings.setFollowMouse(true) && settings.setStartDelaySeconds(0) &&
+                settings.setFollowMouseSmoothMovement(false) &&
+                settings.setFollowMouseReduceJitter(false) &&
+                settings.setPostProcessingEnabled(false) && settings.setAutoHideToolbar(false),
+            "prepare a direct follow mouse recording");
+    const auto screens = QGuiApplication::screens();
+    require(screens.size() == 2, "follow handoff requires the two offscreen displays");
+    auto* first = screens.front();
+    auto* second = screens.back();
+    if (first->geometry().x() < second->geometry().x())
+        std::swap(first, second);
+    require(first->devicePixelRatio() != second->devicePixelRatio(),
+            "follow handoff requires different display scales");
+    const auto bounds = [](const QScreen& screen) {
+#ifdef Q_OS_MACOS
+        return screen.geometry();
+#else
+        return ScreenshotGeometryMapper::physicalRectForScreen(screen);
+#endif
+    };
+    const QRect firstBounds = bounds(*first);
+    const QRect secondBounds = bounds(*second);
+    require(secondBounds.x() < firstBounds.x(), "the second display is left of the first");
+
+    std::optional<QPoint> cursor = firstBounds.center();
+    ScreenRecordingController controller(testEffectsSource);
+    controller.setFollowPointerReaderForTests([&] { return cursor; });
+    const QRect selected(firstBounds.topLeft() + QPoint(40, 40), QSize(320, 240));
+    controller.open(selected);
+    auto* area = recordingAreaWindow();
+    auto* tools = palette();
+    auto* toolbar = tools->window();
+    const QRect toolbarGeometry = toolbar->geometry();
+    const auto centeredGuide = [&](const QPoint& point) {
+        return QRectF(point - QPoint(160, 120), selected.size());
+    };
+    controller.startRecording();
+    waitForRecording(controller);
+
+    const auto snapshot = [&](uint64_t revision, const QPoint& center) {
+        lastCreatedSession->viewport = {revision, center.x() - 12.5, center.y() - 10.5, 25, 21};
+        controller.pollCaptureViewportForTests();
+    };
+    area->followPointerMoved(*cursor);
+    require(area->captureViewport() == QRectF(selected),
+            "movement cannot establish a capture display before the first frame");
+    snapshot(1, firstBounds.center());
+    require(area->captureViewport() == centeredGuide(*cursor),
+            "the first snapshot positions the guide around the current cursor");
+
+    {
+        const QRect originalBounds = first->handle()->geometry();
+        const QRect originalAvailable = first->handle()->availableGeometry();
+        const auto resizeDisplay = [first](const QRect& geometry, const QRect& available) {
+            QWindowSystemInterface::handleScreenGeometryChange(first, geometry, available);
+            QWindowSystemInterface::flushWindowSystemEvents();
+        };
+        const auto restoreScreen =
+            qScopeGuard([&] { resizeDisplay(originalBounds, originalAvailable); });
+
+        cursor = QPoint(firstBounds.right(), firstBounds.center().y());
+        area->followPointerMoved(*cursor);
+        const QRectF originalGuide = area->captureViewport();
+        QRect narrowerBounds = originalBounds;
+        narrowerBounds.setWidth(originalBounds.width() * 2 / 3);
+        resizeDisplay(narrowerBounds, narrowerBounds);
+        const QRect resizedBounds = bounds(*first);
+        require(resizedBounds.width() < firstBounds.width() &&
+                    resizedBounds.contains(firstBounds.center()),
+                "the display shrinks around the same accepted capture viewport");
+        controller.pollCaptureViewportForTests();
+        const QRectF resizedGuide = area->captureViewport();
+        require(resizedGuide.left() < originalGuide.left() &&
+                    resizedGuide.right() == resizedBounds.right() + 1 - 3 &&
+                    resizedGuide.size() == originalGuide.size(),
+                "the guide clamps to the smaller display with the same viewport revision");
+    }
+
+    cursor.reset();
+    snapshot(2, secondBounds.center());
+    require(area->captureViewport() == centeredGuide(secondBounds.center()),
+            "an unavailable cursor sample falls back to the confirmed snapshot center");
+    cursor = secondBounds.topLeft();
+    area->followPointerMoved(*cursor);
+    const QRectF edgeGuide(secondBounds.topLeft() + QPoint(3, 3), selected.size());
+    require(area->captureViewport() == edgeGuide,
+            "same-display movement clamps the painted guide inside the display");
+    cursor = firstBounds.center();
+    area->followPointerMoved(*cursor);
+    snapshot(3, secondBounds.center() + QPoint(80, 40));
+    snapshot(4, {firstBounds.right() + 1000, firstBounds.bottom() + 1000});
+    require(area->captureViewport() == edgeGuide,
+            "same-display and unresolved snapshots hold the guide after a cursor crossing");
+
+    snapshot(5, firstBounds.topLeft() + QPoint(100, 100));
+    const QRectF destinationGuide = centeredGuide(*cursor);
+    require(area->captureViewport() == destinationGuide && toolbar->geometry() == toolbarGeometry,
+            "capture confirmation moves the guide to the stationary cursor and keeps the toolbar");
+#ifdef Q_OS_MACOS
+    const qreal scale = 1.0;
+#else
+    const qreal scale = first->devicePixelRatio();
+#endif
+    const QPointF logicalOrigin = QPointF(first->geometry().topLeft()) +
+                                  (destinationGuide.topLeft() - firstBounds.topLeft()) / scale;
+    const QRectF logicalGuide = area->selectionRect().translated(area->mapToGlobal(QPoint()));
+    require(QLineF(logicalGuide.topLeft(), logicalOrigin).length() < 0.001 &&
+                qAbs(logicalGuide.width() * scale - selected.width()) < 0.001,
+            "the destination display supplies the guide's coordinate mapping and DPI");
+
+    snapshot(6, secondBounds.center());
+    const QRectF clampedGuide(
+        QPointF(secondBounds.x() + secondBounds.width() - 3 - selected.width(), cursor->y() - 120),
+        selected.size());
+    require(area->captureViewport() == clampedGuide,
+            "a confirmed switch clamps to its destination when the cursor has already left");
+    const QRectF frozenGuide = area->captureViewport();
+    std::promise<void> release;
+    std::promise<void> entered;
+    auto exportReady = entered.get_future();
+    exportGate = release.get_future().share();
+    exportEntered = &entered;
+    const int previousExports = exports;
+    tools->recordingTrimRequested();
+    require(exportReady.wait_for(std::chrono::seconds(3)) == std::future_status::ready,
+            "hold finalization before opening the trim preview");
+    area->followPointerMoved(secondBounds.center());
+    snapshot(7, firstBounds.center());
+    require(area->captureViewport() == frozenGuide && area->canvas()->isHidden(),
+            "trim preparation leaves the guide frozen while the recording finalizes");
+    joinHeldExport(release, previousExports);
+    waitForIdle(controller);
+    require(area->captureViewport() == QRectF(selected) && area->recordingRegion() == selected,
+            "trim finalization restores the original selection before preview");
+    tools->recordingCloseRequested();
+}
+
 template <typename Application> int runRecordingControllerTests(Application& app) {
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary storage must exist");
@@ -8649,6 +8922,12 @@ template <typename Application> int runRecordingControllerTests(Application& app
     if (app.arguments().contains(QStringLiteral("--follow-mouse-only"))) {
         recordingFollowMouseTests();
         recordingFollowAreaExclusionTests();
+        recordingSmoothFollowGuide();
+        recordingFollowGuideResyncsAfterMovementSettles();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--follow-display-handoff-only"))) {
+        recordingFollowDisplayHandoff();
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--countdown-only"))) {

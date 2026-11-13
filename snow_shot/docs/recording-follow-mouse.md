@@ -8,18 +8,24 @@ overrides the toggle for that session and uses the saved motion options.
 
 The selected rectangle determines the nominal capture extent and output aspect ratio. Capture
 starts centered on the cursor and clamps to the monitor bounds. Reduce jitter holds the crop while
-the cursor is within its central half. Entering an outer quarter triggers a recenter. Smooth
-movement eases the crop toward its target. A fast cursor jump can temporarily leave the frame.
+the cursor is within its central five-sixths. Entering the outer twelfth along either axis
+triggers a recenter. Smooth movement eases the crop toward its target. On a fast cursor jump
+within the display, the guide and crop catch up enough to include the cursor on their next
+sample, then ease toward the target.
 With both options off, the crop immediately centers on each cursor sample.
 
 If the nominal extent exceeds the monitor, it shrinks uniformly to fit and scales into the original
 encoded dimensions. Raster rounding can differ by less than one source pixel per axis. Moving onto
 a larger monitor restores the nominal extent. Cursor visibility does not affect following.
 
-Follow mode keeps the area border visible throughout recording. It follows the desktop rectangle
-of the latest frame accepted by the recording output, including smoothing, monitor clamping, and
-source resizing. The border freezes at the last captured rectangle during pause and finalization,
-then returns to the original selection after stopping or a failed start. The toolbar stays in place.
+Follow mode keeps the area border visible throughout recording. The guide uses global mouse
+movement, applies the same motion options as the capture crop, and fits inside the display being
+captured. It can differ from the crop in a video frame. With Reduce jitter enabled, the guide
+realigns to the latest submitted crop after movement settles. When the cursor crosses to another
+display, the guide holds until a submitted frame confirms the switch. It then starts centered on the
+current cursor position and clamps to the new display. The guide freezes during pause and
+finalization, tracks the current cursor with the selected motion options on resume, and returns to
+the original selection after finalization or a failed start. The toolbar stays in place.
 The recording area is excluded from capture on a best-effort basis, independently of the toolbar
 capture setting; an exclusion failure never hides the border or prevents recording. Active
 following hides retained canvas annotations without changing their contents, history, or viewport.
@@ -62,7 +68,7 @@ so recovery does not repeatedly poll a failed native stream.
 Each admitted frame carries its actual desktop transform. Cursor observations remain attached to
 that frame. The nonblocking `snow_recording_session_capture_viewport` query exposes the last
 successfully submitted frame's rectangle and a session-local geometry revision. The UI polls it
-every 16 ms while recording, retaining its current border when no snapshot is available.
+every 16 ms while recording to confirm the display and advance any pending guide movement.
 Click and trail history reprojects through the moving viewport without renewing its
 age or releasing held keys. Deferred input format 3 adds streamed viewport reprojections; readers
 continue to accept formats 1 and 2. The media footer retains the initial canvas geometry rather

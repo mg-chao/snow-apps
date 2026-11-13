@@ -131,16 +131,16 @@ fn follow_mouse_native_motion_reprojects_cursor_without_stationary_geometry_revi
     let left = f64::from(region.x);
     assert_eq!(first.metadata().capture_transform().unwrap().source.x, left);
 
-    set_bench_follow_mouse_position(Some((x + 40, y + 30)));
-    let inside = gpu_at(&stream, x + 40, y + 30);
+    set_bench_follow_mouse_position(Some((x + 133, y + 74)));
+    let inside = gpu_at(&stream, x + 133, y + 74);
     assert_eq!(
         inside.metadata().configuration_generation(),
         first.metadata().configuration_generation()
     );
 
-    let goal = left + 96.0;
-    set_bench_follow_mouse_position(Some((x + 96, y)));
-    let panning = gpu_at_when(&stream, x + 96, y, |metadata| {
+    let goal = left + 134.0;
+    set_bench_follow_mouse_position(Some((x + 134, y)));
+    let panning = gpu_at_when(&stream, x + 134, y, |metadata| {
         let origin = metadata.capture_transform().unwrap().source.x;
         origin > left && origin < goal
     });
@@ -148,7 +148,7 @@ fn follow_mouse_native_motion_reprojects_cursor_without_stationary_geometry_revi
         panning.metadata().configuration_generation()
             > inside.metadata().configuration_generation()
     );
-    let settled = gpu_at_when(&stream, x + 96, y, |metadata| {
+    let settled = gpu_at_when(&stream, x + 134, y, |metadata| {
         metadata.capture_transform().unwrap().source.x == goal
     });
     assert!(

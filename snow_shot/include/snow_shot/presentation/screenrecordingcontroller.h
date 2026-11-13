@@ -7,8 +7,10 @@
 #include <QRect>
 #include <QJsonObject>
 
+#include <chrono>
 #include <memory>
 #include <functional>
+#include <optional>
 
 class RecordingEffectsSource;
 
@@ -44,6 +46,9 @@ class ScreenRecordingController final : public QObject {
     void detachAutomation();
 #ifdef SNOW_SHOT_TEST_HOOKS
     void setCaptureExclusionSetterForTests(std::function<bool(QWidget*, bool)> setter);
+    void setFollowPointerReaderForTests(std::function<std::optional<QPoint>()> reader);
+    void setFollowClockForTests(std::function<std::chrono::steady_clock::time_point()> clock);
+    void pollCaptureViewportForTests();
 #endif
 
   signals:

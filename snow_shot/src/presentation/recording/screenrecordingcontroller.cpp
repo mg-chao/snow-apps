@@ -5,6 +5,7 @@
 #include "recordingeffectpreview.h"
 #include "recordingaudiogainpopover.h"
 #include "recordingcountdownoverlay.h"
+#include "recordingregioninputrouter.h"
 #include "../tools/screenshotfloatingtoolpalettenative.h"
 #include "recordingpopupexclusions.h"
 #include "widgets/popover.h"
@@ -89,6 +90,7 @@
 namespace {
 constexpr int kDurationTickMilliseconds = 100;
 constexpr int kCountdownTickMilliseconds = 16;
+constexpr auto kMinimumFollowGuideIdleDelay = std::chrono::milliseconds(150);
 
 uint32_t recordingCaptureBackendPreference(const snow_shot::storage::RecordingSettings& settings) {
 #ifdef Q_OS_MACOS
@@ -459,9 +461,9 @@ struct ScreenRecordingController::Impl {
     }
 
     void shutdown() {
+        stopFollowTracking();
         stopAudioMeter();
         exclusionPollTimer.stop();
-        captureViewportTimer.stop();
         durationTimer.stop();
         finalizationPollTimer.stop();
         startPollTimer.stop();
@@ -568,6 +570,11 @@ struct ScreenRecordingController::Impl {
             areaWindow, &ScreenRecordingAreaWindow::captureSurfaceChanged,
             uiSession->connections.get(), [this] { refreshAreaCaptureExclusion(); },
             Qt::QueuedConnection);
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::followPointerMoved,
+                         uiSession->connections.get(), [this](const QPoint& position) {
+                             if (tracksFollowPointer())
+                                 followPointer(position, followNow());
+                         });
         QObject::connect(areaWindow->canvas(), &SnowCanvasWidget::historyStateChanged,
                          uiSession->connections.get(), [this] {
                              automationRevision = snow_shot::presentation::nextAutomationRevision();
@@ -626,17 +633,33 @@ struct ScreenRecordingController::Impl {
     }
 
     bool followCaptureActive() const {
-        // Preparation and countdown keep their existing canvas and effect previews.
-        return followMouse && !trimRequested &&
-               (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
+        // Keep the last guide visible while the native session is being finalized.
+        return followMouse &&
+               (recordingSession || discardFuture.valid() || finalizationFuture.valid() ||
                 sessionStatus.busyOperation() ==
                     ScreenshotToolPalette::RecordingBusyOperation::Starting);
+    }
+
+    bool tracksFollowPointer() const {
+        return areaWindow && recordingSession && followMouse && !trimRequested && !sessionEnding &&
+               !sessionStatus.busy() &&
+               sessionStatus.state() == ScreenshotToolPalette::RecordingState::Recording;
+    }
+
+    void stopFollowTracking() {
+        captureViewportTimer.stop();
+        followGuideTick.reset();
+        lastFollowPointer.reset();
+        followGuideIdleSince.reset();
+        if (areaWindow)
+            areaWindow->setFollowPointerTracking(false);
     }
 
     void syncAreaPresentation() {
         if (!uiSession || !areaWindow || !toolbarWindow)
             return;
-        const bool following = followMouse && !trimRequested;
+        const bool followCapture = followCaptureActive();
+        const bool following = followMouse && (!trimRequested || followCapture);
         if (following != uiSession->followMouseSelected) {
             updateCaptureRegion();
             if (following) {
@@ -645,34 +668,143 @@ struct ScreenRecordingController::Impl {
             }
             uiSession->followMouseSelected = following;
         }
-        areaWindow->setFollowCaptureActive(followCaptureActive());
-        const bool tracking =
-            following && recordingSession && !sessionStatus.busy() &&
-            sessionStatus.state() == ScreenshotToolPalette::RecordingState::Recording;
-        if (tracking && !captureViewportTimer.isActive()) {
-            pollCaptureViewport();
-            captureViewportTimer.start();
-        } else if (!tracking) {
-            captureViewportTimer.stop();
-        }
+        areaWindow->setFollowCaptureActive(followCapture);
         if (!areaWindow->isVisible()) {
             areaWindow->show();
             areaWindow->raise();
         }
+        if (!tracksFollowPointer()) {
+            stopFollowTracking();
+        } else if (!captureViewportTimer.isActive()) {
+            pollCaptureViewport();
+            areaWindow->setFollowPointerTracking(true);
+            captureViewportTimer.start();
+        }
+    }
+
+    std::chrono::steady_clock::time_point followNow() const {
+#ifdef SNOW_SHOT_TEST_HOOKS
+        if (followClock)
+            return followClock();
+#endif
+        return std::chrono::steady_clock::now();
+    }
+
+    void followPointer(const QPoint& position, std::chrono::steady_clock::time_point now) {
+        if (lastFollowPointer == position)
+            return;
+        lastFollowPointer = position;
+        followGuideIdleSince = now;
+        if (!followScreen || !followGuide ||
+            !ScreenshotHalfOpenRect::fromRect(followScreenBounds).contains(position)) {
+            followGuideTick.reset();
+            return;
+        }
+        followGuide->track(position);
+        if (followGuide->isMoving()) {
+            if (!followGuideTick)
+                followGuideTick = now;
+        } else {
+            followGuideTick.reset();
+        }
+        placeFollowGuide();
+    }
+
+    void advanceFollowGuide(std::chrono::steady_clock::time_point now) {
+        if (!followGuideTick || !followScreen)
+            return;
+        followGuide->advance(now - *followGuideTick);
+        if (followGuide->isMoving())
+            followGuideTick = now;
+        else
+            followGuideTick.reset();
+        placeFollowGuide();
+    }
+
+    void placeFollowGuide() {
+        areaWindow->setCaptureViewport(followGuide->viewport(), followScreen.data());
+    }
+
+    std::optional<QPoint> currentFollowPointer() const {
+#ifdef SNOW_SHOT_TEST_HOOKS
+        if (followPointerReader)
+            return followPointerReader();
+#endif
+        return RecordingRegionInputRouter::cursorPosition();
+    }
+
+    static QRect followDisplayBounds(const QScreen& screen) {
+#ifdef Q_OS_MACOS
+        return screen.geometry();
+#else
+        return ScreenshotGeometryMapper::physicalRectForScreen(screen);
+#endif
     }
 
     void pollCaptureViewport() {
-        if (!areaWindow || !recordingSession || !followMouse || trimRequested ||
-            sessionStatus.busy() ||
-            sessionStatus.state() != ScreenshotToolPalette::RecordingState::Recording)
+        if (!tracksFollowPointer())
             return;
+
+        const auto now = followNow();
+        // Pointer events move the guide immediately. Polling also covers missed events.
+        const auto pointer = currentFollowPointer();
+        QScreen* screen = followScreen.data();
+        QRect bounds;
+        QPointF center = followGuide ? followGuide->viewport().center() : QPointF();
         SnowRecordingCaptureViewport viewport{};
-        if (!snow_recording_session_capture_viewport(recordingSession.get(), &viewport) ||
-            viewport.revision == captureViewportRevision)
+        ScreenshotHalfOpenRect source;
+        // Only a submitted capture rectangle can confirm a different display.
+        if (snow_recording_session_capture_viewport(recordingSession.get(), &viewport)) {
+            source = ScreenshotHalfOpenRect::fromEdges(
+                viewport.x, viewport.y, viewport.x + viewport.width, viewport.y + viewport.height);
+            if ((!screen || viewport.revision != captureViewportRevision) && !source.isEmpty()) {
+                const QPointF sourceCenter = source.center();
+                for (QScreen* candidate : QGuiApplication::screens()) {
+                    const QRect candidateBounds = followDisplayBounds(*candidate);
+                    if (!ScreenshotHalfOpenRect::fromRect(candidateBounds).contains(sourceCenter))
+                        continue;
+                    captureViewportRevision = viewport.revision;
+                    followGuideIdleSince = now;
+                    screen = candidate;
+                    bounds = candidateBounds;
+                    center = sourceCenter;
+                    break;
+                }
+            }
+        }
+
+        // The display bounds can change while the accepted crop stays identical.
+        if (screen && !bounds.isValid())
+            bounds = followDisplayBounds(*screen);
+        if (!bounds.isValid()) {
+            followGuideTick.reset();
             return;
-        areaWindow->setCaptureViewport(
-            QRectF(viewport.x, viewport.y, viewport.width, viewport.height));
-        captureViewportRevision = viewport.revision;
+        }
+        if (followScreen != screen || followScreenBounds != bounds) {
+            followScreen = screen;
+            followScreenBounds = bounds;
+            followGuide.emplace(recordingRegion.size(), bounds,
+                                pointer ? QPointF(*pointer) : center, followMouseSmoothMovement,
+                                followMouseReduceJitter);
+            followGuideTick.reset();
+            lastFollowPointer = pointer;
+            followGuideIdleSince = now;
+            placeFollowGuide();
+            return;
+        }
+        if (pointer)
+            followPointer(*pointer, now);
+        advanceFollowGuide(now);
+        // A brief crossing can change the guide's dead zone between capture samples.
+        // Once both motion and input settle, use the accepted crop as the next anchor.
+        if (followMouseReduceJitter && !followGuideTick && followGuideIdleSince && pointer &&
+            now - *followGuideIdleSince >= followGuideIdleDelay &&
+            viewport.revision == captureViewportRevision && source.contains(*pointer) &&
+            ScreenshotHalfOpenRect::fromRect(bounds).contains(*pointer)) {
+            followGuide->recenter(source.center());
+            followGuideIdleSince.reset();
+            placeFollowGuide();
+        }
     }
 
     void clearCountdown() {
@@ -1430,7 +1562,6 @@ struct ScreenRecordingController::Impl {
             const RecordingKeyboardFont keyboardFont;
             const RecordingKeyboardTheme keyboardTheme(keyboardBackgroundColor,
                                                        keyboardForegroundColor);
-            captureViewportRevision = 0;
             areaCaptureExcluded = followMouse;
             refreshAreaCaptureExclusion();
             if (!automationOptions.value(QStringLiteral("capture_toolbar"))
@@ -1509,6 +1640,11 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(followMouseSmoothMovement),
                 static_cast<uint32_t>(followMouseReduceJitter),
             };
+            // Give low frame-rate capture time to sample and submit a settled crop.
+            followGuideIdleDelay =
+                qMax(kMinimumFollowGuideIdleDelay,
+                     std::chrono::ceil<std::chrono::milliseconds>(
+                         std::chrono::duration<double>(3.0 / config.capture_fps)));
             sessionLoopAnimatedImages = config.loop_animated_images != 0;
             const QDateTime outputTimestamp = QDateTime::currentDateTime();
             sessionWindowNames =
@@ -1681,8 +1817,8 @@ struct ScreenRecordingController::Impl {
             showError(captureError());
             return;
         }
-        pollCaptureViewport();
         sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::paused();
+        stopFollowTracking();
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         report(QStringLiteral("recording.paused"));
         syncUi();
@@ -1726,6 +1862,8 @@ struct ScreenRecordingController::Impl {
         trimSaveWhenReady = save;
         stop(false);
         uiSession->preview->stopAndClear();
+        if (!followCaptureActive())
+            areaWindow->setTrimming(true);
         trimSession = new RecordingTrimSession(areaWindow, toolbarWindow, &owner);
         trimSession->reportError = [this](const QString& error) { showError(error); };
         trimSession->exported = [this, session = trimSession](const QString& path) {
@@ -1746,14 +1884,14 @@ struct ScreenRecordingController::Impl {
 
         // Freeze the media endpoint before UI teardown or worker scheduling.
         static_cast<void>(snow_recording_session_request_stop(recordingSession.get()));
+        sessionStatus = sessionStatus.finishing(copyToClipboard);
+        stopFollowTracking();
         setCaptureActivity(false);
         stopAudioMeter();
         exclusionPollTimer.stop();
-        captureViewportTimer.stop();
         durationTimer.stop();
         // Keep the final duration on screen while the file is finalized;
         // pollFinalization resets it once the operation completes.
-        sessionStatus = sessionStatus.finishing(copyToClipboard);
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         syncUi();
         // The member keeps ownership; pollFinalization destroys the session
@@ -2042,12 +2180,12 @@ struct ScreenRecordingController::Impl {
     }
 
     void discard() {
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::stopping();
+        stopFollowTracking();
         setCaptureActivity(false);
         stopAudioMeter();
         exclusionPollTimer.stop();
-        captureViewportTimer.stop();
         durationTimer.stop();
-        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::stopping();
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         syncUi();
         // Destroy cancels capture and removes only the session's private staging
@@ -2096,7 +2234,7 @@ struct ScreenRecordingController::Impl {
     }
 
     void destroyUi() {
-        captureViewportTimer.stop();
+        stopFollowTracking();
         if (!recordingSession)
             setCaptureActivity(false);
         if (trimSession) {
@@ -2204,8 +2342,13 @@ struct ScreenRecordingController::Impl {
     }
 
     void restoreRecordingCaptureVisibility() {
-        captureViewportTimer.stop();
+        stopFollowTracking();
         captureViewportRevision = 0;
+        followScreen.clear();
+        followScreenBounds = {};
+        followGuide.reset();
+        if (areaWindow)
+            areaWindow->setFollowCaptureActive(false);
         areaCaptureExcluded = false;
         areaCaptureExclusion.restore();
         restoreToolbarCaptureVisibility();
@@ -2812,6 +2955,17 @@ struct ScreenRecordingController::Impl {
     QTimer durationTimer;
     QTimer captureViewportTimer;
     uint64_t captureViewportRevision = 0;
+    QPointer<QScreen> followScreen;
+    QRect followScreenBounds;
+    std::optional<snow_shot::presentation::recording::ScreenRecordingFollowGuideMotion> followGuide;
+    std::optional<std::chrono::steady_clock::time_point> followGuideTick;
+    std::optional<QPoint> lastFollowPointer;
+    std::optional<std::chrono::steady_clock::time_point> followGuideIdleSince;
+    std::chrono::milliseconds followGuideIdleDelay = kMinimumFollowGuideIdleDelay;
+#ifdef SNOW_SHOT_TEST_HOOKS
+    std::function<std::optional<QPoint>()> followPointerReader;
+    std::function<std::chrono::steady_clock::time_point()> followClock;
+#endif
     bool areaCaptureExcluded = false;
     QTimer finalizationPollTimer;
     QTimer startPollTimer;
@@ -2949,6 +3103,20 @@ void ScreenRecordingController::setCaptureExclusionSetterForTests(
     std::function<bool(QWidget*, bool)> setter) {
     m_impl->captureExclusionSetter = std::move(setter);
 }
+
+void ScreenRecordingController::setFollowPointerReaderForTests(
+    std::function<std::optional<QPoint>()> reader) {
+    m_impl->followPointerReader = std::move(reader);
+}
+
+void ScreenRecordingController::setFollowClockForTests(
+    std::function<std::chrono::steady_clock::time_point()> clock) {
+    m_impl->followClock = std::move(clock);
+}
+
+void ScreenRecordingController::pollCaptureViewportForTests() {
+    m_impl->pollCaptureViewport();
+}
 #endif
 
 ScreenRecordingController::ScreenRecordingController(QObject* parent)
@@ -3020,7 +3188,7 @@ void ScreenRecordingController::prepareForSessionEnd(int timeoutMs) {
     const bool hasUnfinishedRecording = s.recordingSession || s.startFuture.valid() ||
                                         s.finalizationFuture.valid() || s.renderJob ||
                                         s.trimSession;
-    s.captureViewportTimer.stop();
+    s.stopFollowTracking();
     s.durationTimer.stop();
     s.finalizationPollTimer.stop();
     s.startPollTimer.stop();
