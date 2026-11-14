@@ -42,6 +42,8 @@ class ScreenshotOcrTextLayer final : public QGraphicsView {
     void synchronize(const QTransform& canvasToViewTransform, const QRect& viewportRect);
     void updateSelection();
     void updateLineText(int lineIndex);
+    void updateLineTexts(const QVector<int>& lineIndices);
+    void updateTextColors();
     [[nodiscard]] ScreenshotOcrTextPosition textPositionAt(const QPointF& canvasPosition,
                                                            bool useClosestLine) const;
 

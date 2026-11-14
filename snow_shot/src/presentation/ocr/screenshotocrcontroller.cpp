@@ -250,9 +250,9 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 applyOcrBackgroundToOverlays(presentation, std::move(filteredImage),
                                              filteredImageCanvasRect);
             },
-            [this](int lineIndex, const QString& text, bool streaming) {
+            [this](const QVector<ScreenshotOcrTextUpdate>& updates) {
                 if (m_recognitionWindow != nullptr) {
-                    m_recognitionWindow->updateOcrText(lineIndex, text, streaming);
+                    m_recognitionWindow->updateOcrTexts(updates);
                 }
             },
             [this](bool, bool busy, SnowShotImageConversionFormat format) {
@@ -534,8 +534,9 @@ void ScreenshotOcrController::activateMode(Mode mode, bool textTranslation,
     composition.start();
     QImage source = m_surfaceKey == key
                         ? m_surfaceImage
-                        : composeScreenshotSourceSelection(m_context.displaySession, selection);
-    source = clipRecognitionSelection(std::move(source), m_context.selection);
+                        : clipRecognitionSelection(
+                              composeScreenshotSourceSelection(m_context.displaySession, selection),
+                              m_context.selection);
     if (mode == Mode::Table) {
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.capture"),
                                          QStringLiteral("table.source_prepared"),

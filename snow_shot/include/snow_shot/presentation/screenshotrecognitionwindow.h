@@ -175,6 +175,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
     // Only the active result page contributes a selection; no selection returns null.
     [[nodiscard]] std::unique_ptr<QMimeData> textSelectionClipboardMimeData() const;
     void updateOcrText(int lineIndex, const QString& text, bool streaming = false);
+    void updateOcrTexts(const QVector<ScreenshotOcrTextUpdate>& updates);
+    void updateOcrColors();
     void clearOcrPresentation();
     [[nodiscard]] std::optional<ScreenshotRecognitionImageSnapshot>
     imageSnapshot(QImage image, const QRectF& canvasRect, QImage filteredImage,

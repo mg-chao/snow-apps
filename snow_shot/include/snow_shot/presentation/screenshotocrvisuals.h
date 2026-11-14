@@ -17,7 +17,8 @@ class ScreenshotOcrPresentation;
 // Bounded interior/perimeter sampling selects an opaque dominant color, including split
 // backgrounds. Disabling fill selects the separate Blur policy and clears background estimates.
 void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, const QImage& source,
-                                    const QRectF& canvasRect, bool backgroundFill);
+                                    const QRectF& canvasRect, bool backgroundFill,
+                                    const std::atomic_bool* cancelled = nullptr);
 
 // Sample original, unfiltered pixels once per image/geometry. Independent of Background Fill.
 // Invalid estimates retain the renderer's contrast fallback. Cancellation never caches partial

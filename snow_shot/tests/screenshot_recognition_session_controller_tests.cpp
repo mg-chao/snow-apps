@@ -1175,8 +1175,11 @@ class BackgroundOcrRecognition final : public ScreenshotOcrRecognitionPort {
         renderCompletions.push_back(std::move(completion));
         return static_cast<RequestToken>(100 + renders.size());
     }
-    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor&) override {
-        requests[static_cast<qsizetype>(token - 1)].renderFilteredImage = enabled;
+    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor&,
+                                bool backgroundFill) override {
+        auto& request = requests[static_cast<qsizetype>(token - 1)];
+        request.renderFilteredImage = enabled;
+        request.backgroundFill = enabled && backgroundFill;
         return true;
     }
     void cancel(RequestToken token) override {
@@ -1244,8 +1247,9 @@ void textBackgroundPolicyControlsRendering() {
                     recognition.completions[0]({presentation});
             } else if (scenario == Scenario::InFlight) {
                 session.activate(Mode::Text);
-                require(recognition.requests[0].renderFilteredImage ==
-                            (fill == QStringLiteral("blur")),
+                require(recognition.requests[0].renderFilteredImage &&
+                            recognition.requests[0].backgroundFill ==
+                                (fill == QStringLiteral("background_fill")),
                         "interactive recognition initially requests the selected worker effect");
                 renderBackground = false;
             }
@@ -1273,8 +1277,9 @@ void textBackgroundPolicyControlsRendering() {
             session.activate(Mode::Text);
             require(recognition.requests.size() == 1 && backgrounds == 1 &&
                         recognition.renders.size() == 1 && renderPreparations == 1 &&
-                        presentation->lines[0].backgroundFillColor.isValid() ==
-                            (fill == QStringLiteral("background_fill")),
+                        recognition.renders[0].backgroundFill ==
+                            (fill == QStringLiteral("background_fill")) &&
+                        !presentation->lines[0].backgroundFillColor.isValid(),
                     "ordinary cached activation restores backgrounds without repeating OCR");
             renderBackground = false;
             session.activate(Mode::Text);
@@ -1298,7 +1303,7 @@ void cachedRecognitionUsesTheSelectedFillStyle() {
     require(configuration.setValue(QStringLiteral("text_recognition/fill_style"),
                                    QStringLiteral("background_fill")),
             "select background fill");
-    ControllableOcrRecognition recognition;
+    BackgroundOcrRecognition recognition;
     std::shared_ptr<ScreenshotOcrPresentation> displayed;
     ScreenshotRecognitionSessionActions actions;
     actions.applyOcrPresentation = [&](const auto& presentation) { displayed = presentation; };
@@ -1320,13 +1325,23 @@ void cachedRecognitionUsesTheSelectedFillStyle() {
     cached.text->presentation->prepareForRendering();
     controller.seedRecognitionResults(cached);
     controller.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    require(displayed != nullptr && displayed->lines[0].backgroundFillColor == QColor(30, 40, 50),
-            "cached OCR must receive fill colors from the source image before display");
+    require(displayed && !displayed->lines[0].backgroundFillColor.isValid() &&
+                recognition.renders.size() == 1 && recognition.renders[0].prepareVisualColors &&
+                !recognition.renders[0].renderFilteredImage,
+            "cached OCR requests worker colors independently of a filtered image");
+    const auto prepared = recognition.renders[0].presentation;
+    prepared->lines[0].backgroundFillColor = QColor(30, 40, 50);
+    prepared->solidBackgroundFill = true;
+    displayed->selectAll();
+    recognition.renderCompletions[0]({prepared});
+    require(displayed->lines[0].backgroundFillColor == QColor(30, 40, 50) &&
+                displayed->selectedText() == QStringLiteral("Text"),
+            "worker colors update the live presentation and preserve selection");
     require(configuration.setValue(QStringLiteral("text_recognition/fill_style"),
                                    QStringLiteral("blur")),
             "restore Blur");
     require(displayed != nullptr && !displayed->lines[0].backgroundFillColor.isValid() &&
-                recognition.requests == 0,
+                recognition.requests.isEmpty(),
             "switching visible OCR back to Blur clears solid colors without recognizing again");
     controller.deactivate();
 }
@@ -1775,6 +1790,12 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--ocr-defaults-only"))) {
         smartTypesettingUsesRecognizedLayout();
         recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--ocr-background-only"))) {
+        textBackgroundPolicyControlsRendering();
+        cachedRecognitionUsesTheSelectedFillStyle();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

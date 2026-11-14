@@ -5,6 +5,8 @@
 #include <QTextDocument>
 #include <QVector>
 
+#include <optional>
+
 class ScreenshotOcrTextEditingSession final {
   public:
     explicit ScreenshotOcrTextEditingSession(QString originalText, bool preserveSource = false);
@@ -30,6 +32,7 @@ class ScreenshotOcrTextEditingSession final {
     void establishBaseline(const QString& text);
     void establishHistory(const QString& text);
     void replaceTextWithoutHistory(const QString& text);
+    void appendStreamedText(const QString& text);
     void recordCurrentText();
     void undo();
     void redo();
@@ -51,6 +54,7 @@ class ScreenshotOcrTextEditingSession final {
     QString m_punctuation;
     QString m_preservedSource;
     QString m_documentRawText;
+    std::optional<QString> m_streamedText;
     QVector<qsizetype> m_documentSourceOffsets;
     QTextDocument m_document;
     QMetaObject::Connection m_sourceChangeConnection;

@@ -883,13 +883,30 @@ void prepareScreenshotOcrTextColors(ScreenshotOcrPresentation& presentation, con
 }
 
 void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, const QImage& source,
-                                    const QRectF& canvasRect, bool backgroundFill) {
+                                    const QRectF& canvasRect, bool backgroundFill,
+                                    const std::atomic_bool* cancelled) {
+    if (cancelled && cancelled->load(std::memory_order_relaxed))
+        return;
     const QRectF normalized = canvasRect.normalized();
+    const bool valid =
+        backgroundFill && !source.isNull() && normalized.isValid() && !normalized.isEmpty();
+    if (valid && presentation.solidBackgroundFill &&
+        presentation.m_fillColorImageKey == source.cacheKey() &&
+        presentation.m_fillColorCanvasRect == normalized &&
+        presentation.m_fillColorGeometry.size() == presentation.lines.size() &&
+        std::equal(presentation.lines.cbegin(), presentation.lines.cend(),
+                   presentation.m_fillColorGeometry.cbegin(),
+                   [](const auto& line, const auto& quad) { return line.quad == quad; }))
+        return;
+
     presentation.solidBackgroundFill = backgroundFill;
-    for (ScreenshotOcrLine& line : presentation.lines) {
-        line.backgroundFillColor = QColor();
-    }
-    if (!backgroundFill || source.isNull() || !normalized.isValid() || normalized.isEmpty()) {
+    presentation.m_fillColorImageKey = 0;
+    presentation.m_fillColorGeometry.clear();
+    if (!valid) {
+        for (qsizetype index = 0; index < presentation.lines.size(); ++index) {
+            if (presentation.lines.at(index).backgroundFillColor.isValid())
+                presentation.lines[index].backgroundFillColor = QColor();
+        }
         return;
     }
     QVector<QPolygonF> quads;
@@ -905,10 +922,16 @@ void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, con
         quads.push_back(std::move(quad));
     }
     const TextRegionIndex textRegions(quads, source.rect());
+    presentation.m_fillColorGeometry.reserve(presentation.lines.size());
     for (qsizetype i = 0; i < presentation.lines.size(); ++i) {
-        presentation.lines[i].backgroundFillColor =
-            estimateBackground(source, quads[i], textRegions);
+        if (cancelled && cancelled->load(std::memory_order_relaxed))
+            return;
+        auto& line = presentation.lines[i];
+        line.backgroundFillColor = estimateBackground(source, quads.at(i), textRegions);
+        presentation.m_fillColorGeometry.push_back(line.quad);
     }
+    presentation.m_fillColorCanvasRect = normalized;
+    presentation.m_fillColorImageKey = source.cacheKey();
 }
 
 QImage materializeScreenshotImageSource(const ScreenshotImageSource& source,

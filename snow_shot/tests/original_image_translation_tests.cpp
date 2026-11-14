@@ -23,10 +23,12 @@
 #include <QJsonObject>
 #include <QMimeData>
 #include <QNetworkReply>
+#include <QSignalBlocker>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTextDocument>
 #include <QThread>
+#include <QTimer>
 
 #include <algorithm>
 #include <cmath>
@@ -97,6 +99,12 @@ void waitUntil(const std::function<bool()>& condition, const char* message) {
         QThread::msleep(1);
     }
     require(condition(), message);
+}
+
+QTimer* translationUpdateTimer(const ScreenshotRecognitionSessionController& controller) {
+    auto* timer = controller.findChild<QTimer*>(QStringLiteral("screenshotTranslationUpdateTimer"));
+    require(timer != nullptr, "the translation controller owns a batching timer");
+    return timer;
 }
 
 void configureTranslation(bool overlay = true, const QString& model = QStringLiteral("model-a")) {
@@ -320,14 +328,14 @@ struct SessionProbe {
         if (ocr != nullptr) {
             actions.applyOcrBackgroundImage = [](auto, QImage, QRectF) {};
         }
-        actions.updateOcrText = [this, recognitionWindow](int index, const QString& text,
-                                                          bool lineStreaming) {
-            ++textUpdates;
+        actions.updateOcrTexts = [this, recognitionWindow](const auto& updates) {
+            textUpdates += static_cast<int>(updates.size());
             require(displayed != source, "stream updates must not modify the source presentation");
             if (recognitionWindow != nullptr) {
-                recognitionWindow->updateOcrText(index, text, lineStreaming);
+                recognitionWindow->updateOcrTexts(updates);
             } else {
-                displayed->setLineText(index, text, lineStreaming);
+                for (const auto& update : updates)
+                    displayed->setLineText(update.index, update.text, update.streaming);
             }
         };
         actions.showStatus = [this](const QString& text, bool error) {
@@ -1489,6 +1497,61 @@ void fragmentedUnicodeStreamsUpdateOnlyCompleteEvents() {
     server.finish(0);
     waitUntil([&]() { return !session.streaming; }, "single-box translation should finish");
 }
+
+void streamingBurstsCoalesceByBoxAndFlushOnCompletion() {
+    configureTranslation();
+    TranslationServer server;
+    SnowShotApiClient api(server.url());
+    SessionProbe session(&api, 1);
+    session.controller->beginTextTranslation();
+    server.waitForStreams(1);
+
+    const QSignalBlocker timerBlocked(translationUpdateTimer(*session.controller));
+    const auto token = TranslationServer::deltaEvent(QStringLiteral("x"));
+    server.send(0, token.repeated(24));
+    waitUntil([&] { return session.controller->textDraft() == QString(24, u'x'); },
+              "receive the complete burst before flushing");
+    require(session.textUpdates == 0 && session.controller->flushTranslationUpdates() &&
+                session.textUpdates == 1 && session.displayed->lines[0].text == QString(24, u'x') &&
+                session.displayed->lines[0].translationStreaming,
+            "a burst only refits the affected overlay box once");
+
+    server.send(0, token.repeated(24));
+    waitUntil([&] { return session.controller->textDraft() == QString(48, u'x'); },
+              "receive the final burst before completing the stream");
+    require(session.textUpdates == 1, "the final burst stays queued until completion");
+    server.finish(0);
+    waitUntil([&] { return !session.streaming; }, "the final burst completes");
+    require(session.textUpdates == 2 && !session.displayed->lines[0].translationStreaming &&
+                session.displayed->lines[0].text == QString(48, u'x'),
+            "completion publishes the last text and retires the stream in one visual update");
+}
+
+void denseOverlayPreparationUsesTheLatestConfiguration() {
+    configureTranslation();
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    TranslationServer server;
+    SnowShotApiClient api(server.url());
+    ScreenshotRecognitionWindow window({});
+    SessionProbe session(&api, 40, QStringLiteral("dense-overlay"), false, nullptr, nullptr,
+                         &window);
+    require(settings.setLayoutProcessing(QStringLiteral("smart_merge")), "select Smart Merge");
+    session.controller->beginTextEditing();
+    require(!window.showsOcrLayer() && window.findChild<QTextEdit*>(),
+            "the source is open in the OCR text editor");
+    session.controller->beginTextTranslation();
+    require(session.streaming && session.displayed == session.source && window.showsOcrLayer() &&
+                !window.findChild<QTextEdit*>() && server.streams.isEmpty(),
+            "dense translation restores the source overlay while the worker prepares its layout");
+
+    require(settings.setLayoutProcessing(QStringLiteral("original")), "replace pending merge");
+    server.waitForStreams(kBuiltInTranslationConcurrency);
+    require(session.displayed != session.source && session.displayed->lines.size() == 40 &&
+                server.streams[0].text == QStringLiteral("source 0"),
+            "only the latest layout may publish or send translation requests");
+    session.controller->invalidate();
+    require(!session.controller->hasTarget(), "invalidation retires the current dense overlay");
+}
 } // namespace
 
 void runOriginalImageTranslationTests() {
@@ -1513,6 +1576,8 @@ void runOriginalImageTranslationTests() {
     emptyFormattedAndPreparationFailures();
     renderSnapshotsAndLateCallbacksStayIsolated();
     fragmentedUnicodeStreamsUpdateOnlyCompleteEvents();
+    streamingBurstsCoalesceByBoxAndFlushOnCompletion();
+    denseOverlayPreparationUsesTheLatestConfiguration();
 }
 
 #if defined(SNOW_SHOT_TEST_PINNED_TRANSLATION)
@@ -1652,12 +1717,21 @@ void runPinnedOriginalImageTranslationTests() {
             return left->sceneBoundingRect().top() < right->sceneBoundingRect().top();
         });
     server.delta(0, QStringLiteral("t"));
-    waitUntil([&] { return controller->textDraft().startsWith(QStringLiteral("t\n")); },
-              "pinned translation displays the first letter");
+    const QRectF initial = firstGlyphItem->sceneBoundingRect();
+    waitUntil(
+        [&] {
+            return controller->textDraft().startsWith(QStringLiteral("t\n")) &&
+                   firstGlyphItem->sceneBoundingRect() != initial;
+        },
+        "pinned translation displays the first letter");
     const QRectF firstLetter = firstGlyphItem->sceneBoundingRect();
     server.delta(0, QStringLiteral("ranslated"));
-    waitUntil([&]() { return controller->textDraft().startsWith(QStringLiteral("translated")); },
-              "pinned translation should consume streamed text");
+    waitUntil(
+        [&] {
+            return controller->textDraft().startsWith(QStringLiteral("translated")) &&
+                   firstGlyphItem->sceneBoundingRect().right() > firstLetter.right();
+        },
+        "pinned translation should display the streamed word");
     const QRectF word = firstGlyphItem->sceneBoundingRect();
     require(std::abs(word.left() - firstLetter.left()) < 0.5 && word.right() > firstLetter.right(),
             "the pinned preview grows rightward from the first letter");
@@ -1734,6 +1808,24 @@ void runPinnedOriginalImageTranslationTests() {
                     QStringLiteral("translated after rotation\nvertical result") &&
                 seed.source->lines[0].text == QStringLiteral("source 0"),
             "zoomed, rotated and resized pins must retain text mapping and immutable source OCR");
+    {
+        const QSignalBlocker timerBlocked(translationUpdateTimer(*controller));
+        server.delta(1, QStringLiteral(" queued for save"));
+        waitUntil(
+            [&] { return controller->textDraft().endsWith(QStringLiteral("queued for save")); },
+            "receive a translation delta while the display is still queued");
+        const auto displayed = [&] {
+            return content->imageSnapshot(background, config.canvasSourceRect, {}, {}, {}, true);
+        };
+        const auto before = displayed();
+        require(before && before->lines[1].text == QStringLiteral("vertical result"),
+                "the displayed pin still contains the previous text");
+        const auto artifact = pinned->fileSaveArtifact();
+        const auto after = displayed();
+        require(artifact && after &&
+                    after->lines[1].text == QStringLiteral("vertical result queued for save"),
+                "pinned image save flushes the received text before capturing the overlay");
+    }
     server.finish(0);
     server.finish(1);
     waitUntil([&]() { return server.disconnected(0) && server.disconnected(1); },
