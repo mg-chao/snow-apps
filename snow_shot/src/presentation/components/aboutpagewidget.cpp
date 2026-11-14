@@ -369,6 +369,8 @@ struct AboutPageWidget::Ui {
     QBoxLayout* updateLayout = nullptr;
     QProgressBar* updateProgress = nullptr;
     QWidget* updateProgressWrap = nullptr;
+    QWidget* updateActionRow = nullptr;
+    AdButton* updateCheck = nullptr;
     AdButton* updateAction = nullptr;
     AdButton* updateCancel = nullptr;
     QWidget* updateActionBlank = nullptr;
@@ -543,26 +545,36 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
         statusRow->addWidget(m_ui->updateStatus, 1);
         m_ui->updateLayout->addLayout(statusRow, 1);
         m_ui->versionPanelLayout->addLayout(m_ui->updateLayout);
-        // The action and cancel buttons never appear together; the stack reserves the larger
-        // of the two so switching states never changes the card's size.
+        // Reserve room for the update actions or the cancel button in the same row.
         m_ui->updateActions = new QStackedLayout;
-        m_ui->updateAction = new AdButton(m_ui->versionPanel);
+        m_ui->updateActionRow = new QWidget(m_ui->versionPanel);
+        auto* actionRowLayout = new QHBoxLayout(m_ui->updateActionRow);
+        actionRowLayout->setContentsMargins(0, 0, 0, 0);
+        m_ui->updateCheck = new AdButton(m_ui->updateActionRow);
+        m_ui->updateCheck->setObjectName(QStringLiteral("aboutUpdateCheck"));
+        m_ui->updateCheck->setButtonStyle(AdButton::ButtonStyle::Link);
+        m_ui->updateAction = new AdButton(m_ui->updateActionRow);
         m_ui->updateAction->setObjectName(QStringLiteral("aboutUpdateAction"));
+        actionRowLayout->addWidget(m_ui->updateCheck);
+        actionRowLayout->addWidget(m_ui->updateAction);
         m_ui->updateCancel = new AdButton(m_ui->versionPanel);
         m_ui->updateCancel->setObjectName(QStringLiteral("aboutUpdateCancel"));
+        m_ui->updateCancel->setButtonStyle(AdButton::ButtonStyle::Outline);
         m_ui->updateActionBlank = new QWidget(m_ui->versionPanel);
-        m_ui->updateActions->addWidget(m_ui->updateAction);
+        m_ui->updateActions->addWidget(m_ui->updateActionRow);
         m_ui->updateActions->addWidget(m_ui->updateCancel);
         m_ui->updateActions->addWidget(m_ui->updateActionBlank);
-        for (auto* button : {m_ui->updateAction, m_ui->updateCancel}) {
-            button->setButtonStyle(AdButton::ButtonStyle::Outline);
+        for (auto* button : {m_ui->updateCheck, m_ui->updateAction, m_ui->updateCancel}) {
             button->setSizeClass(AdButton::SizeClass::Small);
             button->setFocusPolicy(Qt::StrongFocus);
-            m_ui->updateActions->setAlignment(button, Qt::AlignLeft | Qt::AlignVCenter);
         }
+        m_ui->updateActions->setAlignment(m_ui->updateActionRow, Qt::AlignLeft | Qt::AlignVCenter);
+        m_ui->updateActions->setAlignment(m_ui->updateCancel, Qt::AlignLeft | Qt::AlignVCenter);
         m_ui->updateLayout->addLayout(m_ui->updateActions);
         connect(m_ui->updates, &snow_shot::update::UpdateService::statusChanged, this,
                 &AboutPageWidget::refreshUpdateStatus);
+        connect(m_ui->updateCheck, &AdButton::clicked, m_ui->updates,
+                [service = m_ui->updates] { service->check(); });
         connect(m_ui->updateCancel, &adqt::widgets::AdButton::clicked, m_ui->updates,
                 &snow_shot::update::UpdateService::cancel);
         connect(m_ui->updateAction, &adqt::widgets::AdButton::clicked, this, [this] {
@@ -733,7 +745,7 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
         m_ui->updateDivider->setSemanticStyles(dividerSemantics);
         m_ui->updateLayout->setSpacing(metric.paddingSM);
         m_ui->updateLayout->itemAt(0)->layout()->setSpacing(metric.paddingXS);
-        m_ui->updateActions->setSpacing(metric.paddingXS);
+        m_ui->updateActionRow->layout()->setSpacing(metric.paddingXS);
         const int progressHeight = qMax(4, metric.paddingXXS);
         m_ui->updateProgress->setFixedHeight(progressHeight);
     }
@@ -1042,7 +1054,8 @@ void AboutPageWidget::refreshUpdateStatus() {
     auto statusIcon = outlined::InfoCircle();
     auto actionIcon = outlined::Sync();
     QString text;
-    QString action = tr("Check for updates");
+    const QString checkAction = tr("Check for updates");
+    QString action = checkAction;
     switch (status.state) {
     case UpdateState::Unavailable:
         text = tr("Automatic updates are unavailable for this copy");
@@ -1120,6 +1133,9 @@ void AboutPageWidget::refreshUpdateStatus() {
     m_ui->updateIcon->setPixmap(aboutIcon(statusIcon, m_ui->updateIcon->size(), this, statusColor));
     m_ui->updateStatus->setText(text);
     m_ui->updateStatus->setAccessibleName(text);
+    m_ui->updateCheck->setText(checkAction);
+    m_ui->updateCheck->setAccessibleName(checkAction);
+    m_ui->updateCheck->setVisible(!storeManaged && status.state == UpdateState::Available);
     m_ui->updateAction->setText(action);
     m_ui->updateAction->setAccessibleName(action);
     m_ui->updateAction->setIconRef(actionIcon);
@@ -1140,7 +1156,7 @@ void AboutPageWidget::refreshUpdateStatus() {
     if (downloading) {
         currentAction = m_ui->updateCancel;
     } else if (m_ui->updateAction->isEnabled()) {
-        currentAction = m_ui->updateAction;
+        currentAction = m_ui->updateActionRow;
     }
     m_ui->updateActions->setCurrentWidget(currentAction);
     m_ui->updateRail->setCurrentWidget(downloading ? m_ui->updateProgressWrap
