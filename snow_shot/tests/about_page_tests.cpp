@@ -27,6 +27,7 @@
 #include <QClipboard>
 #include <QDir>
 #include <QEvent>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QImage>
 #include <QFontDatabase>
@@ -304,6 +305,7 @@ void storeUpdatesOpenMicrosoftStore() {
                 child<QLabel>(page, "aboutUpdateStatus")->text() ==
                     QStringLiteral("Updates are managed by Microsoft Store") &&
                 !child<QProgressBar>(page, "aboutUpdateProgress")->isVisible() &&
+                !child<adqt::widgets::AdButton>(page, "aboutUpdateCheck")->isVisible() &&
                 !child<adqt::widgets::AdButton>(page, "aboutUpdateCancel")->isVisible(),
             "Store About exposes only the external update manager");
     action->click();
@@ -409,7 +411,7 @@ void largerTypeKeepsEveryActionReachable() {
     QCoreApplication::setApplicationVersion(QStringLiteral("12.34.56-beta.7+build.89"));
     snow_shot::update::UpdateService updates({});
     const_cast<snow_shot::update::UpdateStatus&>(updates.status()) = {
-        snow_shot::update::UpdateState::Ready,
+        snow_shot::update::UpdateState::Available,
         QStringLiteral("12.34.56-beta.8+build.90"),
         {},
         0,
@@ -428,9 +430,10 @@ void largerTypeKeepsEveryActionReachable() {
     auto* artwork = child<QWidget>(page, "aboutArtwork");
     require(artwork->width() <= scroll->viewport()->width() && artwork->height() > 0,
             "artwork scales down to the available width with larger fonts");
-    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction",
-                             "aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup3",
-                             "aboutQqGroup4", "aboutPrivacyPolicy", "aboutUserAgreement"}) {
+    for (const char* name :
+         {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateCheck", "aboutUpdateAction",
+          "aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup3", "aboutQqGroup4",
+          "aboutPrivacyPolicy", "aboutUserAgreement"}) {
         auto* button = child<QAbstractButton>(page, name);
         scroll->ensureWidgetVisible(button);
         flushEvents();
@@ -524,14 +527,19 @@ void updateStatesFitTheVersionPanel() {
     AboutPageWidget page(nullptr, [](const QUrl&) { return true; }, &updates);
     auto* panel = child<QFrame>(page, "aboutVersionPanel");
     auto* label = child<QLabel>(page, "aboutUpdateStatus");
+    auto* check = child<AdButton>(page, "aboutUpdateCheck");
     auto* action = child<AdButton>(page, "aboutUpdateAction");
     auto* cancel = child<AdButton>(page, "aboutUpdateCancel");
     auto* progress = child<QProgressBar>(page, "aboutUpdateProgress");
     auto* scroll = child<adqt::widgets::AdScrollArea>(page, "pageScrollArea");
-    require(panel->isAncestorOf(label) && panel->isAncestorOf(action) &&
-                panel->isAncestorOf(cancel) && panel->isAncestorOf(progress),
+    require(panel->isAncestorOf(label) && panel->isAncestorOf(check) &&
+                panel->isAncestorOf(action) && panel->isAncestorOf(cancel) &&
+                panel->isAncestorOf(progress),
             "update feedback and actions belong to the current version surface");
-    require(action->sizeClass() == AdButton::SizeClass::Small &&
+    require(check->buttonStyle() == AdButton::ButtonStyle::Link &&
+                check->sizeClass() == AdButton::SizeClass::Small &&
+                check->focusPolicy() == Qt::StrongFocus &&
+                action->sizeClass() == AdButton::SizeClass::Small &&
                 cancel->sizeClass() == AdButton::SizeClass::Small &&
                 action->focusPolicy() == Qt::StrongFocus &&
                 cancel->focusPolicy() == Qt::StrongFocus,
@@ -569,6 +577,19 @@ void updateStatesFitTheVersionPanel() {
                         state == UpdateState::Ready || state == UpdateState::Failed;
                     require(action->isVisible() == actionable && action->isEnabled() == actionable,
                             "only actionable update states display a primary control");
+                    require(check->isVisible() == (state == UpdateState::Available),
+                            "the check link appears with the download action");
+                    if (check->isVisible()) {
+                        require(check->isEnabled() &&
+                                    check->text() == expectedTranslation(translator, locale,
+                                                                         "AboutPageWidget",
+                                                                         "Check for updates") &&
+                                    check->accessibleName() == check->text(),
+                                "the check link uses the active language");
+                        require(check->geometry().center().y() == action->geometry().center().y() &&
+                                    check->geometry().right() < action->geometry().left(),
+                                "the check link fits to the left of the download button");
+                    }
                     require(cancel->isVisible() == (state == UpdateState::Downloading) &&
                                 progress->isVisible() == (state == UpdateState::Downloading),
                             "download controls are confined to the downloading state");
@@ -604,7 +625,7 @@ void updateStatesFitTheVersionPanel() {
                     }
                     require(label->height() >= label->heightForWidth(label->width()),
                             "wrapped update status text is not clipped");
-                    for (auto* button : {action, cancel}) {
+                    for (auto* button : {check, action, cancel}) {
                         if (!button->isVisible()) {
                             continue;
                         }
@@ -661,6 +682,35 @@ void updateStatesFitTheVersionPanel() {
 #endif
     page.hide();
     styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
+}
+
+void checkLinkStartsManualUpdateCheck() {
+    using namespace snow_shot::update;
+    QTemporaryDir directory;
+    require(directory.isValid(), "create isolated update directory");
+    UpdateService::Options options;
+    options.applicationDirectory = directory.path();
+    options.root = directory.path();
+    options.storeManaged = false;
+    UpdateService updates(std::move(options));
+    updates.setMode(QStringLiteral("manual"));
+    const_cast<UpdateStatus&>(updates.status()).state = UpdateState::Available;
+    AboutPageWidget page(nullptr, {}, &updates);
+
+    QString operation;
+    QEventLoop loop;
+    QObject::connect(&updates, &UpdateService::operationFinished, &loop,
+                     [&](const QString& finishedOperation, const QString&) {
+                         operation = finishedOperation;
+                         loop.quit();
+                     });
+    // The empty directory on Windows and unset installed version on macOS fail without networking.
+    child<adqt::widgets::AdButton>(page, "aboutUpdateCheck")->click();
+    if (operation.isEmpty()) {
+        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+    require(operation == QStringLiteral("check"), "the check link begins a manual update check");
 }
 
 void updateModuleKeepsItsHeightAcrossStates() {
@@ -1143,6 +1193,7 @@ int main(int argc, char** argv) {
     storeUpdatesOpenMicrosoftStore();
     updatePolicyAndUnavailableCopy();
     updateStatesFitTheVersionPanel();
+    checkLinkStartsManualUpdateCheck();
     updateModuleKeepsItsHeightAcrossStates();
     dividersFollowTheComponentLibraryAndUpdatesBreathe();
     traySystemIconColorSettings();
