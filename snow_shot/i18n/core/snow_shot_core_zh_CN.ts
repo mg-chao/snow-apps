@@ -182,10 +182,6 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>隐私政策</translation>
         </message>
         <message>
-            <source>QQ group 3</source>
-            <translation>QQ 交流群 3</translation>
-        </message>
-        <message>
             <source>QQ group 4</source>
             <translation>QQ 交流群 4</translation>
         </message>
