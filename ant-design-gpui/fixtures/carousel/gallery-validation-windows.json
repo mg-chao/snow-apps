@@ -1,0 +1,38 @@
+{
+  "binary_sha256": "487756421a70bc40213c7d8e38851509c78823ef28ce38712bf18600138c0f7e",
+  "utc": "2026-10-29T13:24:38.1858767Z",
+  "purpose": "Fresh current-worktree gallery layout QA",
+  "captures": [
+    {
+      "name": "wide",
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-gallery-final\\wide.png",
+      "window_size": "1280x960",
+      "sha256": "8421f40ba1f6453250203d840483b3a60f51144988c5e1297afdff99e5bb31c5"
+    },
+    {
+      "name": "narrow",
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-gallery-final\\narrow.png",
+      "window_size": "640x900",
+      "sha256": "3ea325ffe8502397d0e330fea89027f1f023e25a15d15b0c06f68c86c7251b52"
+    },
+    {
+      "name": "dark-rtl",
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-gallery-final\\dark-rtl.png",
+      "window_size": "1280x960",
+      "sha256": "c34f7791b979987c3ff3e5cdad4843020bcb6044232091225f7f4e5103575730"
+    },
+    {
+      "name": "bottom",
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-gallery-final\\bottom.png",
+      "window_size": "1280x960",
+      "sha256": "5808faca8a354000c63085bf6ac4f346e876b8ce8e7659b8267b2f5ca1aea4de"
+    },
+    {
+      "name": "dark-compact-rtl",
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-gallery-final\\dark-compact-rtl.png",
+      "sha256": "0877badd4dde642da34d4a99e50daf90c188ae97f5d087a39cc7ac40f613097b",
+      "window_size": "1280x960"
+    }
+  ],
+  "source_root": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui"
+}

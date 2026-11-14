@@ -1,0 +1,41 @@
+{
+  "trigger-basic": [{ "value": "#1677ff" }],
+  "trigger-sizes": [
+    { "value": "#1677ff", "size": "small" },
+    { "value": "#1677ff" },
+    { "value": "#1677ff", "size": "large" },
+    { "value": "#1677ff", "disabled": true }
+  ],
+  "trigger-text": [
+    { "value": "#1677ff", "showText": true },
+    { "value": "#722ed180", "showText": true },
+    { "value": null, "showText": true }
+  ],
+  "solid-hex": [{ "value": "#1677ff", "open": true }],
+  "solid-rgb": [{ "value": "#52c41a", "format": "rgb", "open": true }],
+  "solid-hsb": [{ "value": "#722ed180", "format": "hsb", "open": true }],
+  "alpha-disabled": [{ "value": "#fa8c16", "disabledAlpha": true, "disabledFormat": true, "open": true }],
+  "cleared": [{ "value": null, "allowClear": true, "showText": true, "open": true }],
+  "presets": [{ "value": "#1677ff", "presets": true, "allowClear": true, "open": true }],
+  "gradient": [{ "value": [{ "color": "#1677ff", "percent": 0 }, { "color": "#9254de", "percent": 50 }, { "color": "#f5222d", "percent": 100 }], "mode": ["single", "gradient"], "open": true }],
+  "gradient-alpha": [{ "value": [{ "color": "#1677ff00", "percent": 0 }, { "color": "#52c41a80", "percent": 35 }, { "color": "#f5222d", "percent": 100 }], "mode": ["single", "gradient"], "allowClear": true, "open": true }],
+  "custom-panel": [{ "value": "#1677ff", "customPanel": true, "presets": true, "open": true }],
+  "focus": [{ "value": "#1677ff", "open": true, "focus": "hex" }],
+  "token": [{ "value": "#722ed1", "open": true, "tokenCase": true }],
+  "status-error": [{ "value": "#1677ff", "status": "error" }],
+  "status-warning": [{ "value": "#faad14", "status": "warning", "open": true }],
+  "hover": [{ "value": "#1677ff", "hover": true }],
+  "focus-hue": [{ "value": "#1677ff", "open": true, "focus": "hue" }],
+  "bottom-right-no-arrow": [{ "value": "#1677ff", "open": true, "arrow": false, "placement": "bottomRight", "anchorX": 328 }],
+  "gradient-only": [{ "value": [{ "color": "#1677ff", "percent": 0 }, { "color": "#f5222d", "percent": 100 }], "mode": ["gradient"], "allowClear": true, "open": true }],
+  "gradient-one-stop": [{ "value": [{ "color": "#722ed1", "percent": 50 }], "mode": ["gradient"], "open": true }],
+  "gradient-cleared": [{ "value": null, "mode": ["gradient"], "allowClear": true, "open": true }],
+  "standalone": [{ "value": "#1677ff", "standalone": true }],
+  "split-panel": [{ "value": "#1677ff", "splitPanel": true, "presets": true, "open": true }],
+  "custom-trigger": [{ "value": "#1677ff", "customTrigger": true, "open": true }],
+  "gradient-text-open": [{ "value": [{ "color": "#1677ff", "percent": 0 }, { "color": "#722ed180", "percent": 100 }], "mode": ["single", "gradient"], "showText": true, "format": "hsb", "open": true }],
+  "gradient-text-closed": [{ "value": [{ "color": "#1677ff", "percent": 0 }, { "color": "#722ed180", "percent": 100 }], "mode": ["single", "gradient"], "showText": true, "format": "hsb" }],
+  "semantic-trigger": [{ "value": "#1677ff", "semantic": true, "presets": true, "open": true }],
+  "custom-text": [{ "value": "#1677ff", "textRender": "custom" }],
+  "text-icon": [{ "value": "#1677ff", "textRender": "icon", "open": true }]
+}

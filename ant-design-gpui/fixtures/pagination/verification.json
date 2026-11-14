@@ -1,0 +1,438 @@
+{
+  "validated_at_utc": "2026-10-27T18:26:40.866Z",
+  "validation_date": "2026-10-28",
+  "validation_timezone": "Asia/Shanghai",
+  "platform": "win32",
+  "architecture": "x64",
+  "toolchain": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "node": "v24.14.0",
+    "python": "Python 3.12.10"
+  },
+  "reference": {
+    "version": "6.6.7",
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "renderer": "Edg/156.0.4314.42",
+    "rc_pagination": "1.4.0",
+    "lock_sha256": "4de8df42bca0635ca18f7e410cd26e125484591e03fb45df025043bba8a774a1",
+    "visual_fixture_sha256": "1ecbfd3d31dad1af6f4ec3e7ef6692ccfc0bb49aa38b8ff9221e4b8edc038d2d",
+    "raster_integrity": {
+      "cases": 1248,
+      "unexpected_foreground_cases": 0,
+      "report_sha256": "e7f173ba11fdc49e1b696993915848be543d22b451f74ea9f5303f83406f682a"
+    },
+    "native_form_paint_probes": {
+      "actual_backdrop_samples": 30,
+      "computed_cursor_states": 12,
+      "fixture_sha256": "435b7d0620ebdb8cd6522e122c8df48f9f2a946f7cc98c4026e0501433d57002"
+    },
+    "capture_repairs": [
+      {
+        "scenario": "all-large-dark-compact-ltr",
+        "scale": 2,
+        "renderer": "Edg/156.0.4314.42",
+        "reason": "Headless browser screenshot contained repeated tiles of the pager, contradicting its unchanged DOM geometry and independent single-line DOMRange text evidence. A fresh isolated browser rendered the same original source correctly.",
+        "corrupt_image_sha256": "d28d51333c56fec889c56aa540fab9e385a9590d101bccc36f1521201f72c9a0",
+        "replacement_image_sha256": "e16d6def1f2ce6addecd43b19161803962a758baa40bd6e80a6ee2c8dc2dc12d",
+        "dom_style_metrics_unchanged": true,
+        "dom_style_record_sha256": "dd16a5ab021b95791ef043dc51b0492ce12b7de8214123b4464f2841858e6a12",
+        "independent_domrange_file": "text-reference.json",
+        "original_domrange_total_line_count": 1,
+        "capture_repaired_at_utc": "2026-10-27T17:06:18.441215+00:00"
+      },
+      {
+        "scenario": "default-ltr-23-basic",
+        "scale": 1.5,
+        "renderer": "Edg/156.0.4314.42",
+        "reason": "Headless browser PNG contained repeated pager tiles outside measured root bounds. A fresh isolated browser rendered the same original source correctly with identical DOM/style records.",
+        "corrupt_image_sha256": "4ddeab04ae2c90248615a0e9742f763f4322e03e3344cdc1eb16c941db41edf5",
+        "replacement_image_sha256": "78fbcce64db4dd0d657ed6d054d1fc2e6573db9416c3254de094fa8e32282ad0",
+        "dom_style_metrics_unchanged": true,
+        "dom_style_record_sha256": "b2542c61a6c159e42d2af0ba8a200281ff955b9ac234f6710d1b1bad04ea9a5b",
+        "capture_repaired_at_utc": "2026-10-27T17:09:08.700723+00:00"
+      },
+      {
+        "scenario": "long-pages-dark-compact-ltr",
+        "scale": 1.5,
+        "renderer": "Edg/156.0.4314.42",
+        "reason": "Headless browser PNG contained repeated pager tiles outside measured root bounds. A fresh isolated browser rendered the same original source correctly with identical DOM/style records.",
+        "corrupt_image_sha256": "6a30f94cb0902a0374a04f103f338f10568b135210ff9c38ae22a00b2b732bb4",
+        "replacement_image_sha256": "89d5a0aad0137c6b0ecd4c65da78aa59aefbe82546ac72ab64ef0329c29552db",
+        "dom_style_metrics_unchanged": true,
+        "dom_style_record_sha256": "2ba78411c234873dc0919242732565223509488ee05cf3b9c1bd41f9b6be4c77",
+        "capture_repaired_at_utc": "2026-10-27T17:09:08.708181+00:00"
+      }
+    ]
+  },
+  "behavior": {
+    "browser_rendered_models": 222,
+    "browser_interaction_traces": 17,
+    "fixture_sha256": "9be62e5fb6b1d0dc98cb25f84f55d096d2a38aeb218caa3631c338c794ca4ac7"
+  },
+  "visual": {
+    "native_cases": 1248,
+    "total_surface_checks": 8574,
+    "total_label_line_checks": 204,
+    "bidi_shaping_checks": 372,
+    "custom_label_line_checks": 48,
+    "native_form_label_visibility_checks": 216,
+    "native_form_translucency_checks": 72,
+    "original_text_fixture_sha256": "7dc935e10638bfd77340d1af6cbcfb81673438a5292fd04637cbe4e6b4a03d4a",
+    "failed_surface_checks": 0,
+    "budgets": {
+      "geometry_logical_px": 1,
+      "rgb_rounding_bytes": 1,
+      "alpha_rounding": 0.001
+    },
+    "scales": [
+      {
+        "scale": 1,
+        "cases": 416,
+        "surface_checks": 2858,
+        "passed_surface_checks": 2858,
+        "failed_surface_checks": 0,
+        "total_label_line_checks": 68,
+        "passed_total_label_line_checks": 68,
+        "bidi_shaping_checks": 124,
+        "passed_bidi_shaping_checks": 124,
+        "custom_label_line_checks": 16,
+        "passed_custom_label_line_checks": 16,
+        "native_form_label_visibility_checks": 72,
+        "passed_native_form_label_visibility_checks": 72,
+        "native_form_translucency_checks": 24,
+        "passed_native_form_translucency_checks": 24,
+        "mean_per_case_pixel_channel_error": 0.13344576305233205,
+        "max_case_pixel_channel_error": 0.9840095029239766,
+        "mean_per_case_foreground_channel_error": 35.11182138261049,
+        "excluded_from_surface_pass": [
+          "text rasterization",
+          "SVG glyph rasterization",
+          "shadows",
+          "motion",
+          "dashed root borders",
+          "native form button corner radius (manual PNG review)"
+        ],
+        "report_sha256": "ffd8f4e3b3937320956a8cd16ae24cd19f46164cdc5b879a81ff4413024d14e3"
+      },
+      {
+        "scale": 1.5,
+        "cases": 416,
+        "surface_checks": 2858,
+        "passed_surface_checks": 2858,
+        "failed_surface_checks": 0,
+        "total_label_line_checks": 68,
+        "passed_total_label_line_checks": 68,
+        "bidi_shaping_checks": 124,
+        "passed_bidi_shaping_checks": 124,
+        "custom_label_line_checks": 16,
+        "passed_custom_label_line_checks": 16,
+        "native_form_label_visibility_checks": 72,
+        "passed_native_form_label_visibility_checks": 72,
+        "native_form_translucency_checks": 24,
+        "passed_native_form_translucency_checks": 24,
+        "mean_per_case_pixel_channel_error": 0.08588460138410253,
+        "max_case_pixel_channel_error": 0.4944353764025895,
+        "mean_per_case_foreground_channel_error": 33.4022336167308,
+        "excluded_from_surface_pass": [
+          "text rasterization",
+          "SVG glyph rasterization",
+          "shadows",
+          "motion",
+          "dashed root borders",
+          "native form button corner radius (manual PNG review)"
+        ],
+        "report_sha256": "96182519ed5e034b98d9d1e462dfaff046cad829291a060497375c3b5d494e5b"
+      },
+      {
+        "scale": 2,
+        "cases": 416,
+        "surface_checks": 2858,
+        "passed_surface_checks": 2858,
+        "failed_surface_checks": 0,
+        "total_label_line_checks": 68,
+        "passed_total_label_line_checks": 68,
+        "bidi_shaping_checks": 124,
+        "passed_bidi_shaping_checks": 124,
+        "custom_label_line_checks": 16,
+        "passed_custom_label_line_checks": 16,
+        "native_form_label_visibility_checks": 72,
+        "passed_native_form_label_visibility_checks": 72,
+        "native_form_translucency_checks": 24,
+        "passed_native_form_translucency_checks": 24,
+        "mean_per_case_pixel_channel_error": 0.08101050522277337,
+        "max_case_pixel_channel_error": 0.5006835039430189,
+        "mean_per_case_foreground_channel_error": 28.50382950966536,
+        "excluded_from_surface_pass": [
+          "text rasterization",
+          "SVG glyph rasterization",
+          "shadows",
+          "motion",
+          "dashed root borders",
+          "native form button corner radius (manual PNG review)"
+        ],
+        "report_sha256": "774949443284b57c828eb4ebb9553711bdb0e05cfd68b48d60c56f2fa054b1f9"
+      }
+    ],
+    "native_binary_sha256": "3b8ab30ca9b5dede6d00d3ff8fc6c34da017fc14b8e325795c882598db1036d5"
+  },
+  "performance": {
+    "profile": "Release",
+    "preset": "windows-msvc-performance",
+    "scope": "Only Pagination benchmark",
+    "measurements": "CPU/allocation distributions using GPUI deterministic offscreen text; GPU presentation latency is not measured",
+    "idle_animation_frames": 0,
+    "results_sha256": "a8198bbd6a9fbd333b51001f4875a51f1156f0bcc1f6d794df25bd54c0262536",
+    "results": [
+      {
+        "name": "pagination/1000/builder",
+        "iterations": 2000,
+        "us": {
+          "p50": 0.09999999999999999,
+          "p95": 0.19999999999999998,
+          "p99": 0.19999999999999998
+        },
+        "allocations": 0,
+        "allocated_bytes": 0,
+        "pagination_render_sequences_per_operation": null,
+        "max_render_sequences_per_operation": null,
+        "item_builds_per_operation": null,
+        "explicit_window_draws_per_operation": null,
+        "max_items_per_render_sequence": null
+      },
+      {
+        "name": "pagination/1000/warm-draw",
+        "iterations": 100,
+        "us": {
+          "p50": 165.1,
+          "p95": 187.89999999999998,
+          "p99": 193.79999999999998
+        },
+        "allocations": 776,
+        "allocated_bytes": 220018,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 1,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/1000/rerender",
+        "iterations": 100,
+        "us": {
+          "p50": 147.2,
+          "p95": 157.70000000000002,
+          "p99": 178.1
+        },
+        "allocations": 776,
+        "allocated_bytes": 220018,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 1,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/1000/page-change",
+        "iterations": 100,
+        "us": {
+          "p50": 155,
+          "p95": 165.5,
+          "p99": 186.4
+        },
+        "allocations": 811,
+        "allocated_bytes": 222260,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 0,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/1000000000000/builder",
+        "iterations": 2000,
+        "us": {
+          "p50": 0.09999999999999999,
+          "p95": 0.19999999999999998,
+          "p99": 0.19999999999999998
+        },
+        "allocations": 0,
+        "allocated_bytes": 0,
+        "pagination_render_sequences_per_operation": null,
+        "max_render_sequences_per_operation": null,
+        "item_builds_per_operation": null,
+        "explicit_window_draws_per_operation": null,
+        "max_items_per_render_sequence": null
+      },
+      {
+        "name": "pagination/1000000000000/warm-draw",
+        "iterations": 100,
+        "us": {
+          "p50": 150.2,
+          "p95": 158.70000000000002,
+          "p99": 167.6
+        },
+        "allocations": 778,
+        "allocated_bytes": 220127,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 1,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/1000000000000/rerender",
+        "iterations": 100,
+        "us": {
+          "p50": 149.2,
+          "p95": 159.1,
+          "p99": 173.4
+        },
+        "allocations": 778,
+        "allocated_bytes": 220127,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 1,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/1000000000000/page-change",
+        "iterations": 100,
+        "us": {
+          "p50": 152.20000000000002,
+          "p95": 163.6,
+          "p99": 187.5
+        },
+        "allocations": 813,
+        "allocated_bytes": 222369,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 0,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/18446744073709551615/builder",
+        "iterations": 2000,
+        "us": {
+          "p50": 0.09999999999999999,
+          "p95": 0.19999999999999998,
+          "p99": 0.19999999999999998
+        },
+        "allocations": 0,
+        "allocated_bytes": 0,
+        "pagination_render_sequences_per_operation": null,
+        "max_render_sequences_per_operation": null,
+        "item_builds_per_operation": null,
+        "explicit_window_draws_per_operation": null,
+        "max_items_per_render_sequence": null
+      },
+      {
+        "name": "pagination/18446744073709551615/warm-draw",
+        "iterations": 100,
+        "us": {
+          "p50": 143.6,
+          "p95": 155.4,
+          "p99": 175.79999999999998
+        },
+        "allocations": 780,
+        "allocated_bytes": 220269,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 1,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/18446744073709551615/rerender",
+        "iterations": 100,
+        "us": {
+          "p50": 143.6,
+          "p95": 152.5,
+          "p99": 155.5
+        },
+        "allocations": 780,
+        "allocated_bytes": 220269,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 1,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/18446744073709551615/page-change",
+        "iterations": 100,
+        "us": {
+          "p50": 151.5,
+          "p95": 164.9,
+          "p99": 192.39999999999998
+        },
+        "allocations": 815,
+        "allocated_bytes": 222511,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 0,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/composite/open-size-changer/rerender",
+        "iterations": 100,
+        "us": {
+          "p50": 315,
+          "p95": 340.1,
+          "p99": 353.79999999999995
+        },
+        "allocations": 1373,
+        "allocated_bytes": 476297,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 1,
+        "max_items_per_render_sequence": 9
+      },
+      {
+        "name": "pagination/composite/quick-edit",
+        "iterations": 100,
+        "us": {
+          "p50": 261.90000000000003,
+          "p95": 282.2,
+          "p99": 305.2
+        },
+        "allocations": 1227.54,
+        "allocated_bytes": 357305,
+        "pagination_render_sequences_per_operation": 1,
+        "max_render_sequences_per_operation": 1,
+        "item_builds_per_operation": 9,
+        "explicit_window_draws_per_operation": 0,
+        "max_items_per_render_sequence": 9
+      }
+    ]
+  },
+  "sources_sha256": {
+    "src/pagination/bidi.rs": "fe333d535f14ef7f067f3ab78c0cba85b474a9c0a8370ba7820fd4167c32856e",
+    "src/pagination/geometry.rs": "9d2312c437633176d188a800f4f809cfc0ee5b84319bb4260ce6745d1d2b3805",
+    "src/pagination/interaction_tests.rs": "a68987d0650f6da08d77cba80039cb50e8f7aef98ae594b42444ca236a891b64",
+    "src/pagination/mod.rs": "cecfb0a15adbdef75fc921572386bb50c42177bd1af4ea1983a841acc8cbb84b",
+    "src/pagination/model.rs": "57f5da7e89704d9826878d1958ea308f997c85a2302e8f08e8760f39f4f8b0d6",
+    "src/pagination/state.rs": "4913f9adfe76120a4d728d9f368d90e3603d6aa98d4a55e7e7c246a59466ab79",
+    "src/pagination/style.rs": "654d5f2484789413942f5f09d9f6585e969bb68ed707af6fa684688ceb9cfae3",
+    "src/pagination/tests.rs": "e0109d510edd615833567ce14ee405ab1ca43376edeed8068f940fdfbbc35201",
+    "src/pagination/text.rs": "62d4b41a12c0f7e429299eb2d29bc3aacfe323b8ac76ff3a1374396066d0ae00",
+    "src/pagination/view.rs": "24affefe5ee2607a1dd8c7a5fb6039f0cbf82abef29f8c0962608875b08e46ac",
+    "src/config.rs": "039eb91f44f1e21acd479d1534d8525aba17966f887d4fa2abc24827487666e2",
+    "src/locale.rs": "9da593af084cf9afae1fee0a57089853ed7e6a8b0eff8c4a72865d66decd9d75",
+    "src/lib.rs": "3233ff0bb10492337f092774a7a59735a96a2d6b66191b0e8b82c775a12cc98c",
+    "Cargo.toml": "c86da5d8f19c8a9eac6e162f0cbec5c75a3375e70fbe7ca7ca3268a1ac03dfd0",
+    "Cargo.lock": "5a67e919a8f1ee99a4f6f513288b8b09f849c78f28be40dd620ef3fc7f886181",
+    "examples/pagination_visual.rs": "50411d9184cb4b24ff784963f5daa9e05be2a9edd7e8b99a573426827c7b63c0",
+    "benches/pagination.rs": "81cff76a756543457a9696800c37ae51008426da651a5175479ef2cfcf42181c",
+    "scripts/compare_pagination_visual.py": "8ed5255689c4447e756a9e6c7fcedcc2e76627c80d0a9b6888afa3b540f3527b",
+    "scripts/capture_pagination_text_reference.mjs": "907c873e3ea9a51a1676e108f1207755bbaf108e59ea6a0a29540ee0db3f7097",
+    "scripts/pack_pagination_text_reference.mjs": "701035e710c6213589e979e755afaea70cb1208a42ed052ea266bd518bb68876",
+    "scripts/audit_pagination_reference.py": "7ae46d64879c1ab9b394d07494ded13975949b895674102fb6e83b2d55bbbcfd",
+    "scripts/probe_pagination_go_paint.mjs": "cec5c9a6af19f2b44442e67d8156c5389e0398478acee806772891649daa4f77",
+    "scripts/pack_pagination_native_form.mjs": "de12e7fd5a91c31b86f60f554d55e42df59fdec770d3b20cdaa595f448934bf3"
+  }
+}

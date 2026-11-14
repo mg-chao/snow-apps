@@ -1,0 +1,1094 @@
+{
+  "horizontal": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "basic",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password",
+            "required": true
+          },
+          {
+            "id": "remember",
+            "label": null,
+            "control": "checkbox",
+            "value": true,
+            "text": "Remember me"
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "vertical": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "vertical",
+        "width": 600,
+        "layout": "vertical",
+        "labelCol": null,
+        "wrapperCol": null,
+        "items": [
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "required": true,
+            "placeholder": "Email address"
+          },
+          {
+            "id": "nickname",
+            "label": "Nickname",
+            "control": "input",
+            "extra": "This name will be visible to other people."
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "inline": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "inline",
+        "width": 820,
+        "layout": "inline",
+        "labelCol": null,
+        "wrapperCol": null,
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "controlWidth": 160,
+            "placeholder": "Username"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password",
+            "controlWidth": 160,
+            "placeholder": "Password"
+          },
+          {
+            "id": "submit",
+            "control": "button",
+            "text": "Log in"
+          }
+        ]
+      }
+    ]
+  },
+  "mixed": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "mixed",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "flex": "120px"
+        },
+        "wrapperCol": {
+          "flex": 1
+        },
+        "items": [
+          {
+            "id": "name",
+            "label": "Name",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "description",
+            "label": "Description",
+            "control": "textarea",
+            "layout": "vertical",
+            "rows": 3
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "sizes": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "small",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password"
+          }
+        ],
+        "size": "small"
+      },
+      {
+        "id": "middle",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password"
+          }
+        ],
+        "size": "middle"
+      },
+      {
+        "id": "large",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password"
+          }
+        ],
+        "size": "large"
+      }
+    ]
+  },
+  "marks": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "marks-0",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "required",
+            "label": "Required field",
+            "control": "input",
+            "required": true,
+            "tooltip": "This is a required field"
+          },
+          {
+            "id": "optional",
+            "label": "Optional field",
+            "control": "input"
+          }
+        ],
+        "requiredMark": true
+      },
+      {
+        "id": "marks-1",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "required",
+            "label": "Required field",
+            "control": "input",
+            "required": true,
+            "tooltip": "This is a required field"
+          },
+          {
+            "id": "optional",
+            "label": "Optional field",
+            "control": "input"
+          }
+        ],
+        "requiredMark": false
+      },
+      {
+        "id": "marks-2",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "required",
+            "label": "Required field",
+            "control": "input",
+            "required": true,
+            "tooltip": "This is a required field"
+          },
+          {
+            "id": "optional",
+            "label": "Optional field",
+            "control": "input"
+          }
+        ],
+        "requiredMark": "optional"
+      }
+    ]
+  },
+  "statuses": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "statuses",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 6
+        },
+        "wrapperCol": {
+          "span": 18
+        },
+        "items": [
+          {
+            "id": "error",
+            "label": "Fail",
+            "control": "input",
+            "status": "error",
+            "help": "Should be combination of numbers & alphabets"
+          },
+          {
+            "id": "warning",
+            "label": "Warning",
+            "control": "input",
+            "status": "warning",
+            "feedback": true,
+            "placeholder": "Warning"
+          },
+          {
+            "id": "validating",
+            "label": "Validating",
+            "control": "input",
+            "status": "validating",
+            "feedback": true,
+            "help": "The information is being validated..."
+          },
+          {
+            "id": "success",
+            "label": "Success",
+            "control": "input",
+            "status": "success",
+            "feedback": true,
+            "value": "Valid value"
+          },
+          {
+            "id": "feedback-error",
+            "label": "Fail",
+            "control": "input",
+            "status": "error",
+            "feedback": true,
+            "help": "Please check this value."
+          },
+          {
+            "id": "extra",
+            "label": "Email",
+            "control": "input",
+            "status": "error",
+            "help": "Please enter Email",
+            "extra": "We use this address to send updates."
+          }
+        ]
+      }
+    ]
+  },
+  "wrapped": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "wrapped",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "flex": "110px"
+        },
+        "wrapperCol": {
+          "flex": 1
+        },
+        "items": [
+          {
+            "id": "normal",
+            "label": "Normal label",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "long",
+            "label": "A super long label text",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "optional",
+            "label": "A super long label text",
+            "control": "input",
+            "help": "A longer explanation that wraps naturally over the available control width without clipping."
+          },
+          {
+            "id": "submit",
+            "label": " ",
+            "control": "button",
+            "text": "Submit"
+          }
+        ],
+        "labelAlign": "left",
+        "labelWrap": true,
+        "colon": false
+      }
+    ]
+  },
+  "label-absence": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "labels",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "ordinary",
+            "label": "Ordinary",
+            "control": "input"
+          },
+          {
+            "id": "null",
+            "label": null,
+            "control": "input",
+            "placeholder": "Null label reserves the label column"
+          },
+          {
+            "id": "absent",
+            "control": "input",
+            "placeholder": "Absent label has no reserved label column"
+          },
+          {
+            "id": "colon",
+            "label": "Already has colon:",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "nocolon",
+            "label": "No colon",
+            "control": "input",
+            "colon": false
+          }
+        ]
+      }
+    ]
+  },
+  "narrow-520": {
+    "viewport": {
+      "width": 520,
+      "height": 650
+    },
+    "forms": [
+      {
+        "id": "responsive",
+        "width": 480,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password",
+            "required": true
+          },
+          {
+            "id": "remember",
+            "label": null,
+            "control": "checkbox",
+            "value": true,
+            "text": "Remember me"
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "breakpoint-575": {
+    "viewport": {
+      "width": 575,
+      "height": 650
+    },
+    "forms": [
+      {
+        "id": "responsive",
+        "width": 535,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password",
+            "required": true
+          },
+          {
+            "id": "remember",
+            "label": null,
+            "control": "checkbox",
+            "value": true,
+            "text": "Remember me"
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "breakpoint-576": {
+    "viewport": {
+      "width": 576,
+      "height": 650
+    },
+    "forms": [
+      {
+        "id": "responsive",
+        "width": 536,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password",
+            "required": true
+          },
+          {
+            "id": "remember",
+            "label": null,
+            "control": "checkbox",
+            "value": true,
+            "text": "Remember me"
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "variants": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "outlined",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "name",
+            "label": "Name",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "status": "error",
+            "feedback": true
+          }
+        ],
+        "variant": "outlined"
+      },
+      {
+        "id": "filled",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "name",
+            "label": "Name",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "status": "error",
+            "feedback": true
+          }
+        ],
+        "variant": "filled"
+      },
+      {
+        "id": "borderless",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "name",
+            "label": "Name",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "status": "error",
+            "feedback": true
+          }
+        ],
+        "variant": "borderless"
+      },
+      {
+        "id": "underlined",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "name",
+            "label": "Name",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "status": "error",
+            "feedback": true
+          }
+        ],
+        "variant": "underlined"
+      }
+    ]
+  },
+  "disabled": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "disabled",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "name",
+            "label": "Name",
+            "control": "input",
+            "value": "Disabled value"
+          },
+          {
+            "id": "enabled",
+            "label": "Enabled child",
+            "control": "input",
+            "disabled": false,
+            "placeholder": "Explicitly enabled"
+          },
+          {
+            "id": "remember",
+            "label": "Remember",
+            "control": "checkbox",
+            "value": true,
+            "text": "Remember me"
+          },
+          {
+            "id": "switch",
+            "label": "Switch",
+            "control": "switch",
+            "value": true
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ],
+        "disabled": true
+      }
+    ]
+  },
+  "tokens": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "tokens",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "control": "password",
+            "required": true
+          }
+        ],
+        "tokens": {
+          "labelRequiredMarkColor": "#eb2f96",
+          "labelColor": "#389e0d",
+          "labelFontSize": 16,
+          "labelHeight": 34,
+          "labelColonMarginInlineStart": 4,
+          "labelColonMarginInlineEnd": 12,
+          "itemMarginBottom": 18,
+          "inlineItemMarginBottom": 18
+        }
+      }
+    ]
+  },
+  "no-style": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "compound",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 6
+        },
+        "wrapperCol": {
+          "span": 18
+        },
+        "items": [
+          {
+            "id": "contact",
+            "label": "Contact",
+            "control": "group",
+            "gap": 8,
+            "children": [
+              {
+                "id": "given",
+                "control": "input",
+                "noStyle": true,
+                "controlWidth": 180,
+                "placeholder": "First name",
+                "required": true,
+                "errors": [
+                  "Missing first name"
+                ]
+              },
+              {
+                "id": "family",
+                "control": "input",
+                "noStyle": true,
+                "controlWidth": 180,
+                "placeholder": "Last name",
+                "required": true
+              }
+            ]
+          },
+          {
+            "id": "address",
+            "label": "Address",
+            "control": "group",
+            "gap": 8,
+            "extra": "Two fields share the same label and validation area.",
+            "children": [
+              {
+                "id": "city",
+                "control": "input",
+                "noStyle": true,
+                "controlWidth": 180,
+                "value": "Hangzhou"
+              },
+              {
+                "id": "postcode",
+                "control": "input",
+                "noStyle": true,
+                "controlWidth": 180,
+                "placeholder": "Postcode"
+              }
+            ]
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "nested-items": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "nested",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 6
+        },
+        "wrapperCol": {
+          "span": 18
+        },
+        "items": [
+          {
+            "id": "name",
+            "label": "Full name",
+            "control": "group",
+            "gap": 8,
+            "children": [
+              {
+                "id": "given",
+                "label": "Given name",
+                "control": "input",
+                "layout": "vertical",
+                "controlWidth": 200,
+                "required": true
+              },
+              {
+                "id": "family",
+                "label": "Family name",
+                "control": "input",
+                "layout": "vertical",
+                "controlWidth": 200,
+                "help": "As shown on your ID."
+              }
+            ]
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "submit",
+            "label": null,
+            "control": "button",
+            "text": "Submit"
+          }
+        ]
+      }
+    ]
+  },
+  "dynamic-list": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "list",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 6
+        },
+        "wrapperCol": {
+          "span": 18
+        },
+        "items": [],
+        "list": {
+          "name": "users",
+          "gap": 8,
+          "initialValue": [
+            {
+              "first": "Ada",
+              "last": "Lovelace"
+            },
+            {
+              "first": "Grace",
+              "last": "Hopper"
+            }
+          ],
+          "move": [
+            1,
+            0
+          ],
+          "children": [
+            {
+              "id": "first",
+              "control": "input",
+              "noStyle": true,
+              "controlWidth": 180,
+              "placeholder": "First name"
+            },
+            {
+              "id": "last",
+              "control": "input",
+              "noStyle": true,
+              "controlWidth": 180,
+              "placeholder": "Last name"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "semantic": {
+    "viewport": {
+      "width": 900,
+      "height": 900
+    },
+    "forms": [
+      {
+        "id": "semantic",
+        "width": 600,
+        "layout": "horizontal",
+        "labelCol": {
+          "span": 8
+        },
+        "wrapperCol": {
+          "span": 16
+        },
+        "items": [
+          {
+            "id": "username",
+            "label": "Username",
+            "control": "input",
+            "required": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "control": "input",
+            "required": true,
+            "status": "error",
+            "feedback": true,
+            "help": "Please enter Email",
+            "extra": "This description stays aligned with the control column."
+          }
+        ],
+        "styles": {
+          "label": {
+            "color": "#531dab",
+            "backgroundColor": "#f9f0ff",
+            "paddingInlineStart": 4,
+            "paddingInlineEnd": 4
+          },
+          "content": {
+            "paddingInlineStart": 12,
+            "backgroundColor": "#f6ffed"
+          },
+          "help": {
+            "backgroundColor": "#fff1f0"
+          },
+          "extra": {
+            "backgroundColor": "#f0f5ff"
+          }
+        }
+      }
+    ]
+  }
+}

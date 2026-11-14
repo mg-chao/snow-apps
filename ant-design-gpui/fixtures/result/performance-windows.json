@@ -1,0 +1,1241 @@
+{
+  "kind": "focused Release CPU and offscreen GPUI drawing with TestAppContext/NoopTextSystem",
+  "idle_animation_callbacks": 0,
+  "warm_cache_gates_passed": true,
+  "measurements": [
+    {
+      "name": "result/style/cached-tokens",
+      "iterations": 200000,
+      "nanoseconds_per_iteration": 26.7285
+    },
+    {
+      "name": "result/style/theme-lookup",
+      "iterations": 200000,
+      "nanoseconds_per_iteration": 51.6795
+    },
+    {
+      "name": "result/builder",
+      "iterations": 200000,
+      "nanoseconds_per_iteration": 336.1635
+    },
+    {
+      "name": "result/1/1x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 55.6
+    },
+    {
+      "name": "result/1/1x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 42.8,
+      "p95_microseconds": 53.5
+    },
+    {
+      "name": "result/1/1x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 72.0
+    },
+    {
+      "name": "result/1/1x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 46.5,
+      "p95_microseconds": 57.3
+    },
+    {
+      "name": "result/1/1x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 134.6
+    },
+    {
+      "name": "result/1/1x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 85.7,
+      "p95_microseconds": 107.0
+    },
+    {
+      "name": "result/1/1x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 51.6
+    },
+    {
+      "name": "result/1/1x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 38.699999999999996,
+      "p95_microseconds": 49.3
+    },
+    {
+      "name": "result/1/1x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 46.8
+    },
+    {
+      "name": "result/1/1x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 42.6,
+      "p95_microseconds": 73.2
+    },
+    {
+      "name": "result/1/1x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 96.4
+    },
+    {
+      "name": "result/1/1x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 79.6,
+      "p95_microseconds": 91.10000000000001
+    },
+    {
+      "name": "result/1/1.5x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 43.300000000000004
+    },
+    {
+      "name": "result/1/1.5x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 38.0,
+      "p95_microseconds": 48.0
+    },
+    {
+      "name": "result/1/1.5x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 69.3
+    },
+    {
+      "name": "result/1/1.5x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 42.0,
+      "p95_microseconds": 53.8
+    },
+    {
+      "name": "result/1/1.5x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 97.0
+    },
+    {
+      "name": "result/1/1.5x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 78.89999999999999,
+      "p95_microseconds": 89.8
+    },
+    {
+      "name": "result/1/1.5x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 44.8
+    },
+    {
+      "name": "result/1/1.5x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 36.8,
+      "p95_microseconds": 51.7
+    },
+    {
+      "name": "result/1/1.5x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 45.9
+    },
+    {
+      "name": "result/1/1.5x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 41.9,
+      "p95_microseconds": 51.9
+    },
+    {
+      "name": "result/1/1.5x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 96.60000000000001
+    },
+    {
+      "name": "result/1/1.5x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 78.7,
+      "p95_microseconds": 90.60000000000001
+    },
+    {
+      "name": "result/1/2x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 39.9
+    },
+    {
+      "name": "result/1/2x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 36.4,
+      "p95_microseconds": 47.2
+    },
+    {
+      "name": "result/1/2x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 64.8
+    },
+    {
+      "name": "result/1/2x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 40.7,
+      "p95_microseconds": 50.2
+    },
+    {
+      "name": "result/1/2x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 99.8
+    },
+    {
+      "name": "result/1/2x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 77.8,
+      "p95_microseconds": 103.7
+    },
+    {
+      "name": "result/1/2x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 44.0
+    },
+    {
+      "name": "result/1/2x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 36.199999999999996,
+      "p95_microseconds": 45.4
+    },
+    {
+      "name": "result/1/2x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 58.6
+    },
+    {
+      "name": "result/1/2x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 40.1,
+      "p95_microseconds": 51.199999999999996
+    },
+    {
+      "name": "result/1/2x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 104.4
+    },
+    {
+      "name": "result/1/2x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 76.3,
+      "p95_microseconds": 86.4
+    },
+    {
+      "name": "result/20/1x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 401.0
+    },
+    {
+      "name": "result/20/1x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 397.40000000000003,
+      "p95_microseconds": 577.0
+    },
+    {
+      "name": "result/20/1x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 501.6
+    },
+    {
+      "name": "result/20/1x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 452.6,
+      "p95_microseconds": 588.4
+    },
+    {
+      "name": "result/20/1x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 1186.2
+    },
+    {
+      "name": "result/20/1x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 998.8,
+      "p95_microseconds": 1113.2
+    },
+    {
+      "name": "result/20/1x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 422.1
+    },
+    {
+      "name": "result/20/1x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 392.7,
+      "p95_microseconds": 419.0
+    },
+    {
+      "name": "result/20/1x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 471.6
+    },
+    {
+      "name": "result/20/1x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 451.9,
+      "p95_microseconds": 486.1
+    },
+    {
+      "name": "result/20/1x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 1087.8999999999999
+    },
+    {
+      "name": "result/20/1x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 989.0000000000001,
+      "p95_microseconds": 1069.8999999999999
+    },
+    {
+      "name": "result/20/1.5x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 397.6
+    },
+    {
+      "name": "result/20/1.5x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 392.7,
+      "p95_microseconds": 426.6
+    },
+    {
+      "name": "result/20/1.5x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 493.90000000000003
+    },
+    {
+      "name": "result/20/1.5x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 444.90000000000003,
+      "p95_microseconds": 465.9
+    },
+    {
+      "name": "result/20/1.5x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 1159.5
+    },
+    {
+      "name": "result/20/1.5x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 985.5,
+      "p95_microseconds": 1059.5
+    },
+    {
+      "name": "result/20/1.5x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 405.9
+    },
+    {
+      "name": "result/20/1.5x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 390.8,
+      "p95_microseconds": 421.0
+    },
+    {
+      "name": "result/20/1.5x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 467.0
+    },
+    {
+      "name": "result/20/1.5x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 452.8,
+      "p95_microseconds": 487.7
+    },
+    {
+      "name": "result/20/1.5x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 1403.6000000000001
+    },
+    {
+      "name": "result/20/1.5x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 1002.0000000000001,
+      "p95_microseconds": 1247.3
+    },
+    {
+      "name": "result/20/2x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 401.4
+    },
+    {
+      "name": "result/20/2x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 389.8,
+      "p95_microseconds": 407.4
+    },
+    {
+      "name": "result/20/2x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 507.70000000000005
+    },
+    {
+      "name": "result/20/2x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 441.0,
+      "p95_microseconds": 461.8
+    },
+    {
+      "name": "result/20/2x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 1095.6
+    },
+    {
+      "name": "result/20/2x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 971.3000000000001,
+      "p95_microseconds": 1029.3
+    },
+    {
+      "name": "result/20/2x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 397.40000000000003
+    },
+    {
+      "name": "result/20/2x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 391.59999999999997,
+      "p95_microseconds": 563.6999999999999
+    },
+    {
+      "name": "result/20/2x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 520.7
+    },
+    {
+      "name": "result/20/2x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 468.8,
+      "p95_microseconds": 494.70000000000005
+    },
+    {
+      "name": "result/20/2x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 1273.8
+    },
+    {
+      "name": "result/20/2x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 999.0000000000001,
+      "p95_microseconds": 1063.7
+    },
+    {
+      "name": "result/100/1x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 1947.6999999999998
+    },
+    {
+      "name": "result/100/1x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 1965.4999999999998,
+      "p95_microseconds": 2157.8
+    },
+    {
+      "name": "result/100/1x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 2541.0
+    },
+    {
+      "name": "result/100/1x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2373.4,
+      "p95_microseconds": 3239.5
+    },
+    {
+      "name": "result/100/1x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 6253.0
+    },
+    {
+      "name": "result/100/1x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 5475.0,
+      "p95_microseconds": 7492.6
+    },
+    {
+      "name": "result/100/1x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 1988.9999999999998
+    },
+    {
+      "name": "result/100/1x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 1931.0,
+      "p95_microseconds": 2131.3
+    },
+    {
+      "name": "result/100/1x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 2229.4
+    },
+    {
+      "name": "result/100/1x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2187.3,
+      "p95_microseconds": 2424.5
+    },
+    {
+      "name": "result/100/1x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 8889.1
+    },
+    {
+      "name": "result/100/1x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 10014.199999999999,
+      "p95_microseconds": 12344.900000000001
+    },
+    {
+      "name": "result/100/1.5x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 3577.5
+    },
+    {
+      "name": "result/100/1.5x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2057.7999999999997,
+      "p95_microseconds": 3519.2000000000003
+    },
+    {
+      "name": "result/100/1.5x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 2395.8999999999996
+    },
+    {
+      "name": "result/100/1.5x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2318.7,
+      "p95_microseconds": 3879.8
+    },
+    {
+      "name": "result/100/1.5x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 10531.0
+    },
+    {
+      "name": "result/100/1.5x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 8253.4,
+      "p95_microseconds": 10974.7
+    },
+    {
+      "name": "result/100/1.5x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 2006.7
+    },
+    {
+      "name": "result/100/1.5x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 3464.9,
+      "p95_microseconds": 3810.0
+    },
+    {
+      "name": "result/100/1.5x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 4162.8
+    },
+    {
+      "name": "result/100/1.5x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2201.7999999999997,
+      "p95_microseconds": 4080.7999999999997
+    },
+    {
+      "name": "result/100/1.5x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 5434.5
+    },
+    {
+      "name": "result/100/1.5x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 8910.8,
+      "p95_microseconds": 12722.300000000001
+    },
+    {
+      "name": "result/100/2x/Ltr/status/first-draw",
+      "iterations": 1,
+      "microseconds": 2671.4
+    },
+    {
+      "name": "result/100/2x/Ltr/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 3357.9,
+      "p95_microseconds": 4372.7
+    },
+    {
+      "name": "result/100/2x/Ltr/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 4716.900000000001
+    },
+    {
+      "name": "result/100/2x/Ltr/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 3251.0,
+      "p95_microseconds": 4748.900000000001
+    },
+    {
+      "name": "result/100/2x/Ltr/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 6341.0
+    },
+    {
+      "name": "result/100/2x/Ltr/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 9667.699999999999,
+      "p95_microseconds": 12354.0
+    },
+    {
+      "name": "result/100/2x/Rtl/status/first-draw",
+      "iterations": 1,
+      "microseconds": 2052.9
+    },
+    {
+      "name": "result/100/2x/Rtl/status/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 3503.0,
+      "p95_microseconds": 3734.7000000000003
+    },
+    {
+      "name": "result/100/2x/Rtl/exception/first-draw",
+      "iterations": 1,
+      "microseconds": 6262.700000000001
+    },
+    {
+      "name": "result/100/2x/Rtl/exception/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 3795.2,
+      "p95_microseconds": 4443.400000000001
+    },
+    {
+      "name": "result/100/2x/Rtl/rich/first-draw",
+      "iterations": 1,
+      "microseconds": 6291.2
+    },
+    {
+      "name": "result/100/2x/Rtl/rich/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 8734.1,
+      "p95_microseconds": 11425.8
+    }
+  ],
+  "cache_cases": [
+    {
+      "count": 1,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 1,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 295176,
+      "resident_bytes": 295176
+    },
+    {
+      "count": 1,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 295176,
+      "resident_bytes": 295176
+    },
+    {
+      "count": 1,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 295176,
+      "resident_bytes": 295176
+    },
+    {
+      "count": 1,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 295176,
+      "resident_bytes": 295176
+    },
+    {
+      "count": 1,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 295176,
+      "resident_bytes": 295176
+    },
+    {
+      "count": 1,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 1,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 663264,
+      "resident_bytes": 663264
+    },
+    {
+      "count": 1,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 663264,
+      "resident_bytes": 663264
+    },
+    {
+      "count": 1,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 663264,
+      "resident_bytes": 663264
+    },
+    {
+      "count": 1,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 663264,
+      "resident_bytes": 663264
+    },
+    {
+      "count": 1,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 1,
+      "raster_bytes": 663264,
+      "resident_bytes": 663264
+    },
+    {
+      "count": 1,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 1,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 1180704
+    },
+    {
+      "count": 1,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 1,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 1,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 1180704
+    },
+    {
+      "count": 1,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 20,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 20,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 20,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 20,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 20,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 20,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 20,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 20,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 20,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 20,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 20,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 20,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 20,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 20,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 3560928
+    },
+    {
+      "count": 20,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 20,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 20,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 3560928
+    },
+    {
+      "count": 20,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 100,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 100,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 100,
+      "scale": 1.0,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 100,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 100,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 100,
+      "scale": 1.0,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 890232,
+      "resident_bytes": 890232
+    },
+    {
+      "count": 100,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 100,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 100,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 100,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 100,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 100,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 3,
+      "raster_bytes": 2002140,
+      "resident_bytes": 2002140
+    },
+    {
+      "count": 100,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 100,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 3560928
+    },
+    {
+      "count": 100,
+      "scale": 2.0,
+      "direction": "Ltr",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 100,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "status",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    },
+    {
+      "count": 100,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "exception",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 3560928
+    },
+    {
+      "count": 100,
+      "scale": 2.0,
+      "direction": "Rtl",
+      "mode": "rich",
+      "warm_parse_misses": 0,
+      "warm_raster_misses": 0,
+      "raster_entries": 0,
+      "raster_bytes": 0,
+      "resident_bytes": 0
+    }
+  ],
+  "limitations": [
+    "Offscreen CPU measurements do not measure native GPU frame latency.",
+    "The deterministic GPUI test text system does not measure production operating-system font shaping or glyph rasterization latency.",
+    "First-draw is one observation after a mode/direction change; RTL reuses prior LTR caches. It is not a repeated cold-cache distribution."
+  ],
+  "date": "2026-10-28",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "profile": "Release",
+  "preset": "windows-msvc-performance",
+  "command": "scripts/run-result-perf.ps1",
+  "source_sha256": {
+    "Cargo.toml": "b675f08fe251d8e1f38c31e1b74602aa5b0c8728375539fdba991ebed94ae6d1",
+    "Cargo.lock": "0eceaf9c72300f27b386397663d5b7b933de63be0328b8b5e4f8466a1c587031",
+    "benches/result.rs": "6e9d7acd6c347522f134e61f283b8635bc247c0e60df31b2998a1d77541665e2",
+    "scripts/run-result-perf.ps1": "62b3e4f14b3700bc89964d1134b1243e93d39a8ff386625d08be41ac1c4636b5",
+    "src/config.rs": "77dd147c0fa73358815720f0c9bf69bd3001049d6a95e760aaf407fb2be32448",
+    "src/result/mod.rs": "a30c42ea9f352a23f4927bf16534d2f4cfe9ae54cf896e08a9b3af849459934a",
+    "src/result/view.rs": "d3f2238fb9b67f7c0d27b671368b172d432c0641edd90417a244513528128208",
+    "src/result/style.rs": "248a0d81ed04cfb54029e73645edbb49d3dd073a49e11bfd96d43ab41b3cbd43",
+    "src/result/config.rs": "c31c165d55de03a855c9d2c6cbe2e1ac6cbdfda5cc31593fa4ac337a4180f451",
+    "src/behavior/text.rs": "ac2fd230a6ca51a851fedf38bce150c399c0a59f96edb02ea63985dba9f24c8c",
+    "src/behavior/paragraph.rs": "ac679b93f18842efd061583d7d76c3e2de810b04b7b642764a1b7fff21641479",
+    "src/icons/mod.rs": "cd27b0f6962fc5b915a2844784d459f58a76ec5375e6b981c58c84420390778b",
+    "src/result/resources/403.svg": "5e114ca6afd04f766e6dafa35c4db19a5abd8d41034c0b9291aa3c1475f87ca7",
+    "src/result/resources/404.svg": "6a5b2becd19b9b9e62c26a47430f672480ce4da6bef75556b50acba219a4a79c",
+    "src/result/resources/500.svg": "1bd26486c919e20a9e0162701c0c439edfc07b44189ef8beb64347b4447eaf8d"
+  },
+  "preset_cache_sha256": "4a09ab32a650ce840227156648358f7644e0e3a8c0418e44220afb13f706bf9a"
+}

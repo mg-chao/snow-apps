@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "completed_utc": "2026-10-30T16:53:05.3076682Z",
+  "platform": "Windows x64",
+  "profile": "read-only-background-inspection",
+  "actuation": "None: no Invoke/SetFocus/keyboard/global input",
+  "build_skipped": false,
+  "source_files_verified": 348,
+  "source_unchanged": true,
+  "executable_sha256": "dcaaa5dea859325fbb1fad14e3c4d40bad8547e25e7bbdc4d35310718cc6e6fa",
+  "result_sha256": "7b9b04b1bf7cc57427470013205c7a7aae46ce7fcb93b1f7894c547fd521cd7d",
+  "profiles_passed": 6,
+  "logical_client_viewport": [
+    900,
+    850
+  ],
+  "checks": [
+    "owned-window",
+    "fresh-process-state",
+    "hidden-viewport",
+    "correct-dpi-client-viewport",
+    "four-settled-native-tree-frames",
+    "stable-native-field-identities",
+    "field-present",
+    "field-label",
+    "native-edit",
+    "required",
+    "localized-full-description",
+    "actual-accesskit-invalid",
+    "actual-accesskit-required",
+    "actual-accesskit-busy",
+    "optional",
+    "help-and-extra",
+    "protected-password",
+    "disabled",
+    "enabled-override",
+    "hidden-field",
+    "busy",
+    "no-native-activation",
+    "never-foreground",
+    "no-password-export"
+  ],
+  "cases": [
+    {
+      "name": "en_US-default",
+      "passed": true,
+      "settled_frame_numbers": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "native_fields": 6,
+      "never_foreground": true,
+      "native_activation_seen": false,
+      "foreground_preserved": true,
+      "state_sha256": "ecd43a8d1f40238448c189547b54e43560604397af3024773613c82217253f3b",
+      "native_tree_sha256": "e8730dab47c4d18824eafb474c9eb1d8cd29cd13ea9053361432b180e55864a8"
+    },
+    {
+      "name": "en_US-dark-compact-rtl",
+      "passed": true,
+      "settled_frame_numbers": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "native_fields": 6,
+      "never_foreground": true,
+      "native_activation_seen": false,
+      "foreground_preserved": true,
+      "state_sha256": "e65cfb9736db035211af737fc3f1f1c0d99306494746e602a11a2230308b21f2",
+      "native_tree_sha256": "e8730dab47c4d18824eafb474c9eb1d8cd29cd13ea9053361432b180e55864a8"
+    },
+    {
+      "name": "zh_CN-default",
+      "passed": true,
+      "settled_frame_numbers": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "native_fields": 6,
+      "never_foreground": true,
+      "native_activation_seen": false,
+      "foreground_preserved": true,
+      "state_sha256": "4ca8148d36ab0839f007b89511d97d9a906c3d25f9568833b2349c9949cfc786",
+      "native_tree_sha256": "a57b2f48dd9d09ae9060ae55836af28ae4c8a7e21b4e09b9f0c6e7bd4152158d"
+    },
+    {
+      "name": "zh_CN-dark-compact-rtl",
+      "passed": true,
+      "settled_frame_numbers": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "native_fields": 6,
+      "never_foreground": true,
+      "native_activation_seen": false,
+      "foreground_preserved": true,
+      "state_sha256": "448e287a72dc9ebcaebe1cb7f70ae076ded45faa222726e59bf8db401941d785",
+      "native_tree_sha256": "a57b2f48dd9d09ae9060ae55836af28ae4c8a7e21b4e09b9f0c6e7bd4152158d"
+    },
+    {
+      "name": "zh_TW-default",
+      "passed": true,
+      "settled_frame_numbers": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "native_fields": 6,
+      "never_foreground": true,
+      "native_activation_seen": false,
+      "foreground_preserved": true,
+      "state_sha256": "8ccea0de0bed2155aa1c8da6a510f03a327679f47883f87a75e088b50aa3bb0d",
+      "native_tree_sha256": "69c06406f16aa57fce09e30480fa0edc31eeae2953bba1d7e044651b93b07e57"
+    },
+    {
+      "name": "zh_TW-dark-compact-rtl",
+      "passed": true,
+      "settled_frame_numbers": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "native_fields": 6,
+      "never_foreground": true,
+      "native_activation_seen": false,
+      "foreground_preserved": true,
+      "state_sha256": "679cc52c2a6f35e602c70cac62454f3e6b98c18aa97c0723cdf2add62167ec45",
+      "native_tree_sha256": "69c06406f16aa57fce09e30480fa0edc31eeae2953bba1d7e044651b93b07e57"
+    }
+  ],
+  "limitations": [
+    "Pinned AccessKit Windows 0.34 does not implement UIA IsDataValidForForm. Invalid metadata is checked in its native AccessKit tree; localized errors/help use native UIA FullDescription. Unsupported property values are recorded, not counted as proof of OS invalid-state support.",
+    "Native Windows UIA evidence only; macOS and Linux accessibility execution is unverified.",
+    "Active accessibility bypasses named-item scene caching because the pinned GPUI does not replay cached accessibility subtrees; costs were not benchmarked."
+  ]
+}

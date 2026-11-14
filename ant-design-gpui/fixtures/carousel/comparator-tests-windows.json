@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "utc": "2026-10-29T13:07:26.219377+00:00",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "python": "3.12.10",
+  "command": "python scripts/test_carousel_visual_comparator.py",
+  "tests_run": 17,
+  "failures": 0,
+  "errors": 0,
+  "successful": true,
+  "source_sha256": {
+    "scripts/compare_carousel_visual.py": "895114168d5a1463ca775bff9f520b74c5baca753b21bb6c57e406f27598774c",
+    "scripts/test_carousel_visual_comparator.py": "27a156eaab9d9fb91480211bc750bf9f588bd9d50eadac9573aea353de5f5e2d"
+  }
+}

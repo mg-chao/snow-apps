@@ -1,0 +1,366 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-28T11:05:38.670489+00:00",
+  "platform": "Windows x64 MSVC",
+  "cpu": "AMD Ryzen 9 5950X",
+  "available_logical_processors": 24,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "preset": "windows-msvc-performance",
+  "cargo_profile": "bench (optimized Release)",
+  "command": "pwsh -NoProfile -File scripts/run-spin-perf.ps1",
+  "final_measurement": "Direct rerun of the qualified Release executable after the final native captures and compiler-load cooldown.",
+  "benchmark_executable": {
+    "name": "spin-7e326e9903b60303.exe",
+    "sha256": "132353adb990c0db397687e881ebb22efcd27393f905a11c508ae035503fcc46",
+    "modified_at_utc": "2026-10-28T10:55:30.346836+00:00"
+  },
+  "raw_results_sha256": "9c6aec434dbd4a2f3f5116b6a9abfc8123f00b4a4c5358dbc953769abcf51e7f",
+  "raw_result_log": "build/windows-msvc-performance/ant-design-gpui/spin-results-quiet.txt",
+  "source_sha256": {
+    "benches/spin.rs": "88a13e01b978695b3277aaf03674eea3caa085392dd16445bc11cd83722f9947",
+    "scripts/run-spin-perf.ps1": "dfe406aeae86fa0d65dcc72754e4afff42af2840712bf9e91f0ad9525098b037",
+    "Cargo.toml": "b675f08fe251d8e1f38c31e1b74602aa5b0c8728375539fdba991ebed94ae6d1",
+    "Cargo.lock": "0eceaf9c72300f27b386397663d5b7b933de63be0328b8b5e4f8466a1c587031",
+    "src/behavior/text.rs": "ac2fd230a6ca51a851fedf38bce150c399c0a59f96edb02ea63985dba9f24c8c",
+    "src/config.rs": "77dd147c0fa73358815720f0c9bf69bd3001049d6a95e760aaf407fb2be32448",
+    "src/spin/config.rs": "fd0a4dbbca14d86cf1dab4a09433aae144cf243185f09b9d465ddb02908f3a01",
+    "src/spin/element.rs": "c6e69f7f833dff7caae88539829723a5a6aa4c9dfdac83fda4f8419749565dc4",
+    "src/spin/geometry.rs": "671dfb399aa0ed35c13b55e8045c92553dbe52c088adb40f9a5e5b32c9e1f47c",
+    "src/spin/mod.rs": "8c4f079f5f9f7a579e1cb2a25f92a3cbb120b2d78ba71252f6ab2eec84b356ed",
+    "src/spin/paint.rs": "f50d96f764770fa1075d39b43000de89608d29cd119c3e404a5c456c81780db3",
+    "src/spin/reference_tests.rs": "0cbf33f29bef1a56997078646885081d2c2d105a43a77d7cc22d037840637c34",
+    "src/spin/state.rs": "e91debd9a8e3525fde20a0ce21ab8a91dd8e7d52d8ea4ffa7adcf3464648f209",
+    "src/spin/style.rs": "fc731c78e5fd42b343307f855e400d828c54be5eb1caea2b937e6a16d00db298",
+    "src/spin/tests.rs": "119dbd3ee4c4f12ee65fb1f8de4135651afee6cd2cab27ea9a2cf72ceff3e3dc",
+    "src/spin/view.rs": "fa4abb5a73af2666d30d810b2f5319e55ad2b90c4bb7c9030586393042f5d2e1"
+  },
+  "source_modified_at_utc": {
+    "benches/spin.rs": "2026-10-28T10:47:16.576783+00:00",
+    "scripts/run-spin-perf.ps1": "2026-10-28T10:00:10.498292+00:00",
+    "Cargo.toml": "2026-10-28T10:15:09.002188+00:00",
+    "Cargo.lock": "2026-10-28T10:05:56.833566+00:00",
+    "src/behavior/text.rs": "2026-10-28T10:23:39.840338+00:00",
+    "src/config.rs": "2026-10-28T10:03:44.573021+00:00",
+    "src/spin/config.rs": "2026-10-28T10:12:46.137414+00:00",
+    "src/spin/element.rs": "2026-10-28T10:30:40.036597+00:00",
+    "src/spin/geometry.rs": "2026-10-28T10:12:46.143919+00:00",
+    "src/spin/mod.rs": "2026-10-28T10:19:40.866211+00:00",
+    "src/spin/paint.rs": "2026-10-28T10:40:11.963550+00:00",
+    "src/spin/reference_tests.rs": "2026-10-28T10:18:05.337939+00:00",
+    "src/spin/state.rs": "2026-10-28T10:53:50.753016+00:00",
+    "src/spin/style.rs": "2026-10-28T10:12:46.141414+00:00",
+    "src/spin/tests.rs": "2026-10-28T10:51:45.365735+00:00",
+    "src/spin/view.rs": "2026-10-28T10:34:15.611784+00:00"
+  },
+  "assertions": [
+    "At most one frame callback per visible animated Spin; repeated draws do not accumulate callbacks.",
+    "Hidden, settled determinate, scoped reduced-motion, and static custom indicators schedule zero animation callbacks.",
+    "Stopping loading drains any pending callback and does not schedule continuous work."
+  ],
+  "auto_timer_optimization": {
+    "prior_state_sha256": "8e3b6338948c5b997497f5c527a9050f8c3f4a95bf22871f6a7386c4cd0c89fe",
+    "baseline_100_auto_median_us": 8179.5,
+    "baseline_100_auto_p95_us": 277308.4,
+    "final_100_auto_median_us": 6251.0,
+    "final_100_auto_p95_us": 9921.6,
+    "p95_speedup": 27.94996774713756,
+    "mechanism": "Pending animation frames own wakeups. Coarse 200ms auto timers are used only when no animation frame is pending.",
+    "baseline_origin": "Exact quiet benchmark stdout recorded in the tool execution before the timer change; a deterministic regression separately observed the redundant timer notification."
+  },
+  "contended_run": {
+    "raw_result_log": "build/windows-msvc-performance/ant-design-gpui/spin-results-contended.txt",
+    "raw_results_sha256": "c098401d23bdceb47a1ae2a00793c9a2c0cc831b66d0373977125a0cd916a82d",
+    "observed_load": "Concurrent external MSVC cl/link and Rust compiler processes. Those unrelated processes were left running.",
+    "measurements": [
+      {
+        "name": "spin/style/cached-tokens",
+        "ns_per_iteration": 50.6,
+        "iterations": 200000
+      },
+      {
+        "name": "spin/style/theme-lookup",
+        "ns_per_iteration": 75.5,
+        "iterations": 200000
+      },
+      {
+        "name": "spin/builder",
+        "ns_per_iteration": 3233.1,
+        "iterations": 200000
+      },
+      {
+        "name": "spin/1/hidden/warm-draw",
+        "median_us": 57.0,
+        "p95_us": 227.1,
+        "samples": 200
+      },
+      {
+        "name": "spin/1/dots/warm-draw",
+        "median_us": 162.5,
+        "p95_us": 220.0,
+        "samples": 200
+      },
+      {
+        "name": "spin/1/progress/warm-draw",
+        "median_us": 85.2,
+        "p95_us": 108.2,
+        "samples": 200
+      },
+      {
+        "name": "spin/1/auto-progress/warm-draw",
+        "median_us": 205.4,
+        "p95_us": 261.7,
+        "samples": 200
+      },
+      {
+        "name": "spin/1/nested/warm-draw",
+        "median_us": 274.9,
+        "p95_us": 329.6,
+        "samples": 200
+      },
+      {
+        "name": "spin/1/reduced-motion/warm-draw",
+        "median_us": 76.1,
+        "p95_us": 83.9,
+        "samples": 200
+      },
+      {
+        "name": "spin/1/static-custom/warm-draw",
+        "median_us": 69.4,
+        "p95_us": 75.4,
+        "samples": 200
+      },
+      {
+        "name": "spin/20/hidden/warm-draw",
+        "median_us": 242.5,
+        "p95_us": 259.0,
+        "samples": 200
+      },
+      {
+        "name": "spin/20/dots/warm-draw",
+        "median_us": 1591.7,
+        "p95_us": 10319.8,
+        "samples": 200
+      },
+      {
+        "name": "spin/20/progress/warm-draw",
+        "median_us": 766.4,
+        "p95_us": 923.8,
+        "samples": 200
+      },
+      {
+        "name": "spin/20/auto-progress/warm-draw",
+        "median_us": 2149.4,
+        "p95_us": 4936.6,
+        "samples": 200
+      },
+      {
+        "name": "spin/20/nested/warm-draw",
+        "median_us": 3486.3,
+        "p95_us": 9693.2,
+        "samples": 200
+      },
+      {
+        "name": "spin/20/reduced-motion/warm-draw",
+        "median_us": 638.2,
+        "p95_us": 908.5,
+        "samples": 200
+      },
+      {
+        "name": "spin/20/static-custom/warm-draw",
+        "median_us": 528.3,
+        "p95_us": 1250.1,
+        "samples": 200
+      },
+      {
+        "name": "spin/100/hidden/warm-draw",
+        "median_us": 1026.5,
+        "p95_us": 1476.5,
+        "samples": 200
+      },
+      {
+        "name": "spin/100/dots/warm-draw",
+        "median_us": 9600.8,
+        "p95_us": 94233.9,
+        "samples": 200
+      },
+      {
+        "name": "spin/100/progress/warm-draw",
+        "median_us": 4996.2,
+        "p95_us": 9765.0,
+        "samples": 200
+      },
+      {
+        "name": "spin/100/auto-progress/warm-draw",
+        "median_us": 15798.2,
+        "p95_us": 75558.3,
+        "samples": 200
+      },
+      {
+        "name": "spin/100/nested/warm-draw",
+        "median_us": 31864.2,
+        "p95_us": 107569.8,
+        "samples": 200
+      },
+      {
+        "name": "spin/100/reduced-motion/warm-draw",
+        "median_us": 5492.3,
+        "p95_us": 16332.6,
+        "samples": 200
+      },
+      {
+        "name": "spin/100/static-custom/warm-draw",
+        "median_us": 2888.6,
+        "p95_us": 11506.1,
+        "samples": 200
+      }
+    ]
+  },
+  "notes": [
+    "CPU full offscreen window draws include layout, accessibility, content text and scene preparation; these are not GPU frame times.",
+    "All draws use the pinned GPUI TestAppContext virtual clock; no wall-clock animation sleeps enter timing.",
+    "Final quiet and externally contended logs are both preserved. Results are not portable timing thresholds or guaranteed application frame rates."
+  ],
+  "measurements": [
+    {
+      "name": "spin/style/cached-tokens",
+      "ns_per_iteration": 33.3,
+      "iterations": 200000
+    },
+    {
+      "name": "spin/style/theme-lookup",
+      "ns_per_iteration": 50.7,
+      "iterations": 200000
+    },
+    {
+      "name": "spin/builder",
+      "ns_per_iteration": 227.0,
+      "iterations": 200000
+    },
+    {
+      "name": "spin/1/hidden/warm-draw",
+      "median_us": 22.4,
+      "p95_us": 34.9,
+      "samples": 200
+    },
+    {
+      "name": "spin/1/dots/warm-draw",
+      "median_us": 82.1,
+      "p95_us": 134.9,
+      "samples": 200
+    },
+    {
+      "name": "spin/1/progress/warm-draw",
+      "median_us": 39.4,
+      "p95_us": 46.1,
+      "samples": 200
+    },
+    {
+      "name": "spin/1/auto-progress/warm-draw",
+      "median_us": 101.3,
+      "p95_us": 133.3,
+      "samples": 200
+    },
+    {
+      "name": "spin/1/nested/warm-draw",
+      "median_us": 139.7,
+      "p95_us": 220.3,
+      "samples": 200
+    },
+    {
+      "name": "spin/1/reduced-motion/warm-draw",
+      "median_us": 35.2,
+      "p95_us": 52.9,
+      "samples": 200
+    },
+    {
+      "name": "spin/1/static-custom/warm-draw",
+      "median_us": 30.9,
+      "p95_us": 31.6,
+      "samples": 200
+    },
+    {
+      "name": "spin/20/hidden/warm-draw",
+      "median_us": 116.9,
+      "p95_us": 133.8,
+      "samples": 200
+    },
+    {
+      "name": "spin/20/dots/warm-draw",
+      "median_us": 668.0,
+      "p95_us": 718.7,
+      "samples": 200
+    },
+    {
+      "name": "spin/20/progress/warm-draw",
+      "median_us": 344.5,
+      "p95_us": 365.7,
+      "samples": 200
+    },
+    {
+      "name": "spin/20/auto-progress/warm-draw",
+      "median_us": 959.4,
+      "p95_us": 1049.1,
+      "samples": 200
+    },
+    {
+      "name": "spin/20/nested/warm-draw",
+      "median_us": 1549.2,
+      "p95_us": 1797.8,
+      "samples": 200
+    },
+    {
+      "name": "spin/20/reduced-motion/warm-draw",
+      "median_us": 324.9,
+      "p95_us": 340.3,
+      "samples": 200
+    },
+    {
+      "name": "spin/20/static-custom/warm-draw",
+      "median_us": 260.3,
+      "p95_us": 289.6,
+      "samples": 200
+    },
+    {
+      "name": "spin/100/hidden/warm-draw",
+      "median_us": 520.1,
+      "p95_us": 536.4,
+      "samples": 200
+    },
+    {
+      "name": "spin/100/dots/warm-draw",
+      "median_us": 3769.9,
+      "p95_us": 4728.0,
+      "samples": 200
+    },
+    {
+      "name": "spin/100/progress/warm-draw",
+      "median_us": 2070.9,
+      "p95_us": 2564.1,
+      "samples": 200
+    },
+    {
+      "name": "spin/100/auto-progress/warm-draw",
+      "median_us": 6251.0,
+      "p95_us": 9921.6,
+      "samples": 200
+    },
+    {
+      "name": "spin/100/nested/warm-draw",
+      "median_us": 9463.2,
+      "p95_us": 12033.0,
+      "samples": 200
+    },
+    {
+      "name": "spin/100/reduced-motion/warm-draw",
+      "median_us": 1782.1,
+      "p95_us": 2069.5,
+      "samples": 200
+    },
+    {
+      "name": "spin/100/static-custom/warm-draw",
+      "median_us": 1247.5,
+      "p95_us": 1323.1,
+      "samples": 200
+    }
+  ]
+}

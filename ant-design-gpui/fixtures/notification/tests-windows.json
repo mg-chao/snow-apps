@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "utc": "2026-10-28T18:03:00.526463+00:00",
+  "platform": "windows-x64",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "passed": 146,
+  "checks": [
+    {
+      "command": "cargo test --locked --offline --lib notification:: -- --test-threads=1",
+      "passed": 34,
+      "log_sha256": "6b06949740f75bad7e063dfa08b5475fc60390856575f226b474aa6c1fc63544"
+    },
+    {
+      "command": "cargo test --locked --offline --lib message:: -- --test-threads=1",
+      "passed": 67,
+      "log_sha256": "b4f70e47096a9beee2601243be5f6778a29aaedbf36ad0364c268b5b580b8bfc"
+    },
+    {
+      "command": "cargo test --locked --offline --lib behavior::text:: -- --test-threads=1",
+      "passed": 17,
+      "log_sha256": "f2f03b153cb25147560843d2f7ee541b6c07b512158ff87da2c779e26949c294"
+    },
+    {
+      "command": "cargo test --locked --offline --lib root:: -- --test-threads=1",
+      "passed": 5,
+      "log_sha256": "c7ce7c22477f94346c59c4923ac7dbbba5a59465b0bf6950fb940eb0c31abf6c"
+    },
+    {
+      "command": "cargo test --locked --offline --lib config:: -- --test-threads=1",
+      "passed": 18,
+      "log_sha256": "08569e5e35dbc058820c9c9743cbdbfadad3caa5ba79d14c6ac8257b2c74965b"
+    },
+    {
+      "command": "cargo test --locked --offline --example gallery notification_gallery -- --test-threads=1",
+      "passed": 5,
+      "log_sha256": "14a1ba1550abcf83c2adb7dea158abce792361657ab4482a3e8f9520f2d42a68"
+    }
+  ],
+  "source_sha256": {
+    "src/behavior/text.rs": "67d68127f54252f8790904451797f8c73fad1596c0b1929c68bcb1d77baf4cb8",
+    "src/behavior/notice.rs": "182be27ea3f40adddc1aff43c11e15ca3d33f43bc54b4f54b26713db1f53c08f",
+    "src/root.rs": "0ce4bd0dcf032ef0fbe19d639acf28eaf87a31df65a06b99b30ce76cfb4c2928",
+    "src/config.rs": "9dddca0a24fce3e3c1f5eeb4059fa6a94989c09ebb79c9e37605c530a1b74465",
+    "src/lib.rs": "e05946458684fa49f768b1027d94322cc1e948f1d48b5a21b76a9719ff920105",
+    "Cargo.toml": "44ae6b159afcc270e73eeece34e7615e03c552a77a3d833ba77e734992b01862",
+    "Cargo.lock": "3863e01aea618961450389bef3877e6cccea54f00028bfc68646e0011fcda954",
+    "examples/gallery/notification.rs": "2c50c332843d9a88dd464fb3493918f2cd27b8af8112a71a27de505762c35cdd",
+    "src/notification/card.rs": "21f1ee9e8ea55cfc5ff5e0e5c649a92d8c0b721e981f5686ac557be13ceaf69b",
+    "src/notification/config.rs": "24ed361245c4a086fecffd75d0b6da847544f93b6613d685e71c7b8df027d07c",
+    "src/notification/geometry.rs": "f9d89337ae756c657c4b962368f49ada264d45ef40497db105f41f9c93d065bb",
+    "src/notification/mod.rs": "8d87aa35136b57de0a8eedbaac8cdafddcf87594f26ac911f683c3334776999c",
+    "src/notification/state.rs": "4877480a9edc55188a7578f37be5097e75a5900c580abdc6e50440a573cdfdf1",
+    "src/notification/style.rs": "279dd118c9058820d7e0cecfe7aebec422bd88f4984436d7d6b7a3d0c367dbfc",
+    "src/notification/tests.rs": "69b053b531926d2525d0697de1fbe1c0a5440828ace153f3b5a67a571a8e4f07",
+    "src/notification/view.rs": "2017c5e3f270bdd851e3fc6864b8c09785692c57dd8b3994daddb90a86c3a808"
+  },
+  "source_differences_after_build": [],
+  "scope": "Only Notification and directly related shared regression tests; no full suite.",
+  "format": {
+    "status": "passed",
+    "tool": "rustfmt --edition 2024 --check --config skip_children=true",
+    "scope": "Notification sources, fixtures, benchmark, gallery integration, and edited shared modules"
+  },
+  "clippy": {
+    "strict_status": "blocked_by_concurrent_descriptions_work",
+    "command": "cargo clippy --locked --offline --lib --example gallery --example notification_visual --example notification_accessibility --bench notification -- -D warnings",
+    "diagnostics": [
+      {
+        "file": "src/descriptions/view.rs",
+        "lint": "double_ended_iterator_last"
+      },
+      {
+        "file": "examples/gallery/descriptions.rs",
+        "lint": "clone_on_copy",
+        "count": 2
+      }
+    ],
+    "scoped_status": "passed with only double_ended_iterator_last and clone_on_copy allowed; no source lint suppression was added",
+    "log_sha256": "255f9eba69a959a3365dc2f95b45ffc6f3591f560e71ce00f5726e1819e19285"
+  }
+}

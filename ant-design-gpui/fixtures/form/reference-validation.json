@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "scope": "Original-source reference evidence and comparator self-checks; native visual parity is reported separately.",
+  "upstream": {
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "version": "6.6.7",
+    "rc_form": "1.8.6"
+  },
+  "renderer": "Chrome/156.0.8078.74",
+  "matrix": {
+    "scenes": 19,
+    "themes": [
+      "default",
+      "dark",
+      "compact",
+      "dark-compact"
+    ],
+    "directions": [
+      "ltr",
+      "rtl"
+    ],
+    "scales": [
+      1,
+      1.5,
+      2
+    ],
+    "actual_captures": 456,
+    "compact_metric_cases": 40
+  },
+  "original_source_audit": {
+    "passed": true,
+    "native_browser_dpi_verified": true,
+    "verified_input_hashes": 477,
+    "verified_screenshot_hashes": 456,
+    "raster_outside_forms": 0,
+    "fractional_viewport_edge_cases": 8,
+    "audit_sha256": "17287b72429112766d5dfa7967420c973efd70440232fa9224af264ccbe82b28"
+  },
+  "behavior": {
+    "independent_traces": 13,
+    "sha256": "8689ded2f49d88616d0bacb623608a2471f0b29a7246fb06e767e8acd2292b98"
+  },
+  "inheritance": {
+    "configurations": 15,
+    "controls": 15,
+    "label_pointer_actions": 3,
+    "sha256": "4d1fc6543e0da15894341ac44553ad126fd1f9bf8651b291eb079e9ba10b9cdd"
+  },
+  "supplemental_source": {
+    "native_browser_dpi_proof_sha256": "5a577c1e60dee05225f8f59dc730419fdc90b58ad069377239676b13047ce373",
+    "required_mark_typography_sha256": "0448f8fef5086d0b1ed0e6b837839188afe1b3f64da25296794e22417234b4a2",
+    "textarea_resize": {
+      "real_pointer_traces": 21,
+      "sha256": "ec57730541923fb10915e788a41a6b681cd383f7367978bb6df7b067a2744fba"
+    },
+    "switch_opacity": {
+      "actual_captures": 12,
+      "actual_pixel_probes": 216,
+      "sha256": "17015ce29b552548aa358dbcad7e82cd740838cf7bb987dfac886fdeeb14ae3d",
+      "software_compositor_model_sha256": "7d2d8dfd2af4a08df667e80c053f196a05fd4ad3f09d24d14c39300983794c4a"
+    }
+  },
+  "licenses": {
+    "loaded_packages": 33,
+    "inheritance_loaded_packages": 41,
+    "unique_loaded_packages": 41,
+    "all_recorded_license_hashes_verified": true
+  },
+  "comparator_negative_controls": {
+    "synthetic_baseline": true,
+    "negative_controls_passed": 6,
+    "coverage_boundary_controls_passed": 2
+  },
+  "visual_fixture_sha256": "d674f44c6619f9e80391afb57d47f8d8e3999bab2e4c363c689e4fdcd761d3b8"
+}

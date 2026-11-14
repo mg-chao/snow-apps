@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "platform": "windows",
+  "mode": "hidden-native-window",
+  "keyboard": "not-sent",
+  "activation": "WM_GETOBJECT UIA root through normal AccessKit registration",
+  "utc": "2026-10-28T14:04:41.2010103Z",
+  "reason": null,
+  "checks": [
+    "stage-0-live-content-update-focus-and-removal",
+    "stage-1-live-content-update-focus-and-removal",
+    "stage-2-live-content-update-focus-and-removal",
+    "stage-3-live-content-update-focus-and-removal",
+    "rich-content-native-invoke-routes-once",
+    "stage-4-live-content-update-focus-and-removal"
+  ],
+  "scenarios": [
+    {
+      "stage": 0,
+      "active_messages": 1,
+      "focus_preserved": true,
+      "focus_preserved_after_action": true,
+      "action_count": 0,
+      "native": {
+        "control_type": "ControlType.Text",
+        "role": "alert",
+        "label": "Saving document",
+        "description": "Document operation feedback",
+        "live_setting": 2,
+        "focusable": false,
+        "automation_id": "message.main"
+      }
+    },
+    {
+      "stage": 1,
+      "active_messages": 1,
+      "focus_preserved": true,
+      "focus_preserved_after_action": true,
+      "action_count": 0,
+      "native": {
+        "control_type": "ControlType.Text",
+        "role": "alert",
+        "label": "Document saved",
+        "description": "Document operation feedback",
+        "live_setting": 2,
+        "focusable": false,
+        "automation_id": "message.main"
+      }
+    },
+    {
+      "stage": 2,
+      "active_messages": 1,
+      "focus_preserved": true,
+      "focus_preserved_after_action": true,
+      "action_count": 0,
+      "native": {
+        "control_type": "ControlType.StatusBar",
+        "role": "status",
+        "label": "Save failed",
+        "description": "Document operation feedback",
+        "live_setting": 1,
+        "focusable": false,
+        "automation_id": "message.main"
+      }
+    },
+    {
+      "stage": 3,
+      "active_messages": 0,
+      "focus_preserved": true,
+      "focus_preserved_after_action": true,
+      "action_count": 0,
+      "native": null
+    },
+    {
+      "stage": 4,
+      "active_messages": 1,
+      "focus_preserved": true,
+      "focus_preserved_after_action": false,
+      "action_count": 1,
+      "native": {
+        "control_type": "ControlType.Text",
+        "role": "alert",
+        "label": "Document ready",
+        "description": "Document operation feedback",
+        "live_setting": 2,
+        "focusable": false,
+        "automation_id": "message.main"
+      }
+    }
+  ],
+  "binary_sha256": "e00dc2788677c694f12ce03e6cb11845151c4209533414afba48347bcd7c14a8",
+  "source_sha256": {
+    "examples/message_accessibility.rs": "22dd7ca7ac9563f4ac0eb0cce3bee1c1aee2ace22dcde811aab900992390a5d6",
+    "scripts/test-message-accessibility.ps1": "378daf299e110a9e84bf1e9be74545ff992189f4f976490a42dbb8d50790b499",
+    "src/root.rs": "943fc6310804e202a736088db2f970a7e81e119603a6f13ad3676a777a460d61",
+    "src/lib.rs": "40f1c31d967c65933280ebd252435f82a2eb30c4754091034fafc10ef644e1ec",
+    "src/config.rs": "67e3ee9a84fc6157d74077ad8d5fa0749ec28c57d43e1ff2676335f1f606e2a3",
+    "src/behavior/text.rs": "c2caa1b4b1b3714e85f846a7deb32658795554a1d17a2bb48cdac0840f56384f",
+    "Cargo.toml": "c676f4612e74903d5741eb29bd2f3b7b08164446db5a6ff5c38fc739a87eb9f6",
+    "Cargo.lock": "0eceaf9c72300f27b386397663d5b7b933de63be0328b8b5e4f8466a1c587031",
+    "src/message/config.rs": "04c780c38ad0efdc7683c5baf8d298c0cfe4bbfc82d600a3db4789470f9d8ea8",
+    "src/message/core_audit_tests.rs": "f0d393529937f1528883a9fd609fee2ecfaa018717e10c5909d5791bb6c2b876",
+    "src/message/element.rs": "6dfe810d7f61512c026b01549f832c4d8eca5c17a429f7300528e34780126940",
+    "src/message/mod.rs": "c6a1caf9c4c7efc3169109a8f80cda35f8fe66c068147923a325e52081926211",
+    "src/message/reference_tests.rs": "318e33e4b3553e62bf7d101b3cd5e4635fc0715ecc82405b0b18f899d4cdcc49",
+    "src/message/render_tests.rs": "ee3f8f2c697c2c314973030dcf19dc6e6ae87fa32be28440b00135b553f37a74",
+    "src/message/state.rs": "64c50b671cd447c30d560b822f70962bf4ada5a28620b548b0985fcd5c173623",
+    "src/message/style.rs": "f27974adcbcd90c29ee55ddad808a9fc70da2b6eedaeedf3b30960cbd47d3a2f",
+    "src/message/tests.rs": "ef8519e055cbfb1901d1dd387ec55d3f5bf6acacf4d4e66c1087e042ac20d4b0",
+    "src/message/view.rs": "9a8b47f806179377d1e8a7df6297fd1426e5748ee0dfde592b0a6a5f9fc0279d"
+  },
+  "limitations": [
+    "Native UIA properties are queried independently of GPUI debug JSON.",
+    "Screen reader speech and global input are not exercised."
+  ]
+}

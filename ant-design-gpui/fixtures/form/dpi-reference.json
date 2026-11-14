@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "scope": "Independently executed minimal native Chromium DPI versus CDP emulated raster scale. Equal devicePixelRatio does not imply equal CSS border snapping.",
+  "cases": [
+    {
+      "mode": "native-force",
+      "scale": 1,
+      "launch_scale": 1,
+      "launch_device_pixel_ratio": 1,
+      "renderer": "Chrome/156.0.8078.74",
+      "metrics": {
+        "devicePixelRatio": 1,
+        "borderTop": "1px",
+        "borderBottom": "1px",
+        "height": 32,
+        "width": 200,
+        "lineHeight": "22px",
+        "padding": "4px"
+      }
+    },
+    {
+      "mode": "emulated-only",
+      "scale": 1,
+      "launch_scale": 1,
+      "launch_device_pixel_ratio": 1,
+      "renderer": "Chrome/156.0.8078.74",
+      "metrics": {
+        "devicePixelRatio": 1,
+        "borderTop": "1px",
+        "borderBottom": "1px",
+        "height": 32,
+        "width": 200,
+        "lineHeight": "22px",
+        "padding": "4px"
+      }
+    },
+    {
+      "mode": "native-force",
+      "scale": 1.5,
+      "launch_scale": 1.5,
+      "launch_device_pixel_ratio": 1.5,
+      "renderer": "Chrome/156.0.8078.74",
+      "metrics": {
+        "devicePixelRatio": 1.5,
+        "borderTop": "0.666667px",
+        "borderBottom": "0.666667px",
+        "height": 31.33333396911621,
+        "width": 200,
+        "lineHeight": "22px",
+        "padding": "4px"
+      }
+    },
+    {
+      "mode": "emulated-only",
+      "scale": 1.5,
+      "launch_scale": 1,
+      "launch_device_pixel_ratio": 1,
+      "renderer": "Chrome/156.0.8078.74",
+      "metrics": {
+        "devicePixelRatio": 1.5,
+        "borderTop": "1px",
+        "borderBottom": "1px",
+        "height": 32,
+        "width": 200,
+        "lineHeight": "22px",
+        "padding": "4px"
+      }
+    },
+    {
+      "mode": "native-force",
+      "scale": 2,
+      "launch_scale": 2,
+      "launch_device_pixel_ratio": 2,
+      "renderer": "Chrome/156.0.8078.74",
+      "metrics": {
+        "devicePixelRatio": 2,
+        "borderTop": "1px",
+        "borderBottom": "1px",
+        "height": 32,
+        "width": 200,
+        "lineHeight": "22px",
+        "padding": "4px"
+      }
+    },
+    {
+      "mode": "emulated-only",
+      "scale": 2,
+      "launch_scale": 1,
+      "launch_device_pixel_ratio": 1,
+      "renderer": "Chrome/156.0.8078.74",
+      "metrics": {
+        "devicePixelRatio": 2,
+        "borderTop": "1px",
+        "borderBottom": "1px",
+        "height": 32,
+        "width": 200,
+        "lineHeight": "22px",
+        "padding": "4px"
+      }
+    }
+  ]
+}

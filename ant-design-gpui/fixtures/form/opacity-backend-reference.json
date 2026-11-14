@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "scope": "Independent plain CSS group-opacity software-renderer evidence; no Ant Design, Form, Switch, text or font rendering.",
+  "renderer": "Chrome/156.0.8078.74",
+  "probe": {
+    "script": "scripts/probe_form_opacity_blend.mjs",
+    "script_sha256": "83a84b73c339d3fed2fb6748390600f38cbfc2dd9428ed6e7aab542915fd1097",
+    "transport": "scripts/pagination_browser.mjs",
+    "transport_sha256": "65d7a9cbf676c8ba415c17ebca58d9e83c1249cde248e7ad97c032b24b824bc9",
+    "observations": "../build/ant-design-gpui/form-opacity-blend/blend-pixels.json",
+    "observations_sha256": "7c9437c639df92da299a058e8c85e5acbe5489984e906c10d8c65ae40e1f72a3",
+    "geometry_sha256": "4ad6197164df322a68925f73bda8a48b99371ee55c5bf29276f7df1fbd7a5f4b",
+    "png_sha256": "dcf4946a52fe42eebe426f1271842f8a6926f6baf727bd7378099aab04618400",
+    "png_dimensions": [
+      640,
+      700
+    ],
+    "gpu_disabled": true,
+    "requested_device_scale_factor": 1
+  },
+  "model": {
+    "integer": "a8=floor(clamp(opacity,0,1)*255+0.5); scale=a8+1; channel=(source*scale+backdrop*(256-scale))>>8",
+    "continuous": "channel=source*opacity+backdrop*(1-opacity)",
+    "continuous_u8_rounding": "floor(continuous_channel+0.5); diagnostic mathematical comparison, not a GPUI output prediction",
+    "channel_error": "observed minus predicted",
+    "backdrops": [
+      "#ffffff",
+      "#141414",
+      "#e65a5a"
+    ],
+    "opacities": [
+      0.25,
+      0.5,
+      0.65,
+      1
+    ],
+    "opaque_sources": {
+      "track": "#1677ff",
+      "handle": "#ffffff"
+    }
+  },
+  "primary_sources": {
+    "inspected_skia_revision": "d2b9e48baf1697760afc1dc8ea3ad40110b8cacc",
+    "alpha_conversion": "https://skia.googlesource.com/skia/+/d2b9e48baf1697760afc1dc8ea3ad40110b8cacc/src/core/SkColorPriv.h",
+    "byte_interpolation": "https://skia.googlesource.com/skia/+/d2b9e48baf1697760afc1dc8ea3ad40110b8cacc/src/core/SkBlitRow_D32.cpp",
+    "functions": [
+      "SkUnitScalarClampToByte",
+      "SkAlpha255To256",
+      "SkPMLerp_SSE2",
+      "blit_row_s32_blend"
+    ]
+  },
+  "inference": "All samples match documented Skia software byte-alpha interpolation exactly. The browser binary function was not instrumented; the inspected Skia revision is not claimed to be the Chromium binary revision.",
+  "verification": {
+    "rgb_samples": 24,
+    "channels": 72,
+    "integer_exact_samples": 24,
+    "integer_exact_channels": 72,
+    "continuous_rounded_exact_samples": 15,
+    "max_continuous_rounded_channel_error": 2
+  },
+  "sample_columns": [
+    "backdrop",
+    "opacity",
+    "kind",
+    "sample_position",
+    "opaque_source_rgb",
+    "observed_rgb",
+    "integer_predicted_rgb",
+    "continuous_predicted_rgb",
+    "continuous_nearest_u8",
+    "observed_minus_integer",
+    "observed_minus_continuous",
+    "observed_minus_continuous_nearest_u8"
+  ],
+  "samples": [
+    ["#ffffff",0.25,"track",[30,20],[22,119,255],[195,220,255],[195,220,255],[196.75,221,255],[197,221,255],[0,0,0],[-1.75,-1,0],[-2,-1,0]],
+    ["#ffffff",0.25,"handle",[110,20],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#ffffff",0.5,"track",[30,76],[22,119,255],[137,186,255],[137,186,255],[138.5,187,255],[139,187,255],[0,0,0],[-1.5,-1,0],[-2,-1,0]],
+    ["#ffffff",0.5,"handle",[110,76],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#ffffff",0.65,"track",[30,132],[22,119,255],[103,166,255],[103,166,255],[103.55,166.6,255],[104,167,255],[0,0,0],[-0.55,-0.6,0],[-1,-1,0]],
+    ["#ffffff",0.65,"handle",[110,132],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#ffffff",1,"track",[30,188],[22,119,255],[22,119,255],[22,119,255],[22,119,255],[22,119,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#ffffff",1,"handle",[110,188],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#141414",0.25,"track",[30,244],[22,119,255],[20,45,79],[20,45,79],[20.5,44.75,78.75],[21,45,79],[0,0,0],[-0.5,0.25,0.25],[-1,0,0]],
+    ["#141414",0.25,"handle",[110,244],[255,255,255],[79,79,79],[79,79,79],[78.75,78.75,78.75],[79,79,79],[0,0,0],[0.25,0.25,0.25],[0,0,0]],
+    ["#141414",0.5,"track",[30,300],[22,119,255],[21,69,138],[21,69,138],[21,69.5,137.5],[21,70,138],[0,0,0],[0,-0.5,0.5],[0,-1,0]],
+    ["#141414",0.5,"handle",[110,300],[255,255,255],[138,138,138],[138,138,138],[137.5,137.5,137.5],[138,138,138],[0,0,0],[0.5,0.5,0.5],[0,0,0]],
+    ["#141414",0.65,"track",[30,356],[22,119,255],[21,84,173],[21,84,173],[21.3,84.35,172.75],[21,84,173],[0,0,0],[-0.3,-0.35,0.25],[0,0,0]],
+    ["#141414",0.65,"handle",[110,356],[255,255,255],[173,173,173],[173,173,173],[172.75,172.75,172.75],[173,173,173],[0,0,0],[0.25,0.25,0.25],[0,0,0]],
+    ["#141414",1,"track",[30,412],[22,119,255],[22,119,255],[22,119,255],[22,119,255],[22,119,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#141414",1,"handle",[110,412],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#e65a5a",0.25,"track",[30,468],[22,119,255],[177,97,131],[177,97,131],[178,97.25,131.25],[178,97,131],[0,0,0],[-1,-0.25,-0.25],[-1,0,0]],
+    ["#e65a5a",0.25,"handle",[110,468],[255,255,255],[236,131,131],[236,131,131],[236.25,131.25,131.25],[236,131,131],[0,0,0],[-0.25,-0.25,-0.25],[0,0,0]],
+    ["#e65a5a",0.5,"track",[30,524],[22,119,255],[125,104,173],[125,104,173],[126,104.5,172.5],[126,105,173],[0,0,0],[-1,-0.5,0.5],[-1,-1,0]],
+    ["#e65a5a",0.5,"handle",[110,524],[255,255,255],[242,173,173],[242,173,173],[242.5,172.5,172.5],[243,173,173],[0,0,0],[-0.5,0.5,0.5],[-1,0,0]],
+    ["#e65a5a",0.65,"track",[30,580],[22,119,255],[94,108,197],[94,108,197],[94.8,108.85,197.25],[95,109,197],[0,0,0],[-0.8,-0.85,-0.25],[-1,-1,0]],
+    ["#e65a5a",0.65,"handle",[110,580],[255,255,255],[246,197,197],[246,197,197],[246.25,197.25,197.25],[246,197,197],[0,0,0],[-0.25,-0.25,-0.25],[0,0,0]],
+    ["#e65a5a",1,"track",[30,636],[22,119,255],[22,119,255],[22,119,255],[22,119,255],[22,119,255],[0,0,0],[0,0,0],[0,0,0]],
+    ["#e65a5a",1,"handle",[110,636],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[255,255,255],[0,0,0],[0,0,0],[0,0,0]]
+  ]
+}

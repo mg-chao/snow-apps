@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "completed_utc": "2026-10-30T15:02:01.7062681Z",
+  "command": "scripts/collect-third-party-licenses.ps1 (standalone native library, Windows x64)",
+  "reachable_rust_packages": 264,
+  "external_rust_packages": 263,
+  "vcpkg_packages": 21,
+  "notice_count": 479,
+  "manifest_sha256": "b91717d7b139c05e85eaf4c45717ac21807cc8d5d3037e0a507058047310c4c5",
+  "index_sha256": "375f2f221b20658c4161ad35d2f283f6afd19461ea863d3f35048e2c60701c93",
+  "cargo_lock_sha256": "4dab64b8c1a262367068aea5796d0cbb9bb60f19a26631cf610fbaca3801b46b",
+  "cargo_manifest_sha256": "d8b472916f6c50f5880e49feda771f1a5770efd069026a6b5d90725aa7eb5c87",
+  "project_notice_sha256": "02d4aa56d31657deb506c07d117e416b4c2cb511e61b9e3e5dd4fff1782e376b",
+  "limitations": "License collection only; not a production package or platform validation."
+}

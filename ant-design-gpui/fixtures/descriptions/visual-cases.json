@@ -1,0 +1,2731 @@
+{
+  "horizontal": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "horizontal",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          },
+          {
+            "key": "4",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ],
+        "layout": "horizontal",
+        "bordered": false
+      }
+    ]
+  },
+  "bordered-horizontal": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "bordered-horizontal",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": 2
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          },
+          {
+            "key": "7",
+            "label": "Discount",
+            "content": "$20.00"
+          },
+          {
+            "key": "8",
+            "label": "Official Receipts",
+            "content": "$60.00"
+          },
+          {
+            "key": "9",
+            "label": "Config Info",
+            "content": "Data disk type: MongoDB\nDatabase version: 3.4\nPackage: dds.mongo.mid\nStorage space: 10 GB\nReplication factor: 3\nRegion: East China 1"
+          }
+        ],
+        "layout": "horizontal",
+        "bordered": true
+      }
+    ]
+  },
+  "vertical": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "vertical",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          },
+          {
+            "key": "4",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ],
+        "layout": "vertical",
+        "bordered": false
+      }
+    ]
+  },
+  "bordered-vertical": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "bordered-vertical",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": 2
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          },
+          {
+            "key": "7",
+            "label": "Discount",
+            "content": "$20.00"
+          },
+          {
+            "key": "8",
+            "label": "Official Receipts",
+            "content": "$60.00"
+          },
+          {
+            "key": "9",
+            "label": "Config Info",
+            "content": "Data disk type: MongoDB\nDatabase version: 3.4\nPackage: dds.mongo.mid\nStorage space: 10 GB\nReplication factor: 3\nRegion: East China 1"
+          }
+        ],
+        "layout": "vertical",
+        "bordered": true
+      }
+    ]
+  },
+  "sizes-borderless": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "size-large",
+        "width": 860,
+        "title": "Custom Size",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "size": "large",
+        "bordered": false,
+        "extra": "Edit"
+      },
+      {
+        "id": "size-medium",
+        "width": 860,
+        "title": "Custom Size",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "size": "medium",
+        "bordered": false,
+        "extra": "Edit"
+      },
+      {
+        "id": "size-small",
+        "width": 860,
+        "title": "Custom Size",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "size": "small",
+        "bordered": false,
+        "extra": "Edit"
+      }
+    ]
+  },
+  "sizes-bordered": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "size-large",
+        "width": 860,
+        "title": "Custom Size",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "size": "large",
+        "bordered": true,
+        "extra": "Edit"
+      },
+      {
+        "id": "size-medium",
+        "width": 860,
+        "title": "Custom Size",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "size": "medium",
+        "bordered": true,
+        "extra": "Edit"
+      },
+      {
+        "id": "size-small",
+        "width": 860,
+        "title": "Custom Size",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "size": "small",
+        "bordered": true,
+        "extra": "Edit"
+      }
+    ]
+  },
+  "spans": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "spans",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "Field 0",
+            "content": "Value 0",
+            "span": 2
+          },
+          {
+            "key": "1",
+            "label": "Field 1",
+            "content": "Value 1"
+          },
+          {
+            "key": "2",
+            "label": "Field 2",
+            "content": "Value 2"
+          },
+          {
+            "key": "3",
+            "label": "Field 3",
+            "content": "Value 3",
+            "span": "filled"
+          },
+          {
+            "key": "4",
+            "label": "Field 4",
+            "content": "Value 4",
+            "span": "filled"
+          },
+          {
+            "key": "5",
+            "label": "Field 5",
+            "content": "Value 5",
+            "span": 1
+          },
+          {
+            "key": "6",
+            "label": "Field 6",
+            "content": "Value 6",
+            "span": 1
+          },
+          {
+            "key": "7",
+            "label": "Field 7",
+            "content": "Value 7",
+            "span": 2
+          },
+          {
+            "key": "8",
+            "label": "Field 8",
+            "content": "Value 8",
+            "span": 2
+          }
+        ],
+        "bordered": true
+      },
+      {
+        "id": "spans-vertical",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "Field 0",
+            "content": "Value 0",
+            "span": 2
+          },
+          {
+            "key": "1",
+            "label": "Field 1",
+            "content": "Value 1"
+          },
+          {
+            "key": "2",
+            "label": "Field 2",
+            "content": "Value 2"
+          },
+          {
+            "key": "3",
+            "label": "Field 3",
+            "content": "Value 3",
+            "span": "filled"
+          },
+          {
+            "key": "4",
+            "label": "Field 4",
+            "content": "Value 4",
+            "span": "filled"
+          },
+          {
+            "key": "5",
+            "label": "Field 5",
+            "content": "Value 5",
+            "span": 1
+          },
+          {
+            "key": "6",
+            "label": "Field 6",
+            "content": "Value 6",
+            "span": 1
+          },
+          {
+            "key": "7",
+            "label": "Field 7",
+            "content": "Value 7",
+            "span": 2
+          },
+          {
+            "key": "8",
+            "label": "Field 8",
+            "content": "Value 8",
+            "span": 2
+          }
+        ],
+        "bordered": true,
+        "layout": "vertical"
+      }
+    ]
+  },
+  "responsive-375": {
+    "viewport": {
+      "width": 375,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 335,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-575": {
+    "viewport": {
+      "width": 575,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 535,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-576": {
+    "viewport": {
+      "width": 576,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 536,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-767": {
+    "viewport": {
+      "width": 767,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 727,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-768": {
+    "viewport": {
+      "width": 768,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 728,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-991": {
+    "viewport": {
+      "width": 991,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 951,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-992": {
+    "viewport": {
+      "width": 992,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 952,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-1199": {
+    "viewport": {
+      "width": 1199,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 1159,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-1200": {
+    "viewport": {
+      "width": 1200,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 1160,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-1599": {
+    "viewport": {
+      "width": 1599,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 1559,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-1600": {
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 1560,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-1919": {
+    "viewport": {
+      "width": 1919,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 1879,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-1920": {
+    "viewport": {
+      "width": 1920,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "responsive",
+        "width": 1880,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "sm": 2,
+          "md": 3,
+          "xl": 4,
+          "xxxl": 5
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": {
+              "xs": 1,
+              "sm": 2,
+              "md": 3,
+              "xl": 2
+            }
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          },
+          {
+            "key": "6",
+            "label": "Negotiated Amount",
+            "content": "$80.00"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "responsive-cascade": {
+    "viewport": {
+      "width": 1100,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "cascade",
+        "width": 860,
+        "title": "User Info",
+        "column": {
+          "xs": 1,
+          "md": 2
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          },
+          {
+            "key": "4",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ]
+      },
+      {
+        "id": "fallback",
+        "width": 860,
+        "title": "User Info",
+        "column": {
+          "xl": 4
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          },
+          {
+            "key": "4",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ]
+      },
+      {
+        "id": "default",
+        "width": 860,
+        "title": "User Info",
+        "column": {},
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          },
+          {
+            "key": "4",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ]
+      }
+    ]
+  },
+  "long-text": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "long-horizontal",
+        "width": 560,
+        "title": "User Info",
+        "column": 2,
+        "items": [
+          {
+            "key": "0",
+            "label": "Long label with multiple words",
+            "content": "loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong"
+          },
+          {
+            "key": "1",
+            "label": "Another label",
+            "content": "Line one\nLine two\nLine three"
+          },
+          {
+            "key": "2",
+            "label": "Name",
+            "content": "Alice"
+          },
+          {
+            "key": "3",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ]
+      },
+      {
+        "id": "long-vertical",
+        "width": 560,
+        "title": "User Info",
+        "column": 2,
+        "items": [
+          {
+            "key": "0",
+            "label": "Long label with multiple words",
+            "content": "loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong"
+          },
+          {
+            "key": "1",
+            "label": "Another label",
+            "content": "Line one\nLine two\nLine three"
+          },
+          {
+            "key": "2",
+            "label": "Name",
+            "content": "Alice"
+          },
+          {
+            "key": "3",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ],
+        "layout": "vertical"
+      },
+      {
+        "id": "long-bordered",
+        "width": 560,
+        "title": "User Info",
+        "column": 2,
+        "items": [
+          {
+            "key": "0",
+            "label": "Long label with multiple words",
+            "content": "loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong"
+          },
+          {
+            "key": "1",
+            "label": "Another label",
+            "content": "Line one\nLine two\nLine three"
+          },
+          {
+            "key": "2",
+            "label": "Name",
+            "content": "Alice"
+          },
+          {
+            "key": "3",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "empty": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "empty",
+        "width": 860,
+        "title": "",
+        "column": 3,
+        "items": [
+          {
+            "key": "zero",
+            "label": 0,
+            "content": 0
+          },
+          {
+            "key": "missing",
+            "content": "No label"
+          },
+          {
+            "key": "empty",
+            "label": "Empty",
+            "content": ""
+          },
+          {
+            "key": "null",
+            "label": null,
+            "content": null
+          }
+        ],
+        "extra": 0
+      },
+      {
+        "id": "empty-bordered",
+        "width": 860,
+        "title": 0,
+        "column": 3,
+        "items": [
+          {
+            "key": "zero",
+            "label": 0,
+            "content": 0
+          },
+          {
+            "key": "missing",
+            "content": "No label"
+          },
+          {
+            "key": "empty",
+            "label": "Empty",
+            "content": ""
+          },
+          {
+            "key": "null",
+            "label": null,
+            "content": null
+          }
+        ],
+        "bordered": true,
+        "extra": ""
+      },
+      {
+        "id": "extra-only",
+        "width": 860,
+        "title": null,
+        "column": 3,
+        "items": [],
+        "extra": "Edit"
+      },
+      {
+        "id": "neither",
+        "width": 860,
+        "title": null,
+        "column": 3,
+        "items": []
+      }
+    ]
+  },
+  "colon": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "colon-on",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ]
+      },
+      {
+        "id": "colon-off",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "colon": false
+      },
+      {
+        "id": "vertical-colon-off",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "colon": false,
+        "layout": "vertical"
+      }
+    ]
+  },
+  "semantic": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "semantic",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000",
+            "styles": {
+              "label": {
+                "background": "#f6ffed",
+                "color": "#389e0d"
+              },
+              "content": {
+                "background": "#fffbe6",
+                "color": "#ad6800"
+              }
+            }
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "bordered": true,
+        "styles": {
+          "label": {
+            "background": "#fff1f0",
+            "padding": 12
+          },
+          "content": {
+            "color": "#1677ff"
+          }
+        }
+      },
+      {
+        "id": "semantic-vertical",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ],
+        "layout": "vertical",
+        "bordered": true,
+        "styles": {
+          "label": {
+            "background": "#fff1f0"
+          },
+          "content": {
+            "background": "#f6ffed"
+          }
+        }
+      }
+    ]
+  },
+  "tokens": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "tokens",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "Product",
+            "content": "Cloud Database"
+          },
+          {
+            "key": "1",
+            "label": "Billing Mode",
+            "content": "Prepaid"
+          },
+          {
+            "key": "2",
+            "label": "Automatic Renewal",
+            "content": "YES"
+          },
+          {
+            "key": "3",
+            "label": "Order time",
+            "content": "2018-04-24 18:00:00"
+          },
+          {
+            "key": "4",
+            "label": "Usage Time",
+            "content": "2019-04-24 18:00:00",
+            "span": 2
+          },
+          {
+            "key": "5",
+            "label": "Status",
+            "content": "Running",
+            "span": 3
+          }
+        ],
+        "bordered": true,
+        "tokens": {
+          "labelBg": "#e6f4ff",
+          "titleColor": "#1677ff",
+          "titleMarginBottom": 12,
+          "itemPaddingBottom": 8,
+          "itemPaddingEnd": 20,
+          "colonMarginRight": 4,
+          "colonMarginLeft": 6,
+          "contentColor": "#389e0d",
+          "extraColor": "#9254de"
+        },
+        "extra": "Edit"
+      },
+      {
+        "id": "tokens-borderless",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          }
+        ],
+        "tokens": {
+          "labelColor": "#d4380d",
+          "titleMarginBottom": 12,
+          "itemPaddingBottom": 8,
+          "itemPaddingEnd": 20,
+          "colonMarginRight": 4,
+          "colonMarginLeft": 6
+        }
+      }
+    ]
+  },
+  "nested": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "outer",
+        "width": 860,
+        "title": "User Info",
+        "column": 1,
+        "items": [
+          {
+            "key": "outer",
+            "label": "Nested",
+            "content": {
+              "descriptions": {
+                "id": "inner",
+                "width": 600,
+                "title": "Inner Info",
+                "column": 1,
+                "items": [
+                  {
+                    "key": "0",
+                    "label": "UserName",
+                    "content": "Zhou Maomao"
+                  },
+                  {
+                    "key": "1",
+                    "label": "Telephone",
+                    "content": "1810000000"
+                  },
+                  {
+                    "key": "2",
+                    "label": "Live",
+                    "content": "Hangzhou, Zhejiang"
+                  }
+                ],
+                "bordered": false,
+                "size": "large"
+              }
+            }
+          }
+        ],
+        "bordered": true,
+        "size": "small"
+      },
+      {
+        "id": "outer-borderless",
+        "width": 860,
+        "title": "User Info",
+        "column": 1,
+        "items": [
+          {
+            "key": "outer",
+            "label": "Nested",
+            "content": {
+              "descriptions": {
+                "id": "inner-bordered",
+                "width": 600,
+                "title": null,
+                "column": 1,
+                "items": [
+                  {
+                    "key": "0",
+                    "label": "UserName",
+                    "content": "Zhou Maomao"
+                  },
+                  {
+                    "key": "1",
+                    "label": "Telephone",
+                    "content": "1810000000"
+                  }
+                ],
+                "bordered": true,
+                "size": "large"
+              }
+            }
+          }
+        ],
+        "size": "small"
+      }
+    ]
+  },
+  "intrinsic": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "narrow",
+        "width": 320,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          },
+          {
+            "key": "3",
+            "label": "Remark",
+            "content": "empty"
+          },
+          {
+            "key": "4",
+            "label": "Address",
+            "content": "No. 18, Wantang Road, Xihu District, Hangzhou, Zhejiang, China"
+          }
+        ]
+      },
+      {
+        "id": "shrink",
+        "width": 860,
+        "title": "User Info",
+        "column": 2,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ],
+        "shrinkToFit": true
+      },
+      {
+        "id": "explicit",
+        "width": 860,
+        "title": "User Info",
+        "column": 3,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao",
+            "styles": {
+              "label": {
+                "width": 140
+              }
+            }
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ],
+        "bordered": true
+      }
+    ]
+  },
+  "dashed": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "dashed-horizontal-1",
+        "width": 860,
+        "title": "Dashed border (1 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "horizontal",
+        "globalTokens": {
+          "lineType": "dashed",
+          "lineWidth": 1
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dashed-vertical-1",
+        "width": 860,
+        "title": "Dashed border (1 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "vertical",
+        "globalTokens": {
+          "lineType": "dashed",
+          "lineWidth": 1
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dashed-horizontal-2",
+        "width": 860,
+        "title": "Dashed border (2 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "horizontal",
+        "globalTokens": {
+          "lineType": "dashed",
+          "lineWidth": 2
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dashed-vertical-2",
+        "width": 860,
+        "title": "Dashed border (2 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "vertical",
+        "globalTokens": {
+          "lineType": "dashed",
+          "lineWidth": 2
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dashed-horizontal-3",
+        "width": 860,
+        "title": "Dashed border (3 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "horizontal",
+        "globalTokens": {
+          "lineType": "dashed",
+          "lineWidth": 3
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dashed-vertical-3",
+        "width": 860,
+        "title": "Dashed border (3 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "vertical",
+        "globalTokens": {
+          "lineType": "dashed",
+          "lineWidth": 3
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      }
+    ]
+  },
+  "dotted": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "dotted-horizontal-1",
+        "width": 860,
+        "title": "Dotted border (1 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "horizontal",
+        "globalTokens": {
+          "lineType": "dotted",
+          "lineWidth": 1
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dotted-vertical-1",
+        "width": 860,
+        "title": "Dotted border (1 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "vertical",
+        "globalTokens": {
+          "lineType": "dotted",
+          "lineWidth": 1
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dotted-horizontal-2",
+        "width": 860,
+        "title": "Dotted border (2 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "horizontal",
+        "globalTokens": {
+          "lineType": "dotted",
+          "lineWidth": 2
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dotted-vertical-2",
+        "width": 860,
+        "title": "Dotted border (2 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "vertical",
+        "globalTokens": {
+          "lineType": "dotted",
+          "lineWidth": 2
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dotted-horizontal-3",
+        "width": 860,
+        "title": "Dotted border (3 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "horizontal",
+        "globalTokens": {
+          "lineType": "dotted",
+          "lineWidth": 3
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "dotted-vertical-3",
+        "width": 860,
+        "title": "Dotted border (3 px)",
+        "column": 3,
+        "bordered": true,
+        "layout": "vertical",
+        "globalTokens": {
+          "lineType": "dotted",
+          "lineWidth": 3
+        },
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      }
+    ]
+  },
+  "bidi": {
+    "viewport": {
+      "width": 900,
+      "height": 1000
+    },
+    "components": [
+      {
+        "id": "bidi-horizontal-False",
+        "width": 860,
+        "title": "Multilingual details",
+        "column": 3,
+        "layout": "horizontal",
+        "bordered": false,
+        "items": [
+          {
+            "key": "arabic",
+            "label": "اسم المستخدم",
+            "content": "ليلى أحمد"
+          },
+          {
+            "key": "hebrew",
+            "label": "שפה",
+            "content": "עברית with English 123"
+          },
+          {
+            "key": "cjk",
+            "label": "地址",
+            "content": "杭州，浙江，中国 ABC 123"
+          },
+          {
+            "key": "spaces",
+            "label": "Whitespace",
+            "content": "  Multiple   spaces\tand trailing   "
+          },
+          {
+            "key": "lines",
+            "label": "Mixed lines",
+            "content": "English العربية 123\nעברית with 中文"
+          }
+        ]
+      },
+      {
+        "id": "bidi-horizontal-True",
+        "width": 860,
+        "title": "Multilingual details",
+        "column": 3,
+        "layout": "horizontal",
+        "bordered": true,
+        "items": [
+          {
+            "key": "arabic",
+            "label": "اسم المستخدم",
+            "content": "ليلى أحمد"
+          },
+          {
+            "key": "hebrew",
+            "label": "שפה",
+            "content": "עברית with English 123"
+          },
+          {
+            "key": "cjk",
+            "label": "地址",
+            "content": "杭州，浙江，中国 ABC 123"
+          },
+          {
+            "key": "spaces",
+            "label": "Whitespace",
+            "content": "  Multiple   spaces\tand trailing   "
+          },
+          {
+            "key": "lines",
+            "label": "Mixed lines",
+            "content": "English العربية 123\nעברית with 中文"
+          }
+        ]
+      },
+      {
+        "id": "bidi-vertical-False",
+        "width": 860,
+        "title": "Multilingual details",
+        "column": 3,
+        "layout": "vertical",
+        "bordered": false,
+        "items": [
+          {
+            "key": "arabic",
+            "label": "اسم المستخدم",
+            "content": "ليلى أحمد"
+          },
+          {
+            "key": "hebrew",
+            "label": "שפה",
+            "content": "עברית with English 123"
+          },
+          {
+            "key": "cjk",
+            "label": "地址",
+            "content": "杭州，浙江，中国 ABC 123"
+          },
+          {
+            "key": "spaces",
+            "label": "Whitespace",
+            "content": "  Multiple   spaces\tand trailing   "
+          },
+          {
+            "key": "lines",
+            "label": "Mixed lines",
+            "content": "English العربية 123\nעברית with 中文"
+          }
+        ]
+      },
+      {
+        "id": "bidi-vertical-True",
+        "width": 860,
+        "title": "Multilingual details",
+        "column": 3,
+        "layout": "vertical",
+        "bordered": true,
+        "items": [
+          {
+            "key": "arabic",
+            "label": "اسم المستخدم",
+            "content": "ليلى أحمد"
+          },
+          {
+            "key": "hebrew",
+            "label": "שפה",
+            "content": "עברית with English 123"
+          },
+          {
+            "key": "cjk",
+            "label": "地址",
+            "content": "杭州，浙江，中国 ABC 123"
+          },
+          {
+            "key": "spaces",
+            "label": "Whitespace",
+            "content": "  Multiple   spaces\tand trailing   "
+          },
+          {
+            "key": "lines",
+            "label": "Mixed lines",
+            "content": "English العربية 123\nעברית with 中文"
+          }
+        ]
+      }
+    ]
+  },
+  "headers": {
+    "viewport": {
+      "width": 600,
+      "height": 700
+    },
+    "components": [
+      {
+        "id": "truncated-title",
+        "width": 320,
+        "title": "An intentionally long account information heading that must truncate",
+        "extra": "Edit",
+        "column": 1,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          },
+          {
+            "key": "1",
+            "label": "Telephone",
+            "content": "1810000000"
+          },
+          {
+            "key": "2",
+            "label": "Live",
+            "content": "Hangzhou, Zhejiang"
+          }
+        ]
+      },
+      {
+        "id": "whitespace-header",
+        "width": 320,
+        "title": "   ",
+        "extra": "\t  ",
+        "column": 1,
+        "items": []
+      },
+      {
+        "id": "whitespace-title",
+        "width": 320,
+        "title": "   ",
+        "extra": "Edit",
+        "column": 1,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          }
+        ]
+      },
+      {
+        "id": "whitespace-extra",
+        "width": 320,
+        "title": "User Info",
+        "extra": "  ",
+        "column": 1,
+        "items": [
+          {
+            "key": "0",
+            "label": "UserName",
+            "content": "Zhou Maomao"
+          }
+        ]
+      }
+    ]
+  }
+}

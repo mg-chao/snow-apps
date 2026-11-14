@@ -1,0 +1,39 @@
+{
+  "repairs": [
+    {
+      "scenario": "all-large-dark-compact-ltr",
+      "scale": 2,
+      "renderer": "Edg/156.0.4314.42",
+      "reason": "Headless browser screenshot contained repeated tiles of the pager, contradicting its unchanged DOM geometry and independent single-line DOMRange text evidence. A fresh isolated browser rendered the same original source correctly.",
+      "corrupt_image_sha256": "d28d51333c56fec889c56aa540fab9e385a9590d101bccc36f1521201f72c9a0",
+      "replacement_image_sha256": "e16d6def1f2ce6addecd43b19161803962a758baa40bd6e80a6ee2c8dc2dc12d",
+      "dom_style_metrics_unchanged": true,
+      "dom_style_record_sha256": "dd16a5ab021b95791ef043dc51b0492ce12b7de8214123b4464f2841858e6a12",
+      "independent_domrange_file": "text-reference.json",
+      "original_domrange_total_line_count": 1,
+      "capture_repaired_at_utc": "2026-10-27T17:06:18.441215+00:00"
+    },
+    {
+      "scenario": "default-ltr-23-basic",
+      "scale": 1.5,
+      "renderer": "Edg/156.0.4314.42",
+      "reason": "Headless browser PNG contained repeated pager tiles outside measured root bounds. A fresh isolated browser rendered the same original source correctly with identical DOM/style records.",
+      "corrupt_image_sha256": "4ddeab04ae2c90248615a0e9742f763f4322e03e3344cdc1eb16c941db41edf5",
+      "replacement_image_sha256": "78fbcce64db4dd0d657ed6d054d1fc2e6573db9416c3254de094fa8e32282ad0",
+      "dom_style_metrics_unchanged": true,
+      "dom_style_record_sha256": "b2542c61a6c159e42d2af0ba8a200281ff955b9ac234f6710d1b1bad04ea9a5b",
+      "capture_repaired_at_utc": "2026-10-27T17:09:08.700723+00:00"
+    },
+    {
+      "scenario": "long-pages-dark-compact-ltr",
+      "scale": 1.5,
+      "renderer": "Edg/156.0.4314.42",
+      "reason": "Headless browser PNG contained repeated pager tiles outside measured root bounds. A fresh isolated browser rendered the same original source correctly with identical DOM/style records.",
+      "corrupt_image_sha256": "6a30f94cb0902a0374a04f103f338f10568b135210ff9c38ae22a00b2b732bb4",
+      "replacement_image_sha256": "89d5a0aad0137c6b0ecd4c65da78aa59aefbe82546ac72ab64ef0329c29552db",
+      "dom_style_metrics_unchanged": true,
+      "dom_style_record_sha256": "2ba78411c234873dc0919242732565223509488ee05cf3b9c1bd41f9b6be4c77",
+      "capture_repaired_at_utc": "2026-10-27T17:09:08.708181+00:00"
+    }
+  ]
+}

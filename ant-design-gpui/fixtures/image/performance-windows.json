@@ -1,0 +1,186 @@
+{
+  "status": "passed",
+  "started_utc": "2026-10-29T16:02:46.7893070Z",
+  "completed_utc": "2026-10-29T16:03:14.6651276Z",
+  "preset": "windows-msvc-performance",
+  "profile": "bench (Release)",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+  "executable_sha256": "0033203c71d02f78424d5c211c7f7519393cfb72255b3dcf3f04a845eedbb556",
+  "results": "../build/windows-msvc-performance/ant-design-gpui/image-results.txt",
+  "results_sha256": "62e73cffdda5dac4f642237bda1e1fcc538fc990ae62491c984910a9fbb920cf",
+  "sources_unchanged_during_run": true,
+  "source_sha256": {
+    ".cargo/config.toml": "d9151b8e0479bbb5ae75c7fce7a30500936aadccdf3ef6ebdf92cc78b7d07731",
+    "benches/image.rs": "e3a15371751b7608f09baa2a533b323c9fc2c70060350ba1de9b49d0b77ab253",
+    "Cargo.lock": "fcf8244137f9471eb6740b51611460308bb25094979b1c5c64f4ec0464c613f6",
+    "Cargo.toml": "50ad003d81d914998311aca622ff43f572d84a64b7acdfcc501264e4f1d24509",
+    "resources/image/fallback.png": "a0ffbc53999d9444dbb07b278c1ec89d3bffc37c2f49f7ad647b23189fe0ed7e",
+    "resources/image/landscape.png": "ec5bc20f72536ae02bccafd0bf57bea3dec419f8cbacd402ec8ab29fd806babf",
+    "resources/image/manifest.json": "8bedfe1a3086e36a5fe8eaa76e8f4f87d336b52b5f744b5ee1629dc8d7f0573f",
+    "resources/image/portrait.png": "5ebf87e09fef1fc99b3fcc91bc54b13bb080b1ed6305955e5ccfb62c3c662b18",
+    "resources/image/transparent.png": "e98ef97dc5a9ff8d6ca97184f4190a61e944ceba51abc74d2288827119445de1",
+    "rust-toolchain.toml": "86810d0ace88a635a96ed7a8d7d432afa6950c0c0b99f78f6e905ed9616a9882",
+    "scripts/image_build_support.ps1": "dcf7c852dc4d45c01fa4d13ecea5db571b8b89fc4f3d9cbf327562d172460876",
+    "scripts/run-image-perf.ps1": "247ccda171bfd699296fd90754b097b834a5b5517918896ce72c438dea8a63ff",
+    "src/behavior/accessibility.rs": "a22c7fb7426a4e438c2ea6e8184f6f2db6df98a873447116648a0cde8955061f",
+    "src/behavior/activation.rs": "d4df8f5d369560ab6fb8da02425c302e14c0bba2d19f71bc65a5e163c2f67aa4",
+    "src/behavior/focus.rs": "891b2af5f029e457be405a6469c898eb3562ca1c5c458a5f8dc3c99d82dd9cd2",
+    "src/behavior/mod.rs": "309a5adaa9ec167ae2d435c89ff2432e6c5447f83021426adf9da042525e2dc2",
+    "src/behavior/motion.rs": "0a102bbe77fbe0a5eada0c9637f715ad0275eb9af81cefadfa35d0c9cc69f238",
+    "src/behavior/notice.rs": "e7eef19b82935e08aeccf67f1042102ed9ffa678b79e48392450b4c30ca4aaa1",
+    "src/behavior/paragraph.rs": "b7e3b404ec5276dec13e63073bc27fb93033f4af882a69459f07963bb4e87d42",
+    "src/behavior/text.rs": "29117d547170e9ce66a4a39a8bee4b53dfd2a714432027481bf3edda3ee3de8c",
+    "src/behavior/wave.rs": "7a87a8cf4259854803511ab37e8bcbe87dde8f5aaa356583b63e571d263a6476",
+    "src/config.rs": "990cb86efb1ef456c038beab03e5c4e64eb21f7bc618323d4b9f742159319436",
+    "src/icons/generated.rs": "014849f235075557a8fd897b36922f4d73b0d1d0f4512f6c3f751fc703379c74",
+    "src/icons/mod.rs": "76310db107c0779d8785593db1315e5bf508223ac9552cbc2051c41916494422",
+    "src/image/config.rs": "442831a6e5659eda8f9e64c165ca721d60410691bd570631b5a5ef914603915a",
+    "src/image/mod.rs": "6fb0c24c3f41232e900bde26357b3473e05aa0ec2010bb6fd832d50aec24fcf8",
+    "src/image/picture.rs": "a796f38da32ed17c9c7f2fc0742532be6eefe33ac8d7e7b20161363f14b56da5",
+    "src/image/picture/loader.rs": "ffdb35c2e5a62d22e4e7a2a3efbd9b313afaf1b005c0eaf69dfb3533be4ca4ca",
+    "src/image/picture/renderer.rs": "714818b32c6d913c72f9f6fb775bf991a6fc4d9869ac7ca74184f6fc16612ca2",
+    "src/image/preview.rs": "9dc08ef42a0aff2e94b6fb25fe76790508f08cee61202fff23fcc2e57c33466f",
+    "src/image/progress.rs": "a2e1dbfe8b1a3908f85b6921c3edbaaae0f95b7061b9306b3ad6f8a19671a3af",
+    "src/image/style.rs": "5966e8fe38caa6b58c00dfbcf106e8b92b701ee411476fcb177ea2c090c0d1f0",
+    "src/image/thumbnail.rs": "5188bb7ca5ec4c7ef12d436c116848ece40b130c2d6774e1efc6deff84b25b91",
+    "src/lib.rs": "ca7d5c99a36f401d04788a8486f702d93326c047d0a76f07f83ed20306c1ebb1",
+    "src/locale.rs": "c4331953970632fa36eba5ce751b4e9eaa1cf1493593ac60e59f071d3c2a40f9",
+    "src/modal/config.rs": "6cbf1aa20647400c4488d3a4d06ca14cfd1a36865353a26822245dbc8497f9b1",
+    "src/modal/host.rs": "0ce6353542d222dbdd1333e8cd86b47ad6ea8b54eeece057bcc5c75ce59d5f13",
+    "src/modal/manager.rs": "df071de4e40562abca8f26e118edbc700f27802da4555b33f2fcb80189d8f549",
+    "src/modal/mod.rs": "5aef22566e16e03033d4db6c1d8d539f06eceddc8c7248ee3ef681a6ed04d398",
+    "src/modal/skeleton.rs": "5029d1a7b28e227d63fd11cfa69c4fe249d8abf7d5258efff3d8e4e799641d0f",
+    "src/modal/state.rs": "6f57cb829c2fae904cf13ffff1ff451cf032d71d85222d2c5006984c4791adb3",
+    "src/modal/style.rs": "f3318ea489e08ca09fec56da767524132bc0234977a24694ba9555ed4198d91b",
+    "src/modal/view.rs": "674e9a3e0f54cb43dc260f6f8656111fa641af3dd7142155fd1cfd14e4e5eba5",
+    "src/root.rs": "43090eef9f0d21230def9d3eac67c303403e849711811cfa3adffc244570aff3",
+    "src/theme/algorithm.rs": "6add66bdebc14e3118515642e18a55a2f9e7091c322c1d052ad88567961e4c61",
+    "src/theme/component.rs": "b5d3ebd10aa06fd9207ac2f094ed53e87d9db64836f195c2831c1f1bd5c0f6a8",
+    "src/theme/mod.rs": "440b1972fcdb6704d0e2b8880433a2eec61e1fdccd71246271832da9adc4e62e",
+    "src/theme/palette.rs": "882faf5ea81d2429cde7d633c81b749c68c0f9dd053bda988c4fb701091bf59e",
+    "src/theme/tokens.rs": "2a0a2f47a2aeb8dd4afd3fe8ed62ec4dd7f023ece59eb9b7778ad608fa12f148",
+    "src/theme/values.rs": "6d23d651f3a0bea2b95153f6e5861676e5b26a0843815d145d7f6d1362b29c22"
+  },
+  "linked_library": {
+    "library": "E:\\snow-apps-workspace\\snow-apps\\build\\windows-msvc-performance\\ant-design-gpui\\release\\deps\\libant_design_gpui-7b7e905a35d7eb7c.rlib",
+    "library_sha256": "3b51448172657a23c6cbafa48806b3ac0aff961de256368bffeb6819550d8203",
+    "dependency_info": "E:\\snow-apps-workspace\\snow-apps\\build\\windows-msvc-performance\\ant-design-gpui\\release\\deps\\ant_design_gpui-7b7e905a35d7eb7c.d",
+    "dependency_info_sha256": "834fb2bd1f1e51a8e66809b5842d0acc38325c93a4cf381933b8af4401da7245",
+    "manifest_directory": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+    "build_log_sha256": "62e73cffdda5dac4f642237bda1e1fcc538fc990ae62491c984910a9fbb920cf"
+  },
+  "cases": [
+    {
+      "name": "image/1/display/warm-draw",
+      "median_us": 96.5,
+      "p95_us": 115.5,
+      "samples": 100
+    },
+    {
+      "name": "image/1/preview-enabled/warm-draw",
+      "median_us": 79.9,
+      "p95_us": 90.5,
+      "samples": 100
+    },
+    {
+      "name": "image/1/indeterminate-reduced-motion/warm-draw",
+      "median_us": 117.8,
+      "p95_us": 129.8,
+      "samples": 100
+    },
+    {
+      "name": "image/1/determinate-reduced-motion/warm-draw",
+      "median_us": 134.7,
+      "p95_us": 146.3,
+      "samples": 100
+    },
+    {
+      "name": "image/1/open-close",
+      "median_us": 1153.0,
+      "p95_us": 1661.0,
+      "samples": 100
+    },
+    {
+      "name": "image/1/navigate-transform",
+      "median_us": 512.1,
+      "p95_us": 599.5,
+      "samples": 100
+    },
+    {
+      "name": "image/20/display/warm-draw",
+      "median_us": 701.7,
+      "p95_us": 786.0,
+      "samples": 100
+    },
+    {
+      "name": "image/20/preview-enabled/warm-draw",
+      "median_us": 446.6,
+      "p95_us": 662.0,
+      "samples": 100
+    },
+    {
+      "name": "image/20/indeterminate-reduced-motion/warm-draw",
+      "median_us": 1119.3,
+      "p95_us": 1318.6,
+      "samples": 100
+    },
+    {
+      "name": "image/20/determinate-reduced-motion/warm-draw",
+      "median_us": 1362.4,
+      "p95_us": 1647.7,
+      "samples": 100
+    },
+    {
+      "name": "image/20/open-close",
+      "median_us": 3630.3,
+      "p95_us": 4636.9,
+      "samples": 100
+    },
+    {
+      "name": "image/20/navigate-transform",
+      "median_us": 1336.3,
+      "p95_us": 1588.1,
+      "samples": 100
+    },
+    {
+      "name": "image/100/display/warm-draw",
+      "median_us": 3693.9,
+      "p95_us": 4428.8,
+      "samples": 100
+    },
+    {
+      "name": "image/100/preview-enabled/warm-draw",
+      "median_us": 2208.6,
+      "p95_us": 2564.8,
+      "samples": 100
+    },
+    {
+      "name": "image/100/indeterminate-reduced-motion/warm-draw",
+      "median_us": 6419.0,
+      "p95_us": 10684.6,
+      "samples": 100
+    },
+    {
+      "name": "image/100/determinate-reduced-motion/warm-draw",
+      "median_us": 8529.2,
+      "p95_us": 10684.1,
+      "samples": 100
+    },
+    {
+      "name": "image/100/open-close",
+      "median_us": 14279.0,
+      "p95_us": 20463.0,
+      "samples": 100
+    },
+    {
+      "name": "image/100/navigate-transform",
+      "median_us": 4871.6,
+      "p95_us": 7610.7,
+      "samples": 100
+    }
+  ],
+  "cached_theme_lookup_ns": 14.1,
+  "settled_idle_callbacks": 0
+}

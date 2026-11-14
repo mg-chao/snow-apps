@@ -1,0 +1,132 @@
+{
+  "renderer": "Edg/156.0.4314.42",
+  "provenance": {
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "trigger": "3.10.1",
+    "inputSha256": "c8aaa3302561ac85d8ee0116e1cae0380163f98e2853b01e25831cf2ac44cbda",
+    "lockSha256": "0e22f5870350d04d3d223f3e52a27fa6a5c583094cc40a03a33189411da70b3a",
+    "sources": {
+      "components/_util/placements.ts": "a2fc12e2ec58469bbe6025b47034d45d2241016321ae4419df86b6634f9bdc72",
+      "components/style/placementArrow.ts": "9acc4405697083613306bbc90620bd9c2e88e4d01856c9646ca55f58909e4b7a",
+      "components/_util/is.ts": "b5cc35765d4d374635e3391da435884a057a7263b333083274e4272b53e32f24",
+      "..\\build\\ant-design-gpui\\popup-reference\\default-ltr-tooltip-top.html": "7c3787ede6c0300a86e5a79ace812c19ca1c8ac4a45e1c5f49e1f781df4651c8",
+      "..\\build\\ant-design-gpui\\popup-reference\\default-rtl-tooltip-top.html": "a6b67a77cd27ec0464fd5119d2cca60d9d5f468b6a5d4f3bf485f04a14b491e5",
+      "..\\build\\ant-design-gpui\\popup-reference-radius\\radius-16-ltr-tooltip-top.html": "3f5ae96e49dbe22902871a62e631dba7825856f2e187f2fa62b0d0a6d40e46e2",
+      "..\\build\\ant-design-gpui\\popup-reference\\default-ltr-popover-top.html": "c2c9f725a1410dc7c97c2c5673931a794ff584ee5b57889366b0e207328c3687",
+      "..\\build\\ant-design-gpui\\popup-reference\\default-rtl-popover-top.html": "48f01c22a8bd701f81b0468e09b44070d2a0808be83c77babcafb9eb8fdfd896",
+      "..\\build\\ant-design-gpui\\popup-reference-radius\\radius-16-ltr-popover-top.html": "34970511868abd9abc59e4d074cdab240faa34de4d720e139b62da4427e656ce",
+      "..\\build\\ant-design-gpui\\popup-reference\\default-ltr-popconfirm-top.html": "a30bff1eb5567cecb00ecd54a3c211ca689e5c8620db7361cd708401ed0b2fe6",
+      "..\\build\\ant-design-gpui\\popup-reference\\default-rtl-popconfirm-top.html": "229b20647217afae5a583c5771eb05bad3b565031516efea3abfd924835c84cc",
+      "..\\build\\ant-design-gpui\\popup-reference-radius\\radius-16-ltr-popconfirm-top.html": "c219527e5209ade3032ec3e8b40c035cc25d06700272c026eb9fd9dd145a1d1d"
+    },
+    "bundleSha256": "41923276ac4789887a43f4f9479257ab8e72481456bef4baacfbb6eaa96fa7a9"
+  },
+  "motion": {
+    "from": {
+      "x": 100,
+      "y": 200,
+      "width": 80,
+      "height": 32
+    },
+    "to": {
+      "x": 420,
+      "y": 120,
+      "width": 240,
+      "height": 76
+    },
+    "duration": "0.3s",
+    "easing": "ease",
+    "samples": [
+      {
+        "time": 0,
+        "bounds": {
+          "x": 100,
+          "y": 200,
+          "width": 80,
+          "height": 32
+        }
+      },
+      {
+        "time": 25,
+        "bounds": {
+          "x": 122.65625,
+          "y": 194.328125,
+          "width": 91.328125,
+          "height": 35.109375
+        }
+      },
+      {
+        "time": 50,
+        "bounds": {
+          "x": 170.609375,
+          "y": 182.34375,
+          "width": 115.296875,
+          "height": 41.703125
+        }
+      },
+      {
+        "time": 75,
+        "bounds": {
+          "x": 230.71875,
+          "y": 167.3125,
+          "width": 145.359375,
+          "height": 49.96875
+        }
+      },
+      {
+        "time": 100,
+        "bounds": {
+          "x": 284.265625,
+          "y": 153.921875,
+          "width": 172.125,
+          "height": 57.328125
+        }
+      },
+      {
+        "time": 150,
+        "bounds": {
+          "x": 356.765625,
+          "y": 135.796875,
+          "width": 208.375,
+          "height": 67.296875
+        }
+      },
+      {
+        "time": 200,
+        "bounds": {
+          "x": 395.9375,
+          "y": 126,
+          "width": 227.96875,
+          "height": 72.6875
+        }
+      },
+      {
+        "time": 250,
+        "bounds": {
+          "x": 414.703125,
+          "y": 121.3125,
+          "width": 237.34375,
+          "height": 75.265625
+        }
+      },
+      {
+        "time": 299,
+        "bounds": {
+          "x": 419.984375,
+          "y": 120,
+          "width": 239.984375,
+          "height": 75.984375
+        }
+      },
+      {
+        "time": 300,
+        "bounds": {
+          "x": 420,
+          "y": 120,
+          "width": 240,
+          "height": 76
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "utc": "2026-10-28T14:45:42.2569922Z",
+  "checks": [
+    "dialog-title-role-and-background-isolation",
+    "native-tab-containment",
+    "cancel-and-focus-return",
+    "named-close-action",
+    "async-busy-and-completion",
+    "locale-and-confirm-role",
+    "disabled-footer-button",
+    "window-teardown"
+  ],
+  "executable_sha256": "ff6bf676daa68ced7bb266205378a560405cf711ecf04bec462341bd1691b30e",
+  "script_sha256": "bfeb4f843affadae79da9dc6615ef9ed50735f8e2add5c7e8306e7c0ed880c12"
+}

@@ -1,0 +1,208 @@
+{
+  "placements": [
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "bottom",
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "top",
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "start",
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "end",
+      "arrows": true
+    }
+  ],
+  "controls": [
+    {
+      "width": 480,
+      "height": 160,
+      "arrows": true,
+      "infinite": false
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "arrows": true,
+      "infinite": false,
+      "initial": 3
+    }
+  ],
+  "hover-prev": [
+    {
+      "width": 480,
+      "height": 160,
+      "arrows": true,
+      "state": "hover-prev"
+    }
+  ],
+  "focus-next": [
+    {
+      "width": 480,
+      "height": 160,
+      "arrows": true,
+      "state": "focus-next"
+    }
+  ],
+  "hover-dot": [
+    {
+      "width": 480,
+      "height": 160,
+      "arrows": true,
+      "state": "hover-dot"
+    }
+  ],
+  "content": [
+    {
+      "width": 480,
+      "height": 160,
+      "count": 1,
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "count": 0,
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "dots": false,
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "tokenCase": true
+    }
+  ],
+  "motion": [
+    {
+      "width": 480,
+      "height": 160,
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "start",
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "effect": "fade",
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "effect": "fade",
+      "arrows": true,
+      "layered": true
+    }
+  ],
+  "progress": [
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "bottom",
+      "progress": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "top",
+      "progress": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "start",
+      "progress": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "end",
+      "progress": true
+    }
+  ],
+  "basic": [
+    {
+      "width": 480,
+      "height": 160
+    }
+  ],
+  "narrow": [
+    {
+      "width": 240,
+      "height": 160,
+      "arrows": true
+    },
+    {
+      "width": 240,
+      "height": 160,
+      "placement": "end",
+      "arrows": true
+    }
+  ],
+  "orientation": [
+    {
+      "width": 480,
+      "height": 160,
+      "placement": "start",
+      "vertical": false,
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "vertical": true,
+      "arrows": true
+    }
+  ],
+  "adaptive": [
+    {
+      "width": 480,
+      "height": 160,
+      "adaptive": true,
+      "arrows": true
+    }
+  ],
+  "motion-wrap": [
+    {
+      "width": 480,
+      "height": 160,
+      "initial": 3,
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "initial": 3,
+      "placement": "start",
+      "arrows": true
+    },
+    {
+      "width": 480,
+      "height": 160,
+      "initial": 3,
+      "effect": "fade",
+      "arrows": true
+    }
+  ]
+}
