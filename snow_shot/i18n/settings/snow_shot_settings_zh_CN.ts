@@ -1352,6 +1352,10 @@
             <translation>转换为 Markdown</translation>
         </message>
         <message>
+            <source>Document recognition</source>
+            <translation>文档识别</translation>
+        </message>
+        <message>
             <source>Drag tools here to hide them from the screenshot toolbar</source>
             <translation>将工具拖到此处，即可在截图工具栏中隐藏它们</translation>
         </message>

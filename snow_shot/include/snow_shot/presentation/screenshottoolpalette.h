@@ -104,6 +104,7 @@ class ScreenshotToolPalette final : public QWidget,
         Magnifier,
         SpeechBubble,
         Bracket,
+        Document,
     };
 
     enum class MoveToolPresentation {
@@ -562,6 +563,7 @@ class ScreenshotToolPalette final : public QWidget,
     void ocrRequested();
     void textTranslationRequested();
     void tableRequested();
+    void documentRequested();
     void qrRequested();
     void latexRequested();
     void recognitionModelChanged(const QString& selection);
@@ -572,6 +574,7 @@ class ScreenshotToolPalette final : public QWidget,
     void tableSplitRequested();
     void tableResetRequested();
     void openSpreadsheetFileRequested();
+    void openDocumentFileRequested();
     void showOriginalImageRequested(bool show);
     void textEditRequested();
     void textTranslateRequested();
@@ -1003,6 +1006,11 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_sequenceNumberButton = nullptr;
     adqt::widgets::AdButton* m_ocrButton = nullptr;
     adqt::widgets::AdButton* m_textTranslationButton = nullptr;
+    adqt::widgets::AdButton* m_documentButton = nullptr;
+    adqt::widgets::AdButton* m_openDocumentFileButton = nullptr;
+    QFrame* m_openDocumentFileSeparator = nullptr;
+    QVector<QSpacerItem*> m_documentActionSpacers;
+    ScreenshotRecognitionModelState m_documentRecognitionModelState;
     adqt::widgets::AdButton* m_tableButton = nullptr;
     adqt::widgets::AdButton* m_tableOptionButton = nullptr;
     adqt::widgets::AdButton* m_qrButton = nullptr;

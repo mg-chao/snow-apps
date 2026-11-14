@@ -88,7 +88,8 @@ void manualRecognitionWithoutRemoteProviders() {
     session.setTarget({QStringLiteral("mini-manual-text"), image, QRectF(0, 0, 120, 40)});
     require(recognition.requests == 0, "creating a text session must not start recognition");
     using Mode = ScreenshotRecognitionSessionController::Mode;
-    for (const auto mode : {Mode::Table, Mode::Qr, Mode::Latex, Mode::Markdown, Mode::Html}) {
+    for (const auto mode :
+         {Mode::Table, Mode::Qr, Mode::Latex, Mode::Markdown, Mode::Html, Mode::Document}) {
         session.activate(mode);
         require(!session.active() && recognition.requests == 0,
                 "removed modes must not activate providers or change session state");
@@ -169,7 +170,8 @@ void removedProvidersAndCachesDoNotParticipateInTextSessions() {
 
     using Mode = ScreenshotRecognitionSessionController::Mode;
     session.activate(Mode::Text);
-    for (const auto mode : {Mode::Table, Mode::Qr, Mode::Latex, Mode::Markdown, Mode::Html}) {
+    for (const auto mode :
+         {Mode::Table, Mode::Qr, Mode::Latex, Mode::Markdown, Mode::Html, Mode::Document}) {
         session.activate(mode);
         require(session.active() && session.mode() == Mode::Text && !session.busy(mode),
                 "removed modes must preserve an active Mini text session");
@@ -262,8 +264,8 @@ void removedPaletteToolsCannotMaterializeControls() {
                 palette.findChild<QWidget*>(QStringLiteral("screenshotOcrTextEditButton")) &&
                 palette.findChild<QWidget*>(QStringLiteral("screenshotOcrTextFormattingSelect")),
             "Mini manual OCR must retain editing and formatting controls");
-    for (const auto tool :
-         {Tool::TextTranslation, Tool::Table, Tool::Qr, Tool::Latex, Tool::Markdown, Tool::Html}) {
+    for (const auto tool : {Tool::TextTranslation, Tool::Table, Tool::Qr, Tool::Latex,
+                            Tool::Markdown, Tool::Html, Tool::Document}) {
         palette.setActiveTool(tool);
         require(palette.activeTool() == Tool::Ocr,
                 "removed recognition tools must not replace the active Mini OCR tool");

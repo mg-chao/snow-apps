@@ -85,6 +85,8 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::Ocr;
     case ScreenshotActiveTool::TextTranslation:
         return ScreenshotToolPalette::Tool::TextTranslation;
+    case ScreenshotActiveTool::Document:
+        return ScreenshotToolPalette::Tool::Document;
     case ScreenshotActiveTool::Table:
         return ScreenshotToolPalette::Tool::Table;
     case ScreenshotActiveTool::Qr:
@@ -153,6 +155,7 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                                        ScreenshotActiveTool::TextTranslation
                                    ? ScreenshotActiveTool::TextTranslation
                                    : ScreenshotActiveTool::Ocr)
+                        : mode == 6 ? ScreenshotActiveTool::Document
                         : mode == static_cast<int>(
                                       ScreenshotRecognitionSessionController::Mode::Table)
                             ? ScreenshotActiveTool::Table
@@ -287,10 +290,11 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 if (auto* toolbar = m_context.overlayCoordinator.toolbar()) {
                     using Mode = ScreenshotRecognitionSessionController::Mode;
                     using Tool = ScreenshotToolPalette::Tool;
-                    const auto tool = mode == int(Mode::Table)   ? Tool::Table
-                                      : mode == int(Mode::Latex) ? Tool::Latex
-                                      : mode == int(Mode::Html)  ? Tool::Html
-                                                                 : Tool::Markdown;
+                    const auto tool = mode == int(Mode::Document) ? Tool::Document
+                                      : mode == int(Mode::Table)  ? Tool::Table
+                                      : mode == int(Mode::Latex)  ? Tool::Latex
+                                      : mode == int(Mode::Html)   ? Tool::Html
+                                                                  : Tool::Markdown;
                     toolbar->setRecognitionModelState(tool, state);
                 }
             },
@@ -398,6 +402,10 @@ void ScreenshotOcrController::activateTextTranslation() {
 #endif
 }
 
+void ScreenshotOcrController::activateDocument() {
+    activateMode(Mode::Document);
+}
+
 void ScreenshotOcrController::activateTable() {
     activateMode(Mode::Table);
 }
@@ -453,7 +461,8 @@ QString ScreenshotOcrController::currentCacheKey() const {
 
 void ScreenshotOcrController::activateMode(Mode mode, bool textTranslation,
                                            bool copyAndEndCapture) {
-    const int sessionMode = mode == Mode::Text       ? 0
+    const int sessionMode = mode == Mode::Document   ? 6
+                            : mode == Mode::Text     ? 0
                             : mode == Mode::Table    ? 1
                             : mode == Mode::Qr       ? 2
                             : mode == Mode::Markdown ? 3
@@ -519,6 +528,7 @@ void ScreenshotOcrController::activateMode(Mode mode, bool textTranslation,
     const ScreenshotActiveTool activeTool =
         mode == Mode::Text
             ? (textTranslation ? ScreenshotActiveTool::TextTranslation : ScreenshotActiveTool::Ocr)
+        : mode == Mode::Document ? ScreenshotActiveTool::Document
         : mode == Mode::Table    ? ScreenshotActiveTool::Table
         : mode == Mode::Markdown ? ScreenshotActiveTool::Markdown
         : mode == Mode::Latex    ? ScreenshotActiveTool::Latex
@@ -570,6 +580,40 @@ bool ScreenshotOcrController::copyRecognitionToClipboard(bool endCapture) {
     if (!m_active || QApplication::clipboard() == nullptr) {
         return false;
     }
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (m_session->mode() == ScreenshotRecognitionSessionController::Mode::Document) {
+        const auto request = m_session->documentCopyRequest();
+        const auto publication = ScreenshotClipboardService::reservePublication();
+        const QPointer<ScreenshotOcrController> guard(this);
+        const auto activation = m_activationId;
+        const auto current = [guard, activation] {
+            return guard && guard->m_active && activation == guard->m_activationId;
+        };
+        return request
+            .start(this,
+                   [current, guard, publication, endCapture](auto mime, const QString& error) {
+                       if (!current())
+                           return;
+                       if (!mime) {
+                           if (!error.isEmpty())
+                               guard->showStatus(error, true);
+                           return;
+                       }
+                       static_cast<void>(ScreenshotClipboardService::commitMimeData(
+                           QApplication::clipboard(), guard, mime.release(), publication,
+                           [current, guard, endCapture](ScreenshotClipboardCommitResult result) {
+                               if (!current())
+                                   return;
+                               if (!result.succeeded())
+                                   guard->showStatus(result.errorString(), true);
+                               else if (endCapture && !result.superseded)
+                                   guard->m_context.cancelCapture();
+                           }));
+                   })
+            .isValid();
+    }
+    static_cast<void>(ScreenshotClipboardService::reservePublication());
+#endif
     if (m_session->tableModeActive()) {
         if (m_recognitionWindow != nullptr) {
             m_recognitionWindow->commitActiveTableEdit();
@@ -606,6 +650,10 @@ void ScreenshotOcrController::splitTableSelection() {
 
 void ScreenshotOcrController::resetTable() {
     m_session->resetTable();
+}
+
+bool ScreenshotOcrController::openDocumentFile(std::function<void()> opened) {
+    return m_session->openDocumentFile(std::move(opened));
 }
 
 bool ScreenshotOcrController::openSpreadsheetFile() {

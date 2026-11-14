@@ -19,6 +19,9 @@ class ImageEditingExportController final : public QObject {
   public:
     enum class Operation { Copy, Save, QuickSave, Print, Upload, Pin };
     using Content = std::variant<ScreenshotExportSource, QString, ScreenshotRecognitionFileSnapshot,
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+                                 ScreenshotDocumentCopyRequest,
+#endif
                                  std::unique_ptr<QMimeData>>;
     using Completion = std::function<void(bool, QString)>;
     using Pin = std::function<bool(QImage, std::function<void(bool)>)>;

@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/SnowShotMiniBuildContract.cmake")
 add_library(snow_shot_edition_full INTERFACE)
 target_compile_definitions(snow_shot_edition_full INTERFACE SNOW_SHOT_EDITION_MINI=0)
 foreach(_feature IN ITEMS QR_RECOGNITION TABLE_RECOGNITION IMAGE_CONVERSION
-        LATEX_RECOGNITION TEXT_TRANSLATION API_CONFIGURATION EXTENDED_FEATURES)
+        LATEX_RECOGNITION DOCUMENT_RECOGNITION TEXT_TRANSLATION API_CONFIGURATION EXTENDED_FEATURES)
     target_compile_definitions(snow_shot_edition_full INTERFACE SNOW_SHOT_ENABLE_${_feature}=1)
 endforeach()
 
@@ -26,7 +26,7 @@ endif()
 add_library(snow_shot_edition_mini INTERFACE)
 target_compile_definitions(snow_shot_edition_mini INTERFACE SNOW_SHOT_EDITION_MINI=1)
 foreach(_feature IN ITEMS QR_RECOGNITION TABLE_RECOGNITION IMAGE_CONVERSION
-        LATEX_RECOGNITION TEXT_TRANSLATION API_CONFIGURATION EXTENDED_FEATURES)
+        LATEX_RECOGNITION DOCUMENT_RECOGNITION TEXT_TRANSLATION API_CONFIGURATION EXTENDED_FEATURES)
     target_compile_definitions(snow_shot_edition_mini INTERFACE SNOW_SHOT_ENABLE_${_feature}=0)
 endforeach()
 
@@ -383,7 +383,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_set_source_dependency_edition(snow-shot-${_edition}-mcp-edition-tests ${_edition})
         target_include_directories(snow-shot-${_edition}-mcp-edition-tests PRIVATE include)
         target_link_libraries(snow-shot-${_edition}-mcp-edition-tests PRIVATE
-            snow_shot_edition_${_edition} Qt6::Core)
+            snow_shot_edition_${_edition} Qt6::Gui)
     endforeach()
     get_target_property(_branding_sources snow-shot-about-page-tests SOURCES)
     list(REMOVE_ITEM _branding_sources tests/about_page_tests.cpp)

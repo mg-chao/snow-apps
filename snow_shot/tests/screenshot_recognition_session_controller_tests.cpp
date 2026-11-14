@@ -1731,6 +1731,199 @@ void translationLanguageSelectsUseCodePrefixGroups() {
 
 void runLatexRecognitionTests();
 
+void documentSessionCancelsPendingRequestOnAccountChange() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "document test server listens");
+    auto client =
+        std::make_unique<SnowShotApiClient>(QStringLiteral("http://127.0.0.1:%1")
+                                                .arg(server.serverPort()));
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, client.get(), {});
+    QImage original(64, 48, QImage::Format_ARGB32);
+    original.fill(Qt::white);
+    session.setTarget({QStringLiteral("document-account"), original, QRectF(0, 0, 64, 48)});
+
+    session.activate(Mode::Document);
+    require(session.busy(Mode::Document), "document request is still preparing");
+    client->setAccountAccessToken(QByteArrayLiteral("new-account"));
+    require(!session.busy(Mode::Document) &&
+                !session.workflowState().value(QStringLiteral("error")).toString().isEmpty(),
+            "account change settles the cancelled request");
+    require(QThreadPool::globalInstance()->waitForDone(5000), "document encoding settles");
+    QCoreApplication::sendPostedEvents(client.get(), QEvent::MetaCall);
+    QCoreApplication::processEvents();
+    require(!server.hasPendingConnections(), "cancelled encoding cannot upload");
+
+    session.retryRecognition();
+    require(session.busy(Mode::Document), "retry starts under the current account");
+    client.reset();
+    require(!session.busy(Mode::Document), "provider destruction clears the document busy state");
+}
+
+void documentSessionUsesImmutableCacheAndPreservesSelection() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    QPointer<ScreenshotRecognitionWindow> window;
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() -> ScreenshotRecognitionWindow* {
+        if (!window) {
+            window = new ScreenshotRecognitionWindow({});
+            require(window->present({QGuiApplication::primaryScreen(), nullptr,
+                                     QRect(300, 180, 300, 220), QRectF(0, 0, 300, 220)}),
+                    "document fixture presented");
+        }
+        return window;
+    };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    QImage original(300, 220, QImage::Format_ARGB32);
+    original.fill(Qt::white);
+    session.setTarget({QStringLiteral("document-target"), original, QRectF(0, 0, 300, 220)});
+    auto document = std::make_shared<ScreenshotRecognizedDocument>();
+    document->html = QStringLiteral("<h1>Title</h1><p>Editable export, read-only preview.</p>");
+    ScreenshotRecognitionResults cached;
+    cached.key = QStringLiteral("document-target");
+    cached.document = document;
+    session.seedRecognitionResults(cached);
+    session.activate(Mode::Document);
+    require(window && !session.busy() && session.fileExportSnapshot()->document == document,
+            "cache reused without a provider or recognition charge");
+    auto* editor = window->findChild<QTextEdit*>();
+    require(editor && editor->isReadOnly(), "document preview read-only");
+    auto cursor = editor->textCursor();
+    cursor.setPosition(0);
+    cursor.setPosition(5, QTextCursor::KeepAnchor);
+    editor->setTextCursor(cursor);
+    session.setShowOriginalImage(true);
+    session.setShowOriginalImage(false);
+    require(editor->textCursor().selectedText() == QStringLiteral("Title"),
+            "image toggle preserves document selection");
+    auto mime = session.recognitionClipboardMimeData();
+    require(mime && mime->hasHtml() && mime->text() == QStringLiteral("Title"),
+            "selected rich copy");
+    QApplication::clipboard()->setText(QStringLiteral("previous contents"));
+    require(window->copyVisibleContentToClipboard(), "document selection schedules copy");
+    require(QApplication::clipboard()->text() == QStringLiteral("previous contents"),
+            "document copy does not publish synchronously");
+    translation_tests::waitUntil(
+        [&] { return QApplication::clipboard()->text() == QStringLiteral("Title"); },
+        "asynchronous document copy preserves selected text");
+    require(QApplication::clipboard()->mimeData()->hasHtml(), "document copy preserves rich text");
+
+    editor->setTextCursor(cursor);
+    require(window->copyVisibleContentToClipboard(), "document selection schedules another copy");
+    static_cast<void>(ScreenshotClipboardService::reservePublication());
+    QApplication::clipboard()->setText(QStringLiteral("newer copy"));
+    session.deactivate();
+    session.activate(Mode::Document);
+    translation_tests::flushEvents();
+    require(QApplication::clipboard()->text() == QStringLiteral("newer copy"),
+            "superseded document copy does not overwrite the clipboard");
+    require(session.fileExportSnapshot()->document == document,
+            "session reentry reuses immutable result");
+    session.setTarget({QStringLiteral("different-target"), original, QRectF(0, 0, 300, 220)});
+    require(!session.cachedRecognitionResults().document,
+            "different selection cannot reuse stale document");
+    session.deactivate();
+    delete window.data();
+}
+
+void documentCacheEvictsLeastRecentlyUsedResults() {
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, {});
+    QImage original(20, 20, QImage::Format_RGB32);
+    original.fill(Qt::white);
+    const auto setTarget = [&](const QString& key) {
+        session.setTarget({key, original, QRectF(0, 0, 20, 20)});
+    };
+    auto document = std::make_shared<ScreenshotRecognizedDocument>();
+    document->html = QStringLiteral("<p>Document cache</p>");
+    // Qt shares the image allocation. Count each distinct key against cache admission.
+    const QImage image(4096, 4096, QImage::Format_RGB32);
+    document->images.insert(QStringLiteral("image"), image);
+    for (int i = 0; i < 3; ++i) {
+        const auto key = QString::number(i);
+        setTarget(key);
+        ScreenshotRecognitionResults cached;
+        cached.key = key;
+        cached.document = document;
+        session.seedRecognitionResults(std::move(cached));
+    }
+    setTarget(QStringLiteral("0"));
+    require(session.cachedRecognitionResults().document == document, "touch the oldest entry");
+    setTarget(QStringLiteral("3"));
+    ScreenshotRecognitionResults cached;
+    cached.key = QStringLiteral("3");
+    cached.document = document;
+    session.seedRecognitionResults(std::move(cached));
+    setTarget(QStringLiteral("1"));
+    require(!session.cachedRecognitionResults().document, "evict the least recently used entry");
+    setTarget(QStringLiteral("0"));
+    require(session.cachedRecognitionResults().document == document,
+            "keep the recently used entry");
+}
+
+void documentPreviewDisplaysBeforeFormulaAssetsAreReady() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "document preview fixture listens");
+    SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+        auto* socket = server.nextPendingConnection();
+        const auto respond = [socket, request = QByteArray{}]() mutable {
+            request += socket->readAll();
+            const auto end = request.indexOf("\r\n\r\n");
+            if (end < 0)
+                return;
+            for (const auto& line : request.left(end).split('\n')) {
+                if (line.toLower().startsWith("content-length:") &&
+                    request.size() - end - 4 < line.mid(15).trimmed().toLongLong())
+                    return;
+            }
+            const QByteArray body =
+                R"({"code":0,"data":{"md_results":"# Preview\n\n$x^2$ and $x^2$"}})";
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                          QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+            socket->disconnectFromHost();
+        };
+        QObject::connect(socket, &QTcpSocket::readyRead, socket, respond);
+    });
+    ScreenshotRecognitionWindow window({});
+    require(window.present({QGuiApplication::primaryScreen(), nullptr, QRect(300, 180, 300, 220),
+                            QRectF(0, 0, 300, 220)}),
+            "present document preview");
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&] { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &client, actions);
+    QImage image(64, 48, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    session.setTarget({QStringLiteral("formula-preview"), image, QRectF(0, 0, 64, 48)});
+    bool previewWhileBusy = false;
+    QPointer<QTextDocument> preview;
+    QObject::connect(&window, &ScreenshotRecognitionWindow::resultPageChanged, &window, [&] {
+        auto* editor = window.findChild<QTextEdit*>();
+        if (editor && editor->toPlainText().contains(QStringLiteral("Preview")) &&
+            session.busy(Mode::Document)) {
+            previewWhileBusy = true;
+            preview = editor->document();
+        }
+    });
+    session.activate(Mode::Document);
+    translation_tests::waitUntil([&] { return !session.busy(Mode::Document); },
+                                 "document formulas finish");
+    const auto snapshot = session.fileExportSnapshot();
+    require(previewWhileBusy && preview && snapshot && snapshot->document->images.size() == 2,
+            "publish a first frame before rendering both formula occurrences");
+    require(window.findChild<QTextEdit*>()->document() == preview,
+            "the final assets update the existing preview");
+    const auto& images = snapshot->document->images;
+    require(images.value(QStringLiteral("snow-document-formula-0")).cacheKey() ==
+                images.value(QStringLiteral("snow-document-formula-1")).cacheKey(),
+            "identical formulas share a raster");
+    require(session.workflowResult()
+                .value(QStringLiteral("html"))
+                .toString()
+                .contains(QStringLiteral("data:image/png;base64,")),
+            "the completed workflow exposes embedded images");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir temporary;
@@ -1774,6 +1967,14 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--recognition-model-only"))) {
         runRecognitionModelTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--document-only"))) {
+        documentSessionCancelsPendingRequestOnAccountChange();
+        documentSessionUsesImmutableCacheAndPreservesSelection();
+        documentCacheEvictsLeastRecentlyUsedResults();
+        documentPreviewDisplaysBeforeFormulaAssetsAreReady();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

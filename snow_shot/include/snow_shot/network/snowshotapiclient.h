@@ -10,6 +10,7 @@
 #endif
 
 #include <QHash>
+#include <QJsonObject>
 #include <QElapsedTimer>
 #include <QImage>
 #include <QObject>
@@ -28,6 +29,16 @@ class QJsonObject;
 class QJsonValue;
 class QTimer;
 class SnowShotApiClient;
+
+struct SnowShotDocumentResult {
+    QJsonObject raw;
+    QString error;
+    QString code;
+    int httpStatus = 0;
+    [[nodiscard]] bool succeeded() const {
+        return !raw.isEmpty() && error.isEmpty();
+    }
+};
 
 struct SnowShotTableResult {
     QString html;
@@ -146,6 +157,7 @@ class SnowShotApiClient final : public QObject {
   public:
     using RequestToken = quint64;
     using Completion = std::function<void(SnowShotTableResult)>;
+    using DocumentCompletion = std::function<void(SnowShotDocumentResult)>;
     using LatexCompletion = std::function<void(SnowShotLatexResult)>;
     using ChatModelsCompletion = std::function<void(SnowShotChatModelsResult)>;
     using TranslationDelta = std::function<void(const QString&)>;
@@ -173,6 +185,8 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] QString cachedChatModelsLocale() const {
         return m_cachedChatModelsLocale;
     }
+    [[nodiscard]] RequestToken extractDocument(const QImage& image, QObject* receiver,
+                                               DocumentCompletion completion);
     [[nodiscard]] RequestToken extractTable(const QImage& image, QObject* receiver,
                                             Completion completion);
     [[nodiscard]] RequestToken extractLatex(const QImage& image, QObject* receiver,
@@ -238,6 +252,8 @@ class SnowShotApiClient final : public QObject {
                                                const QString& description, QStringView model = {});
 
   private:
+    void startDocumentUpload(RequestToken token, const QByteArray& png);
+    void finishDocument(RequestToken token, SnowShotDocumentResult result);
     friend class SnowShotApiClientTestAccess;
     std::function<QByteArray(const QImage&)> m_tableImagePreparation;
     int m_latexTimeoutMs = 65000;

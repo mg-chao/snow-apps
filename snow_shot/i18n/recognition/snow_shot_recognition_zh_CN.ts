@@ -172,6 +172,10 @@
             <translation>正在转换为 Markdown</translation>
         </message>
         <message>
+            <source>Document recognition service is unavailable</source>
+            <translation>文档识别服务不可用</translation>
+        </message>
+        <message>
             <source>LaTeX recognition failed</source>
             <translation>LaTeX 识别失败</translation>
         </message>
@@ -220,6 +224,10 @@
             <translation>正在识别条码</translation>
         </message>
         <message>
+            <source>Recognizing document</source>
+            <translation>正在识别文档</translation>
+        </message>
+        <message>
             <source>Recognizing table</source>
             <translation>正在识别表格</translation>
         </message>
@@ -266,6 +274,10 @@
         <message>
             <source>Text recognition request could not be prepared</source>
             <translation>无法准备文本识别请求</translation>
+        </message>
+        <message>
+            <source>The document file could not be opened</source>
+            <translation>无法打开文档文件</translation>
         </message>
         <message>
             <source>The selected recognition model is unavailable. Choose another model or retry</source>
@@ -337,6 +349,10 @@
         <message>
             <source>Paste</source>
             <translation>粘贴</translation>
+        </message>
+        <message>
+            <source>Recognized document</source>
+            <translation>已识别文档</translation>
         </message>
         <message>
             <source>Rendering formula...</source>

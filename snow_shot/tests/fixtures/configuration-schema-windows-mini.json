@@ -5164,6 +5164,20 @@
     },
     {
       "allowedStringValues": [],
+      "defaultJsonType": 2,
+      "defaultStringIsNull": false,
+      "defaultValue": 100,
+      "integerRange": [
+        0,
+        100,
+        1
+      ],
+      "key": "collage/pdf_image_quality",
+      "maximumListItems": -1,
+      "valueKind": "Integer"
+    },
+    {
+      "allowedStringValues": [],
       "defaultJsonType": 5,
       "defaultStringIsNull": false,
       "defaultValue": {},

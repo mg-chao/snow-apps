@@ -83,6 +83,8 @@ class ScreenshotToolbarCommandSink {
     virtual void setTextTranslationTool() {
         setOcrTool();
     }
+    virtual void setDocumentTool() {}
+    virtual void openDocumentFile() {}
     virtual void setTableTool() {}
     virtual void setQrTool() {}
     virtual void setLatexTool() {}

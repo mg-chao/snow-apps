@@ -529,6 +529,8 @@ enum RecognitionKind {
     Html,
     #[cfg(not(feature = "mini"))]
     Latex,
+    #[cfg(not(feature = "mini"))]
+    Document,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1427,7 +1429,9 @@ mod tests {
                 .as_array()
                 .cloned()
                 .unwrap_or_else(|| vec![definition["const"].clone()]);
-            for kind in ["text", "table", "qr", "markdown", "html", "latex"] {
+            for kind in [
+                "text", "table", "qr", "markdown", "html", "latex", "document",
+            ] {
                 let enabled = kind == "text" || !crate::edition::MINI;
                 assert_eq!(choices.contains(&json!(kind)), enabled, "{name}: {kind}");
                 let arguments = if name.contains("screenshot") {

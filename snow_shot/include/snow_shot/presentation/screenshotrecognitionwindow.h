@@ -34,6 +34,7 @@ class QScreen;
 class QWindow;
 class QStackedLayout;
 class QTextDocument;
+struct ScreenshotRecognizedDocument;
 class QTextBrowser;
 class QTextEdit;
 class QTimer;
@@ -155,6 +156,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     struct SessionCallbacks {
         std::function<bool()> translationActive;
         std::function<std::unique_ptr<QMimeData>()> translationClipboard;
+        std::function<bool(QString)> copyDocument = {};
     };
     [[nodiscard]] AttachmentToken attachSession(QObject* owner, SessionCallbacks callbacks);
     [[nodiscard]] bool ownsAttachment(const QObject* owner, AttachmentToken token) const;
@@ -207,6 +209,11 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void commitActiveTableEdit();
     [[nodiscard]] QVector<int> tableColumnWidths() const;
 
+    void showDocument(std::shared_ptr<const ScreenshotRecognizedDocument> document,
+                      std::shared_ptr<QTextDocument> preview);
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    [[nodiscard]] QString documentSelectionHtml() const;
+#endif
     void showTextEditor(QTextDocument* document, bool readOnly = false, bool streaming = false);
     void showTextEditor(std::shared_ptr<QTextDocument> document, bool readOnly = false,
                         bool streaming = false);
@@ -365,6 +372,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     AttachmentToken m_attachmentToken = 0;
     SessionCallbacks m_sessionCallbacks;
     std::shared_ptr<QTextDocument> m_textEditorDocumentOwner;
+    std::shared_ptr<const ScreenshotRecognizedDocument> m_recognizedDocument;
     adqt::widgets::AdSpin* m_textEditorSpin = nullptr;
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     QTextBrowser* m_qrBrowser = nullptr;

@@ -110,9 +110,10 @@ void toolbarDefaultsAndImports() {
                 "explicit OCR visibility must survive normalization");
         storage::ScreenshotToolbarLayout imported;
         imported.positions = {
-            {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
-             QStringLiteral("latex-recognition"), QStringLiteral("convert-to-markdown"),
-             QStringLiteral("convert-to-html"), QStringLiteral("text-translation")},
+            {QStringLiteral("table-recognition"), QStringLiteral("document-recognition"),
+             QStringLiteral("barcode-recognition"), QStringLiteral("latex-recognition"),
+             QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
+             QStringLiteral("text-translation")},
             {QStringLiteral("save-as-file")}};
         const auto normalized = layout::normalizedLayout(imported, kind);
         for (const auto& position : normalized.positions)

@@ -3961,6 +3961,7 @@
             "convert-to-markdown",
             "latex-recognition",
             "barcode-recognition",
+            "document-recognition",
             "table-recognition"
           ],
           [
@@ -4006,6 +4007,7 @@
             "convert-to-markdown",
             "latex-recognition",
             "barcode-recognition",
+            "document-recognition",
             "table-recognition"
           ],
           [
@@ -5535,6 +5537,20 @@
       "key": "collage/pdf_export_mode",
       "maximumListItems": -1,
       "valueKind": "String"
+    },
+    {
+      "allowedStringValues": [],
+      "defaultJsonType": 2,
+      "defaultStringIsNull": false,
+      "defaultValue": 100,
+      "integerRange": [
+        0,
+        100,
+        1
+      ],
+      "key": "collage/pdf_image_quality",
+      "maximumListItems": -1,
+      "valueKind": "Integer"
     },
     {
       "allowedStringValues": [],

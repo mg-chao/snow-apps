@@ -42,13 +42,14 @@ enum class ScreenshotActiveTool {
     Magnifier,
     SpeechBubble,
     Bracket,
+    Document,
 };
 
 [[nodiscard]] inline bool isScreenshotRecognitionTool(ScreenshotActiveTool tool) {
     return tool == ScreenshotActiveTool::Ocr || tool == ScreenshotActiveTool::TextTranslation ||
-           tool == ScreenshotActiveTool::Table || tool == ScreenshotActiveTool::Latex ||
-           tool == ScreenshotActiveTool::Qr || tool == ScreenshotActiveTool::Markdown ||
-           tool == ScreenshotActiveTool::Html;
+           tool == ScreenshotActiveTool::Document || tool == ScreenshotActiveTool::Table ||
+           tool == ScreenshotActiveTool::Latex || tool == ScreenshotActiveTool::Qr ||
+           tool == ScreenshotActiveTool::Markdown || tool == ScreenshotActiveTool::Html;
 }
 
 enum class ScreenshotCaptureMode {

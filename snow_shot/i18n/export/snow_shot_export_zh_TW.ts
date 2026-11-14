@@ -205,6 +205,26 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Cannot create output directory</source>
+            <translation>無法建立輸出目錄</translation>
+        </message>
+        <message>
+            <source>Cannot publish document output</source>
+            <translation>無法儲存文件輸出</translation>
+        </message>
+        <message>
+            <source>Cannot replace document output</source>
+            <translation>無法取代文件輸出</translation>
+        </message>
+        <message>
+            <source>Cannot stage document</source>
+            <translation>無法暫存文件</translation>
+        </message>
+        <message>
+            <source>Cannot stage document images</source>
+            <translation>無法暫存文件影像</translation>
+        </message>
+        <message>
             <source>Excel workbook (*.xlsx)</source>
             <translation>Excel 活頁簿 (*.xlsx)</translation>
         </message>
@@ -255,6 +275,14 @@
             <translation>無法建立 Excel 活頁簿</translation>
         </message>
         <message>
+            <source>The document file could not be created</source>
+            <translation>無法建立文件檔案</translation>
+        </message>
+        <message>
+            <source>The document file could not be opened</source>
+            <translation>無法開啟文件檔案</translation>
+        </message>
+        <message>
             <source>The output directory could not be created</source>
             <translation>無法建立輸出目錄</translation>
         </message>
@@ -281,6 +309,21 @@
         <message>
             <source>The temporary directory could not be created</source>
             <translation>無法建立暫存目錄</translation>
+        </message>
+        <message>
+            <source>Word document (*.docx);;PDF document (*.pdf);;Markdown document (*.md);;LaTeX document (*.tex)</source>
+            <translation>Word 文件 (*.docx);;PDF 文件 (*.pdf);;Markdown 文件 (*.md);;LaTeX 文件 (*.tex)</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotRecognizedDocument</name>
+        <message>
+            <source>Document recognition returned no document</source>
+            <translation>文件辨識未傳回文件內容</translation>
+        </message>
+        <message>
+            <source>[Image unavailable]</source>
+            <translation>[影像無法使用]</translation>
         </message>
     </context>
     <context>

@@ -301,7 +301,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
             const QString path =
                 m_staging->filePath(QStringLiteral("result.") +
                                     ScreenshotRecognitionFileExport::extension(recognition->kind));
-            submitPublication(ScreenshotRecognitionFileExport::outputPaths(path, recognition->kind),
+            submitPublication(ScreenshotRecognitionFileExport::outputPaths(path, *recognition),
                               *recognition);
             return;
         }

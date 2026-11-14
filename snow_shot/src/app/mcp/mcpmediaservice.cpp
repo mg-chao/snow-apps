@@ -760,6 +760,44 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
         }
         const bool original = p.value(QStringLiteral("original")).toBool();
         if (output == QStringLiteral("copy")) {
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+            if (!original) {
+                const auto request = window->automationDocumentCopyRequest();
+                if (request.document) {
+                    const auto publication = ScreenshotClipboardService::reservePublication();
+                    auto publicationHandle = std::make_shared<ScreenshotClipboardCommitHandle>();
+                    auto job =
+                        request.start(this, [this, owner = r.connectionId, publication,
+                                             publicationHandle, reply](auto mime, const QString&) {
+                            if (!mime) {
+                                reply({}, QStringLiteral("clipboard_failed"));
+                                return;
+                            }
+                            *publicationHandle = m_impl->clipboardScope(owner).commitMimeData(
+                                QApplication::clipboard(), this, mime.release(),
+                                [reply](const auto& result) {
+                                    reply({{QStringLiteral("copied"), result.succeeded()}},
+                                          result.succeeded() ? QString()
+                                                             : QStringLiteral("clipboard_failed"));
+                                },
+                                publication);
+                            if (!publicationHandle->isValid())
+                                reply({}, QStringLiteral("clipboard_failed"));
+                        });
+                    if (!job.isValid()) {
+                        reply({}, QStringLiteral("queue_full"));
+                        return;
+                    }
+                    s.cancellations.insert(QString::number(r.connectionId) + u':' + r.requestId,
+                                           [job, publicationHandle, reply] {
+                                               job.cancel();
+                                               publicationHandle->cancel();
+                                               reply({}, QStringLiteral("cancelled"));
+                                           });
+                    return;
+                }
+            }
+#endif
             if (auto mime = window->automationClipboardMimeData(original)) {
                 auto commit =
                     s.clipboardScope(r.connectionId)

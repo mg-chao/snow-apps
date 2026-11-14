@@ -1,0 +1,30 @@
+<!--
+Document silhouette adapted from Ant Design Icons outlined/file-text.svg.
+The silhouette and badge layout match the project-owned markdown.svg and html.svg.
+
+MIT License
+
+Copyright (c) 2018-present Ant UED, https://xtech.antfin.com/
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
+  <path d="M117.76 422.4V46.08c0-19.824 16.016-35.84 35.84-35.84h475.776c9.52 0 18.592 3.808 25.312 10.528l241.024 241.024c6.72 6.72 10.528 15.904 10.528 25.424V422.4h-80.64v-42.56H583.68a47.04 47.04 0 0 1-47.04-47.04V90.88H198.4v331.52h-80.64Zm495.04-329.504V303.68h210.784L612.8 92.896ZM117.76 825.6h80.64v107.52h627.2v-107.52h80.64v152.32c0 19.824-16.016 35.84-35.84 35.84H153.6c-19.824 0-35.84-16.016-35.84-35.84V825.6Z"/>
+  <path fill-rule="evenodd" d="M46.08 422.4h931.84c19.824 0 35.84 16.016 35.84 35.84v331.52c0 19.824-16.016 35.84-35.84 35.84H46.08c-19.824 0-35.84-16.016-35.84-35.84V458.24c0-19.824 16.016-35.84 35.84-35.84Z M171.52 512h89.6a107.52 107.52 0 0 1 107.52 107.52v8.96A107.52 107.52 0 0 1 261.12 736h-89.6V512z M225.28 565.76v116.48h35.84a53.76 53.76 0 0 0 53.76-53.76v-8.96a53.76 53.76 0 0 0-53.76-53.76h-35.84z M494.08 512h35.84a80.64 80.64 0 0 1 80.64 80.64v62.72A80.64 80.64 0 0 1 529.92 736h-35.84a80.64 80.64 0 0 1-80.64-80.64v-62.72A80.64 80.64 0 0 1 494.08 512z M494.08 565.76a26.88 26.88 0 0 0-26.88 26.88v62.72a26.88 26.88 0 0 0 26.88 26.88h35.84a26.88 26.88 0 0 0 26.88-26.88v-62.72a26.88 26.88 0 0 0-26.88-26.88h-35.84z M852.48 592.64h-53.76a26.88 26.88 0 0 0-26.88-26.88H736a26.88 26.88 0 0 0-26.88 26.88v62.72A26.88 26.88 0 0 0 736 682.24h35.84a26.88 26.88 0 0 0 26.88-26.88h53.76A80.64 80.64 0 0 1 771.84 736H736a80.64 80.64 0 0 1-80.64-80.64v-62.72A80.64 80.64 0 0 1 736 512h35.84a80.64 80.64 0 0 1 80.64 80.64z"/>
+</svg>

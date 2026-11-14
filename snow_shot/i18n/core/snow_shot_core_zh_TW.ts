@@ -688,6 +688,14 @@ so every moment on screen can be expressed clearly and shared easily</source>
     <context>
         <name>SnowShotApiClient</name>
         <message>
+            <source>Document recognition request timed out</source>
+            <translation>文件辨識請求逾時</translation>
+        </message>
+        <message>
+            <source>Document recognition response is too large</source>
+            <translation>文件辨識結果過大</translation>
+        </message>
+        <message>
             <source>Image conversion failed</source>
             <translation>影像轉換失敗</translation>
         </message>
@@ -722,6 +730,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
         <message>
             <source>Invalid LaTeX recognition response</source>
             <translation>無效的 LaTeX 辨識回應</translation>
+        </message>
+        <message>
+            <source>Invalid document recognition response</source>
+            <translation>文件辨識結果無效</translation>
         </message>
         <message>
             <source>Invalid model stream response</source>
@@ -788,6 +800,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>表格辨識未傳回表格</translation>
         </message>
         <message>
+            <source>The document image could not be encoded</source>
+            <translation>無法編碼文件影像</translation>
+        </message>
+        <message>
             <source>The image could not be prepared for conversion</source>
             <translation>無法準備要轉換的影像</translation>
         </message>
@@ -802,6 +818,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
         <message>
             <source>The image is too large to recognize. Select a smaller area</source>
             <translation>影像過大，無法辨識。請選擇較小的區域</translation>
+        </message>
+        <message>
+            <source>The image is too large. Select a smaller area.</source>
+            <translation>影像過大，請選擇較小的區域。</translation>
         </message>
         <message>
             <source>The model response is too large</source>

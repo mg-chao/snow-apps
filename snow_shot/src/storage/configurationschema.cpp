@@ -263,6 +263,7 @@ const QStringList kSkinPositions = schemaStrings(kSkinPositionsData);
 
 constexpr SchemaString kActionToolbarItemIdsData[] = {u"barcode-recognition",
                                                       u"table-recognition",
+                                                      u"document-recognition",
                                                       u"convert-to-markdown",
                                                       u"latex-recognition",
                                                       u"convert-to-html",
@@ -337,8 +338,8 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
 }
 
 constexpr SchemaString defaultActionToolbarPositionsGroup0[] = {
-    u"convert-to-html", u"convert-to-markdown", u"latex-recognition", u"barcode-recognition",
-    u"table-recognition"};
+    u"convert-to-html",     u"convert-to-markdown",  u"latex-recognition",
+    u"barcode-recognition", u"document-recognition", u"table-recognition"};
 constexpr SchemaString defaultActionToolbarPositionsGroup1[] = {u"record-screen"};
 constexpr SchemaString defaultActionToolbarPositionsGroup2[] = {u"pin-window-to-screen",
                                                                 u"pin-to-screen"};
@@ -368,6 +369,7 @@ QVector<QStringList> defaultActionToolbarPositions() {
 
 constexpr SchemaString kPinnedActionToolbarItemIdsData[] = {u"barcode-recognition",
                                                             u"table-recognition",
+                                                            u"document-recognition",
                                                             u"convert-to-markdown",
                                                             u"latex-recognition",
                                                             u"convert-to-html",
@@ -386,8 +388,8 @@ const QStringList kPinnedActionToolbarItemIds =
     editionActionIds(schemaStrings(kPinnedActionToolbarItemIdsData));
 
 constexpr SchemaString defaultPinnedActionToolbarPositionsGroup0[] = {
-    u"convert-to-html", u"convert-to-markdown", u"latex-recognition", u"barcode-recognition",
-    u"table-recognition"};
+    u"convert-to-html",     u"convert-to-markdown",  u"latex-recognition",
+    u"barcode-recognition", u"document-recognition", u"table-recognition"};
 constexpr SchemaString defaultPinnedActionToolbarPositionsGroup1[] = {u"text-recognition"};
 constexpr SchemaString defaultPinnedActionToolbarPositionsGroup2[] = {u"text-translation"};
 constexpr SchemaString defaultPinnedActionToolbarPositionsGroup3[] = {u"separator"};
@@ -2538,6 +2540,23 @@ normalizeToolbarLayout(const QJsonValue& value, const QStringList& itemIds,
             hiddenSet.contains(QStringLiteral("convert-to-markdown"))) {
             hidden.push_back(QStringLiteral("latex-recognition"));
             hiddenSet.insert(QStringLiteral("latex-recognition"));
+        }
+    }
+    if (known.contains(QStringLiteral("document-recognition")) &&
+        !positioned.contains(QStringLiteral("document-recognition")) &&
+        !hiddenSet.contains(QStringLiteral("document-recognition"))) {
+        for (QStringList& position : positions) {
+            const auto table = position.indexOf(QStringLiteral("table-recognition"));
+            if (table >= 0) {
+                position.insert(table, QStringLiteral("document-recognition"));
+                positioned.insert(QStringLiteral("document-recognition"));
+                break;
+            }
+        }
+        if (!positioned.contains(QStringLiteral("document-recognition")) &&
+            hiddenSet.contains(QStringLiteral("table-recognition"))) {
+            hidden.push_back(QStringLiteral("document-recognition"));
+            hiddenSet.insert(QStringLiteral("document-recognition"));
         }
     }
     // Preserve the former fixed prefix when upgrading saved annotation layouts.

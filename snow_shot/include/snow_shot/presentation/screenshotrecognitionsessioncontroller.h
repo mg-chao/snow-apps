@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QJsonObject>
 #include <QHash>
+#include <QCache>
 #include <QFont>
 #include <QImage>
 #include <QPointer>
@@ -118,7 +119,15 @@ class ScreenshotRecognitionSessionController final : public QObject {
     Q_OBJECT
 
   public:
-    enum class Mode { Text = 0, Table = 1, Qr = 2, Markdown = 3, Html = 4, Latex = 5 };
+    enum class Mode {
+        Text = 0,
+        Table = 1,
+        Qr = 2,
+        Markdown = 3,
+        Html = 4,
+        Latex = 5,
+        Document = 6
+    };
 
     ScreenshotRecognitionSessionController(ScreenshotOcrRecognitionPort* recognition,
                                            ScreenshotQrRecognitionPort* qrRecognition,
@@ -170,6 +179,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void splitTableSelection();
     void resetTable();
     [[nodiscard]] bool openSpreadsheetFile();
+    [[nodiscard]] bool openDocumentFile(std::function<void()> opened = {});
     void undoTableEdit();
     void redoTableEdit();
     void undoTextEdit();
@@ -206,6 +216,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
     bool flushTranslationUpdates();
     [[nodiscard]] std::unique_ptr<QMimeData>
     recognitionClipboardMimeData(const ScreenshotOcrPresentation* displayedPresentation = nullptr);
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    [[nodiscard]] ScreenshotDocumentCopyRequest documentCopyRequest() const;
+#endif
     // Commits active table edits before copying the complete document for file saving.
     [[nodiscard]] std::optional<ScreenshotRecognitionFileSnapshot> fileExportSnapshot();
     void setTextDraft(const QString& text);
@@ -337,6 +350,21 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void startTextRecognition(ScreenshotOcrRequestPriority priority);
     void startTextRender();
     void startTableRecognition();
+    void startDocumentRecognition();
+    void prepareDocument(quint64 generation, const QString& key,
+                         std::shared_ptr<ScreenshotRecognizedDocument> document,
+                         std::shared_ptr<QTextDocument> preview);
+    void finishDocumentPreparation(quint64 generation, const QString& key,
+                                   std::shared_ptr<ScreenshotRecognizedDocument> document,
+                                   std::shared_ptr<QTextDocument> preview);
+    void cacheDocument(const QString& key, std::shared_ptr<const ScreenshotRecognizedDocument>);
+    [[nodiscard]] std::shared_ptr<const ScreenshotRecognizedDocument>
+    cachedDocument(const QString& key) const;
+    void applyDocument();
+    void showDocumentPreview(std::shared_ptr<const ScreenshotRecognizedDocument> document);
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    bool copyDocumentPreview(QString selection);
+#endif
     void startQrRecognition();
     void startLatexRecognition();
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
@@ -528,6 +556,21 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QString m_recognitionEffectiveModel;
     bool m_recognitionAwaitingModel = false;
     bool m_savingRecognitionModel = false;
+#endif
+    QCache<QString, std::shared_ptr<const ScreenshotRecognizedDocument>> m_documents{256 * 1024 *
+                                                                                     1024};
+    std::shared_ptr<QTextDocument> m_documentPreview;
+    QString m_documentPreviewKey;
+    std::shared_ptr<std::atomic_bool> m_documentCancellation;
+    quint64 m_documentRequestToken = 0;
+    quint64 m_documentGeneration = 0;
+    bool m_documentParsing = false;
+    bool m_openingDocument = false;
+    QPointer<QObject> m_documentPreparation;
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    ScreenshotExportJobHandle m_documentCopyJob;
+    ScreenshotClipboardCommitHandle m_documentClipboardCommit;
+    quint64 m_documentCopyPublication = 0;
 #endif
     Mode m_mode = Mode::Text;
     bool m_active = false;

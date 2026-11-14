@@ -86,6 +86,7 @@
     "ScreenshotPrintService",
     "ScreenshotAirDropService",
     "ScreenshotRecognitionFileExport",
+    "ScreenshotRecognizedDocument",
     "ScreenshotSaveAsFileDialog",
     "ScreenshotSavePreviewCanvas"
   ],

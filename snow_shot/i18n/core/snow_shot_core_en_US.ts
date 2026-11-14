@@ -688,6 +688,14 @@ so every moment on screen can be expressed clearly and shared easily</translatio
     <context>
         <name>SnowShotApiClient</name>
         <message>
+            <source>Document recognition request timed out</source>
+            <translation>Document recognition request timed out</translation>
+        </message>
+        <message>
+            <source>Document recognition response is too large</source>
+            <translation>Document recognition response is too large</translation>
+        </message>
+        <message>
             <source>Image conversion failed</source>
             <translation>Image conversion failed</translation>
         </message>
@@ -722,6 +730,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
         <message>
             <source>Invalid LaTeX recognition response</source>
             <translation>Invalid LaTeX recognition response</translation>
+        </message>
+        <message>
+            <source>Invalid document recognition response</source>
+            <translation>Invalid document recognition response</translation>
         </message>
         <message>
             <source>Invalid model stream response</source>
@@ -788,6 +800,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Table recognition returned no table</translation>
         </message>
         <message>
+            <source>The document image could not be encoded</source>
+            <translation>The document image could not be encoded</translation>
+        </message>
+        <message>
             <source>The image could not be prepared for conversion</source>
             <translation>The image could not be prepared for conversion</translation>
         </message>
@@ -802,6 +818,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
         <message>
             <source>The image is too large to recognize. Select a smaller area</source>
             <translation>The image is too large to recognize. Select a smaller area</translation>
+        </message>
+        <message>
+            <source>The image is too large. Select a smaller area.</source>
+            <translation>The image is too large. Select a smaller area.</translation>
         </message>
         <message>
             <source>The model response is too large</source>

@@ -5179,6 +5179,19 @@ void ScreenshotPinnedWindow::configureEditToolbar(
             &ScreenshotPinnedWindow::handleTableSplitRequested);
     connect(toolbar, &ScreenshotToolPalette::tableResetRequested, this,
             &ScreenshotPinnedWindow::handleTableResetRequested);
+    connect(toolbar, &ScreenshotToolPalette::documentRequested, this, [this] {
+        m_translateAfterRecognition = false;
+        activateRecognitionMode(
+            static_cast<int>(ScreenshotRecognitionSessionController::Mode::Document));
+    });
+    connect(toolbar, &ScreenshotToolPalette::openDocumentFileRequested, this, [this] {
+        const QPointer<ScreenshotPinnedWindow> lifetime(this);
+        if (m_recognitionSession)
+            static_cast<void>(m_recognitionSession->openDocumentFile([this, lifetime] {
+                if (lifetime)
+                    deactivateRecognition();
+            }));
+    });
     connect(toolbar, &ScreenshotToolPalette::openSpreadsheetFileRequested, this, [this] {
         const QPointer<ScreenshotPinnedWindow> lifetime(this);
         if (m_recognitionSession && m_recognitionSession->openSpreadsheetFile() && lifetime)
@@ -5513,6 +5526,12 @@ bool ScreenshotPinnedWindow::recognitionModeAvailable(int mode) const {
                (hasCacheKey && results.text.has_value() && results.text->error.isEmpty() &&
                 results.text->presentation != nullptr) ||
                (m_ocrSupported && m_recognition != nullptr);
+    case ScreenshotRecognitionSessionController::Mode::Document:
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+        return (hasCacheKey && results.document) || (m_ocrSupported && m_tableRecognition);
+#else
+        return false;
+#endif
     case ScreenshotRecognitionSessionController::Mode::Table:
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         return (hasCacheKey && (!results.tableEntries.isEmpty() ||
@@ -5732,6 +5751,8 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                                                         m_recognitionSession->translating()
                                                     ? ScreenshotToolPalette::Tool::TextTranslation
                                                     : ScreenshotToolPalette::Tool::Ocr);
+                        } else if (mode == 6) {
+                            host->setActiveTool(ScreenshotToolPalette::Tool::Document);
                         } else if (mode ==
                                    static_cast<int>(
                                        ScreenshotRecognitionSessionController::Mode::Table)) {
@@ -5924,10 +5945,11 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                     if (auto* palette = m_editController->toolbarWindow()->palette()) {
                         using Mode = ScreenshotRecognitionSessionController::Mode;
                         using Tool = ScreenshotToolPalette::Tool;
-                        const auto tool = mode == int(Mode::Table)   ? Tool::Table
-                                          : mode == int(Mode::Latex) ? Tool::Latex
-                                          : mode == int(Mode::Html)  ? Tool::Html
-                                                                     : Tool::Markdown;
+                        const auto tool = mode == int(Mode::Document) ? Tool::Document
+                                          : mode == int(Mode::Table)  ? Tool::Table
+                                          : mode == int(Mode::Latex)  ? Tool::Latex
+                                          : mode == int(Mode::Html)   ? Tool::Html
+                                                                      : Tool::Markdown;
                         palette->setRecognitionModelState(tool, state);
                     }
                 }
@@ -6279,6 +6301,34 @@ void ScreenshotPinnedWindow::copyEditToolbarContent() {
         return;
     }
     const auto publicationId = beginCopyRequest();
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (const auto request = m_recognitionSession->documentCopyRequest(); request.document) {
+        const QPointer<ScreenshotPinnedWindow> guard(this);
+        m_documentCopyJob =
+            request.start(this, [guard, publicationId](auto mime, const QString& error) {
+                if (!guard || guard->m_copyPublicationId != publicationId)
+                    return;
+                guard->m_documentCopyJob = {};
+                if (!mime) {
+                    showPinnedRecognitionMessage(guard, error, true);
+                    return;
+                }
+                guard->m_clipboardCommit = ScreenshotClipboardService::commitMimeData(
+                    QApplication::clipboard(), guard, mime.release(), publicationId,
+                    [guard](const auto& result) {
+                        if (guard && !result.succeeded())
+                            showPinnedRecognitionMessage(guard, result.errorString(), true);
+                    });
+            });
+        if (!m_documentCopyJob.isValid())
+            showPinnedRecognitionMessage(
+                this,
+                QCoreApplication::translate("ScreenshotController",
+                                            "The screenshot export queue is full"),
+                true);
+        return;
+    }
+#endif
     if (m_recognitionSession->tableModeActive() && m_recognitionContent != nullptr) {
         m_recognitionContent->commitActiveTableEdit();
     }
@@ -7983,20 +8033,24 @@ void ScreenshotPinnedWindow::saveAsFile() {
                 QLatin1Char('.') + ScreenshotRecognitionFileExport::extension(fileSnapshot->kind)));
         const QPointer<ScreenshotPinnedWindow> lifetime(this);
         setProperty("saveDialogOpen", true);
-        const QString selectedPath = QFileDialog::getSaveFileName(
+        QString selectedFilter;
+        QString selectedPath = QFileDialog::getSaveFileName(
             this, translatePinnedText("Save as file"), initialPath,
-            ScreenshotRecognitionFileExport::dialogFilter(fileSnapshot->kind), nullptr,
+            ScreenshotRecognitionFileExport::dialogFilter(fileSnapshot->kind), &selectedFilter,
             QFileDialog::DontConfirmOverwrite);
         if (!lifetime)
             return;
         setProperty("saveDialogOpen", false);
         if (m_closing || selectedPath.isEmpty())
             return;
+        if (fileSnapshot->document)
+            selectedPath = ScreenshotRecognitionFileExport::pathForSelectedFilter(selectedPath,
+                                                                                  selectedFilter);
         const QString primaryPath =
             ScreenshotRecognitionFileExport::normalizedPath(selectedPath, fileSnapshot->kind);
         if (!ScreenshotRecognitionFileExport::confirmOverwrite(
                 this,
-                ScreenshotRecognitionFileExport::outputPaths(primaryPath, fileSnapshot->kind)))
+                ScreenshotRecognitionFileExport::outputPaths(primaryPath, *fileSnapshot)))
             return;
         saveRecognitionSnapshot(*fileSnapshot, primaryPath);
         return;
@@ -8115,6 +8169,10 @@ void ScreenshotPinnedWindow::commitClipboardPayload(
 }
 
 void ScreenshotPinnedWindow::invalidatePendingCopy() {
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    m_documentCopyJob.cancel();
+    m_documentCopyJob = {};
+#endif
     cancelExportDrag();
     if (m_exportArtifact != nullptr) {
         m_exportArtifact->cancel();
@@ -10867,7 +10925,8 @@ QJsonObject ScreenshotPinnedWindow::automationEdit(const QString& action,
     } else if (action == QStringLiteral("recognize")) {
         const QStringList kinds{QStringLiteral("text"), QStringLiteral("table"),
                                 QStringLiteral("qr"),   QStringLiteral("markdown"),
-                                QStringLiteral("html"), QStringLiteral("latex")};
+                                QStringLiteral("html"), QStringLiteral("latex"),
+                                QStringLiteral("document")};
         const qsizetype mode = kinds.indexOf(payload.value(QStringLiteral("kind")).toString());
         if (mode < 0)
             return fail("invalid_parameters");
@@ -11005,6 +11064,13 @@ ScreenshotPinnedWindow::automationClipboardMimeData(bool original) const {
         return {};
     return mime;
 }
+
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+ScreenshotDocumentCopyRequest ScreenshotPinnedWindow::automationDocumentCopyRequest() const {
+    return m_ocrMode && m_recognitionSession ? m_recognitionSession->documentCopyRequest()
+                                             : ScreenshotDocumentCopyRequest{};
+}
+#endif
 
 std::optional<ScreenshotRecognitionFileSnapshot>
 ScreenshotPinnedWindow::automationFileSnapshot() const {

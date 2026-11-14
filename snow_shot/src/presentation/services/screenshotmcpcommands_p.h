@@ -255,6 +255,8 @@ void ScreenshotController::mcpCommand(const QString& method, const QJsonObject& 
             s.setQrTool();
         else if (kind == QStringLiteral("latex"))
             s.setLatexTool();
+        else if (kind == QStringLiteral("document"))
+            s.setDocumentTool();
         else if (kind == QStringLiteral("markdown"))
             s.setMarkdownTool();
         else if (kind == QStringLiteral("html"))
