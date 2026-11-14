@@ -98,6 +98,7 @@ class ScreenshotOcrController final : public QObject {
     [[nodiscard]] bool qrModeActive() const;
     [[nodiscard]] bool latexModeActive() const;
     [[nodiscard]] bool copyRecognitionToClipboard(bool endCapture = true);
+    void scheduleCopyRecognitionAndEndCapture();
     void mergeTableSelection();
     void splitTableSelection();
     void resetTable();
