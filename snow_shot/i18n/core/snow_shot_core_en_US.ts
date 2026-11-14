@@ -182,10 +182,6 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Privacy policy</translation>
         </message>
         <message>
-            <source>QQ group 3</source>
-            <translation>QQ group 3</translation>
-        </message>
-        <message>
             <source>QQ group 4</source>
             <translation>QQ group 4</translation>
         </message>
