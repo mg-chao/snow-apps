@@ -441,6 +441,15 @@ void copyAndEndWorkflowsSkipTextBackgrounds(const QString& directory) {
                  QPolygonF{QPointF(15, 15), QPointF(60, 15), QPointF(60, 35), QPointF(15, 35)}});
             presentation->prepareForRendering();
             results.text = ScreenshotOcrRecognitionResult{presentation};
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+            const bool switchToCachedOcr =
+                workflow == Workflow::Translation &&
+                followUp == QStringLiteral("copy_text_and_end_screenshot");
+            if (switchToCachedOcr) {
+                results.translatedText = std::make_shared<ScreenshotOcrPresentation>(*presentation);
+                results.translatedText->lines[0].text = QStringLiteral("Translated text");
+            }
+#endif
             QApplication::clipboard()->setText(QStringLiteral("Previous clipboard"));
             session->seedRecognitionResults(std::move(results));
             QCoreApplication::processEvents();
@@ -463,6 +472,32 @@ void copyAndEndWorkflowsSkipTextBackgrounds(const QString& directory) {
                         (copied ? QStringLiteral("Recognized text")
                                 : QStringLiteral("Previous clipboard")),
                     "workflow background policy preserves automatic clipboard behavior");
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+            if (switchToCachedOcr) {
+                ScreenshotToolbarWindow* toolbar = nullptr;
+                for (auto* widget : QApplication::topLevelWidgets()) {
+                    auto* candidate = qobject_cast<ScreenshotToolbarWindow*>(widget);
+                    if (candidate && candidate->isVisible()) {
+                        toolbar = candidate;
+                        break;
+                    }
+                }
+                require(session->translating() && toolbar &&
+                            toolbar->palette()->activeTool() ==
+                                ScreenshotToolPalette::Tool::TextTranslation,
+                        "translation must be active before switching to cached OCR");
+                require(toolbar->palette()->activateToolShortcut(ScreenshotToolPalette::Tool::Ocr),
+                        "switch to OCR through the screenshot toolbar");
+                require(session->active() && !session->translating() &&
+                            QApplication::clipboard()->text() ==
+                                QStringLiteral("Previous clipboard"),
+                        "cached OCR must finish activating before copying and ending capture");
+                QCoreApplication::processEvents();
+                require(!session->active() &&
+                            QApplication::clipboard()->text() == QStringLiteral("Recognized text"),
+                        "switching to OCR must copy the source text and end capture");
+            }
+#endif
             controller.mcpCancelCapture();
         }
     }

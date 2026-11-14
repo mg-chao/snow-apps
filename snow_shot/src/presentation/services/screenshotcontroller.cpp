@@ -2893,7 +2893,7 @@ void ScreenshotController::Impl::handleAutomaticTextRecognitionAction(bool avail
         static_cast<void>(m_ocrController->copyRecognitionToClipboard(false));
     } else if (action == QStringLiteral("copy_text_and_end_screenshot") ||
                action == QStringLiteral("quick_copy_text_and_end_screenshot")) {
-        static_cast<void>(m_ocrController->copyRecognitionToClipboard(true));
+        m_ocrController->scheduleCopyRecognitionAndEndCapture();
     } else if (action == QStringLiteral("enable_edit_mode")) {
         m_ocrController->beginTextEditing();
     }

@@ -335,14 +335,8 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
             [this](bool available) {
                 // This explicit action takes precedence over the configurable OCR follow-up.
                 if (m_copyAndEndCapture) {
-                    if (available && m_active && m_mode == Mode::Text) {
-                        // Let recognition finish publishing its result before ending the session.
-                        QTimer::singleShot(0, this, [this, activation = m_activationId] {
-                            if (activation == m_activationId && m_copyAndEndCapture && m_active &&
-                                m_mode == Mode::Text && hasTextResult())
-                                static_cast<void>(copyRecognitionToClipboard(true));
-                        });
-                    }
+                    if (available && m_active && m_mode == Mode::Text)
+                        scheduleCopyRecognitionAndEndCapture();
                     return;
                 }
                 emit textResultChanged(available);
@@ -559,6 +553,16 @@ void ScreenshotOcrController::activateMode(Mode mode, bool textTranslation,
         key == m_importedTargetKey ? m_importedFormattedDocument : nullptr,
         key == m_importedTargetKey ? m_importedPlainText : QString()});
     m_session->activate(static_cast<ScreenshotRecognitionSessionController::Mode>(mode));
+}
+
+void ScreenshotOcrController::scheduleCopyRecognitionAndEndCapture() {
+    // A cached result is published inside tool activation. Ending the capture there
+    // invalidates the recognition cache while activation is still using it.
+    QTimer::singleShot(0, this, [this, activation = m_activationId] {
+        if (activation == m_activationId && m_active && m_mode == Mode::Text && !translating() &&
+            hasTextResult())
+            static_cast<void>(copyRecognitionToClipboard(true));
+    });
 }
 
 bool ScreenshotOcrController::copyRecognitionToClipboard(bool endCapture) {
