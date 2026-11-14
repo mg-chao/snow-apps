@@ -17,7 +17,7 @@ inline void check(bool condition) {
         throw std::runtime_error("invalid Excel workbook package");
 }
 
-inline QMap<QString, QByteArray> parts(const QString& path) {
+inline QMap<QString, QByteArray> parts(const QString& path, bool xmlOnly = true) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         throw std::runtime_error((QStringLiteral("Cannot read workbook: ") + path +
@@ -39,10 +39,14 @@ inline QMap<QString, QByteArray> parts(const QString& path) {
         check(length > 0);
         QByteArray xml(length, Qt::Uninitialized);
         check(mz_zip_reader_entry_save_buffer(reader, xml.data(), length) == MZ_OK);
-        QXmlStreamReader parser(xml);
-        while (!parser.atEnd())
-            parser.readNext();
-        check(!parser.hasError() && !result.contains(name));
+        if (xmlOnly || name.endsWith(QStringLiteral(".xml")) ||
+            name.endsWith(QStringLiteral(".rels"))) {
+            QXmlStreamReader parser(xml);
+            while (!parser.atEnd())
+                parser.readNext();
+            check(!parser.hasError());
+        }
+        check(!result.contains(name));
         result.insert(name, xml);
         status = mz_zip_reader_goto_next_entry(reader);
     }

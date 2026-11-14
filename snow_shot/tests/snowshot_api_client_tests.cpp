@@ -3203,8 +3203,149 @@ void abortObserversMayDestroyApiClient() {
     }
 }
 
+void documentUploadPreservesPixelsAndRawResults() {
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "document fixture listens");
+    SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    client.setAccountAccessToken(QByteArrayLiteral("document-test-token"));
+    QImage original(3001, 13, QImage::Format_RGBA8888);
+    original.fill(QColor(17, 73, 151, 123));
+    original.setPixelColor(1234, 7, QColor(255, 23, 91, 19));
+    bool finished = false;
+    require(client.extractDocument(
+                original, &client,
+                [&](auto result) {
+                    require(result.succeeded() &&
+                                result.raw.value(QStringLiteral("custom")).toInt() == 42,
+                            "provider object remains raw");
+                    finished = true;
+                }) != 0,
+            "document starts immediately");
+    const QByteArray body = R"({"code":0,"data":{"md_results":"# Report","custom":42}})";
+    const auto request = waitForHttpRequest(
+        server, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                    QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+    translation_tests::waitUntil([&] { return finished; }, "document completes");
+    require(request.startsWith("POST /api/v1/document/extract ") && request.contains("image/png") &&
+                request.contains("Bearer document-test-token"),
+            "authenticated PNG route");
+    const auto offset = request.indexOf(QByteArray::fromHex("89504e470d0a1a0a"));
+    require(offset >= 0, "PNG signature");
+    const auto image = QImage::fromData(request.mid(offset), "PNG");
+    const auto decoded = image.convertToFormat(original.format());
+    require(decoded.size() == original.size(), "original dimensions survive encoding");
+    for (int row = 0; row < original.height(); ++row)
+        require(std::memcmp(original.constScanLine(row), decoded.constScanLine(row),
+                            static_cast<size_t>(original.width()) * 4) == 0,
+                "every original alpha pixel survives lossless PNG encoding");
+    finished = false;
+    require(client.extractDocument(original, &client,
+                                   [&](auto result) {
+                                       require(result.httpStatus == 413 &&
+                                                   result.error.contains(
+                                                       QStringLiteral("Select a smaller area")),
+                                               "413 uses actionable size message");
+                                       finished = true;
+                                   }) != 0,
+            "second request starts");
+    waitForHttpRequest(server,
+                       "HTTP/1.1 413 Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    translation_tests::waitUntil([&] { return finished; }, "oversize failure completes");
+    finished = false;
+    static_cast<void>(client.extractDocument(original, &client, [&](auto result) {
+        require(!result.succeeded() &&
+                    result.error.contains(QStringLiteral("response is too large")),
+                "document responses have a dedicated 16 MiB bound");
+        finished = true;
+    }));
+    waitForHttpRequest(server,
+                       "HTTP/1.1 200 OK\r\nContent-Length: 16777217\r\nConnection: close\r\n\r\n");
+    translation_tests::waitUntil([&] { return finished; }, "bounded document response completes");
+    QImage noise(1800, 1800, QImage::Format_RGBA8888);
+    quint32 random = 0x12345678;
+    for (qsizetype index = 0; index < noise.sizeInBytes(); ++index) {
+        random ^= random << 13;
+        random ^= random >> 17;
+        random ^= random << 5;
+        noise.bits()[index] = static_cast<uchar>(random);
+    }
+    finished = false;
+    static_cast<void>(client.extractDocument(noise, &client, [&](auto result) {
+        require(!result.succeeded() && result.code == QStringLiteral("payload_too_large"),
+                "encoded PNG limit is enforced before upload");
+        finished = true;
+    }));
+    translation_tests::waitUntil([&] { return finished; }, "oversized encoding completes");
+    require(!server.hasPendingConnections(), "oversized PNG never reaches the server");
+    bool cancelledCallback = false;
+    const auto cancelled =
+        client.extractDocument(original, &client, [&](auto) { cancelledCallback = true; });
+    client.cancel(cancelled);
+    require(QThreadPool::globalInstance()->waitForDone(5000), "cancelled document encoder settles");
+    QCoreApplication::processEvents();
+    require(!cancelledCallback && !server.hasPendingConnections(),
+            "stale encoding cannot upload or publish");
+}
+
+void documentAuthenticationMatchesTable() {
+    for (const bool expiredSession : {false, true}) {
+        QString tableError;
+        const QByteArray code = expiredSession ? "invalid_session" : "account_required";
+        for (const bool document : {false, true}) {
+            QTcpServer server;
+            require(server.listen(QHostAddress::LocalHost), "authentication fixture listens");
+            SnowShotApiClient client(
+                QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+            if (expiredSession)
+                client.setAccountAccessToken(QByteArrayLiteral("expired-test-token"));
+            QImage image(8, 8, QImage::Format_RGBA8888);
+            image.fill(Qt::white);
+            int completions = 0;
+            QString message;
+            const auto completion = [&](auto result) {
+                require(!result.succeeded() && result.httpStatus == 401 &&
+                            result.code == QString::fromLatin1(code),
+                        "recognition preserves the server's authentication error");
+                message = result.error;
+                ++completions;
+            };
+            const auto token = document ? client.extractDocument(image, &client, completion)
+                                        : client.extractTable(image, &client, completion);
+            require(token != 0 && completions == 0,
+                    "recognition starts without a client-side authentication rejection");
+            const QByteArray body = "{\"code\":\"" + code + "\"}";
+            const auto request = waitForHttpRequest(
+                server, "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/problem+json\r\n"
+                        "Content-Length: " +
+                            QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" +
+                            body);
+            require(request.startsWith(document ? "POST /api/v1/document/extract "
+                                                : "POST /api/v1/table/extract "),
+                    "anonymous and expired-session requests reach their recognition endpoint");
+            const auto headers = request.left(request.indexOf("\r\n\r\n")).toLower();
+            require(expiredSession ? headers.contains("authorization: bearer expired-test-token")
+                                   : !headers.contains("authorization:"),
+                    "recognition sends authorization only when a token exists");
+            translation_tests::waitUntil([&] { return completions != 0; },
+                                         "server authentication response completes");
+            require(completions == 1 && !message.isEmpty(),
+                    "server authentication failure completes exactly once");
+            if (document)
+                require(message == tableError,
+                        "document and table recognition share authentication messages");
+            else
+                tableError = message;
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--document-only"))) {
+        documentUploadPreservesPixelsAndRawResults();
+        documentAuthenticationMatchesTable();
+        return 0;
+    }
 
     if (application.arguments().contains(QStringLiteral("--cancel-destruction-only"))) {
         abortObserversMayDestroyApiClient();

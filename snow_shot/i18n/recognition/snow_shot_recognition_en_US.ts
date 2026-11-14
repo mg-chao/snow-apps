@@ -172,6 +172,10 @@
             <translation>Converting to Markdown</translation>
         </message>
         <message>
+            <source>Document recognition service is unavailable</source>
+            <translation>Document recognition service is unavailable</translation>
+        </message>
+        <message>
             <source>LaTeX recognition failed</source>
             <translation>LaTeX recognition failed</translation>
         </message>
@@ -220,6 +224,10 @@
             <translation>Recognizing barcode</translation>
         </message>
         <message>
+            <source>Recognizing document</source>
+            <translation>Recognizing document</translation>
+        </message>
+        <message>
             <source>Recognizing table</source>
             <translation>Recognizing table</translation>
         </message>
@@ -266,6 +274,10 @@
         <message>
             <source>Text recognition request could not be prepared</source>
             <translation>Text recognition request could not be prepared</translation>
+        </message>
+        <message>
+            <source>The document file could not be opened</source>
+            <translation>The document file could not be opened</translation>
         </message>
         <message>
             <source>The selected recognition model is unavailable. Choose another model or retry</source>
@@ -337,6 +349,10 @@
         <message>
             <source>Paste</source>
             <translation>Paste</translation>
+        </message>
+        <message>
+            <source>Recognized document</source>
+            <translation>Recognized document</translation>
         </message>
         <message>
             <source>Rendering formula...</source>

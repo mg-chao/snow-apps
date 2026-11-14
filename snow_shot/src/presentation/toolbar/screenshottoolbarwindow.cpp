@@ -248,6 +248,14 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::TextTranslation);
     });
 #endif
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    connect(&toolPalette, &ScreenshotToolPalette::documentRequested, this, [this]() {
+        m_commands.setDocumentTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::Document);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::openDocumentFileRequested, this,
+            [this]() { m_commands.openDocumentFile(); });
+#endif
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     connect(&toolPalette, &ScreenshotToolPalette::tableRequested, this, [this]() {
         m_commands.setTableTool();

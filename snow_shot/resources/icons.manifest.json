@@ -647,6 +647,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "DocumentRecognition",
+      "name": "document-recognition",
+      "source": "../src/presentation/components/icons/resources/document-recognition.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Duplicate",
       "name": "duplicate",
       "source": "../src/presentation/components/icons/resources/duplicate.svg",
@@ -954,6 +962,14 @@
       "symbol": "Opacity",
       "name": "opacity",
       "source": "../src/presentation/components/icons/resources/opacity.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "OpenDocumentFile",
+      "name": "open-document-file",
+      "source": "../src/presentation/components/icons/resources/open-document-file.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

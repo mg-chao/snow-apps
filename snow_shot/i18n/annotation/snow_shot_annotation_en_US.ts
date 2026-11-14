@@ -467,6 +467,10 @@
             <translation>Decimal places</translation>
         </message>
         <message>
+            <source>Dedicated Models</source>
+            <translation>Dedicated Models</translation>
+        </message>
+        <message>
             <source>Dedicated model</source>
             <translation>Dedicated model</translation>
         </message>
@@ -537,6 +541,14 @@
         <message>
             <source>Distribute vertically</source>
             <translation>Distribute vertically</translation>
+        </message>
+        <message>
+            <source>Document Recognition Model</source>
+            <translation>Document Recognition Model</translation>
+        </message>
+        <message>
+            <source>Document recognition</source>
+            <translation>Document recognition</translation>
         </message>
         <message>
             <source>Dotted arrow line</source>
@@ -989,6 +1001,10 @@
         <message>
             <source>Opacity</source>
             <translation>Opacity</translation>
+        </message>
+        <message>
+            <source>Open document file</source>
+            <translation>Open document file</translation>
         </message>
         <message>
             <source>Open recording folder</source>

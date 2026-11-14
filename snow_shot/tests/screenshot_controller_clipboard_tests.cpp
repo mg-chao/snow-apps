@@ -4,6 +4,7 @@
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/shellimagelaunch.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
+#include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
@@ -60,6 +61,7 @@
 #include <QSemaphore>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTcpServer>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -76,6 +78,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -123,6 +126,56 @@ QImage fixture() {
     image.setColorSpace(QColorSpace::SRgb);
     return image;
 }
+
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+void documentQuickSaveCancelsOnShutdown(const QString& directory) {
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(settings.setImageSaveDirectory(directory), "configure document output directory");
+    require(settings.setAutoSaveFilenameFormat(QStringLiteral("document-shutdown")),
+            "configure document output filename");
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "document test server listens");
+    SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    auto controller = std::make_unique<ScreenshotController>(nullptr, nullptr, nullptr, &client);
+    ScreenshotSelectionParams selection;
+    selection.selection = QRect(0, 0, 120, 80);
+    ScreenshotControllerTestAccess::prepareSelection(*controller, fixture(), selection);
+    ScreenshotControllerTestAccess::presentSelection(*controller);
+    auto& commands = ScreenshotControllerTestAccess::commands(*controller);
+    commands.setDocumentTool();
+    auto* session = controller->findChild<ScreenshotRecognitionSessionController*>();
+    require(session && session->active(), "document fixture has an active session");
+    auto results = session->cachedRecognitionResults();
+    auto document = std::make_shared<ScreenshotRecognizedDocument>();
+    document->html = QStringLiteral("<p>Document shutdown fixture</p>");
+    results.document = document;
+    session->seedRecognitionResults(std::move(results));
+    session->activate(ScreenshotRecognitionSessionController::Mode::Document);
+    require(session->fileExportSnapshot().has_value(), "document export is ready");
+
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    auto entered = std::make_shared<QSemaphore>();
+    auto release = std::make_shared<QSemaphore>();
+    const auto blocker = coordinator.submit(
+        controller.get(), ScreenshotExportCoordinator::Priority::Foreground,
+        [entered, release](const ScreenshotExportCancellation&) {
+            entered->release();
+            release->acquire();
+            return ScreenshotExportTaskResult{};
+        },
+        [](const ScreenshotExportTaskResult&) {}, std::numeric_limits<qint64>::max());
+    require(blocker.isValid() && entered->tryAcquire(1, 5000), "export worker is occupied");
+    const auto pendingBeforeSave = coordinator.pendingJobCount();
+    commands.quickSaveSelection();
+    const bool queued = coordinator.pendingJobCount() == pendingBeforeSave + 1;
+    controller.reset();
+    release->release();
+    waitUntil([&] { return coordinator.pendingJobCount() == 0; }, "export workers settle");
+    require(queued, "document save returns with work still queued");
+    require(!QFileInfo::exists(QDir(directory).filePath(QStringLiteral("document-shutdown.docx"))),
+            "shutdown cancels the queued save before publication");
+}
+#endif
 
 void mcpSelectionPreservesLiveInputTransactions() {
     using namespace snow_shot::app::mcp;
@@ -2167,6 +2220,13 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
                 settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
             "clipboard controller settings must be isolated and deterministic");
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (application.arguments().contains(QStringLiteral("--document-save-shutdown-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        documentQuickSaveCancelsOnShutdown(directory.path());
+        return EXIT_SUCCESS;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--history-pin-admission-tests"))) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
         historyPinAccountsForDecodeBeforeDelivery();

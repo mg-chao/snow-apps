@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
         const auto name = QString::fromLatin1(method);
         require(editionRequestEnabled(name, {{QStringLiteral("kind"), QStringLiteral("text")}}),
                 "Manual text recognition must remain available");
-        for (const auto* kind : {"qr", "table", "latex", "markdown", "html"}) {
+        for (const auto* kind : {"qr", "table", "latex", "markdown", "html", "document"}) {
             const auto value = QString::fromLatin1(kind);
             require(editionRequestEnabled(name, {{QStringLiteral("kind"), value}}) ==
                         editionRecognitionKindEnabled(value),

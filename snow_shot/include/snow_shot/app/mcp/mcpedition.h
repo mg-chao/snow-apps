@@ -18,6 +18,8 @@ inline bool editionMethodEnabled(const QString& method) {
 }
 
 inline bool editionRecognitionKindEnabled(const QString& kind) {
+    if (kind == u"document")
+        return edition::documentRecognition;
     if (kind != u"text" && kind != u"qr" && kind != u"table" && kind != u"latex" &&
         kind != u"markdown" && kind != u"html")
         return true;

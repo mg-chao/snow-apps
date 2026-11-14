@@ -1352,6 +1352,10 @@
             <translation>Convert to Markdown</translation>
         </message>
         <message>
+            <source>Document recognition</source>
+            <translation>Document recognition</translation>
+        </message>
+        <message>
             <source>Drag tools here to hide them from the screenshot toolbar</source>
             <translation>Drag tools here to hide them from the screenshot toolbar</translation>
         </message>

@@ -191,7 +191,7 @@ void savesRealWorkbookWithLiteralCellsAndSpans() {
             "table saves must normalize to an Excel extension");
     requireClassicZipWorkbook(saved.path);
     require(QDir(directory.path()).entryList(QDir::Files).size() == 1 &&
-                ScreenshotRecognitionFileExport::outputPaths(saved.path, snapshot.kind) ==
+                ScreenshotRecognitionFileExport::outputPaths(saved.path, snapshot) ==
                     QStringList{saved.path},
             "table export must create one workbook without a text companion");
     const auto package = recognition_workbook_test::parts(saved.path);
@@ -485,7 +485,7 @@ void longQuickSaveNamesPreservePairsAndCollisions() {
                 require(QFileInfo(result.path).completeBaseName().endsWith(QStringLiteral("_1")),
                         "long recognition names must retain the collision index");
             for (const QString& path :
-                 ScreenshotRecognitionFileExport::outputPaths(result.path, kind)) {
+                 ScreenshotRecognitionFileExport::outputPaths(result.path, snapshot)) {
                 const QString name = QFileInfo(path).fileName();
                 require(read(path) == QByteArrayLiteral("source") && name.toUtf8().size() <= 255 &&
                             QString::fromUtf8(name.toUtf8()) == name,
@@ -504,8 +504,9 @@ void manualOverwriteConfirmsAndReplacesBothFiles() {
     const QString companion = directory.filePath(QStringLiteral("result.txt"));
     write(primary, QByteArrayLiteral("old primary"));
     write(companion, QByteArrayLiteral("old companion"));
-    const QStringList paths = ScreenshotRecognitionFileExport::outputPaths(
-        primary, ScreenshotRecognitionFileKind::Markdown);
+    const ScreenshotRecognitionFileSnapshot snapshot{ScreenshotRecognitionFileKind::Markdown,
+                                                     QStringLiteral("# new")};
+    const QStringList paths = ScreenshotRecognitionFileExport::outputPaths(primary, snapshot);
     const auto confirm = [&](QMessageBox::StandardButton answer) {
         QTimer timer;
         timer.setInterval(10);
@@ -524,8 +525,7 @@ void manualOverwriteConfirmsAndReplacesBothFiles() {
                 read(companion) == QByteArrayLiteral("old companion"),
             "declining overwrite must preserve both existing files");
     require(confirm(QMessageBox::Yes), "manual overwrite requires explicit confirmation");
-    const auto saved = ScreenshotRecognitionFileExport::saveToPath(
-        {ScreenshotRecognitionFileKind::Markdown, QStringLiteral("# new")}, primary, true);
+    const auto saved = ScreenshotRecognitionFileExport::saveToPath(snapshot, primary, true);
     require(saved.succeeded() && read(primary) == QByteArrayLiteral("# new") &&
                 read(companion) == QByteArrayLiteral("# new"),
             "confirmed overwrite must replace both members from one source snapshot");

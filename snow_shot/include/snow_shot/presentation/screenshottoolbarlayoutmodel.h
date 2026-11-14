@@ -88,6 +88,7 @@ enum class Icon {
     Separator,
     BarcodeRecognition,
     TableRecognition,
+    DocumentRecognition,
     RecordScreen,
     PinToScreen,
     PinWindowToScreen,
@@ -211,6 +212,9 @@ struct EditorDescriptor {
             {"barcode-recognition", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Barcode recognition"),
              Icon::BarcodeRecognition},
+            {"document-recognition", "ScreenshotToolbarEditorSettingsWidget",
+             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Document recognition"),
+             Icon::DocumentRecognition},
             {"table-recognition", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Table recognition"),
              Icon::TableRecognition},
@@ -393,6 +397,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
             const QString id = QString::fromLatin1(descriptor.id);
             if (id == QStringLiteral("barcode-recognition") ||
                 id == QStringLiteral("table-recognition") ||
+                id == QStringLiteral("document-recognition") ||
                 id == QStringLiteral("latex-recognition") ||
                 id == QStringLiteral("convert-to-markdown") ||
                 id == QStringLiteral("convert-to-html") ||
@@ -472,7 +477,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
     return editionActionPositions({
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
-         QStringLiteral("table-recognition")},
+         QStringLiteral("document-recognition"), QStringLiteral("table-recognition")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-window-to-screen"), QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -502,7 +507,7 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
         return editionActionPositions({
             {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
              QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
-             QStringLiteral("table-recognition")},
+             QStringLiteral("document-recognition"), QStringLiteral("table-recognition")},
             {QStringLiteral("text-recognition")},
             {QStringLiteral("text-translation")},
             {QStringLiteral("separator")},
@@ -756,6 +761,23 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
             hidden.contains(QStringLiteral("convert-to-markdown"))) {
             result.hidden.push_back(QStringLiteral("latex-recognition"));
             hidden.insert(QStringLiteral("latex-recognition"));
+        }
+    }
+    if (known.contains(QStringLiteral("document-recognition")) &&
+        !positioned.contains(QStringLiteral("document-recognition")) &&
+        !hidden.contains(QStringLiteral("document-recognition"))) {
+        for (QStringList& position : result.positions) {
+            const auto table = position.indexOf(QStringLiteral("table-recognition"));
+            if (table >= 0) {
+                position.insert(table, QStringLiteral("document-recognition"));
+                positioned.insert(QStringLiteral("document-recognition"));
+                break;
+            }
+        }
+        if (!positioned.contains(QStringLiteral("document-recognition")) &&
+            hidden.contains(QStringLiteral("table-recognition"))) {
+            result.hidden.push_back(QStringLiteral("document-recognition"));
+            hidden.insert(QStringLiteral("document-recognition"));
         }
     }
     auto previousDrawingDefaults = defaultLayout;
@@ -1051,6 +1073,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return {};
     case Icon::BarcodeRecognition:
         return custom::ScanQrcode();
+    case Icon::DocumentRecognition:
+        return custom::DocumentRecognition();
     case Icon::TableRecognition:
         return custom::TableRecognition();
     case Icon::Latex:

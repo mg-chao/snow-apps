@@ -10,6 +10,9 @@
 #ifndef SNOW_SHOT_ENABLE_QR_RECOGNITION
 #define SNOW_SHOT_ENABLE_QR_RECOGNITION (!SNOW_SHOT_EDITION_MINI)
 #endif
+#ifndef SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+#define SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION (!SNOW_SHOT_EDITION_MINI)
+#endif
 #ifndef SNOW_SHOT_ENABLE_TABLE_RECOGNITION
 #define SNOW_SHOT_ENABLE_TABLE_RECOGNITION (!SNOW_SHOT_EDITION_MINI)
 #endif
@@ -32,6 +35,7 @@
 namespace snow_shot::app::edition {
 inline constexpr bool isMini = SNOW_SHOT_EDITION_MINI != 0;
 inline constexpr bool qrRecognition = SNOW_SHOT_ENABLE_QR_RECOGNITION != 0;
+inline constexpr bool documentRecognition = SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION != 0;
 inline constexpr bool tableRecognition = SNOW_SHOT_ENABLE_TABLE_RECOGNITION != 0;
 inline constexpr bool imageConversion = SNOW_SHOT_ENABLE_IMAGE_CONVERSION != 0;
 inline constexpr bool latexRecognition = SNOW_SHOT_ENABLE_LATEX_RECOGNITION != 0;

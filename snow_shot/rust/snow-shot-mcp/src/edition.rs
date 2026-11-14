@@ -57,7 +57,7 @@ mod tests {
     fn retained_ids_and_recognition_modes_follow_the_compiled_edition() {
         assert!(method_enabled("snow_shot_document_recognize"));
         assert_eq!(method_enabled("snow_shot_translation_start"), !MINI);
-        for kind in ["table", "qr", "latex", "markdown", "html"] {
+        for kind in ["table", "qr", "latex", "markdown", "html", "document"] {
             assert_eq!(
                 input_enabled("snow_shot_document_recognize", &json!({"kind":kind})),
                 !MINI

@@ -63,6 +63,7 @@
 #include <QTextBoundaryFinder>
 #include <QTextCursor>
 #include <QTextDocument>
+#include "snow_shot/presentation/screenshotrecognizeddocument.h"
 #include <QTextDocumentFragment>
 #include <QTextEdit>
 #include <QUrl>
@@ -1199,6 +1200,17 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionWindow::textSelectionClipboardMi
             return mime;
         }
 #endif
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+        if (m_recognizedDocument) {
+            auto selection = *m_recognizedDocument;
+            selection.preparedClipboard.reset();
+            selection.html = QTextDocumentFragment(cursor).toHtml();
+            const auto clipboard = selection.clipboardContent();
+            mime->setHtml(clipboard.html);
+            mime->setText(clipboard.text);
+            return mime;
+        }
+#endif
         mime->setText(QTextDocumentFragment(cursor).toPlainText());
         return mime;
     }
@@ -1784,6 +1796,46 @@ void ScreenshotRecognitionWindow::prepareLatexPreview(ScreenshotOriginalImagePre
 }
 #endif
 
+void ScreenshotRecognitionWindow::showDocument(
+    std::shared_ptr<const ScreenshotRecognizedDocument> document,
+    std::shared_ptr<QTextDocument> preview) {
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (!document || !preview)
+        return;
+    if (m_textEditor && m_textEditor->document() == preview.get() &&
+        m_stack->currentWidget() == m_textEditorContainer) {
+        m_recognizedDocument = std::move(document);
+        m_textEditor->viewport()->update();
+        return;
+    }
+    const QPointer<ScreenshotRecognitionWindow> guard(this);
+    const auto text = preview;
+    showTextEditor(std::move(preview), true);
+    if (guard) {
+        text->setLayoutEnabled(true);
+        if (!guard || !m_textEditor || m_textEditor->document() != text.get())
+            return;
+        m_recognizedDocument = std::move(document);
+        if (m_textEditor) {
+            m_textEditor->setReadOnly(true);
+            m_textEditor->setAccessibleName(tr("Recognized document"));
+        }
+    }
+#else
+    Q_UNUSED(document)
+    Q_UNUSED(preview)
+#endif
+}
+
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+QString ScreenshotRecognitionWindow::documentSelectionHtml() const {
+    if (!m_recognizedDocument || !m_textEditor || m_stack->currentWidget() != m_textEditorContainer)
+        return {};
+    const auto cursor = m_textEditor->textCursor();
+    return cursor.hasSelection() ? QTextDocumentFragment(cursor).toHtml() : QString{};
+}
+#endif
+
 void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool readOnly,
                                                  bool streaming) {
     showTextEditorWithOwner(document, {}, readOnly, streaming);
@@ -1802,6 +1854,7 @@ void ScreenshotRecognitionWindow::showTextEditorWithOwner(
         clearLatexPreview();
         return;
     }
+    m_recognizedDocument.reset();
     if (!documentOwner && m_textEditorDocumentOwner.get() == document)
         documentOwner = m_textEditorDocumentOwner;
     [[maybe_unused]] const auto activeOwner = documentOwner;
@@ -1849,6 +1902,10 @@ void ScreenshotRecognitionWindow::showTextEditorWithOwner(
         m_stack->addWidget(m_textEditorContainer);
         installSelectionResizeEventFilters(m_textEditorContainer);
         connect(editor, &adqt::widgets::AdTextEdit::textEdited, this, [this](const QString& text) {
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+            if (m_recognizedDocument)
+                return;
+#endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
             // The formula session observes the document directly and preserves source
             // whitespace. AdTextEdit's plain-text notification normalizes that source.
@@ -2047,7 +2104,8 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
         const auto owner = m_sessionOwner;
         const auto token = m_attachmentToken;
         const auto callback = m_actions.handleCopy;
-        const bool copyHandledByHost = m_ocrPresentation && m_actions.copyOcrResult;
+        const bool copyHandledByHost =
+            m_recognizedDocument || (m_ocrPresentation && m_actions.copyOcrResult);
         const bool copied = copyVisibleContentToClipboard();
         if (!lifetime)
             return true;
@@ -2098,14 +2156,14 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
 void ScreenshotRecognitionWindow::setTextEditorEditingEnabled(bool enabled) {
     m_textEditorEditingEnabled = enabled;
     if (m_textEditor != nullptr) {
-        m_textEditor->setReadOnly(!enabled || m_textEditorStreaming);
+        m_textEditor->setReadOnly(m_recognizedDocument || !enabled || m_textEditorStreaming);
     }
 }
 
 void ScreenshotRecognitionWindow::setTextEditorStreaming(bool streaming) {
     m_textEditorStreaming = streaming;
     if (m_textEditor != nullptr) {
-        m_textEditor->setReadOnly(streaming || !m_textEditorEditingEnabled);
+        m_textEditor->setReadOnly(m_recognizedDocument || streaming || !m_textEditorEditingEnabled);
     }
     if (m_textEditorSpin != nullptr) {
         m_textEditorSpin->setSpinning(streaming);
@@ -2118,6 +2176,7 @@ void ScreenshotRecognitionWindow::setTextEditorStreaming(bool streaming) {
 }
 
 void ScreenshotRecognitionWindow::hideTextEditor() {
+    m_recognizedDocument.reset();
     [[maybe_unused]] const auto previousOwner = std::exchange(m_textEditorDocumentOwner, {});
     clearLatexPreview();
     if (m_textEditor == nullptr) {
@@ -2364,6 +2423,12 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
     const QPointer<ScreenshotRecognitionWindow> lifetime(this);
     const auto owner = m_sessionOwner;
     const auto token = m_attachmentToken;
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (m_recognizedDocument && m_stack->currentWidget() == m_textEditorContainer) {
+        const auto copy = m_sessionCallbacks.copyDocument;
+        return copy && copy(documentSelectionHtml());
+    }
+#endif
     const auto active = m_sessionCallbacks.translationActive;
     const auto provider = m_sessionCallbacks.translationClipboard;
     const bool translating = owner && active && active();
@@ -2560,6 +2625,10 @@ void ScreenshotRecognitionWindow::populateTextEditorContextMenu(
             return;
         }
 #endif
+        if (m_recognizedDocument) {
+            static_cast<void>(copyVisibleContentToClipboard());
+            return;
+        }
         m_textEditor->copy();
     });
     connect(cut, &QAction::triggered, m_textEditor, &QTextEdit::cut);
@@ -3150,6 +3219,10 @@ void ScreenshotRecognitionWindow::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange && m_latexPreviewEnabled && m_latexDocument &&
         m_textEditor)
         m_textEditor->setAccessibleName(tr("LaTeX formula source"));
+#endif
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (event->type() == QEvent::LanguageChange && m_recognizedDocument && m_textEditor)
+        m_textEditor->setAccessibleName(tr("Recognized document"));
 #endif
     if (event->type() == QEvent::LanguageChange && companionPreviewEnabled())
         refreshOriginalImagePreview();

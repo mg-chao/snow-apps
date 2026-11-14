@@ -214,6 +214,8 @@ ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) 
         return ScreenshotToolPalette::Tool::Ocr;
     case ScreenshotActiveTool::TextTranslation:
         return ScreenshotToolPalette::Tool::TextTranslation;
+    case ScreenshotActiveTool::Document:
+        return ScreenshotToolPalette::Tool::Document;
     case ScreenshotActiveTool::Table:
         return ScreenshotToolPalette::Tool::Table;
     case ScreenshotActiveTool::Qr:
@@ -435,6 +437,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setOcrTool() override;
     void setTextTranslationTool() override;
     void setTableTool() override;
+    void setDocumentTool() override;
+    void openDocumentFile() override;
     void setQrTool() override;
     void setLatexTool() override;
     void setMarkdownTool() override;
@@ -495,6 +499,10 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void saveSelectionToFile() override;
     void saveSelectionWithSnowDialog();
     void saveRecognitionResultWithSystemDialog(const ScreenshotRecognitionFileSnapshot& snapshot);
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    void saveRecognizedDocument(ScreenshotRecognitionFileSnapshot snapshot, QString path,
+                                QString quickSaveBaseName = {});
+#endif
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> recognitionFileSaveArtifact() const;
     void quickSaveSelection() override;
     void uploadSelectionToCloud() override;
@@ -692,6 +700,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     QHash<quint64, quint64> m_imageExportCaptureEpochs;
     quint64 m_captureEpoch = 0;
     ScreenshotExportJobHandle m_exportJob;
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    ScreenshotExportJobHandle m_documentSaveJob;
+#endif
     std::vector<std::weak_ptr<ScreenshotExportArtifact>> m_saveArtifacts;
     std::vector<ScreenshotExportJobHandle> m_exportJobs;
     ScreenshotClipboardCommitScope m_clipboardScope;
@@ -2713,6 +2724,7 @@ bool ScreenshotController::Impl::activateTool(ScreenshotActiveTool tool,
         break;
     case ScreenshotActiveTool::Ocr:
     case ScreenshotActiveTool::TextTranslation:
+    case ScreenshotActiveTool::Document:
     case ScreenshotActiveTool::Table:
     case ScreenshotActiveTool::Qr:
     case ScreenshotActiveTool::Latex:
@@ -2764,6 +2776,8 @@ void ScreenshotController::Impl::activateRecognitionToolForSelection(ScreenshotA
     }
     if (tool == ScreenshotActiveTool::Ocr) {
         m_ocrController->activate();
+    } else if (tool == ScreenshotActiveTool::Document) {
+        m_ocrController->activateDocument();
     } else if (tool == ScreenshotActiveTool::Table) {
         m_ocrController->activateTable();
     } else if (tool == ScreenshotActiveTool::Qr) {
@@ -2899,6 +2913,18 @@ void ScreenshotController::Impl::handleAutomaticTextRecognitionAction(bool avail
     }
 }
 
+void ScreenshotController::Impl::setDocumentTool() {
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    if (!ensureRecognitionFeature()) {
+        return;
+    }
+    m_ocrController->activateDocument();
+    m_presentationServices->updateOverlayState();
+    restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
+#endif
+}
+
 void ScreenshotController::Impl::setTableTool() {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
@@ -3006,6 +3032,15 @@ void ScreenshotController::Impl::resetTable() {
     if (m_ocrController != nullptr) {
         m_ocrController->resetTable();
     }
+}
+
+void ScreenshotController::Impl::openDocumentFile() {
+    const QPointer<ScreenshotController> lifetime(&owner);
+    if (m_ocrController)
+        static_cast<void>(m_ocrController->openDocumentFile([this, lifetime] {
+            if (lifetime)
+                detachCaptureForExport();
+        }));
 }
 
 void ScreenshotController::Impl::openSpreadsheetFile() {
@@ -4655,12 +4690,18 @@ void ScreenshotController::Impl::quickSaveSelection() {
             return;
         const snow_shot::storage::ScreenshotSettings settings;
         const QDateTime timestamp = QDateTime::currentDateTime();
+        const auto directory = snow_shot::storage::expandScreenshotExportVariables(
+            settings.imageSaveDirectory(), timestamp, names);
+        const auto baseName = ScreenshotImageFileService::suggestedBaseName(
+            settings.autoSaveFilenameFormat(), timestamp, names);
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+        if (fileSnapshot->document) {
+            saveRecognizedDocument(*fileSnapshot, directory, baseName);
+            return;
+        }
+#endif
         const auto result = ScreenshotRecognitionFileExport::quickSave(
-            *fileSnapshot,
-            snow_shot::storage::expandScreenshotExportVariables(settings.imageSaveDirectory(),
-                                                                timestamp, names),
-            ScreenshotImageFileService::suggestedBaseName(settings.autoSaveFilenameFormat(),
-                                                          timestamp, names));
+            *fileSnapshot, directory, baseName);
         if (!result.succeeded()) {
             m_messages->error(
                 QString::fromLatin1(kSaveMessageKey),
@@ -5099,6 +5140,10 @@ void ScreenshotController::Impl::saveRecognitionResultWithSystemDialog(
     if (owner.property("saveDialogOpen").toBool() || !m_selection.hasPixelSelection() ||
         !ensureExportFeature() || !resetCanvasEditingState())
         return;
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (snapshot.document && m_documentSaveJob.isValid())
+        return;
+#endif
     if (!snapshot.hasContent()) {
         m_messages->error(
             QString::fromLatin1(kSaveMessageKey),
@@ -5108,13 +5153,18 @@ void ScreenshotController::Impl::saveRecognitionResultWithSystemDialog(
     }
     rememberKeyboardOwner(QApplication::focusWidget());
     QPointer<ScreenshotOverlayWindow> dialogOwner(keyboardOwnerOverlay());
+    const QPointer<ScreenshotController> lifetime(&owner);
+    const auto epoch = m_captureEpoch;
     const auto suspension =
         m_windowShortcutManager != nullptr ? m_windowShortcutManager->suspendInput() : 0;
-    [[maybe_unused]] const auto interactionGuard = makeScopeExit([this, dialogOwner, suspension]() {
-        if (m_windowShortcutManager != nullptr && suspension != 0)
-            m_windowShortcutManager->resumeInput(suspension);
-        restoreKeyboardOwnerQueued(dialogOwner.data());
-    });
+    [[maybe_unused]] const auto interactionGuard =
+        makeScopeExit([this, lifetime, dialogOwner, suspension]() {
+            if (!lifetime)
+                return;
+            if (m_windowShortcutManager != nullptr && suspension != 0)
+                m_windowShortcutManager->resumeInput(suspension);
+            restoreKeyboardOwnerQueued(dialogOwner.data());
+        });
 
     const snow_shot::storage::ScreenshotSettings settings;
     const auto names =
@@ -5127,19 +5177,30 @@ void ScreenshotController::Impl::saveRecognitionResultWithSystemDialog(
         ScreenshotImageFileService::suggestedBaseName(settings.manualSaveFilenameFormat(),
                                                       timestamp, names),
         QLatin1Char('.') + ScreenshotRecognitionFileExport::extension(snapshot.kind)));
-    const QString selectedPath = QFileDialog::getSaveFileName(
+    QString selectedFilter;
+    QString selectedPath = QFileDialog::getSaveFileName(
         dialogOwner.data(),
         QCoreApplication::translate("ScreenshotController", "Save recognition result"), initialPath,
-        ScreenshotRecognitionFileExport::dialogFilter(snapshot.kind), nullptr,
+        ScreenshotRecognitionFileExport::dialogFilter(snapshot.kind), &selectedFilter,
         QFileDialog::DontConfirmOverwrite);
-    if (selectedPath.isEmpty())
+    if (!lifetime || epoch != m_captureEpoch || selectedPath.isEmpty())
         return;
+    if (snapshot.document)
+        selectedPath =
+            ScreenshotRecognitionFileExport::pathForSelectedFilter(selectedPath, selectedFilter);
     const QString primaryPath =
         ScreenshotRecognitionFileExport::normalizedPath(selectedPath, snapshot.kind);
     if (!ScreenshotRecognitionFileExport::confirmOverwrite(
             dialogOwner.data(),
-            ScreenshotRecognitionFileExport::outputPaths(primaryPath, snapshot.kind)))
+            ScreenshotRecognitionFileExport::outputPaths(primaryPath, snapshot)) ||
+        !lifetime || epoch != m_captureEpoch)
         return;
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (snapshot.document) {
+        saveRecognizedDocument(snapshot, primaryPath);
+        return;
+    }
+#endif
     const auto result = ScreenshotRecognitionFileExport::saveToPath(snapshot, primaryPath, true);
     if (!result.succeeded()) {
         m_messages->error(
@@ -5156,6 +5217,65 @@ void ScreenshotController::Impl::saveRecognitionResultWithSystemDialog(
     Q_UNUSED(snapshot)
 #endif
 }
+
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+void ScreenshotController::Impl::saveRecognizedDocument(ScreenshotRecognitionFileSnapshot snapshot,
+                                                        QString path, QString quickSaveBaseName) {
+    if (m_documentSaveJob.isValid())
+        return;
+    const bool manualSave = quickSaveBaseName.isEmpty();
+    const QPointer<ScreenshotController> lifetime(&owner);
+    const auto complete = [this, lifetime, epoch = m_captureEpoch,
+                           revision = m_selection.changeRevision(),
+                           manualSave](const ScreenshotExportTaskResult& result) {
+        m_documentSaveJob = {};
+        if (m_shuttingDown)
+            return;
+        if (result.succeeded() && manualSave)
+            static_cast<void>(snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
+                QFileInfo(result.savedPath).absolutePath()));
+        if (!lifetime || epoch != m_captureEpoch || revision != m_selection.changeRevision() ||
+            m_interaction.activeTool() != ScreenshotActiveTool::Document)
+            return;
+        if (result.succeeded()) {
+            detachCaptureForExport(ExportDetachMode::Immediate,
+                                   ScreenshotCaptureFocusDisposition::RestorePrevious);
+        } else if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+            m_messages->error(
+                QString::fromLatin1(kSaveMessageKey),
+                QCoreApplication::translate("ScreenshotController",
+                                            "The recognition result could not be saved: %1")
+                    .arg(result.error));
+        }
+    };
+    m_documentSaveJob = ScreenshotExportCoordinator::shared().submit(
+        &owner, ScreenshotExportCoordinator::Priority::Foreground,
+        [snapshot = std::move(snapshot), path = std::move(path),
+         baseName = std::move(quickSaveBaseName),
+         manualSave](const ScreenshotExportCancellation& cancellation) {
+            const auto cancelled = [&] { return cancellation.isCancellationRequested(); };
+            const auto saved =
+                manualSave
+                    ? ScreenshotRecognitionFileExport::saveToPath(snapshot, path, true, cancelled)
+                    : ScreenshotRecognitionFileExport::quickSave(snapshot, path, baseName,
+                                                                 cancelled);
+            if (!saved.succeeded())
+                return ScreenshotExportTaskResult::failure(
+                    saved.wasCancelled ? ScreenshotExportFailureStage::Cancelled
+                                       : ScreenshotExportFailureStage::File,
+                    saved.error);
+            ScreenshotExportTaskResult result;
+            result.savedPath = saved.path;
+            return result;
+        },
+        complete, std::numeric_limits<qint64>::max());
+    if (!m_documentSaveJob.isValid())
+        complete(ScreenshotExportTaskResult::failure(
+            ScreenshotExportFailureStage::Queue,
+            QCoreApplication::translate("ScreenshotController",
+                                        "The screenshot export queue is full")));
+}
+#endif
 
 void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
     const snow_shot::storage::ScreenshotSettings namingSettings;
@@ -6643,6 +6763,10 @@ void ScreenshotController::Impl::shutdown() {
     m_clipboardScope.cancelAll();
     m_exportJob.cancel();
     m_exportJob = {};
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    m_documentSaveJob.cancel();
+    m_documentSaveJob = {};
+#endif
     for (const auto& weak : m_saveArtifacts) {
         if (auto artifact = weak.lock())
             artifact->cancel();
@@ -7380,6 +7504,7 @@ const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
     {"auto_filter", ScreenshotActiveTool::AutoFilter},
     {"ocr", ScreenshotActiveTool::Ocr},
     {"text_translation", ScreenshotActiveTool::TextTranslation},
+    {"document", ScreenshotActiveTool::Document},
     {"table", ScreenshotActiveTool::Table},
     {"qr", ScreenshotActiveTool::Qr},
     {"latex", ScreenshotActiveTool::Latex},

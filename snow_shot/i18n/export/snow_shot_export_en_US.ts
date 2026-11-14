@@ -205,6 +205,26 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Cannot create output directory</source>
+            <translation>Cannot create output directory</translation>
+        </message>
+        <message>
+            <source>Cannot publish document output</source>
+            <translation>Cannot publish document output</translation>
+        </message>
+        <message>
+            <source>Cannot replace document output</source>
+            <translation>Cannot replace document output</translation>
+        </message>
+        <message>
+            <source>Cannot stage document</source>
+            <translation>Cannot stage document</translation>
+        </message>
+        <message>
+            <source>Cannot stage document images</source>
+            <translation>Cannot stage document images</translation>
+        </message>
+        <message>
             <source>Excel workbook (*.xlsx)</source>
             <translation>Excel workbook (*.xlsx)</translation>
         </message>
@@ -255,6 +275,14 @@
             <translation>The Excel workbook could not be created</translation>
         </message>
         <message>
+            <source>The document file could not be created</source>
+            <translation>The document file could not be created</translation>
+        </message>
+        <message>
+            <source>The document file could not be opened</source>
+            <translation>The document file could not be opened</translation>
+        </message>
+        <message>
             <source>The output directory could not be created</source>
             <translation>The output directory could not be created</translation>
         </message>
@@ -281,6 +309,21 @@
         <message>
             <source>The temporary directory could not be created</source>
             <translation>The temporary directory could not be created</translation>
+        </message>
+        <message>
+            <source>Word document (*.docx);;PDF document (*.pdf);;Markdown document (*.md);;LaTeX document (*.tex)</source>
+            <translation>Word document (*.docx);;PDF document (*.pdf);;Markdown document (*.md);;LaTeX document (*.tex)</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotRecognizedDocument</name>
+        <message>
+            <source>Document recognition returned no document</source>
+            <translation>Document recognition returned no document</translation>
+        </message>
+        <message>
+            <source>[Image unavailable]</source>
+            <translation>[Image unavailable]</translation>
         </message>
     </context>
     <context>

@@ -201,7 +201,7 @@ struct ImageEditingExportController::Impl {
             auto snapshot = std::get<ScreenshotRecognitionFileSnapshot>(std::move(*content));
             if (operation == Operation::Save)
                 path = ScreenshotRecognitionFileExport::normalizedPath(path, snapshot.kind);
-            const auto paths = ScreenshotRecognitionFileExport::outputPaths(path, snapshot.kind);
+            const auto paths = ScreenshotRecognitionFileExport::outputPaths(path, snapshot);
             auto submitSnapshot = [this, request, snapshot = std::move(snapshot), output, path,
                                    operation]() mutable {
                 if (!request || active != request)
@@ -256,9 +256,14 @@ struct ImageEditingExportController::Impl {
                 finish(request, false);
                 return;
             }
+            auto path = paths.first();
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+            path = ScreenshotRecognitionFileExport::pathForSelectedFilter(
+                path, dialog->selectedNameFilter());
+#endif
             // Leave QFileDialog::done() before opening another dialog or invoking client code.
             QMetaObject::invokeMethod(
-                request, [write, path = paths.first()] { write(path); }, Qt::QueuedConnection);
+                request, [write, path] { write(path); }, Qt::QueuedConnection);
         });
         QObject::connect(dialog, &QDialog::rejected, request,
                          [this, request] { finish(request, false); });
@@ -430,9 +435,35 @@ void ImageEditingExportController::start(Operation operation, Content content, Q
                          if (pending && m_impl->active == pending)
                              cancel();
                      });
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (auto* copy = std::get_if<ScreenshotDocumentCopyRequest>(&content)) {
+        const QPointer<Request> pending(request);
+        const auto publication = ScreenshotClipboardService::reservePublication();
+        request->job = copy->start(request, [this, pending, publication](auto mime, QString error) {
+            if (!pending || m_impl->active != pending)
+                return;
+            if (!mime) {
+                m_impl->finish(pending, false, std::move(error));
+                return;
+            }
+            pending->clipboard = ScreenshotClipboardService::commitMimeData(
+                QApplication::clipboard(), pending, mime.release(), publication,
+                [this, pending](ScreenshotClipboardCommitResult result) {
+                    m_impl->finish(pending, result.succeeded() && !result.superseded,
+                                   result.errorString());
+                });
+        });
+        if (!request->job.isValid())
+            d.finish(request, false,
+                     QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
+                                                 "Export could not be started"));
+        return;
+    }
+#endif
     if (auto* mime = std::get_if<std::unique_ptr<QMimeData>>(&content)) {
         const QPointer<ImageEditingExportController> lifetime(this);
         const QPointer<Request> pending(request);
+        static_cast<void>(ScreenshotClipboardService::reservePublication());
         QApplication::clipboard()->setMimeData(mime->release());
         if (lifetime)
             d.finish(pending, true);

@@ -503,6 +503,7 @@ struct SnowShotApiClient::Request {
     enum class Kind {
         LatexExtract,
         TableExtract,
+        DocumentExtract,
         LatexVisionExtract,
         TableVisionExtract,
         ChatModels,
@@ -518,6 +519,8 @@ struct SnowShotApiClient::Request {
         switch (kind) {
         case Kind::LatexExtract:
             return QStringLiteral("latex_extract");
+        case Kind::DocumentExtract:
+            return QStringLiteral("document_extract");
         case Kind::TableExtract:
             return QStringLiteral("table_extract");
         case Kind::LatexVisionExtract:
@@ -557,6 +560,8 @@ struct SnowShotApiClient::Request {
     QPointer<QObject> receiver;
     Completion completion;
     LatexCompletion latexCompletion;
+    DocumentCompletion documentCompletion;
+    std::shared_ptr<std::atomic_bool> documentCancelled;
     ChatModelsCompletion chatModelsCompletion;
     TranslationDelta translationDelta;
     TranslationCompletion translationCompletion;
@@ -764,6 +769,149 @@ struct SnowShotApiClient::ImageExtractionResult {
     QString code;
     int httpStatus = 0;
 };
+
+SnowShotApiClient::RequestToken SnowShotApiClient::extractDocument(const QImage& source,
+                                                                   QObject* receiver,
+                                                                   DocumentCompletion completion) {
+    if (!receiver || !completion || source.isNull() || m_baseUrl.isEmpty())
+        return 0;
+    const auto token = ++m_nextToken;
+    auto* state = new Request(Request::Kind::DocumentExtract);
+    state->accountAccessToken = m_accountAccessToken;
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/document/extract");
+    state->receiver = receiver;
+    state->documentCompletion = std::move(completion);
+    state->documentCancelled = std::make_shared<std::atomic_bool>(false);
+    m_requests.insert(token, state);
+    state->receiverDestroyed =
+        connect(receiver, &QObject::destroyed, this, [this, token] { cancel(token); });
+    state->timeout = new QTimer(this);
+    state->timeout->setSingleShot(true);
+    connect(state->timeout, &QTimer::timeout, this, [this, token] {
+        finishDocument(token, {{}, tr("Document recognition request timed out"), {}, 0});
+    });
+    state->timeout->start(310'000);
+    const QPointer<SnowShotApiClient> guard(this);
+    QThreadPool::globalInstance()->start(snow_shot::runtime::trackRuntimeWork(
+        [guard, token, source, cancelled = state->documentCancelled] {
+            if (cancelled->load(std::memory_order_relaxed))
+                return;
+            // PNG's default codec compression level is the existing Medium setting (6).
+            const auto info = snow_shot::image_codec::encoderInfo(snow::image::Format::png);
+            const QByteArray png = snow_shot::image_codec::encodePng(
+                source, info ? info->compression_level.default_value : 6);
+            if (!cancelled->load(std::memory_order_relaxed))
+                QMetaObject::invokeMethod(
+                    QCoreApplication::instance(),
+                    [guard, token, png] {
+                        if (guard)
+                            guard->startDocumentUpload(token, png);
+                    },
+                    Qt::QueuedConnection);
+        }));
+    return token;
+}
+
+void SnowShotApiClient::startDocumentUpload(RequestToken token, const QByteArray& png) {
+    auto* state = m_requests.value(token, nullptr);
+    if (!state)
+        return;
+    if (png.isEmpty() || png.size() > 10'000'000) {
+        finishDocument(token, {{},
+                               png.isEmpty() ? tr("The document image could not be encoded")
+                                             : tr("The image is too large. Select a smaller area."),
+                               png.isEmpty() ? QStringLiteral("encoding_failed")
+                                             : QStringLiteral("payload_too_large"),
+                               0});
+        return;
+    }
+    QNetworkRequest request{QUrl(state->endpoint)};
+    if (!state->accountAccessToken.isEmpty())
+        request.setRawHeader("Authorization", "Bearer " + state->accountAccessToken);
+    request.setRawHeader("X-Request-ID", state->operation.toUtf8());
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::ManualRedirectPolicy);
+    request.setTransferTimeout(310'000);
+    auto* multipart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    QHttpPart part;
+    part.setHeader(QNetworkRequest::ContentDispositionHeader,
+                   QStringLiteral("form-data; name=\"image\"; filename=\"document.png\""));
+    part.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("image/png"));
+    part.setBody(png);
+    multipart->append(part);
+    state->transport.start();
+    auto* reply = networkAccessManager()->post(request, multipart);
+    multipart->setParent(reply);
+    state->retainReply(reply);
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, 16 * 1024 * 1024);
+    connect(reply, &QNetworkReply::finished, this, [this, token, reply, response] {
+        const auto* state = m_requests.value(token, nullptr);
+        if (!state)
+            return;
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (response->tooLarge()) {
+            finishDocument(token,
+                           {{}, tr("Document recognition response is too large"), {}, status});
+            return;
+        }
+        const bool failed = reply->error() != QNetworkReply::NoError || status != 200;
+        const auto reason =
+            status >= 400 ? reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString()
+                          : reply->errorString();
+        const QPointer<SnowShotApiClient> guard(this);
+        QThreadPool::globalInstance()->start(snow_shot::runtime::trackRuntimeWork(
+            [guard, token, status, failed, reason, body = response->body(),
+             cancelled = state->documentCancelled] {
+                if (cancelled->load(std::memory_order_relaxed))
+                    return;
+                SnowShotDocumentResult result;
+                result.httpStatus = status;
+                const auto root = QJsonDocument::fromJson(body).object();
+                const auto problem = problemPayload(root);
+                result.code = problem.value(QStringLiteral("code")).toString();
+                if (status == 413) {
+                    result.error = tr("The image is too large. Select a smaller area.");
+                } else if (failed) {
+                    auto detail = problemDetail(problem);
+                    if (detail.isEmpty() &&
+                        !(result.code.isEmpty() && (status == 401 || status == 402)))
+                        detail = reason;
+                    result.error = formatFailure(status, result.code, detail);
+                } else if (root.value(QStringLiteral("code")).toInt(-1) == 0) {
+                    result.raw = root.value(QStringLiteral("data")).toObject();
+                }
+                if (!failed && result.raw.isEmpty())
+                    result.error = tr("Invalid document recognition response");
+                if (!cancelled->load(std::memory_order_relaxed))
+                    QMetaObject::invokeMethod(
+                        QCoreApplication::instance(),
+                        [guard, token, result = std::move(result)]() mutable {
+                            if (guard)
+                                guard->finishDocument(token, std::move(result));
+                        },
+                        Qt::QueuedConnection);
+            }));
+        reply->deleteLater();
+    });
+}
+
+void SnowShotApiClient::finishDocument(RequestToken token, SnowShotDocumentResult result) {
+    auto* state = m_requests.take(token);
+    if (!state)
+        return;
+    state->report(result.succeeded() ? QStringLiteral("succeeded") : QStringLiteral("failed"),
+                  result.httpStatus, result.code);
+    const QPointer<QObject> receiver = state->receiver;
+    const QPointer<SnowShotApiClient> guard(this);
+    auto completion = std::move(state->documentCompletion);
+    const bool account =
+        !state->accountAccessToken.isEmpty() && state->accountAccessToken == m_accountAccessToken;
+    cleanupRequest(state);
+    if (guard && account)
+        emit officialCallSettled();
+    if (guard && receiver && completion)
+        completion(std::move(result));
+}
 
 SnowShotApiClient::RequestToken
 SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Completion completion) {
@@ -2149,6 +2297,8 @@ void SnowShotApiClient::completeChatStream(RequestToken token) {
 }
 
 void SnowShotApiClient::cleanupRequest(Request* request) {
+    if (request->documentCancelled)
+        request->documentCancelled->store(true, std::memory_order_relaxed);
     disconnect(request->receiverDestroyed);
     if (request->timeout) {
         request->timeout->stop();

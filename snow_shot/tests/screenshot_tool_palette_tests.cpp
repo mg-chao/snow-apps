@@ -161,7 +161,8 @@ void canvasToolBindingsRespectCapabilitiesAndLifetime() {
 
 QString shortcutTooltip(const QString& label, const QStringList& portable) {
     const QString display = snow_shot::shortcuts::formatShortcutListDisplayText(
-        snow_shot::shortcuts::bindingsFromPortableText(portable));
+        snow_shot::shortcuts::bindingsFromPortableText(portable),
+        snow_shot::shortcuts::ShortcutPolicy::Application);
     return display.isEmpty() ? label : QStringLiteral("%1 (%2)").arg(label, display);
 }
 
@@ -2755,6 +2756,7 @@ QList<adqt::widgets::AdButton*> mainActionToolbarButtons(ScreenshotToolPalette& 
     const QStringList actionIds{
         QStringLiteral("barcode-recognition"),
         QStringLiteral("table-recognition"),
+        QStringLiteral("document-recognition"),
         QStringLiteral("record-screen"),
         QStringLiteral("pin-to-screen"),
         QStringLiteral("text-recognition"),
@@ -4369,6 +4371,13 @@ void arrowAndLineUseConfiguredPopoverGroup() {
             "clicking the active replaced group trigger should return to selection");
 }
 
+// Keep fixtures for the retained two-tool legacy group independent of the new default.
+void hideDocumentForLegacyTableQrFixture(ScreenshotToolPalette::Options& options) {
+    options.actionToolsLayout = snow_shot::presentation::toolbar_layout::moveItemToHidden(
+        options.actionToolsLayout.value_or(snow_shot::storage::ScreenshotToolbarLayout{}),
+        options.actionToolsLayoutKind, QStringLiteral("document-recognition"), 0);
+}
+
 void tableBusyStatePreservesSiblingGroupPopovers(bool recoverFromMove = false) {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
@@ -4382,6 +4391,7 @@ void tableBusyStatePreservesSiblingGroupPopovers(bool recoverFromMove = false) {
         {{QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition")},
          {QStringLiteral("text-recognition"), QStringLiteral("text-translation")}},
         {}};
+    hideDocumentForLegacyTableQrFixture(options);
     ScreenshotToolPalette palette(options);
     palette.resize(palette.contentSizeHint());
     palette.move(QApplication::primaryScreen()->availableGeometry().center() -
@@ -4637,6 +4647,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
     actionOptions.enableStyleToolbar = false;
     actionOptions.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")}}, {}};
+    hideDocumentForLegacyTableQrFixture(actionOptions);
     ScreenshotToolPalette actionPalette(actionOptions);
     actionPalette.show();
     QCoreApplication::processEvents();
@@ -4898,6 +4909,7 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")}}, {}};
 
+    hideDocumentForLegacyTableQrFixture(options);
     ScreenshotToolPalette palette(options);
     palette.contentSizeHint();
     const QList<adqt::widgets::AdButton*> mainButtons = mainToolbarButtons(palette);
@@ -5007,6 +5019,7 @@ void drawingGroupClicksActivateOnceAfterPointerReentry() {
         options.showShapeTool = groups.at(index).contains(QStringLiteral("shape"));
         options.showArrowTool = groups.at(index).contains(QStringLiteral("arrow"));
         options.showDistanceTool = groups.at(index).contains(QStringLiteral("distance"));
+        options.showBracketTool = groups.at(index).contains(QStringLiteral("bracket"));
         options.showAngleTool = groups.at(index).contains(QStringLiteral("angle"));
         options.showLineTool = groups.at(index).contains(QStringLiteral("line"));
         options.showBrushTool = groups.at(index).contains(QStringLiteral("free-draw"));
@@ -5054,6 +5067,7 @@ void tableRecognitionClickActivatesOnceAfterPointerReentry() {
     options.showTableTool = true;
     options.showQrTool = true;
     options.enableStyleToolbar = false;
+    hideDocumentForLegacyTableQrFixture(options);
     ScreenshotToolPalette palette(options);
     palette.show();
     QCoreApplication::processEvents();
@@ -5847,7 +5861,7 @@ void pinnedActionLayoutUsesGenericStacks() {
     options.actionToolsLayoutKind = kind;
     const ScreenshotToolbarLayout previous{
         {{barcode, table}, {markdown}, {html}, {ocr}, {translation}}, {}};
-    ScreenshotToolbarLayout expected{{{barcode, table},
+    ScreenshotToolbarLayout expected{{{barcode, QStringLiteral("document-recognition"), table},
                                       {markdown, QStringLiteral("latex-recognition")},
                                       {html},
                                       {ocr},
@@ -5867,7 +5881,7 @@ void pinnedActionLayoutUsesGenericStacks() {
     };
     options.actionToolsLayout = previous;
     require(layout::normalizedLayout(previous, kind) == expected,
-            "pinned migration adds LaTeX beside Markdown without rearranging other positions");
+            "pinned migration inserts Document and LaTeX beside their related tools");
     ScreenshotToolPalette palette(options);
     palette.show();
     QCoreApplication::processEvents();
@@ -6384,6 +6398,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
                 mixedTrigger->property("screenshotToolbarPositionItems").toStringList() ==
                     QStringList{QStringLiteral("upload-to-cloud"), QStringLiteral("record-screen"),
                                 QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+                                QStringLiteral("document-recognition"),
                                 QStringLiteral("table-recognition")} &&
                 textTrigger->accessibleName() == QStringLiteral("Text recognition") &&
                 palette
@@ -6470,6 +6485,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
     const snow_shot::storage::ScreenshotToolbarLayout unstacked{
         {
             {QStringLiteral("barcode-recognition")},
+            {QStringLiteral("document-recognition")},
             {QStringLiteral("table-recognition")},
             {QStringLiteral("record-screen")},
             {QStringLiteral("pin-to-screen")},
@@ -6486,7 +6502,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
         QStringLiteral("screenshotQrRecognitionButton"));
     auto* directTable = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotTableRecognitionButton"));
-    require(mainActionToolbarButtons(palette).size() == 10 && directBarcode != nullptr &&
+    require(mainActionToolbarButtons(palette).size() == 11 && directBarcode != nullptr &&
                 directTable != nullptr && popoverForTrigger(directBarcode) == nullptr &&
                 popoverForTrigger(directTable) == nullptr &&
                 directBarcode->toolTip().startsWith(QStringLiteral("Barcode recognition")) &&
@@ -6525,7 +6541,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
         QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
         QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
         QStringLiteral("save-as-file"),         QStringLiteral("print"),
-        QStringLiteral("upload-to-cloud"),
+        QStringLiteral("upload-to-cloud"),      QStringLiteral("document-recognition"),
     };
     ScreenshotToolPalette::Options hiddenOptions;
     hiddenOptions.showSelectTool = true;
@@ -7885,7 +7901,7 @@ void imageConversionToolsExposeRecognitionActions() {
                 QStringList{
                     QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
                     QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
-                    QStringLiteral("table-recognition")} &&
+                    QStringLiteral("document-recognition"), QStringLiteral("table-recognition")} &&
             group->accessibleName() == QStringLiteral("Table recognition"),
         "the recognition group initially shows the bottom tool even with a remembered QR entry");
     static_cast<void>(palette.sizeHint());
@@ -18300,6 +18316,7 @@ void tableQrEntrySelectionPersistsAcrossPaletteInstances() {
     options.enableStyleToolbar = false;
 
     {
+        hideDocumentForLegacyTableQrFixture(options);
         ScreenshotToolPalette palette(options);
         auto* tableQrTrigger =
             palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
@@ -20988,6 +21005,51 @@ void layoutCompactionToolbar() {
 
 void runScreenshotQuickTextAnnotationToolbarTests();
 
+void documentRecognitionToolbarContract() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const auto defaults = layout::defaultPositions(Kind::ActionTools);
+    const auto group =
+        layout::stackPresentation(defaults.first(), [](const QString&) { return true; });
+    require(group.popoverItemIds.mid(0, 3) == QStringList{QStringLiteral("table-recognition"),
+                                                          QStringLiteral("document-recognition"),
+                                                          QStringLiteral("barcode-recognition")},
+            "document default order");
+    auto legacy = snow_shot::storage::ScreenshotToolbarLayout{defaults, {}};
+    legacy.positions[0].removeAll(QStringLiteral("document-recognition"));
+    const auto migrated = layout::normalizedLayout(legacy, Kind::ActionTools);
+    require(migrated.positions == defaults, "previous default migrates without other changes");
+    ScreenshotToolPalette::Options options;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    ScreenshotToolPalette palette(options);
+    ScreenshotRecognitionModelState state;
+    state.selection = screenshotDedicatedRecognitionModelId();
+    state.effectiveModel = QStringLiteral("glm-ocr");
+    palette.setRecognitionModelState(ScreenshotToolPalette::Tool::Document, state);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Document);
+    palette.show();
+    QApplication::processEvents();
+    const auto* select = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotRecognitionModelSelect"));
+    const auto* original = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotShowOriginalImageButton"));
+    const auto* open = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotOpenDocumentFileButton"));
+    require(select && original && open, "document subtoolbar materialized");
+    require(select->options().size() == 1 &&
+                select->options()[0].label == QStringLiteral("Document Recognition Model") &&
+                select->options()[0].group == QStringLiteral("Dedicated Models") &&
+                select->currentValue().toString() == screenshotDedicatedRecognitionModelId(),
+            "one selected dedicated model");
+    require(original->geometry().left() < select->geometry().left() &&
+                select->geometry().left() < open->geometry().left(),
+            "document subtoolbar order");
+    auto* tableOpen = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotOpenSpreadsheetFileButton"));
+    require(!tableOpen || tableOpen->isHidden(), "spreadsheet action hidden in document mode");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir storageDirectory;
@@ -21368,6 +21430,10 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--latex-only"))) {
         latexHistoryActionsUseFormulaHistory();
         recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--document-only"))) {
+        documentRecognitionToolbarContract();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--recognition-model-only"))) {

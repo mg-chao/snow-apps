@@ -82,12 +82,16 @@ def exercise(executable, recognition_only=False):
                 if "$ref" in kind_schema:
                     kind_schema = schemas[name]["$defs"][kind_schema["$ref"].rsplit("/", 1)[1]]
                 assert kind_schema["enum"] == [
-                    "text", "table", "qr", "markdown", "html", "latex"], schemas[name]
+                    "text", "table", "qr", "markdown", "html", "latex", "document"], schemas[name]
             for identifier, name, arguments in (
                     (16, "snow_shot_screenshot_recognize",
                      {"session_id":"s", "expected_revision":1, "kind":"latex"}),
                     (17, "snow_shot_document_recognize",
-                     {"document_id":"d", "expected_revision":1, "kind":"latex"})):
+                     {"document_id":"d", "expected_revision":1, "kind":"latex"}),
+                    (18, "snow_shot_screenshot_recognize",
+                     {"session_id":"s", "expected_revision":1, "kind":"document"}),
+                    (19, "snow_shot_document_recognize",
+                     {"document_id":"d", "expected_revision":1, "kind":"document"})):
                 send({"jsonrpc":"2.0", "id":identifier, "method":"tools/call",
                       "params":{"name":name, "arguments":arguments}})
                 unavailable = response(identifier)
@@ -96,7 +100,7 @@ def exercise(executable, recognition_only=False):
             if recognition_only:
                 process.stdin.close()
                 assert process.wait(timeout=10) == 0, diagnostics
-                print("MCP recognition schemas and LaTeX dispatch passed through the stdio bridge.")
+                print("MCP recognition schemas and dispatch passed through the stdio bridge.")
                 return
             send({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
                 "name":"snow_shot_mcp_status","arguments":{}}})

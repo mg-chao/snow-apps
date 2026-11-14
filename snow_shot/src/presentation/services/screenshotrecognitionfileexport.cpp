@@ -1,12 +1,15 @@
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include "snow_shot/storage/exportfilename.h"
+#include "snow_shot/presentation/screenshotdocumentexport.h"
 
 #include <QAbstractButton>
 #include <QCoreApplication>
+#include "snow_shot/storage/clipboardfilecache.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QTemporaryFile>
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
 #include <QDesktopServices>
@@ -321,8 +324,121 @@ QStringList existingPaths(const QStringList& paths) {
 }
 } // namespace
 
+QString ScreenshotRecognitionFileExport::pathForSelectedFilter(const QString& path,
+                                                               const QString& filter) {
+    for (const auto* extension : {"docx", "pdf", "md", "tex"}) {
+        const auto suffix = QString::fromLatin1(extension);
+        if (filter.contains(QStringLiteral("(*.%1)").arg(suffix))) {
+            const auto info = QFileInfo(path);
+            return info.dir().filePath(info.completeBaseName() + u'.' + suffix);
+        }
+    }
+    return path;
+}
+
+ScreenshotRecognitionFileSaveResult
+ScreenshotRecognitionFileExport::copyDocumentFile(const ScreenshotRecognitionFileSnapshot& snapshot,
+                                                  const std::function<bool()>& cancelled) {
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    QString error;
+    auto directory = snow_shot::storage::ClipboardFileCache::shared().createDirectory(&error);
+    if (!directory)
+        return {{}, error};
+    auto html = snapshot;
+    html.kind = ScreenshotRecognitionFileKind::DocumentHtml;
+    const auto result = saveToPath(
+        html, QDir(directory->path()).filePath(QStringLiteral("Document.html")), false, cancelled);
+    if (result.succeeded())
+        directory->retain();
+    return result;
+#else
+    Q_UNUSED(snapshot)
+    Q_UNUSED(cancelled)
+    return {};
+#endif
+}
+
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+namespace {
+struct PreparedDocumentCopy {
+    ScreenshotDocumentClipboard content;
+    QString path;
+    QString error;
+
+    explicit PreparedDocumentCopy(const ScreenshotDocumentCopyRequest& request,
+                                  const std::function<bool()>& cancelled = {}) {
+        if (request.asFile) {
+            ScreenshotRecognitionFileSnapshot snapshot;
+            snapshot.kind = ScreenshotRecognitionFileKind::DocumentHtml;
+            snapshot.document = request.document;
+            auto saved = ScreenshotRecognitionFileExport::copyDocumentFile(snapshot, cancelled);
+            path = std::move(saved.path);
+            error = std::move(saved.error);
+        } else if (request.selectionHtml.isEmpty()) {
+            content = request.document->clipboardContent(cancelled);
+        } else {
+            auto selection = *request.document;
+            selection.preparedClipboard.reset();
+            selection.html = request.selectionHtml;
+            content = selection.clipboardContent(cancelled);
+        }
+    }
+
+    std::unique_ptr<QMimeData> mimeData() const {
+        if (path.isEmpty() && content.html.isEmpty())
+            return {};
+        auto mime = std::make_unique<QMimeData>();
+        if (path.isEmpty()) {
+            mime->setHtml(content.html);
+            mime->setText(content.text);
+        } else {
+            mime->setUrls({QUrl::fromLocalFile(path)});
+        }
+        return mime;
+    }
+};
+} // namespace
+
+std::unique_ptr<QMimeData> ScreenshotDocumentCopyRequest::mimeData() const {
+    return document ? PreparedDocumentCopy(*this).mimeData() : nullptr;
+}
+
+ScreenshotExportJobHandle ScreenshotDocumentCopyRequest::start(QObject* receiver,
+                                                               Completion completion) const {
+    if (!document)
+        return {};
+    auto prepared = std::make_shared<std::optional<PreparedDocumentCopy>>();
+    return ScreenshotExportCoordinator::shared().submit(
+        receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [request = *this, prepared](const ScreenshotExportCancellation& cancellation) {
+            prepared->emplace(request, [&] { return cancellation.isCancellationRequested(); });
+            if (cancellation.isCancellationRequested())
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
+            return ScreenshotExportTaskResult{};
+        },
+        [prepared, completion = std::move(completion)](const ScreenshotExportTaskResult& result) {
+            if (result.failureStage == ScreenshotExportFailureStage::Cancelled)
+                return;
+            completion(*prepared ? (*prepared)->mimeData() : nullptr,
+                       *prepared ? (*prepared)->error : result.error);
+        },
+        document->retainedBytes() * 2);
+}
+#endif
+
 QString ScreenshotRecognitionFileExport::extension(ScreenshotRecognitionFileKind kind) {
     switch (kind) {
+    case ScreenshotRecognitionFileKind::DocumentWord:
+        return QStringLiteral("docx");
+    case ScreenshotRecognitionFileKind::DocumentPdf:
+        return QStringLiteral("pdf");
+    case ScreenshotRecognitionFileKind::DocumentMarkdown:
+        return QStringLiteral("md");
+    case ScreenshotRecognitionFileKind::DocumentLatex:
+        return QStringLiteral("tex");
+    case ScreenshotRecognitionFileKind::DocumentHtml:
+        return QStringLiteral("html");
     case ScreenshotRecognitionFileKind::Html:
         return QStringLiteral("html");
     case ScreenshotRecognitionFileKind::Markdown:
@@ -337,6 +453,10 @@ QString ScreenshotRecognitionFileExport::extension(ScreenshotRecognitionFileKind
 }
 
 QString ScreenshotRecognitionFileExport::dialogFilter(ScreenshotRecognitionFileKind kind) {
+    if (kind >= ScreenshotRecognitionFileKind::DocumentWord)
+        return message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                         "Word document (*.docx);;PDF document (*.pdf);;Markdown "
+                                         "document (*.md);;LaTeX document (*.tex)"));
     switch (kind) {
     case ScreenshotRecognitionFileKind::Html:
         return message(
@@ -347,6 +467,11 @@ QString ScreenshotRecognitionFileExport::dialogFilter(ScreenshotRecognitionFileK
     case ScreenshotRecognitionFileKind::Table:
         return message(
             QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport", "Excel workbook (*.xlsx)"));
+    case ScreenshotRecognitionFileKind::DocumentWord:
+    case ScreenshotRecognitionFileKind::DocumentPdf:
+    case ScreenshotRecognitionFileKind::DocumentMarkdown:
+    case ScreenshotRecognitionFileKind::DocumentLatex:
+    case ScreenshotRecognitionFileKind::DocumentHtml:
     case ScreenshotRecognitionFileKind::Latex:
     case ScreenshotRecognitionFileKind::Qr:
         return message(
@@ -366,14 +491,23 @@ QString ScreenshotRecognitionFileExport::normalizedPath(const QString& path,
         normalized.chop(fileName.size() - dot);
     else if (normalized.endsWith(QLatin1Char('.')))
         normalized.chop(1);
-    return normalized + QLatin1Char('.') + extension(kind);
+    return normalized + QLatin1Char('.') + extension(kindForPath(kind, path));
 }
 
-QStringList ScreenshotRecognitionFileExport::outputPaths(const QString& primaryPath,
-                                                         ScreenshotRecognitionFileKind kind) {
+QStringList
+ScreenshotRecognitionFileExport::outputPaths(const QString& primaryPath,
+                                             const ScreenshotRecognitionFileSnapshot& snapshot) {
     if (primaryPath.isEmpty())
         return {};
+    const auto kind = kindForPath(snapshot.kind, primaryPath);
     QStringList paths{primaryPath};
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (kind == ScreenshotRecognitionFileKind::DocumentLatex ||
+        (kind == ScreenshotRecognitionFileKind::DocumentMarkdown && snapshot.document &&
+         !snapshot.document->markdownImageIds().isEmpty()))
+        paths.push_back(
+            QFileInfo(primaryPath).dir().filePath(screenshotDocumentImageDirectoryName(primaryPath)));
+#endif
     if (kind == ScreenshotRecognitionFileKind::Html ||
         kind == ScreenshotRecognitionFileKind::Markdown) {
         QString companion = primaryPath;
@@ -432,6 +566,140 @@ ScreenshotRecognitionFileSaveResult ScreenshotRecognitionFileExport::openTempora
 }
 #endif
 
+ScreenshotRecognitionFileKind
+ScreenshotRecognitionFileExport::kindForPath(ScreenshotRecognitionFileKind kind,
+                                             const QString& path) {
+    if (kind < ScreenshotRecognitionFileKind::DocumentWord)
+        return kind;
+    const auto suffix = QFileInfo(path).suffix().toLower();
+    if (suffix == QStringLiteral("docx"))
+        return ScreenshotRecognitionFileKind::DocumentWord;
+    if (suffix == QStringLiteral("pdf"))
+        return ScreenshotRecognitionFileKind::DocumentPdf;
+    if (suffix == QStringLiteral("md"))
+        return ScreenshotRecognitionFileKind::DocumentMarkdown;
+    if (suffix == QStringLiteral("tex"))
+        return ScreenshotRecognitionFileKind::DocumentLatex;
+    if (suffix == QStringLiteral("html"))
+        return ScreenshotRecognitionFileKind::DocumentHtml;
+    return kind;
+}
+
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+ScreenshotRecognitionFileSaveResult ScreenshotRecognitionFileExport::openTemporaryDocument(
+    const ScreenshotRecognitionFileSnapshot& snapshot, std::function<bool(const QUrl&)> openUrl) {
+    QTemporaryDir directory(QDir::tempPath() + QStringLiteral("/SnowShot-document-XXXXXX"));
+    if (!directory.isValid())
+        return {{},
+                message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                          "The temporary directory could not be created"))};
+    auto word = snapshot;
+    word.kind = ScreenshotRecognitionFileKind::DocumentWord;
+    const auto result = saveToPath(word, directory.filePath(QStringLiteral("Document.docx")));
+    if (!result.succeeded())
+        return result;
+    const auto url = QUrl::fromLocalFile(result.path);
+    if (!(openUrl ? openUrl(url) : QDesktopServices::openUrl(url)))
+        return {{},
+                message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                          "The document file could not be opened"))};
+    directory.setAutoRemove(false);
+    return result;
+}
+
+namespace {
+ScreenshotRecognitionFileSaveResult saveDocument(const ScreenshotRecognitionFileSnapshot& snapshot,
+                                                 const QString& primary, bool overwrite,
+                                                 const std::function<bool()>& cancelled) {
+    const auto kind = ScreenshotRecognitionFileExport::kindForPath(snapshot.kind, primary);
+    const QFileInfo info(primary);
+    QDir parent = info.dir();
+    if (!parent.mkpath(QStringLiteral(".")))
+        return {{},
+                message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                          "Cannot create output directory"))};
+    const auto outputs = ScreenshotRecognitionFileExport::outputPaths(primary, snapshot);
+    for (qsizetype index = 0; index < outputs.size(); ++index) {
+        const QFileInfo target(outputs[index]);
+        if (target.isSymLink() ||
+            (target.exists() && (index == 0 ? !target.isFile() : !target.isDir())))
+            return {{},
+                    message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                              "An existing output file could not be replaced"))};
+    }
+    for (const auto& output : outputs)
+        if (QFileInfo::exists(output) && !overwrite)
+            return {{},
+                    message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                              "An output file already exists"))};
+    QTemporaryDir staging(parent.filePath(QStringLiteral(".snow-document-XXXXXX")));
+    if (!staging.isValid())
+        return {
+            {},
+            message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport", "Cannot stage document"))};
+    const auto files =
+        screenshotDocumentFiles(*snapshot.document, info.fileName(),
+                                ScreenshotRecognitionFileExport::extension(kind), cancelled);
+    if (cancelled && cancelled())
+        return {{}, {}, true};
+    if (files.isEmpty())
+        return {{},
+                message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                          "The document file could not be created"))};
+    for (auto it = files.cbegin(); it != files.cend(); ++it) {
+        const QString staged = staging.filePath(it.key());
+        if (!QDir().mkpath(QFileInfo(staged).absolutePath()))
+            return {{},
+                    message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                              "Cannot stage document images"))};
+        QFile file(staged);
+        if (!file.open(QIODevice::WriteOnly) || file.write(it.value()) != it.value().size() ||
+            !file.flush())
+            return {{}, file.errorString()};
+    }
+    // LaTeX retains its image directory even when the document has no images.
+    if (kind == ScreenshotRecognitionFileKind::DocumentLatex)
+        QDir().mkpath(staging.filePath(QFileInfo(outputs[1]).fileName()));
+    if (cancelled && cancelled())
+        return {{}, {}, true};
+    QStringList backups, published;
+    const auto rollback = [&] {
+        for (const auto& target : published)
+            QDir().rename(target, staging.filePath(QStringLiteral("rollback-") +
+                                                   QFileInfo(target).fileName()));
+        for (qsizetype i = 0; i < backups.size(); ++i)
+            if (!backups[i].isEmpty())
+                QDir().rename(backups[i], outputs[i]);
+    };
+    for (const auto& target : outputs) {
+        if (cancelled && cancelled()) {
+            rollback();
+            return {{}, {}, true};
+        }
+        QString backup;
+        if (QFileInfo::exists(target)) {
+            backup = staging.filePath(QStringLiteral("backup-") + QFileInfo(target).fileName());
+            if (!overwrite || !QDir().rename(target, backup)) {
+                rollback();
+                return {{},
+                        message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                                  "Cannot replace document output"))};
+            }
+        }
+        backups.push_back(backup);
+        if (!QDir().rename(staging.filePath(QFileInfo(target).fileName()), target)) {
+            rollback();
+            return {{},
+                    message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                              "Cannot publish document output"))};
+        }
+        published.push_back(target);
+    }
+    return {primary, {}};
+}
+} // namespace
+#endif
+
 ScreenshotRecognitionFileSaveResult
 ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnapshot& snapshot,
                                             const QString& path, bool allowOverwrite,
@@ -447,7 +715,11 @@ ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnaps
         return {{},
                 message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
                                           "No output file was selected"))};
-    const QStringList paths = outputPaths(primary, snapshot.kind);
+#if SNOW_SHOT_ENABLE_DOCUMENT_RECOGNITION
+    if (snapshot.kind >= ScreenshotRecognitionFileKind::DocumentWord)
+        return saveDocument(snapshot, primary, allowOverwrite, cancelled);
+#endif
+    const QStringList paths = outputPaths(primary, snapshot);
     const QString directory = QFileInfo(primary).absolutePath();
     if (!QDir().mkpath(directory))
         return {{},
@@ -602,14 +874,15 @@ ScreenshotRecognitionFileExport::quickSave(const ScreenshotRecognitionFileSnapsh
         // A Markdown companion has a longer extension than its primary file. Reserve enough
         // space for every output so the pair always shares the same bounded stem.
         QString longestEnding = ending;
-        for (const QString& output : outputPaths(ending, snapshot.kind)) {
-            if (output.toUtf8().size() > longestEnding.toUtf8().size())
-                longestEnding = output;
+        for (const QString& output : outputPaths(ending, snapshot)) {
+            const auto fileName = QFileInfo(output).fileName();
+            if (fileName.toUtf8().size() > longestEnding.toUtf8().size())
+                longestEnding = fileName;
         }
         QString stem = snow_shot::storage::composeExportFileName(baseName, longestEnding);
         stem.chop(longestEnding.size());
         const QString path = QDir(target).filePath(stem + ending);
-        if (existingPaths(outputPaths(path, snapshot.kind)).isEmpty()) {
+        if (existingPaths(outputPaths(path, snapshot)).isEmpty()) {
             const auto result = saveToPath(snapshot, path, false, cancelled);
             if (result.error != message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
                                                           "An output file already exists")))

@@ -467,6 +467,10 @@
             <translation>小数位数</translation>
         </message>
         <message>
+            <source>Dedicated Models</source>
+            <translation>专用模型</translation>
+        </message>
+        <message>
             <source>Dedicated model</source>
             <translation>专用模型</translation>
         </message>
@@ -537,6 +541,14 @@
         <message>
             <source>Distribute vertically</source>
             <translation>垂直分布</translation>
+        </message>
+        <message>
+            <source>Document Recognition Model</source>
+            <translation>文档识别模型</translation>
+        </message>
+        <message>
+            <source>Document recognition</source>
+            <translation>文档识别</translation>
         </message>
         <message>
             <source>Dotted arrow line</source>
@@ -989,6 +1001,10 @@
         <message>
             <source>Opacity</source>
             <translation>不透明度</translation>
+        </message>
+        <message>
+            <source>Open document file</source>
+            <translation>打开文档文件</translation>
         </message>
         <message>
             <source>Open recording folder</source>
