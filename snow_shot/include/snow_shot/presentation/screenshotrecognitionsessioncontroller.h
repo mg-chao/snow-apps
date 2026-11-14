@@ -15,9 +15,11 @@
 #include <QObject>
 #include <QJsonObject>
 #include <QHash>
+#include <QFont>
 #include <QImage>
 #include <QPointer>
 #include <QRectF>
+#include <QSet>
 #include <QStringList>
 #include <QVector>
 #include "snow_shot/storage/settingsadapters.h"
@@ -34,6 +36,7 @@ class QTextDocument;
 class QTimer;
 class QWidget;
 class ScreenshotOcrPresentation;
+struct ScreenshotOcrTextUpdate;
 class ScreenshotOcrTextEditingSession;
 class ScreenshotRecognitionWindow;
 class ScreenshotImageConversionController;
@@ -90,7 +93,7 @@ struct ScreenshotRecognitionSessionActions {
     // rect it covers and is invalid when the filtered region is empty.
     std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QImage, QRectF)>
         applyOcrBackgroundImage;
-    std::function<void(int, const QString&, bool streaming)> updateOcrText;
+    std::function<void(const QVector<ScreenshotOcrTextUpdate>&)> updateOcrTexts;
     // Workflow activity is independent of the host's provider/tool availability.
     std::function<void(bool active, bool busy, SnowShotImageConversionFormat format)>
         setConversionState;
@@ -107,6 +110,8 @@ struct ScreenshotRecognitionSessionActions {
     std::function<bool()> isCurrentSession{};
     // Empty keeps background preparation and publication enabled.
     std::function<bool()> shouldRenderTextBackground{};
+    // Hosts with a separate display presentation propagate prepared colors to it.
+    std::function<void(const ScreenshotOcrPresentation&)> applyOcrColors{};
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
@@ -197,8 +202,10 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] QString sourceTextDraft() const;
     [[nodiscard]] QString originalText() const;
     [[nodiscard]] QString latexDraft() const;
-    [[nodiscard]] std::unique_ptr<QMimeData> recognitionClipboardMimeData(
-        const ScreenshotOcrPresentation* displayedPresentation = nullptr) const;
+    // Publishes received translation text before the host captures the displayed result.
+    bool flushTranslationUpdates();
+    [[nodiscard]] std::unique_ptr<QMimeData>
+    recognitionClipboardMimeData(const ScreenshotOcrPresentation* displayedPresentation = nullptr);
     // Commits active table edits before copying the complete document for file saving.
     [[nodiscard]] std::optional<ScreenshotRecognitionFileSnapshot> fileExportSnapshot();
     void setTextDraft(const QString& text);
@@ -281,6 +288,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
             TranslationStatus status = TranslationStatus::Absent;
             bool failureReported = false;
             bool captured = false;
+            QSet<int> streamingLines;
         };
 #endif
         ScreenshotOcrRecognitionResult recognitionResult;
@@ -301,6 +309,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
         bool defaultTransformsApplied = false;
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         OverlayTranslation overlayTranslation;
+        QHash<QString, std::shared_ptr<const ScreenshotOcrPresentation>> overlayLayouts;
+        QFont overlayLayoutFont;
         snow_shot::storage::ScreenshotTranslationConfiguration translationConfiguration;
         bool hasTranslationConfiguration = false;
 #endif
@@ -369,13 +379,13 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void handleTranslationDocumentChanged(const QString& key);
     void prepareIndependentTranslation(TextCacheEntry& entry, const QString& key);
     void startTranslation();
-    void prepareOverlayTranslation(TextCacheEntry& entry);
+    bool showOverlayTranslation();
     void reportOverlayTranslationFailure();
     void failTranslationPreparation(const QString& message);
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-    bool updateOverlayTranslationLine(const QString& key, ScreenshotOcrPresentation& presentation,
-                                      int index, const QString& text, bool streaming);
-    bool finishOverlayTranslationLines(const TextCacheEntry& entry, const QString& key);
+    bool finishOverlayTranslationLines(snow_shot::translation::TranslationJob* job);
+    bool publishOverlayUpdates(const QString& key, ScreenshotOcrPresentation& presentation,
+                               const QVector<ScreenshotOcrTextUpdate>& updates);
 #endif
     bool cancelTranslationRequests();
     void handleTranslationFinished(quint64 generation, const QString& key,
@@ -501,6 +511,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
 #endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     quint64 m_translationGeneration = 0;
+    QTimer* m_translationUpdateTimer = nullptr;
+    QSet<int> m_pendingTranslationUnits;
+    std::shared_ptr<std::atomic_bool> m_overlayPreparation;
 #endif
     mutable QString m_workflowError;
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \

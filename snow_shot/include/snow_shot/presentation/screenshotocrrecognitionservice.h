@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 inline constexpr qint64 kScreenshotOcrMaximumPixels = 3840LL * 2160LL;
 
@@ -35,6 +36,12 @@ struct ScreenshotOcrRecognitionResult {
 };
 
 enum class ScreenshotOcrRequestPriority { Interactive, Prefetch };
+
+struct ScreenshotOcrColorSource {
+    QImage image;
+    QRectF canvasRect;
+    std::shared_ptr<ScreenshotOcrPresentation> presentation;
+};
 
 enum class ScreenshotOcrDetectorResizePolicy { Max, Min };
 enum class ScreenshotOcrTextDetectionProcessing { AccuracyFirst, SpeedFirst };
@@ -76,6 +83,10 @@ struct ScreenshotOcrRequest {
     bool renderOnly = false;
     std::shared_ptr<ScreenshotOcrPresentation> presentation = {};
     QColor backgroundColor = {};
+    bool backgroundFill = false;
+    bool prepareVisualColors = false;
+    // Pinned windows rasterize transformed geometry but sample the original pixels.
+    std::optional<ScreenshotOcrColorSource> colorSource = {};
 };
 
 class ScreenshotOcrRecognitionPort : public QObject {
@@ -102,10 +113,12 @@ class ScreenshotOcrRecognitionPort : public QObject {
     // visible, or an abandoned interactive request suppress rendering, without
     // cancelling recognition and recreating its worker.
     virtual bool setRenderFilteredImage(RequestToken token, bool enabled,
-                                        const QColor& backgroundColor = {}) {
+                                        const QColor& backgroundColor = {},
+                                        bool backgroundFill = false) {
         Q_UNUSED(token);
         Q_UNUSED(enabled);
         Q_UNUSED(backgroundColor);
+        Q_UNUSED(backgroundFill);
         return false;
     }
     virtual void cancel(RequestToken token) = 0;
@@ -159,7 +172,8 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     RequestToken render(ScreenshotOcrRequest request, QObject* receiver,
                         Completion completion) override;
     bool setRenderFilteredImage(RequestToken token, bool enabled,
-                                const QColor& backgroundColor = {}) override;
+                                const QColor& backgroundColor = {},
+                                bool backgroundFill = false) override;
     void cancel(RequestToken token) override;
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
     [[nodiscard]] bool modelFilesReady() const override;

@@ -116,7 +116,7 @@ class Recognition final : public ScreenshotOcrRecognitionPort {
         renders.push_back(std::move(request));
         return deferRenders ? static_cast<RequestToken>(100 + renders.size()) : 0;
     }
-    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor&) override {
+    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor&, bool) override {
         requests[static_cast<qsizetype>(token - 1)].renderFilteredImage = enabled;
         return true;
     }

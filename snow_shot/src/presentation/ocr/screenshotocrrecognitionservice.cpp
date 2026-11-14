@@ -230,34 +230,48 @@ class ScreenshotOcrRecognitionService::Impl final {
         }
         const QPointer<ScreenshotOcrRecognitionService> service(m_owner);
         const auto alive = m_alive;
-        m_localPool->start(
-            QRunnable::create([service, job, alive, beforeRender = m_beforeLocalRender]() {
-                snow_shot::platform::applyApplicationQoSToCurrentThread();
-                if (alive->load(std::memory_order_acquire) && beforeRender)
-                    beforeRender();
-                SnowCanvasRegionFilterScratch scratch;
-                ScreenshotOcrRecognitionResult result;
-                if (alive->load(std::memory_order_acquire) &&
-                    !job->cancelled.load(std::memory_order_acquire)) {
-                    result.filteredImage =
-                        renderFilteredImage(std::move(job->request.image), job->request.canvasRect,
-                                            job->request.presentation, job->request.backgroundColor,
-                                            &scratch, &result.filteredImageCanvasRect);
-                    if (result.filteredImage.isNull() && job->request.presentation != nullptr) {
-                        result.error = QCoreApplication::translate("ScreenshotOcrController",
-                                                                   "Text recognition failed");
-                    }
+        m_localPool->start(QRunnable::create([service, job, alive,
+                                              beforeRender = m_beforeLocalRender]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
+            if (alive->load(std::memory_order_acquire) &&
+                !job->cancelled.load(std::memory_order_acquire) && beforeRender)
+                beforeRender();
+            SnowCanvasRegionFilterScratch scratch;
+            ScreenshotOcrRecognitionResult result;
+            if (alive->load(std::memory_order_acquire) &&
+                !job->cancelled.load(std::memory_order_acquire)) {
+                auto& request = job->request;
+                if (request.prepareVisualColors) {
+                    const auto colors = request.colorSource.value_or(ScreenshotOcrColorSource{
+                        request.image, request.canvasRect, request.presentation});
+                    prepareScreenshotOcrTextColors(*colors.presentation, colors.image,
+                                                   colors.canvasRect, &job->cancelled);
+                    prepareScreenshotOcrFillColors(*colors.presentation, colors.image,
+                                                   colors.canvasRect, request.backgroundFill,
+                                                   &job->cancelled);
+                    result.presentation = colors.presentation;
+                    if (request.presentation != colors.presentation)
+                        request.presentation->applyPreparedColors(*colors.presentation);
                 }
-                QMetaObject::invokeMethod(
-                    service,
-                    [service, job, alive, result = std::move(result)]() mutable {
-                        if (alive->load(std::memory_order_acquire) && service != nullptr &&
-                            service->m_impl != nullptr) {
-                            service->m_impl->finishLocalJob(job, std::move(result));
-                        }
-                    },
-                    Qt::QueuedConnection);
-            }));
+                if (request.renderFilteredImage && !job->cancelled.load(std::memory_order_acquire))
+                    result.filteredImage = renderFilteredImage(
+                        std::move(request.image), request.canvasRect, request.presentation,
+                        request.backgroundColor, &scratch, &result.filteredImageCanvasRect);
+                if (request.renderFilteredImage && result.filteredImage.isNull()) {
+                    result.error = QCoreApplication::translate("ScreenshotOcrController",
+                                                               "Text recognition failed");
+                }
+            }
+            QMetaObject::invokeMethod(
+                service,
+                [service, job, alive, result = std::move(result)]() mutable {
+                    if (alive->load(std::memory_order_acquire) && service != nullptr &&
+                        service->m_impl != nullptr) {
+                        service->m_impl->finishLocalJob(job, std::move(result));
+                    }
+                },
+                Qt::QueuedConnection);
+        }));
         return token;
     }
 
@@ -311,13 +325,15 @@ class ScreenshotOcrRecognitionService::Impl final {
         return true;
     }
 
-    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor& backgroundColor) {
+    bool setRenderFilteredImage(RequestToken token, bool enabled, const QColor& backgroundColor,
+                                bool backgroundFill) {
         auto it = m_jobs.find(token);
         if (it == m_jobs.end() || it.value()->request.renderOnly || it.value()->localRendering ||
             it.value()->cancelled.load())
             return false;
         it.value()->request.renderFilteredImage = enabled;
         it.value()->request.backgroundColor = enabled ? backgroundColor : QColor();
+        it.value()->request.backgroundFill = enabled && backgroundFill;
         return true;
     }
 
@@ -1056,7 +1072,6 @@ class ScreenshotOcrRecognitionService::Impl final {
                     line.direction = textDirectionForQuad(line.quad);
                     result.presentation->lines.push_back(std::move(line));
                 }
-                result.presentation->prepareForRendering();
             } else {
                 result.error = QCoreApplication::translate("ScreenshotOcrController",
                                                            "Text recognition failed");
@@ -1075,29 +1090,34 @@ class ScreenshotOcrRecognitionService::Impl final {
                 ++m_localRenderingCount;
             }
         }
-        if (!job->cancelled.load() && result.error.isEmpty() && result.presentation != nullptr &&
-            (!result.presentation->lines.isEmpty() || job->request.renderFilteredImage)) {
+        if (job->localRendering) {
             const QImage source = job->request.image;
             const QRectF canvasRect = job->request.canvasRect;
             const QColor background = job->request.backgroundColor;
             const bool renderFiltered = job->request.renderFilteredImage;
+            const bool backgroundFill = job->request.backgroundFill;
             const QPointer<ScreenshotOcrRecognitionService> service(m_owner);
             const auto alive = m_alive;
             m_localPool->start(
                 QRunnable::create([service, job, alive, beforeRender = m_beforeLocalRender,
                                    result = std::move(result), source, canvasRect, background,
-                                   renderFiltered]() mutable {
+                                   renderFiltered, backgroundFill]() mutable {
                     snow_shot::platform::applyApplicationQoSToCurrentThread();
                     if (renderFiltered && alive->load(std::memory_order_acquire) && beforeRender)
                         beforeRender();
                     SnowCanvasRegionFilterScratch scratch;
                     if (alive->load(std::memory_order_acquire) && !job->cancelled.load()) {
+                        result.presentation->prepareForRendering();
                         prepareScreenshotOcrTextColors(*result.presentation, source, canvasRect,
                                                        &job->cancelled);
-                        if (renderFiltered && !job->cancelled.load())
-                            result.filteredImage = renderFilteredImage(
-                                source, canvasRect, result.presentation, background, &scratch,
-                                &result.filteredImageCanvasRect);
+                        if (renderFiltered && !job->cancelled.load()) {
+                            prepareScreenshotOcrFillColors(*result.presentation, source, canvasRect,
+                                                           backgroundFill, &job->cancelled);
+                            if (!job->cancelled.load())
+                                result.filteredImage = renderFilteredImage(
+                                    source, canvasRect, result.presentation, background, &scratch,
+                                    &result.filteredImageCanvasRect);
+                        }
                     }
                     QMetaObject::invokeMethod(
                         service,
@@ -1405,19 +1425,23 @@ ScreenshotOcrRecognitionPort::RequestToken
 ScreenshotOcrRecognitionService::render(ScreenshotOcrRequest request, QObject* receiver,
                                         Completion completion) {
     if (request.image.isNull() || !request.canvasRect.isValid() || request.canvasRect.isEmpty() ||
-        request.presentation == nullptr || receiver == nullptr || !completion || m_impl == nullptr)
+        request.presentation == nullptr ||
+        (request.colorSource && request.colorSource->presentation == nullptr) ||
+        receiver == nullptr || !completion || m_impl == nullptr)
         return 0;
     request.renderOnly = true;
-    request.renderFilteredImage = false;
+    if (!request.prepareVisualColors)
+        request.renderFilteredImage = true;
     do {
         ++m_nextToken;
     } while (m_nextToken == 0);
     return m_impl->render(m_nextToken, std::move(request), receiver, std::move(completion));
 }
 bool ScreenshotOcrRecognitionService::setRenderFilteredImage(RequestToken token, bool enabled,
-                                                             const QColor& backgroundColor) {
+                                                             const QColor& backgroundColor,
+                                                             bool backgroundFill) {
     return m_impl != nullptr && token != 0 &&
-           m_impl->setRenderFilteredImage(token, enabled, backgroundColor);
+           m_impl->setRenderFilteredImage(token, enabled, backgroundColor, backgroundFill);
 }
 void ScreenshotOcrRecognitionService::cancel(RequestToken token) {
     if (m_impl != nullptr && token != 0)

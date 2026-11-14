@@ -1243,11 +1243,24 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionWindow::textSelectionClipboardMi
 
 void ScreenshotRecognitionWindow::updateOcrText(int lineIndex, const QString& text,
                                                 bool streaming) {
+    updateOcrTexts({{lineIndex, text, streaming}});
+}
+
+void ScreenshotRecognitionWindow::updateOcrTexts(const QVector<ScreenshotOcrTextUpdate>& updates) {
     if (m_ocrPresentation != nullptr) {
-        m_ocrPresentation->setLineText(lineIndex, text, streaming);
-        m_textLayer->updateLineText(lineIndex);
+        QVector<int> indices;
+        indices.reserve(updates.size());
+        for (const auto& update : updates) {
+            m_ocrPresentation->setLineText(update.index, update.text, update.streaming);
+            indices.push_back(update.index);
+        }
+        m_textLayer->updateLineTexts(indices);
         notifyTextSelectionChanged();
     }
+}
+
+void ScreenshotRecognitionWindow::updateOcrColors() {
+    m_textLayer->updateTextColors();
 }
 
 void ScreenshotRecognitionWindow::clearOcrPresentation() {

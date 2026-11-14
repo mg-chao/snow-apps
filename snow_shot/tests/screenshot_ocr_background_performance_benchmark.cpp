@@ -12,6 +12,7 @@
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     std::printf("width,height,lines,scenario,accepted,estimate_median_ms,estimate_p95_ms,"
+                "cached_estimate_median_ms,cached_estimate_p95_ms,"
                 "render_median_ms,render_p95_ms\n");
     for (const QSize size : {QSize(1920, 1080), QSize(3840, 2160)}) {
         for (const int count : {20, 500}) {
@@ -60,24 +61,31 @@ int main(int argc, char** argv) {
                     }
                 }
                 painter.end();
-                std::vector<double> estimates, renders;
+                std::vector<double> estimates, cachedEstimates, renders;
                 SnowCanvasRegionFilterScratch scratch;
                 for (int run = 0; run < 23; ++run) {
+                    auto prepared = presentation;
                     QElapsedTimer timer;
                     timer.start();
-                    prepareScreenshotOcrFillColors(presentation, source, source.rect(), true);
+                    prepareScreenshotOcrFillColors(prepared, source, source.rect(), true);
                     const double estimateMs = static_cast<double>(timer.nsecsElapsed()) / 1000000.0;
                     timer.restart();
+                    prepareScreenshotOcrFillColors(prepared, source, source.rect(), true);
+                    const double cachedMs = static_cast<double>(timer.nsecsElapsed()) / 1000000.0;
+                    timer.restart();
                     const QImage result = renderScreenshotOcrFilteredImage(
-                        source, source.rect(), presentation, Qt::white, 1.0, nullptr, &scratch);
+                        source, source.rect(), prepared, Qt::white, 1.0, nullptr, &scratch);
                     const double renderMs = static_cast<double>(timer.nsecsElapsed()) / 1000000.0;
                     if (result.isNull()) {
                         return 1;
                     }
                     if (run >= 3) {
                         estimates.push_back(estimateMs);
+                        cachedEstimates.push_back(cachedMs);
                         renders.push_back(renderMs);
                     }
+                    if (run == 22)
+                        presentation = std::move(prepared);
                 }
                 const auto accepted =
                     std::count_if(presentation.lines.cbegin(), presentation.lines.cend(),
@@ -91,14 +99,16 @@ int main(int argc, char** argv) {
                     return 2;
                 }
                 std::sort(estimates.begin(), estimates.end());
+                std::sort(cachedEstimates.begin(), cachedEstimates.end());
                 std::sort(renders.begin(), renders.end());
                 const char* name = scenario == 0   ? "flat"
                                    : scenario == 1 ? "noise"
                                    : scenario == 2 ? "mixed"
                                                    : "rotated";
-                std::printf("%d,%d,%d,%s,%d,%.6f,%.6f,%.6f,%.6f\n", size.width(), size.height(),
-                            count, name, static_cast<int>(accepted),
+                std::printf("%d,%d,%d,%s,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", size.width(),
+                            size.height(), count, name, static_cast<int>(accepted),
                             (estimates[9] + estimates[10]) / 2.0, estimates[18],
+                            (cachedEstimates[9] + cachedEstimates[10]) / 2.0, cachedEstimates[18],
                             (renders[9] + renders[10]) / 2.0, renders[18]);
                 std::fflush(stdout);
             }

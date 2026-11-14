@@ -310,11 +310,41 @@ void ScreenshotOcrPresentation::prepareForRendering() {
     m_geometryPrepared = true;
 }
 
+bool ScreenshotOcrPresentation::applyPreparedColors(const ScreenshotOcrPresentation& source) {
+    if (lines.size() != source.lines.size())
+        return false;
+    bool changed = solidBackgroundFill != source.solidBackgroundFill;
+    solidBackgroundFill = source.solidBackgroundFill;
+    for (qsizetype index = 0; index < lines.size(); ++index) {
+        const auto& color = source.lines.at(index);
+        const auto& current = lines.at(index);
+        if (current.sourceTextColor == color.sourceTextColor &&
+            current.sourceLineTextColors == color.sourceLineTextColors &&
+            current.backgroundFillColor == color.backgroundFillColor)
+            continue;
+        auto& line = lines[index];
+        line.sourceTextColor = color.sourceTextColor;
+        line.sourceLineTextColors = color.sourceLineTextColors;
+        line.backgroundFillColor = color.backgroundFillColor;
+        changed = true;
+    }
+    m_textColorImageKey = source.m_textColorImageKey;
+    m_textColorCanvasRect = source.m_textColorCanvasRect;
+    m_textColorGeometry = source.m_textColorGeometry;
+    m_fillColorImageKey = source.m_fillColorImageKey;
+    m_fillColorCanvasRect = source.m_fillColorCanvasRect;
+    m_fillColorGeometry = source.m_fillColorGeometry;
+    return changed;
+}
+
 void ScreenshotOcrPresentation::setLineText(int lineIndex, const QString& text, bool streaming) {
     if (lineIndex < 0 || lineIndex >= lines.size() ||
         (lines.at(lineIndex).text == text && lines.at(lineIndex).translationStreaming == streaming))
         return;
+    const bool changedText = lines.at(lineIndex).text != text;
     lines[lineIndex].translationStreaming = streaming;
+    if (!changedText)
+        return;
     lines[lineIndex].text = text;
     const QVector<int> boundaries = graphemeBoundaries(text);
     if (m_geometryPrepared && m_cachedLineGeometry.size() == lines.size()) {

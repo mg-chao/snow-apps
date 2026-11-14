@@ -150,6 +150,14 @@ std::optional<qint64> renderingBytes(const ScreenshotPinnedViewportExportSource&
         (!plan.composeVisibleOnly || compositionRect != plan.outputPixelRect) &&
         !addBytes(bytes, *output))
         return std::nullopt;
+    if (source.prepareRecognitionOverlay) {
+        const auto raster = rasterBytes(source.backgroundImage.size());
+        if (!raster)
+            return std::nullopt;
+        for (int index = 0; index < 4; ++index)
+            if (!addBytes(bytes, *raster))
+                return std::nullopt;
+    }
     return bytes;
 }
 
@@ -371,7 +379,15 @@ QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource
     const auto plan = screenshotPinnedViewportRenderPlan(source);
     if (!plan)
         return {};
-    QImage image = renderPinnedViewport(source, *plan, cancelled);
+    QImage image;
+    if (source.recognitionOverlay && source.prepareRecognitionOverlay) {
+        auto prepared = source;
+        if (!source.prepareRecognitionOverlay(*prepared.recognitionOverlay, cancelled))
+            return {};
+        image = renderPinnedViewport(prepared, *plan, cancelled);
+    } else {
+        image = renderPinnedViewport(source, *plan, cancelled);
+    }
     if (image.isNull() || (cancelled && cancelled()))
         return {};
     return plan->cropAfterRender && !plan->composeVisibleOnly

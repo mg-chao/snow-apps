@@ -72,6 +72,7 @@
 #include "snow_shot/presentation/screenshotocrlayout.h"
 #include "snow_shot/presentation/screenshotocrtextlayout.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrvisuals.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotexportcache.h"
@@ -5867,18 +5868,21 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                     m_screenshotRenderer->setOcrFilteredImage(std::move(filteredImage), canvasRect);
                 }
             },
-            [this](int lineIndex, const QString& text, bool streaming) {
-                const bool changed = m_originalOcrPresentation && lineIndex >= 0 &&
-                                     lineIndex < m_originalOcrPresentation->lines.size() &&
-                                     m_originalOcrPresentation->lines[lineIndex].text != text;
-                if (m_originalOcrPresentation != nullptr) {
-                    m_originalOcrPresentation->setLineText(lineIndex, text, streaming);
-                }
-                if (m_displayOcrPresentation != nullptr) {
-                    m_displayOcrPresentation->setLineText(lineIndex, text, streaming);
-                }
+            [this](const QVector<ScreenshotOcrTextUpdate>& updates) {
+                const bool changed =
+                    m_displayOcrPresentation &&
+                    std::any_of(updates.cbegin(), updates.cend(), [this](const auto& update) {
+                        return update.index >= 0 &&
+                               update.index < m_displayOcrPresentation->lines.size() &&
+                               m_displayOcrPresentation->lines.at(update.index).text != update.text;
+                    });
                 if (m_recognitionContent != nullptr) {
-                    m_recognitionContent->updateOcrText(lineIndex, text, streaming);
+                    m_recognitionContent->updateOcrTexts(updates);
+                } else if (m_displayOcrPresentation != nullptr) {
+                    for (const auto& update : updates) {
+                        m_displayOcrPresentation->setLineText(update.index, update.text,
+                                                              update.streaming);
+                    }
                 }
                 if (changed)
                     clearTextAnnotations();
@@ -5954,6 +5958,14 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                     if (auto* palette = m_editController->toolbarWindow()->palette())
                         palette->setTextTranslationServices(models, selection, loading);
                 }
+            },
+            {},
+            {},
+            [this](const ScreenshotOcrPresentation& presentation) {
+                if (m_displayOcrPresentation &&
+                    m_displayOcrPresentation->applyPreparedColors(presentation) &&
+                    m_recognitionContent)
+                    m_recognitionContent->updateOcrColors();
             },
         },
         this);
@@ -6481,6 +6493,13 @@ ScreenshotPinnedWindow::renderedImageSnapshot(ViewportExportMode mode) {
     if (!lifetime || m_closing || m_presentationGeneration != generation ||
         m_contentReplacementGeneration != replacement)
         return fail();
+    if (mode != ViewportExportMode::RecognitionBackground && m_recognitionSession &&
+        m_recognitionSession->active() && m_recognitionSession->originalImageTranslationActive() &&
+        !m_recognitionSession->showOriginalImage()) {
+        if (!m_recognitionSession->flushTranslationUpdates() || !lifetime || m_closing ||
+            m_presentationGeneration != generation || m_contentReplacementGeneration != replacement)
+            return fail();
+    }
     const QRectF backgroundRect = m_animationTransformSnapshot
                                       ? m_animationTransformSnapshot->backgroundRect
                                       : m_backgroundCanvasRect;
@@ -6587,6 +6606,42 @@ ScreenshotPinnedWindow::renderedImageSnapshot(ViewportExportMode mode) {
                 // Text marks have their own shared layer and must be painted only once.
                 overlay->textAnnotations = {};
                 request.recognitionOverlay = std::move(*overlay);
+                if (request.recognitionOverlay->filteredImage.isNull() &&
+                    m_originalOcrPresentation) {
+                    const auto preparation = captureScreenshotPinnedRenderPreparation(this);
+                    const auto image = m_originalImage;
+                    const auto bounds = m_canvasSourceRect;
+                    const auto originalLines = m_originalOcrPresentation->lines;
+                    const auto displayImage = m_transformedImage;
+                    request.prepareRecognitionOverlay =
+                        [preparation, image, bounds, originalLines,
+                         displayImage](ScreenshotRecognitionImageSnapshot& output,
+                                       const std::function<bool()>& cancelled) {
+                            ScreenshotOcrPresentation original;
+                            original.lines = originalLines;
+                            prepareScreenshotOcrTextColors(original, image, bounds);
+                            if (cancelled && cancelled())
+                                return false;
+                            prepareScreenshotOcrFillColors(original, image, bounds,
+                                                           preparation.backgroundFill);
+                            if (cancelled && cancelled())
+                                return false;
+                            ScreenshotOcrPresentation display;
+                            display.lines = output.lines;
+                            display.applyPreparedColors(original);
+                            QRect pixels;
+                            output.filteredImage = renderScreenshotOcrFilteredImage(
+                                displayImage, output.canvasRect, display,
+                                preparation.backgroundColor,
+                                std::max(qreal(1),
+                                         displayImage.width() / output.canvasRect.width()),
+                                &pixels);
+                            output.filteredCanvasRect = screenshotOcrFilteredImageCanvasRect(
+                                output.canvasRect, displayImage.size(), pixels);
+                            output.lines = std::move(display.lines);
+                            return !output.filteredImage.isNull();
+                        };
+                }
             } else {
                 // Widget-only presentations are frozen before a worker can observe edits.
                 const QRectF rect = m_cropRect ? exportVisibleCanvasRect() : backgroundRect;

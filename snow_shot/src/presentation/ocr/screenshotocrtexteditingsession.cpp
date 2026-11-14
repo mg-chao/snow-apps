@@ -13,6 +13,12 @@ struct TextDifference {
     qsizetype removed;
     qsizetype inserted;
 };
+void normalizeParagraphSeparators(QString& text) {
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    text.replace(QLatin1Char('\n'), QChar::ParagraphSeparator);
+}
+
 TextDifference difference(const QString& before, const QString& after) {
     const auto size = std::min(before.size(), after.size());
     qsizetype prefix = 0;
@@ -186,11 +192,32 @@ void ScreenshotOcrTextEditingSession::establishHistory(const QString& text) {
     m_history.clear();
     m_historyText = text;
     m_historyIndex = 0;
-    applyText(text);
+    if (!m_streamedText || *m_streamedText != text)
+        applyText(text);
 }
 
 void ScreenshotOcrTextEditingSession::replaceTextWithoutHistory(const QString& text) {
     applyText(text);
+}
+
+void ScreenshotOcrTextEditingSession::appendStreamedText(const QString& text) {
+    if (m_preserveSource || !m_streamedText || !text.startsWith(*m_streamedText)) {
+        applyText(text);
+        return;
+    }
+    auto suffix = text.mid(m_streamedText->size());
+    if (m_streamedText->endsWith(u'\r') && suffix.startsWith(u'\n'))
+        suffix.remove(0, 1);
+    m_streamedText = text;
+    if (suffix.isEmpty())
+        return;
+    normalizeParagraphSeparators(suffix);
+    m_applying = true;
+    m_contentCheckpoint.clear();
+    QTextCursor cursor(&m_document);
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(suffix);
+    m_applying = false;
 }
 
 void ScreenshotOcrTextEditingSession::recordCurrentText() {
@@ -199,6 +226,7 @@ void ScreenshotOcrTextEditingSession::recordCurrentText() {
     }
     if (m_preserveSource)
         synchronizePreservedSource();
+    m_streamedText.reset();
     const QString current = text();
     m_contentCheckpoint.clear();
     if (current == m_historyText) {
@@ -222,12 +250,11 @@ void ScreenshotOcrTextEditingSession::applyText(const QString& text) {
     m_contentCheckpoint.clear();
     if (m_preserveSource)
         m_preservedSource = text;
+    m_streamedText = text;
     // Qt normalizes line endings to one paragraph separator per document position.
     // Replace only the changed span so streamed appends retain existing layouts and cursors.
     QString normalized = text;
-    normalized.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
-    normalized.replace(QLatin1Char('\r'), QLatin1Char('\n'));
-    normalized.replace(QLatin1Char('\n'), QChar::ParagraphSeparator);
+    normalizeParagraphSeparators(normalized);
     const auto change = difference(m_document.toRawText(), normalized);
     if (change.removed || change.inserted) {
         QTextCursor cursor(&m_document);

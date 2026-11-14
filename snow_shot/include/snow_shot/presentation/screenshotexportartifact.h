@@ -42,6 +42,9 @@ struct ScreenshotPinnedViewportExportSource final {
     std::optional<ScreenshotRecognitionImageSnapshot> recognitionOverlay = std::nullopt;
     QImage presentationImage = {};
     QRectF presentationCanvasRect = {};
+    // Runs on the export worker if the display background is still being prepared.
+    std::function<bool(ScreenshotRecognitionImageSnapshot&, const std::function<bool()>&)>
+        prepareRecognitionOverlay = {};
 };
 
 // A styled crop retains the full composition domain and its original pixel phase.

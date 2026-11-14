@@ -447,8 +447,18 @@ void quickServicePickerDiscoversModelsWithoutATranslationJob(bool imageMode) {
                 "switching services sends the original source to the selected model");
         server.delta(0, QStringLiteral("Server"));
         auto* view = editor.canvas()->findChild<ScreenshotRecognitionWindow*>();
-        awaitCondition([&] { return session->textDraft() == QStringLiteral("Server"); },
-                       "the selected service publishes an incremental translation");
+        awaitCondition(
+            [&] {
+                if (session->textDraft() != QStringLiteral("Server"))
+                    return false;
+                const auto* presentation =
+                    view && imageMode
+                        ? ScreenshotRecognitionWindowTestAccess::ocrPresentation(*view)
+                        : nullptr;
+                return !imageMode ||
+                       (presentation && presentation->lines[0].text == QStringLiteral("Server"));
+            },
+            "the selected service displays an incremental translation");
         require(view && view->showsOcrLayer() == imageMode,
                 "streaming updates the selected recognition page");
         if (imageMode) {

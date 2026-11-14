@@ -2250,13 +2250,28 @@ void ScreenshotOcrTextLayer::synchronize(const QTransform& canvasToViewTransform
 }
 
 void ScreenshotOcrTextLayer::updateLineText(int lineIndex) {
-    if (!m_synchronized || lineIndex < 0 || lineIndex >= static_cast<int>(m_textItems.size())) {
+    updateLineTexts({lineIndex});
+}
+
+void ScreenshotOcrTextLayer::updateLineTexts(const QVector<int>& lineIndices) {
+    if (!m_synchronized || lineIndices.isEmpty()) {
         return;
     }
-    synchronizeTextItem(m_textItems.at(static_cast<std::size_t>(lineIndex)),
-                        m_canvasToViewTransform);
+    for (const int index : lineIndices) {
+        if (index >= 0 && static_cast<std::size_t>(index) < m_textItems.size())
+            synchronizeTextItem(m_textItems.at(static_cast<std::size_t>(index)),
+                                m_canvasToViewTransform);
+    }
     m_textHighlightGeometryDirty = true;
     updateTextHighlighting();
+    updateSelection();
+}
+
+void ScreenshotOcrTextLayer::updateTextColors() {
+    if (!m_synchronized)
+        return;
+    for (TextItem& item : m_textItems)
+        synchronizeTextItem(item, m_canvasToViewTransform);
     updateSelection();
 }
 

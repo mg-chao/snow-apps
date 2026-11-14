@@ -439,8 +439,18 @@ std::shared_ptr<ScreenshotOcrPresentation> filterPresentation(const QRect& selec
     return presentation;
 }
 
-void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(qreal scale = 1) {
-    ScreenshotOcrRecognitionService service;
+void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(qreal scale = 1, bool fill = false) {
+    QSemaphore entered;
+    QSemaphore resume;
+    std::atomic_bool ranOffGui = false;
+    const auto gui = QThread::currentThread();
+    ScreenshotOcrRecognitionService::Options options;
+    options.beforeLocalRender = [&] {
+        ranOffGui.store(QThread::currentThread() != gui);
+        entered.release();
+        resume.acquire();
+    };
+    ScreenshotOcrRecognitionService service(options);
     QObject receiver;
     QImage image(96, 64, QImage::Format_RGBA8888);
     image.fill(QColor(20, 80, 220));
@@ -450,6 +460,16 @@ void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(qreal scale = 1) {
     request.canvasRect = canvasRect;
     request.presentation = filterPresentation(canvasRect.toAlignedRect());
     request.backgroundColor = QColor(30, 40, 50);
+    const auto display = request.presentation;
+    if (fill) {
+        QImage source(image.size(), QImage::Format_RGBA8888);
+        source.fill(QColor(170, 30, 40));
+        request.colorSource = ScreenshotOcrColorSource{
+            source, canvasRect, std::make_shared<ScreenshotOcrPresentation>(*display)};
+        request.prepareVisualColors = true;
+        request.renderFilteredImage = true;
+        request.backgroundFill = true;
+    }
 
     ScreenshotOcrRecognitionResult output;
     bool completed = false;
@@ -459,11 +479,20 @@ void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(qreal scale = 1) {
             completed = true;
         });
     require(token != 0, "a valid render-only OCR request should be accepted");
+    const bool workerStarted = entered.tryAcquire(1, kRecognitionTimeoutMs);
+    resume.release();
+    require(workerStarted && ranOffGui.load() && !completed,
+            "the worker renders independently of its GUI completion");
     require(waitUntil([&]() { return completed; }, kRecognitionTimeoutMs),
             "render-only OCR work should complete on the worker");
-    require(output.error.isEmpty() && output.presentation == nullptr &&
+    require(output.error.isEmpty() && static_cast<bool>(output.presentation) == fill &&
                 !output.filteredImage.isNull(),
-            "render-only OCR work should return only its transient filtered image");
+            "render-only work returns colors when requested alongside the filtered image");
+    if (fill)
+        require(output.presentation->lines[0].backgroundFillColor == QColor(170, 30, 40) &&
+                    output.filteredImage.pixelColor(output.filteredImage.rect().center()) ==
+                        QColor(170, 30, 40),
+                "a transformed render uses fill colors sampled from the original source");
     require(output.filteredImageCanvasRect.isValid() && !output.filteredImageCanvasRect.isEmpty() &&
                 canvasRect.contains(output.filteredImageCanvasRect),
             "render-only OCR work should report the canvas rect covered by its filtered crop");
@@ -1391,6 +1420,7 @@ int main(int argc, char** argv) {
     modelInitializationFailureIsReportedOnRequestsAndRetries();
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(2);
+    renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine(1, true);
     destructionStaysBoundedWhileRendersAreInFlight();
     diskBackedEngineCompletesThroughTheQtWorker();
     residentRuntimeRebuildsWarmSessions();
